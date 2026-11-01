@@ -4,7 +4,7 @@ import { PACKET_RUN_MS } from '../hooks/crew-row'
 import { LANDSCAPES } from '../hooks/landscapes'
 import { P, SCENE_H } from '../hooks/landscapes/kit'
 import { canvas, hash, seedOf } from '../hooks/pixels'
-import { CAT_COLUMNS, type SceneInput, lookOf, readScenePointer, sceneFrame, sceneHitAt, scenePixels } from '../hooks/scene'
+import { CAT_COLUMNS, type SceneInput, arcCells, lookOf, readScenePointer, sceneFrame, sceneHitAt, scenePixels } from '../hooks/scene'
 import { readable } from '../hooks/util'
 
 const base: SceneInput = {
@@ -56,15 +56,57 @@ test('a real message edge connects visible workers and exposes its preview', () 
   }
   const missingTarget = sceneFrame({ ...input, jobs: input.jobs.slice(0, 1) })
   expect(missingTarget.hits.targets.some(item => item.id.startsWith('peer:'))).toBe(false)
-  // the wire hangs from each worker's fixed zone, so it never moves with the sprite's drift and bob
-  const path = (frame: number) => {
-    const owners = sceneFrame({ ...input, frame }).hits
-    const owner = owners.targets.findIndex(item => item.id === 'peer:a:b') + 1
-    return owners.owners.flatMap((o, cell) => (o === owner ? [cell] : []))
+})
+
+test('an arc is pure geometry: connected, inside the scene, and from one end to the other', () => {
+  const a = { x: 10, y: 6 }, b = { x: 70, y: 3 }
+  const arc = arcCells(a, b, 120, SCENE_H, 0)
+  expect(arc).toEqual(arcCells(a, b, 120, SCENE_H, 0))
+  expect(arc[0]).toBe(a.y * 120 + a.x)
+  expect(arc.at(-1)).toBe(b.y * 120 + b.x)
+  for (const [k, cell] of arc.entries()) {
+    expect(cell % 120).toBeGreaterThanOrEqual(0)
+    expect(Math.floor(cell / 120)).toBeLessThan(SCENE_H)
+    if (k > 0) {
+      const before = arc[k - 1]!
+      expect(Math.max(Math.abs((cell % 120) - (before % 120)), Math.abs(Math.floor(cell / 120) - Math.floor(before / 120)))).toBe(1) // no gaps, no repeats
+    }
   }
-  const first = path(0)
-  expect(first.length).toBeGreaterThan(0)
-  for (let frame = 1; frame < 120; frame += 7) expect(path(frame)).toEqual(first)
+  const low = { x: 10, y: 15 }, lowEnd = { x: 70, y: 14 }
+  expect(arcCells(low, lowEnd, 120, SCENE_H, 1)).not.toEqual(arcCells(low, lowEnd, 120, SCENE_H, 0)) // a second pair's arc lies apart from the first
+})
+
+test('message trails live in the background: nothing painted over them changes, in any landscape or weather', () => {
+  for (const preset of ['beach', 'city', 'harbor', 'countryside', 'forest', 'mountains', 'desert', 'tundra'] as const) {
+    const plain: SceneInput = { ...base, preset, width: 120, agents: [], jobs: [
+      { isStale: false, seed: 1, hit: { id: 'a', title: 'A', details: [] } },
+      { isStale: false, seed: 2, hit: { id: 'b', title: 'B', details: [] } },
+    ] }
+    const skies: SceneInput['weather'][] = [
+      null,
+      { cloud: 0.2, rain: 3, snow: 0, fog: false, thunder: false, wind: 8 },
+      { cloud: 0.2, rain: 0, snow: 3, fog: false, thunder: false, wind: 8 },
+      { cloud: 0.2, rain: 0, snow: 0, fog: true, thunder: false, wind: 8 },
+    ]
+    for (const weather of skies) for (const frame of [40]) {
+      // a message mid-flight in each direction, plus one at rest
+      const talking = { ...plain, weather, frame, peerEdges: [
+        { source: 'a', target: 'b', strength: 1, preview: 'x', arriving: 500, fresh: 2 },
+        { source: 'mochi', target: 'a', strength: 0.4, preview: 'y' },
+      ] }
+      const bare = sceneFrame({ ...talking, peerEdges: [] })
+      const drawn = sceneFrame(talking)
+      expect(drawn.hits.targets.some(item => item.id === 'peer:a:b'), `${preset} has a trail at frame ${frame}`).toBe(true) // the harbor's water included
+      const pixels = scenePixels(talking), without = scenePixels({ ...talking, peerEdges: [] })
+      expect(pixels.some((p, i) => p !== without[i]), `${preset} shows its trail at frame ${frame}`).toBe(true)
+      // it takes no hover cell from anything real: only the sky (with its sun and moon), the ground and the weather are behind it
+      for (let cell = 0; cell < bare.hits.owners.length; cell++) {
+        const id = bare.hits.targets[bare.hits.owners[cell]! - 1]?.id
+        if (!id || ['sky', 'scenery', 'weather', 'sun', 'moon'].includes(id)) continue
+        expect(drawn.hits.targets[drawn.hits.owners[cell]! - 1]?.id, `${preset} cell ${cell}`).toBe(id)
+      }
+    }
+  }
 })
 
 test('Bridge root messages connect to Mochi in the recorded direction without covering scene objects', () => {

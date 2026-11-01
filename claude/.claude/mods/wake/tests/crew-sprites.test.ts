@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { airJobs, boat, fly, placeFly } from '../hooks/landscapes/crew'
+import { ALL_CRAFT, CRAFT_SIZE } from '../hooks/landscapes/craft'
 import { type Job, type Look, P } from '../hooks/landscapes/kit'
 import { canvas } from '../hooks/pixels'
 
@@ -36,6 +37,19 @@ test('each crew class has its own size and animated image, including stale amber
     const pictures = tiers.map(tier => render({ kind: 'codex', tier, seed: 0, isStale }, 0, true))
     expect(new Set(pictures.map(p => bounds(p).join(','))).size).toBe(4)
     expect(new Set(pictures.map(p => p.join(','))).size).toBe(4)
+  }
+})
+
+test('every place-built Codex craft keeps its class footprint and moves between its two frames', () => {
+  for (const [place, classes] of Object.entries(ALL_CRAFT)) for (const tier of tiers) {
+    const frames = classes![tier]
+    const { w, h } = CRAFT_SIZE[tier]
+    expect(frames.length, place).toBe(2)
+    for (const art of frames) {
+      expect(art.length, `${place} class ${tier} rows`).toBe(h)
+      for (const rowText of art) expect(rowText.length, `${place} class ${tier}: ${rowText}`).toBe(w)
+    }
+    expect(frames[0]).not.toEqual(frames[1])
   }
 })
 

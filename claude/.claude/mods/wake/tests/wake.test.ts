@@ -329,6 +329,29 @@ test('with the model inventory loaded, effort is a meter on the model scale and 
   await bar.unmount()
 })
 
+test('every hover card sits inside a keyed Box, whatever columns the crew rows show', async ($, on) => {
+  // The engine refuses the whole band for one unkeyed hover card (the peers column did once), so check them all at once.
+  engine(on)
+  const peers = [{ target: 'root', count: 2, lastAt: 995_000, observedAt: 995_000, outgoing: true, preview: 'Done' }]
+  const chips: WakeChip[] = [
+    { id: 'o/a', name: 'a', title: 'Face validation', backend: 'agy', account: '01', model: 'gemini-3.8-flash-high', effort: 'high', running: true, isStale: false, since: 1, lastEventAt: 992_000, peers },
+    { id: 'o/b', name: 'b', title: 'Review', backend: 'codex', account: '01', model: 'gpt-5.5', effort: '', running: true, isStale: false, since: 1, lastEventAt: 992_000, peers: [{ ...peers[0]!, target: 'o/a', outgoing: false }] },
+  ]
+  const quotas = [{ cli: 'codex', account: '01', plan: 'Pro', active: true, parts: [{ label: 'w', pct: 80, resets: null }] }]
+  on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: chips, version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'quotas' }, () => ({ value: { value: quotas, version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'effortLevels' }, () => ({ value: { value: { at: 1, levels: { agy: { 'gemini-3.8-flash-high': ['low', 'medium', 'high'] } } }, version: 1 } }))
+  const bar = await mount($, 'AbovePrompt', false, 140, 40)
+  const unkeyed = (node: Node, keyed: boolean): number => typeof node === 'string' ? 0
+    : (node.type === 'Box' && node.props?.display === 'none' && !keyed ? 1 : 0)
+      + (node.children ?? []).reduce((sum, child) => sum + unkeyed(child, keyed || (node.type === 'Box' && node.props?.key !== undefined)), 0)
+  const tree = (await bar.drawn()) as Node
+  expect(flat(tree)).toContain('Face validation')
+  expect(boxes(tree).filter(node => node.props?.display === 'none').length).toBeGreaterThan(4)
+  expect(unkeyed(tree, false)).toBe(0)
+  await bar.unmount()
+})
+
 test('the quota line leads with the CLI at work and shows unknown accounts', async ($, on) => {
   engine(on)
   const job: WakeChip = { name: 'takeover', title: 'Face validation', backend: 'agy', account: 'a2', model: 'gemini-3-flash', effort: '', running: true, isStale: false, since: 1, lastEventAt: 995_000 }

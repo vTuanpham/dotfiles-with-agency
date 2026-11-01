@@ -1,4 +1,5 @@
 import { type Canvas, hash, mix } from '../pixels'
+import { craftFrames } from './craft'
 import { type Job, jobAccent, type Look, P } from './kit'
 
 // The crew's look: one family per harness, four classes that grow in size and detail.
@@ -190,13 +191,7 @@ function dress(canvas: Canvas, look: Look, x0: number, y0: number, w: number, h:
   const put = (x: number, y: number, col: number) => { if (y >= 0 && y < ground) c.set(x, y, col) }
   const { a, l, d } = pal as { a: number; l: number; d: number }
   switch (look.place) {
-    case 'mountains': { // paraglider: a striped canopy on two lines
-      const cw = Math.max(w, 3 + tier * 2), left = x0 - ((cw - w) >> 1)
-      for (let i = 0; i < cw; i++) put(left + i, y0 - 2 + (i === 0 || i === cw - 1 ? 1 : 0), i % 2 ? l : a)
-      put(left + 1, y0 - 1, d)
-      put(left + cw - 2, y0 - 1, d)
-      break
-    }
+    // (mountains, countryside, forest, desert and tundra build their own craft: see craft.ts)
     case 'harbor': // a mast and a fluttering pennant
       put(cx, y0 - 1, d)
       put(cx, y0 - 2, d)
@@ -206,25 +201,6 @@ function dress(canvas: Canvas, look: Look, x0: number, y0: number, w: number, h:
     case 'beach': // a ribbon streaming behind, longer for a bigger model
       for (let k = 1; k <= 2 + tier; k++) put(x0 - k, y0 + (h >> 1) + Math.round(Math.sin(f * 0.22 + k * 0.9 + job.seed)), k % 2 ? l : a)
       break
-    case 'desert': // a lateen sail on a mast
-      put(cx, y0 - 1, d)
-      put(cx, y0 - 2, l)
-      put(cx + 1, y0 - 2, a)
-      put(cx, y0 - 3, a)
-      break
-    case 'tundra': // skis with turned-up tips
-      for (let i = -1; i <= w; i++) put(x0 + i, y0 + h, d)
-      put(x0 - 2, y0 + h - 1, d)
-      break
-    case 'countryside': // a windmill's turning rotor
-      put(cx, y0 - 1, d)
-      for (const dx of f % 8 < 4 ? [-2, 2] : [-1, 1]) put(cx + dx, y0 - 2, l)
-      put(cx, y0 - 2, a)
-      break
-    case 'forest': // a lantern on a string
-      put(cx, y0 + h, d)
-      put(cx, y0 + h + 1, P.yellow)
-      break
     case 'city': // an aerial with a blinking light
       put(cx, y0 - 1, d)
       put(cx, y0 - 2, (f >> 3) % 2 ? (look.night > 0.3 ? P.red : P.white) : d)
@@ -232,9 +208,13 @@ function dress(canvas: Canvas, look: Look, x0: number, y0: number, w: number, h:
   }
 }
 
+/** A flyer's frames: a Codex machine is the craft its place builds (a glider over the mountains, a biplane over the fields),
+ * and the generic drone and airship only where the place has none; the other families look the same everywhere. */
+const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames => (kind === 'codex' && craftFrames(look.place, tier)) || AIR[kind][tier]
+
 /** A flyer centred on (cx, cy): its family and class decide the sprite and which frame this beat shows. */
 export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kind: Kind = job.kind ?? 'codex', compact = false) {
-  const frames = AIR[kind][compact ? 1 : job.tier ?? 1]
+  const frames = airFrames(look, kind, compact ? 1 : job.tier ?? 1)
   const art = frames[(Math.floor(look.frame / (kind === 'claude' ? 3 : kind === 'opencode' ? 5 : 4)) + job.seed) % frames.length]!
   const pal = paint({ ...job, kind }, look)
   const x0 = cx - (art[0]!.length >> 1), y0 = cy - (art.length >> 1)
@@ -254,7 +234,7 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
   for (const z of zones) for (let py = Math.max(0, z.y); py < Math.min(c.H, z.y + z.h); py++) for (let px = Math.max(0, z.x); px < Math.min(c.W, z.x + z.w); px++) occupied[py * c.W + px] = 1
   const blocked = (px: number, py: number) => px >= 0 && px < c.W && py >= 0 && py < c.H && occupied[py * c.W + px] === 1
   {
-    const frames = AIR[job.kind ?? 'codex'][job.tier ?? 1]
+    const frames = airFrames(look, job.kind ?? 'codex', job.tier ?? 1)
     const art = frames[0]!
     const w = art[0]!.length, h = art.length
     const pixels: [number, number][] = []
@@ -472,7 +452,10 @@ export function placeBoat(c: Canvas, look: Look, wanted: number, y: number, job:
   for (const art of compactOnly ? [compact] : [BOATS[job.tier ?? 1], compact]) {
     const w = art[0]!.length, h = art.length
     const xs = Array.from({ length: Math.max(0, c.W - w + 1) }, (_, i) => i).sort((a, b) => Math.abs(a - wanted) - Math.abs(b - wanted) || a - b)
-    const tops = h === 3 ? [y + 1, y, y + 2, y + 3] : [y]
+    // A full boat that cannot berth where it wants (the shore's lamps stand a column every nine cells, in reach of its hull) sails
+    // further out instead: its mast crosses the horizon and its hull stays in open water.
+    // (the small mark sits on the horizon first, where it reads as a distant sail, before it tries the water among the huts)
+    const tops = h === 3 ? [y - 2, y - 1, y, y + 1, y + 2, y + 3, y - 3] : [y, y - 1, y - 2, y - 3, y - 4]
     for (const top of tops) for (const x of xs) {
       if (top < 0 || top + h > c.H) continue
       const zone = { x, y: top, w, h }

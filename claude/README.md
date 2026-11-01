@@ -147,14 +147,15 @@ The [Claude Code documentation](https://code.claude.com/docs/en/sub-agents)
 describes its subagent workflow and status access.
 
 Classes are 1 Haiku/Luna, 2 Sonnet/Terra, 3 Opus/Sol and 4 Fable/Astra;
-unrecognized models fall back to class 2. Each harness has four scene sprites that keep
-their colour and character everywhere (Codex a machine, agy light, Claude a living thing,
-OpenCode a festival balloon) and grow with the class; each landscape then dresses them:
-a Codex machine takes the gear of the country (a paraglider canopy in the mountains, a
-pennant in the harbor, a ribbon on the beach, a lateen sail in the desert, skis in the
-tundra, a windmill rotor in the countryside, a lantern in the forest, an aerial and a
-blinking light in the city) and every family wears its weather as soft light (a
-searchlight over the city, a contrail in the mountains, petals in the countryside,
+unrecognized models fall back to class 2. Each harness has four scene sprites that grow with
+the class and keep their colour and character everywhere (agy light, Claude a living thing,
+OpenCode a festival balloon), while Codex, the mechanical crew, builds what each place would
+build: a steamship on the harbor and the beach (further out on the horizon when the skyline
+hides the shore), drones and blimps over the city, a paraglider in the mountains, a
+crop-duster over the countryside, an autogyro with a lantern in the forest, a sail-skiff in
+the desert and a ski-plane in the tundra (see `hooks/landscapes/craft.ts`). Every family also
+wears its place's weather as soft light (a searchlight over the city, a pennant in the
+harbor, a ribbon on the beach, a contrail in the mountains, petals in the countryside,
 fireflies in the forest, dust in the desert, aurora glitter in the tundra). Flyers patrol the
 clear sky beside their home, slowly and continuously, so nothing teleports; they pass in front
 of the backdrop but never over turn buildings. A worker hops when something real happens to it:
@@ -169,8 +170,9 @@ landscape's own.
 The root has one place in every worker row, the right edge: a `◉` node on the first row, a
 spine down to the last worker tied to it, `─┤`/`─┘` branches, and `↑`/`↓` for the last message
 to or from the root (`·` when the worker simply works for it); a packet runs the spine as a
-message arrives and a tie fades over 15 minutes. In the scene a faint, still thread joins each
-worker (native or Bridge) to Mochi: working for the root is a relationship, not a message.
+message arrives and a tie fades over 15 minutes; the row's leader between its words and the graph
+stays empty except for a few beads while a message arrives. In the scene a trail of faint embers
+joins each worker (native or Bridge) to Mochi: working for the root is a relationship, not a message.
 If the crew will not fit alongside the scene, Wake temporarily gives the rows
 the available space instead; an overflow count indicates any remaining rows.
 A stall mark comes from Bridge's shared
@@ -188,12 +190,14 @@ backoff stay normal known states. Colored gutter lanes join connected peers;
 and ┄/┆ show a declared peer or dependency wait. Motion means a message just arrived: when Wake
 first sees new messages on a link, one packet per message (up to five, a beat apart) crosses the
 lane once from sender to recipient, then the lane rests. History Wake never saw arrive does not
-move, nor does a wait. A worker's state mark lights when it acts, then settles. The scene wire
-between the two sprites carries the same packets in the sender's harness colour and flashes
-where each lands. Message links fade gradually and are gone after 15 minutes. The gutter
+move, nor does a wait. A worker's state mark lights when it acts, then settles. In the scene a
+message is a comet in the sender's harness colour whose tail fades slowly behind it, running an
+arc between the two workers' fixed places (never their moving sprites). The trail is drawn
+behind the sky's buildings, crew, weather and Mochi, so it takes nothing from them, and a soft
+splash marks where it lands. Message links fade gradually and are gone after 15 minutes. The gutter
 shrinks with the terminal; where a group cannot fit, the existing ↗/↙ peer marks remain.
-Root messages use the root graph at the right edge (above). Clear scene paths
-connect workers to Mochi. Hover details show the scrubbed preview and distinguish
+Root messages use the root graph at the right edge (above). Arcs connect workers
+to Mochi. Hover details show the scrubbed preview and distinguish
 Bridge observing worker output from sending a root prompt or steer; neither
 proves the recipient read it. The root endpoint is the owner namespace across
 session handoffs. The native Claude `statusline.py` still renders

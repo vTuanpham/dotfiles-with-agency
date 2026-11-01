@@ -557,9 +557,25 @@ export function lookOf(input: SceneInput): Look {
   }
 }
 
-/** The scene's pixels, row-major, `width` x 12, as 0xRRGGBB. */
+/**
+ * The scene's pixels, row-major, `width` x 12, as 0xRRGGBB.
+ *
+ * A message trail lives in the background, painted straight after the sky and ground so that buildings, the crew, weather and
+ * Mochi all paint over it and it can take nothing from them. Its ends are the crew's places, which are known only once the crew
+ * is placed, so the crew is placed in a first pass (no messages drawn) and the trail painted in the second.
+ */
 export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMap?: SceneHitMap): Uint32Array {
-  const localHits = hitMap ?? (input.peerEdges?.length ? { columns: input.width, rows: SCENE_ROWS, owners: [], targets: [] } : undefined)
+  if (!input.peerEdges?.length) return drawScene(input, crewAnchors, hitMap)
+  const ends = new Map<string, Anchor>()
+  const want = new Set(input.peerEdges.flatMap(edge => [edge.source, edge.target]))
+  drawScene({ ...input, peerEdges: undefined }, crewAnchors, undefined, { collect: ends, want })
+  return drawScene(input, crewAnchors, hitMap, { ends })
+}
+
+type TrailPlan = { collect?: Map<string, Anchor>; want?: Set<string>; ends?: Map<string, Anchor> }
+
+function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap | undefined, plan: TrailPlan = {}): Uint32Array {
+  const localHits = hitMap ?? (plan.collect ? { columns: input.width, rows: SCENE_ROWS, owners: [], targets: [] } : undefined)
   const c = canvas(input.width, H, localHits !== undefined)
   const look = lookOf(input)
   look.hitTargets = localHits?.targets
@@ -578,6 +594,7 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
   const sceneryOwner = registerHit({ id: 'scenery', title: `${input.preset} landscape`, details: ['Scene setting'] })
   const foregroundOwner = registerHit({ id: 'foreground', title: `${input.preset} landscape`, details: ['Scene setting'] })
   const celestialOwner = (input.weather?.cloud ?? 0) < 0.85 ? registerHit({ id: look.isDay ? 'sun' : 'moon', title: look.isDay ? 'Sun' : 'Moon', details: [look.isDay ? 'Daytime' : `Lunar cycle: ${Math.round(input.moonPhase * 100)}%`] }) : 0
+  const trails = new Set<number>() // hit owners of message trails
   let skyPixels: Uint32Array | undefined
   let sceneryPixels: Uint32Array | undefined
   const finish = () => {
@@ -586,8 +603,11 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
       hitMap.rows = SCENE_ROWS
       hitMap.owners = Array.from({ length: c.W * SCENE_ROWS }, (_, i) => {
         const row = Math.floor(i / c.W), x = i % c.W
-        const top = c.hitOwners![(2 * row) * c.W + x]!
-        const bottom = c.hitOwners![(2 * row + 1) * c.W + x]!
+        let top = c.hitOwners![(2 * row) * c.W + x]!
+        let bottom = c.hitOwners![(2 * row + 1) * c.W + x]!
+        // a trail is background: it shares a cell with anything real and loses it
+        if (trails.has(top) && bottom && !trails.has(bottom)) top = 0
+        if (trails.has(bottom) && top && !trails.has(top)) bottom = 0
         if (top || bottom) return top === bottom ? top : top === 0 ? bottom : bottom === 0 ? top : 0
         const a = (2 * row) * c.W + x, b = (2 * row + 1) * c.W + x
         if (skyPixels && c.px[a] === skyPixels[a] && c.px[b] === skyPixels[b]) return skyOwner
@@ -612,6 +632,11 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
   land.backdrop(c, look)
   land.floor(c, look)
   if (localHits) sceneryPixels = c.px.slice()
+  if (plan.ends) drawTrails(c, input, plan.ends, target => {
+    const owner = registerHit(target)
+    if (owner) trails.add(owner)
+    return owner
+  })
 
   look.crewZones = []
   look.crewGround = ground
@@ -722,6 +747,25 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
     const y = 3 + (j % 3)
     placeFly(c, look, x, y, bird, right)
   }
+  // First pass: where each wanted worker and Mochi are. A worker plays about inside its reserved zone, so its end of a trail is
+  // the zone's fixed top, never the sprite: nothing the sprite does (a hop, a mark, a drift) can move the trail. The crew is
+  // read before the weather is drawn, because fog claims every cell it covers; Mochi is read once she is drawn.
+  const collectPlaces = (mochi: boolean) => {
+    if (!plan.collect || !localHits || !c.hitOwners) return
+    for (const [i, hit] of localHits.targets.entries()) {
+      if (!plan.want?.has(hit.id) || (hit.id === 'mochi') !== mochi) continue
+      const owner = i + 1
+      let top = H, found = false // (a harbor's boats sit in the water, below `ground`)
+      for (let y = 0; y < H && !plan.collect.has(hit.id); y++) for (let x = 0; x < c.W; x++) {
+        if (c.hitOwners[y * c.W + x] !== owner) continue
+        if (mochi) { top = Math.min(top, y); found = true; continue }
+        const zone = (look.crewSpriteZones ?? []).find(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h)
+        if (zone) { plan.collect.set(hit.id, { x: zone.x + (zone.w >> 1), y: Math.max(0, (zone.y & ~1) - 1) }); break } // the last row of the cell row above the sprite's
+      }
+      if (found) plan.collect.set(hit.id, { x: catX + (CAT_COLUMNS >> 1), y: Math.max(0, (top & ~1) - 1) })
+    }
+  }
+  collectPlaces(false)
   if (input.weather) {
     const weather = input.weather
     const weatherOwner = registerHit({ id: 'weather', title: 'Weather', details: [`Cloud cover: ${Math.round(weather.cloud * 100)}%`, weather.thunder ? 'Thunderstorm' : weather.snow ? 'Snow' : weather.rain ? 'Rain' : weather.fog ? 'Fog' : 'No precipitation shown'] })
@@ -731,133 +775,91 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
   if (input.effect) drawEffect(c, look, input.effect, ground, right, input.preset)
   if (mochiOwner) c.withHit(mochiOwner, () => drawMochi(c, look, input, ground, catX))
   else drawMochi(c, look, input, ground, catX)
-  // Route only between visible endpoints, through unoccupied sky.
-  const peerBlocked = new Uint8Array(c.W * ground)
-  if (localHits && c.hitOwners && input.peerEdges?.length) {
-    for (let y = 0; y < ground; y++) for (let x = 0; x < c.W; x++) {
-      const i = y * c.W + x, other = (y ^ 1) * c.W + x
-      if (c.hitOwners[i] || c.hitOwners[other] || sceneryPixels && skyPixels && (sceneryPixels[i] !== skyPixels[i] || sceneryPixels[other] !== skyPixels[other])) peerBlocked[i] = 1
-    }
-    for (const z of look.crewZones ?? []) for (let y = Math.max(0, z.y); y < Math.min(ground, z.y + z.h); y++) for (let x = Math.max(0, z.x); x < Math.min(c.W, z.x + z.w); x++) peerBlocked[y * c.W + x] = 1
-  }
-  if (localHits && c.hitOwners && input.peerEdges?.length) for (const edge of input.peerEdges) {
-    const source = localHits.targets.findIndex(target => target.id === edge.source) + 1
-    const target = localHits.targets.findIndex(item => item.id === edge.target) + 1
-    if (!source || !target || source === target) continue
+  collectPlaces(true) // Mochi, now she is drawn
+  return finish()
+}
+
+/** Paint the message trails into the background, under everything the scene draws after them. */
+function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, registerHit: (target: WakeSceneHit | undefined) => number) {
+  const titleOf = (id: string) => id === 'mochi' ? 'root' : [...input.jobs, ...input.agents].find(job => job.hit?.id === id)?.hit?.title ?? id
+  for (const [lane, edge] of (input.peerEdges ?? []).entries()) {
+    const from = ends.get(edge.source), to = ends.get(edge.target)
+    if (!from || !to || edge.source === edge.target) continue
+    const path = arcCells(from, to, c.W, H, lane)
+    const length = path.length
+    if (length < 3) continue
     const rootMessage = edge.source === 'mochi' || edge.target === 'mochi'
-    const rootZone = rootMessage ? look.crewZones?.find(z => z.x === catX - 4 && z.y === 0 && z.w === CAT_COLUMNS + 4 && z.h === H) : undefined
-    const bound = rootMessage ? c.W : right
-    const free = (x: number, y: number) => {
-      if (x < 0 || x >= bound || y < 0 || y >= ground) return false
-      const i = y * c.W + x, other = (y ^ 1) * c.W + x
-      if (c.hitOwners![i] || c.hitOwners![other]) return false
-      // Mochi's reserved lane is passable only where both cell halves are empty sky.
-      if (rootZone && x >= rootZone.x && x < rootZone.x + rootZone.w) {
-        return !sceneryPixels || !skyPixels || sceneryPixels[i] === skyPixels[i] && sceneryPixels[other] === skyPixels[other]
-      }
-      return (x < right || rootMessage && x === right) && peerBlocked[i] === 0
-    }
-    const starts: number[] = [], goals = new Set<number>(), zonesSeen = new Set<object>()
-    for (let y = 0; y < ground; y++) for (let x = 0; x < bound; x++) {
-      const owner = c.hitOwners[y * c.W + x]
-      if (owner !== source && owner !== target) continue
-      const sprite = owner === mochiOwner ? rootZone : (look.crewSpriteZones ?? []).find(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h)
-      if (!sprite) continue
-      if (owner !== mochiOwner) {
-        // A worker drifts and bobs inside its reserved zone; the wire hangs from the zone's edge, which never moves, so the
-        // whole path stays put while the sprite plays about at its end instead of the route being redrawn every frame.
-        if (zonesSeen.has(sprite)) continue
-        zonesSeen.add(sprite)
-        for (let yy = sprite.y - 2; yy <= sprite.y + sprite.h + 1; yy++) for (let xx = sprite.x - 2; xx <= sprite.x + sprite.w + 1; xx++) {
-          if (xx >= sprite.x && xx < sprite.x + sprite.w && yy >= sprite.y && yy < sprite.y + sprite.h) continue
-          if (!free(xx, yy)) continue
-          if (owner === source) starts.push(yy * c.W + xx)
-          else goals.add(yy * c.W + xx)
-        }
-        continue
-      }
-      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
-        const reach = owner === mochiOwner ? 2 : Math.max(sprite.w, sprite.h) + 2
-        for (let distance = 1; distance <= reach; distance++) {
-          const xx = x + dx * distance, yy = y + dy * distance
-          if (xx < 0 || xx >= bound || yy < 0 || yy >= ground) break
-          const other = c.hitOwners[yy * c.W + xx]
-          if (other && other !== owner) break
-          if (free(xx, yy)) {
-            if (owner === source) starts.push(yy * c.W + xx)
-            else goals.add(yy * c.W + xx)
-            break
-          }
-          if (xx < sprite.x - 2 || xx >= sprite.x + sprite.w + 2 || yy < sprite.y - 2 || yy >= sprite.y + sprite.h + 2) break
-        }
-      }
-    }
-    if (!starts.length || !goals.size) continue
-    const prev = new Int32Array(c.W * ground).fill(-1), queue = [...new Set(starts)]
-    for (const i of queue) prev[i] = i
-    let end = -1
-    for (let head = 0; head < queue.length; head++) {
-      const i = queue[head]!
-      if (goals.has(i)) { end = i; break }
-      const x = i % c.W, y = Math.floor(i / c.W)
-      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
-        const xx = x + dx, yy = y + dy, j = yy * c.W + xx
-        if (free(xx, yy) && prev[j] === -1) { prev[j] = i; queue.push(j) }
-      }
-    }
-    if (end < 0) continue
-    const workerId = edge.source === 'mochi' ? edge.target : edge.source
-    const worker = localHits.targets.find(item => item.id === workerId)
-    const title = rootMessage ? edge.source === 'mochi' ? `Root → ${worker?.title ?? workerId}` : `${worker?.title ?? workerId} → root` : `${edge.source} → ${edge.target}`
-    const details = [
-      ...(edge.messageState === 'observed' ? ['Worker output observed by Bridge; root read status unknown'] : []),
-      ...(edge.messageState === 'sent' ? ['Bridge sent; worker read status unknown'] : []),
-      edge.preview || 'Message preview unavailable',
-    ]
-    const owner = registerHit({ id: `peer:${edge.source}:${edge.target}`, title, details })
-    // The wire runs source to target in its sender's colour; when messages arrive, one packet per message crosses it
-    // once, and the last pixel flashes as each one lands.
-    const cellsOnPath: number[] = []
-    for (let i = end;; i = prev[i]!) {
-      cellsOnPath.push(i)
-      peerBlocked[i] = 1
-      const sibling = (Math.floor(i / c.W) ^ 1) * c.W + i % c.W
-      if (sibling < peerBlocked.length) peerBlocked[sibling] = 1
-      if (prev[i] === i) break
-    }
-    cellsOnPath.reverse()
+    const worker = titleOf(edge.source === 'mochi' ? edge.target : edge.source)
+    const owner = registerHit({
+      id: `peer:${edge.source}:${edge.target}`,
+      title: rootMessage ? edge.source === 'mochi' ? `Root → ${worker}` : `${worker} → root` : `${titleOf(edge.source)} → ${titleOf(edge.target)}`,
+      details: [
+        ...(edge.messageState === 'observed' ? ['Worker output observed by Bridge; root read status unknown'] : []),
+        ...(edge.messageState === 'sent' ? ['Bridge sent; worker read status unknown'] : []),
+        edge.preview || 'Message preview unavailable',
+      ],
+    })
+    // A message is a comet in its sender's colour: a bright head running source to target, with a tail that fades slowly
+    // behind it and is gone by the time the last packet has landed. At rest the trail is only embers, a faint mote every few
+    // pixels that says who is in touch (brighter the fresher the message); nothing loops.
     const accent = jobAccent({ kind: edge.family } as Job, P.teal)
-    const wire = mix(P.surface1, accent, 0.3 + 0.35 * edge.strength)
-    // The wire itself is only a faint thread; the pulses running along it are what you see. An old message's thread and pulses
-    // melt into the sky as it ages instead of switching off.
-    const presence = 0.16 + 0.3 * Math.min(1, edge.strength / 0.65)
-    const length = cellsOnPath.length
-    // Packets travel only while a message is arriving: one per new message, a beat apart, each crossing the wire once.
-    // Afterwards the wire is a still thread whose brightness says how recent the conversation is; nothing loops.
-    const lit = new Map<number, number>() // path index -> how bright a packet makes it
+    const tail = Math.max(5, Math.min(12, length * 0.25)) // cells over which the light fades to a third
+    const ember = 0.04 + 0.1 * Math.min(1, edge.strength / 0.65)
+    const light = new Float32Array(length) // how bright each cell of the trail is just now, 0..1
+    let landing = 0
     if (edge.arriving !== undefined) {
       for (let k = 0; k < Math.min(MAX_PACKETS, Math.max(1, edge.fresh ?? 1)); k++) {
         const t = edge.arriving - k * PACKET_STAGGER_MS
         if (t < 0 || t > PACKET_RUN_MS) continue
-        const head = Math.round((t / PACKET_RUN_MS) * (length + 5)) - 1
-        for (const [back, glow] of [[0, 1], [1, 0.75], [2, 0.52], [3, 0.34], [4, 0.2], [5, 0.1]] as const) {
-          const at = head - back
-          if (at >= 0 && at < length) lit.set(at, Math.max(lit.get(at) ?? 0, glow))
-        }
+        const head = (t / PACKET_RUN_MS) * (length + 4 * tail) // the head runs on past the end so the tail finishes crossing
+        for (let at = 0; at < length; at++) if (at <= head) light[at] = Math.max(light[at]!, Math.exp(-(head - at) / tail))
+        if (head > length - 1) landing = Math.max(landing, Math.exp(-(head - (length - 1)) / tail))
       }
     }
-    c.withHit(owner, () => {
-      cellsOnPath.forEach((i, k) => {
-        const glow = lit.get(k) ?? 0
-        const arrived = k === length - 1 && (lit.get(k) ?? 0) > 0.5
-        const base = rootMessage && k === length - 1 ? mix(P.yellow, wire, 0.2) : wire
-        const x = i % c.W, y = Math.floor(i / c.W)
-        const ink = arrived ? P.white : glow ? mix(base, mix(accent, P.white, 0.75), glow) : base
-        c.set(x, y, mix(c.get(x, y) || ink, ink, Math.max(presence, glow)))
-      })
+    const paint = () => path.forEach((i, k) => {
+      const x = i % c.W, y = Math.floor(i / c.W), glow = light[k]!
+      const base = c.get(x, y)
+      const ink = mix(mix(accent, P.white, 0.3), P.white, glow ** 3 * 0.7) // the tail is the sender's colour, lightened; the head near white
+      // (the embers brighten toward the recipient, so the trail shows which way the last message went even at rest)
+      c.set(x, y, mix(base, ink, Math.max(k % 5 === 0 ? ember * (0.3 + 0.7 * k / (length - 1)) : 0, glow * 0.95)))
+      // a soft halo round the bright part, so the comet has body rather than being a one-pixel dash
+      if (glow > 0.2) for (const [dx, dy] of [[0, -1], [0, 1]] as const) {
+        const hy = y + dy
+        if (hy >= 0 && hy < H) c.set(x, hy, mix(c.get(x, hy), ink, glow * 0.3))
+      }
     })
+    const splash = () => {
+      if (landing < 0.05) return
+      const end = path[length - 1]!, x = end % c.W, y = Math.floor(end / c.W)
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+        const sx = x + dx, sy = y + dy
+        if (sx >= 0 && sx < c.W && sy >= 0 && sy < H) c.set(sx, sy, mix(c.get(sx, sy), mix(accent, P.white, 0.5), landing * 0.35))
+      }
+    }
+    if (owner) c.withHit(owner, () => { paint(); splash() })
+    else { paint(); splash() }
   }
-  return finish()
+}
+
+type Anchor = { x: number; y: number }
+
+/** The cells (row-major indexes) of a soft arc from `a` to `b` that rises above both ends, higher the further apart they are;
+ * `lane` lifts it a little more so arcs between different pairs do not lie on top of each other. Pure geometry: it depends on
+ * the two ends alone. */
+export function arcCells(a: Anchor, b: Anchor, width: number, height: number, lane = 0): number[] {
+  const rise = Math.min(4, 1 + Math.abs(b.x - a.x) * 0.07) + lane * 2 // how far the arc's crown stands above the higher end: a hop, not a bridge
+  const cx = (a.x + b.x) / 2
+  const cy = Math.max(Math.min(a.y, b.y) - 2 * rise, 2 - (a.y + b.y) / 2) // a quadratic's crown is half its control lift; never leave the sky
+  const steps = Math.ceil((Math.hypot(b.x - a.x, b.y - a.y) + 2 * rise) * 2)
+  const cells: number[] = []
+  for (let k = 0; k <= steps; k++) {
+    const t = k / steps, u = 1 - t
+    const x = Math.round(u * u * a.x + 2 * u * t * cx + t * t * b.x), y = Math.round(u * u * a.y + 2 * u * t * cy + t * t * b.y)
+    if (x < 0 || x >= width || y < 0 || y >= height) continue
+    const i = y * width + x
+    if (cells.at(-1) !== i) cells.push(i)
+  }
+  return cells
 }
 
 /** What is playing now, for the legend. */

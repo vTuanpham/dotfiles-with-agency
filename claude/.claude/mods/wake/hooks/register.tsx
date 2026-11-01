@@ -11,7 +11,7 @@ import { EFFECT_FRAMES, SCENE_ROWS, type SceneEffect, type SceneHitMap, type Sce
 import { PRESETS, nextRain, skyOf } from './sources/weather'
 import { lookAround, namePlace, pinPreset } from './surroundings'
 import { COLOR, readable, clock, commandHead, hash, isAnswerText, isTestCommand, lines, patchCounts, shortPath, span } from './util'
-import { CLASS_GLYPH, activityFlash, cells, packetWindow, type RootCell, type RootLink, rootSpine, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
+import { CLASS_GLYPH, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
 import { type EffortLevels, effortDots, levelsFor, scanEfforts } from './sources/efforts'
 import { PeerMessageTracker } from './peer-messages'
 import { LOGOS, modelLogo } from './logos'
@@ -68,8 +68,6 @@ const spinner = (frame: number) => String.fromCodePoint(0xf0a9e + (frame % 8))
 const titleOf = (job: { name: string; title?: string }) => job.title ?? job.name
 
 const diamond = (frame: number) => '◆◇◈◇◆◇◈◇'[frame % 8]!
-/** A running worker's own spinner, one motion per harness like Claude's diamond: Codex orbits, agy twinkles, OpenCode's balloon rises and falls. */
-const HARNESS_SPIN: Record<string, string> = { codex: '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏', agy: '✦✧⋆·⋆✧', claude: '◆◇◈◇', opencode: '⠠⠐⠈⠁⠈⠐' }
 /** The working headline's spinner takes its shape from the landscape the session is standing in. */
 const SCENE_SPIN: Record<WakePreset, string> = {
   city: '▁▃▅▇▅▃', harbor: '≈∽~∽', beach: '∽≈~≈', mountains: '▁▂▃▄▅▆▇▆▅▄▃▂', countryside: '✿❀✾❀', forest: '❦❧☙❧', desert: '◜◠◝◞◡◟', tundra: '❄❅❆❅',
@@ -83,7 +81,6 @@ const workSpin = (place: WakePreset, kind: WakePulseKind | undefined, frame: num
   const set = [...(kind && KIND_SPIN[kind] || '')]
   return set.length ? set[frame % set.length]! : sceneSpin(place, frame)
 }
-const harnessSpin = (backend: string, frame: number) => { const set = [...(HARNESS_SPIN[backend] ?? HARNESS_SPIN.codex!)]; return set[frame % set.length]! }
 
 const hex = (rgb: number) => '#' + rgb.toString(16).padStart(6, '0')
 
@@ -558,7 +555,7 @@ export const register: Register = on => {
       const target = sceneSelection?.target ?? lastSceneTarget
       return { text: target ? [target.title, ...target.details].join('\n') : 'No scene object has been selected.' }
     }
-    if (verb === 'legend') return { text: 'Crew: harness logos identify Codex, agy, Claude and OpenCode; unsupported terminals show text instead. The circle fills with model size, ◔ small to ◉ largest. Hover crew marks for harness or model details; model IDs appear only when known. In the scene, hover a building for its turn and tool kinds, or a sprite for its worker; /wake detail shows its full details. Colour names the harness (Codex teal, agy mauve, Claude pink, OpenCode balloons) and a larger sprite means a larger model class; each landscape leaves its mark on them (a searchlight over the city, a pennant in the harbor, a ribbon on the beach, a contrail in the mountains, petals in the countryside, fireflies in the forest, dust in the desert, aurora glitter in the tundra). Their windows mark read, search, edit, run, test, agent, web and failed calls. Lamps show plan progress; fireworks mark passing tests, storms mark failed commands, and shooting stars mark finished jobs. ● running · ⌁ heavy queue · = paused · ↻ retrying · ? needs answer · ! stalled · ✓ done · ○ idle. Signal bars (five rising bars as an image, ▁▃▄▆█ as text) show thinking effort, for Bridge jobs and Claude subagents alike; the number is time since the last event; ▣▰▱ is memory against the job cap (Claude subagents report none). Colored peer lanes join workers; ← points to the recipient, ─/━/═ means 1/2–4/5+ messages. The root sits at the right edge of the crew rows: ◉ is the root, a spine runs down to the last worker with a tie to it, ─┤ and ─┘ are the branches of workers, ↑ means the last message went to the root, ↓ came from it and · means the worker simply works for it. A bright packet runs each lane and the spine (two for a stream of five or more, faster when new); in the scene a thin thread joins each worker to Mochi with a pulse running along it, and an envelope hops over Mochi when a message reaches or leaves the root. Message links pulse, then melt away gradually over 15 minutes. Narrow rows use ↗/↙ and the peer name instead. One logo opens the accounts of each CLI in the quota line, │ divides CLIs and idle accounts with the same numbers fold into a range (02–04). Quota bars show remaining per account/window; hover an account mark for percentages and source reset text when available. ✕ marks signed-out or expired accounts, ? means unknown, ~ means stale numbers.' }
+    if (verb === 'legend') return { text: 'Crew: harness logos identify Codex, agy, Claude and OpenCode; unsupported terminals show text instead. The circle fills with model size, ◔ small to ◉ largest. Hover crew marks for harness or model details; model IDs appear only when known. In the scene, hover a building for its turn and tool kinds, or a sprite for its worker; /wake detail shows its full details. Colour names the harness (Codex teal, agy mauve, Claude pink, OpenCode balloons) and a larger sprite means a larger model class; each landscape leaves its mark on them (a searchlight over the city, a pennant in the harbor, a ribbon on the beach, a contrail in the mountains, petals in the countryside, fireflies in the forest, dust in the desert, aurora glitter in the tundra). Their windows mark read, search, edit, run, test, agent, web and failed calls. Lamps show plan progress; fireworks mark passing tests, storms mark failed commands, and shooting stars mark finished jobs. ● running · ⌁ heavy queue · = paused · ↻ retrying · ? needs answer · ! stalled · ✓ done · ○ idle. Signal bars (five rising bars as an image, ▁▃▄▆█ as text) show thinking effort, for Bridge jobs and Claude subagents alike; the number is time since the last event; ▣▰▱ is memory against the job cap (Claude subagents report none). Colored peer lanes join workers; ← points to the recipient, ─/━/═ means 1/2–4/5+ messages. The root sits at the right edge of the crew rows: ◉ is the root, a spine runs down to the last worker with a tie to it, ─┤ and ─┘ are the branches of workers, ↑ means the last message went to the root, ↓ came from it and · means the worker simply works for it. A bright packet runs each lane and the spine (two for a stream of five or more, faster when new); in the scene a trail behind everything joins workers to one another and to Mochi, and a comet with a long fading tail runs along it when a message arrives, and an envelope hops over Mochi when a message reaches or leaves the root. Message links pulse, then melt away gradually over 15 minutes. Narrow rows use ↗/↙ and the peer name instead. One logo opens the accounts of each CLI in the quota line, │ divides CLIs and idle accounts with the same numbers fold into a range (02–04). Quota bars show remaining per account/window; hover an account mark for percentages and source reset text when available. ✕ marks signed-out or expired accounts, ? means unknown, ~ means stale numbers.' }
     if (verb === 'tour') {
       tour = { start: frameNo }
       return { text: `Touring ${PRESETS.length} landscapes, 12 s each, a whole day in each; your own scene comes back after.` }
@@ -914,7 +911,7 @@ export const register: Register = on => {
     // Keep Claude's native subagent row intact; bridge jobs each get their own line.
     const rowWidth = Math.max(0, width - 2) // extras has one cell of padding on either side
     // The worker rows end where the root's graph stands: a column in the middle, leaning right (about 62%), so every worker
-    // reaches it with a dotted leader and the root reads as one shared spot; a narrow band keeps it at the right edge.
+    // reaches it by its branch and the root reads as one shared spot; a narrow band keeps it at the right edge.
     // It stands at 58% of the band at the least and moves right only as far as the longest row needs, so words are never
     // squeezed for it: the graph takes the room the text leaves.
     const natural = Math.max(0,
@@ -959,19 +956,20 @@ export const register: Register = on => {
       <Text color={glint(dimPeer(cell.family ? familyInk(cell.family) : ink.yellow, ink.subtle, cell.strength), ink.text, cell.flow)}>{cell.branch}</Text>
       <Text color={glint(dimPeer(ink.yellow, ink.subtle, cell.strength), ink.text, cell.flow)} weight={cell.flow > 0.65 ? 'bold' : undefined}>{cell.spine === '◉' && cell.flow > 0.55 ? '◎' : cell.spine}</Text>
       <Text color={glint(dimPeer(cell.family ? familyInk(cell.family) : ink.yellow, ink.subtle, cell.strength), ink.text, cell.flow)}>{cell.arrow}</Text>
-      {cell.spine === '◉' || cell.spine === '◎' ? <Text color={ink.subtle}> root</Text> : ''}
+      {/* the node's label takes five cells; every other row keeps them blank so the spine runs straight down one column */}
+      {cell.spine === '◉' || cell.spine === '◎' ? <Text color={ink.subtle}> root</Text> : <Text>{'     '}</Text>}
       {cell.description.length ? hoverPopup('Root', cell.description, undefined, 'right') : ''}
     </Box> : ''
-    /** The dotted leader from the end of a worker's words to its branch in the graph, so the row visibly reaches the root. */
-    /** The leader's dots with a bead marching along them: toward the root for a message to it, away for one from it, slowly for a tether. */
+    /** The leader between the end of a worker's words and its branch in the graph: empty at rest, a few beads marching along it
+     * while a message arrives (toward the root for a message to it, away for one from it). */
     const march = (cell: RootCell) => {
       // Beads run only while this row's message is arriving, toward the root for a message to it and away for one from it;
-      // otherwise the leader is plain dots. A tether never moves: working for the root is a relationship, not a message.
+      // otherwise the leader is empty: a tether is a standing relationship, and the `─┤` tag at the edge says it.
       const period = 9
-      if (cell.arriving === undefined) return '┈'.repeat(rowWidth + period)
+      if (cell.arriving === undefined) return ''
       const step = Math.floor(cell.arriving / PACKET_FRAME_MS) % period // whole cells per frame: even, never skipped or doubled
       const phase = cell.dir === 'in' ? step : period - 1 - step
-      return ('┈'.repeat(period - 1) + '●').repeat(Math.ceil(rowWidth / period) + 1).slice(phase)
+      return (' '.repeat(period - 2) + '∙•').repeat(Math.ceil(rowWidth / period) + 1).slice(phase)
     }
     // (a long unbroken run wrapped inside a one-row box shows exactly the room there is: clipped, never an ellipsis)
     const leader = (cell: RootCell | undefined) => <Box width={1} height={1} flexGrow={1} flexShrink={1} overflow="hidden">
@@ -1035,7 +1033,7 @@ export const register: Register = on => {
           ], modelLogo(job.model))}
         </Box>}
         {row.family && <Text color={glint(stateColor, ink.text, row.beat * 0.7)}> {row.glyph}</Text>}
-        <Box position="relative" flexShrink={0}>
+        <Box key={`wake-crew-detail-${index}`} position="relative" flexShrink={0}>
           {row.effortSlot ? <Box flexDirection="row">
             <Text color={ink.subtle}>{row.effortSlot.before + ' '}</Text>
             {/* lit dots in the harness colour, the levels left dim: the model's own scale */}
