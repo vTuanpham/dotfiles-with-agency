@@ -24,6 +24,9 @@ Choose the execution route, then read only its relevant reference:
 Brief the objective, evidence/context, owned files, constraints, checks and
 expected output. Name only supporting docs the worker needs. State whether it
 may edit; delegation never expands commit, publication or spending authority.
+A worker starts without your approvals, so restate any execution context the
+user authorized and the work depends on (host access, a GPU, network), plus a
+one-line check to run before bulk work. A worker never widens its own sandbox.
 Use an isolated worktree for independent writers when they need one.
 For heavy worker commands, the resource-admission skill owns host queue usage.
 

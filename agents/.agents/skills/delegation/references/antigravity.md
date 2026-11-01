@@ -3,7 +3,9 @@
 Use the current native subagent tools and supported agent definitions. CLI and
 IDE capabilities can differ: the native schema/agent configuration owns accepted
 model tiers, permissions, workspace choices and lifecycle controls. A model that
-`agy models` lists is not necessarily selectable by a native subagent tier.
+`model-guide models --backend agy` lists is not necessarily selectable by a native
+subagent tier. List models through that adapter: raw `agy models` starts the native
+language server, prints account diagnostics and attempts local writes.
 
 Give a complete brief when the worker starts without the parent's conversation.
 Choose shared workspace or isolated worktree according to file ownership. Keep
