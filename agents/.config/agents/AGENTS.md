@@ -50,9 +50,11 @@ reading, searching and running commands.
   rather than leaving a temporary note. Preserve durable insights, core ideas,
   decisions and non-obvious pitfalls; skip routine steps, raw logs and obvious
   code narration. Use scratch for exploration and promote only what remains useful.
-- When using host tools or dotfiles during unrelated work, leave actionable
-  feature/fix/improvement feedback in the main dotfiles checkout's private,
-  gitignored `feedback.local/`. Maintainers use the current task and owning docs,
+- When a host tool or dotfiles config gives you trouble during unrelated work
+  (an error, a workaround, a retry, an escalation, a misleading doc or a
+  missing capability), file or comment in the main dotfiles checkout's private,
+  gitignored `feedback.local/` before your final report, without being asked,
+  and say so in one line. Include the README's reporter metadata. Maintainers use the current task and owning docs,
   not feedback tickets, to track work they are already developing or fixing. Follow
   `agents/feedback/README.md` for templates, duplicate search and discussion.
   Keep application-specific work with its project. Feedback and agreement grant

@@ -76,6 +76,26 @@ class CheckPublicTests(unittest.TestCase):
                      "backups/shell/old/config", "settings.json.bak-install"):
             self.assertIn(name + ":0", result.stderr)
 
+    def test_a_private_name_in_a_path_is_refused_without_printing_the_name(self):
+        self.stage("labs/Secret-Project/notes.md", "nothing private in here\n")
+
+        result = run(self.repo, self.terms, "--staged")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("labs/***/notes.md:0", result.stderr)
+        self.assertNotIn("secret-project", result.stderr.lower())
+
+    def test_commit_messages_are_checked_but_comments_and_the_diff_below_scissors_are_not(self):
+        message = Path(self.tmp.name) / "COMMIT_EDITMSG"
+        message.write_text("Add notes\n\nCo-Authored-By: Bot <noreply@anthropic.com>\n# on secret-project\n"
+                           "# ------------------------ >8 ------------------------\n+My Real Name\n")
+        self.assertEqual(run(self.repo, self.terms, "--message", str(message)).returncode, 0)
+
+        message.write_text("Port the secret-project fix\n")
+        result = run(self.repo, self.terms, "--message", str(message))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("commit message:1", result.stderr)
+
     def test_ignore_rules_cover_private_state_but_keep_the_public_chrome_setup(self):
         private = ["backups/shell/20261020/config", ".local/state/backups/config",
                    "settings.json.bak-install", ".zshrc.bak.123", ".claude.json.backup.123",

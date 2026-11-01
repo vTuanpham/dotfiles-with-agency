@@ -4,6 +4,7 @@
     python3 tests/check_public.py --changed   everything that differs from HEAD, new files included: what a tool
                                               or an installer wrote into a linked file since the last commit
     python3 tests/check_public.py             every tracked file
+    python3 tests/check_public.py --message F a commit message file (what the commit-msg hook runs)
 
 Only added lines are judged, so old content never blocks a commit. Personal names that must never appear
 (your email, real name, private project names) live outside the repository, one per line, in
@@ -90,13 +91,31 @@ def added_lines(root, mode):
         yield from whole_files(root, git(root, "ls-files", "--others", "--exclude-standard").splitlines())
 
 
-def problems(root, mode):
+def masked(path, terms):
+    """The path with private terms starred out, so reporting where never prints what."""
+    for term in terms:
+        path = re.sub(re.escape(term), "***", path, flags=re.IGNORECASE)
+    return path
+
+
+def message_lines(file):
+    """A commit message as git will record it: no comment lines, nothing below the scissors line."""
+    for number, text in enumerate(Path(file).read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+        if text.startswith("# ------------------------ >8 ------------------------"):
+            return
+        if not text.startswith("#"):
+            yield "commit message", number, text
+
+
+def problems(root, mode, message=None):
     terms = private_terms()
     found = []
-    for path in changed_names(root, mode):
+    for path in [] if message else changed_names(root, mode):
         if path not in SELF and BAD_NAME.search(path):
             found.append((path, 0, "a credential or state file does not belong in a public repo"))
-    for path, number, text in added_lines(root, mode):
+        if any(term in path.lower() for term in terms):
+            found.append((masked(path, terms), 0, "a name from your private-terms list in the file path"))
+    for path, number, text in message_lines(message) if message else added_lines(root, mode):
         if path in SELF:
             continue
         lower = text.lower()
@@ -118,9 +137,10 @@ def main():
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--staged", action="store_const", dest="mode", const="staged", help="what is staged for commit")
     modes.add_argument("--changed", action="store_const", dest="mode", const="changed", help="everything that differs from HEAD, untracked files included")
+    modes.add_argument("--message", metavar="FILE", help="a commit message file (what the commit-msg hook runs)")
     parser.add_argument("--root", default=Path(__file__).resolve().parents[1], help="repository to check")
     args = parser.parse_args()
-    found = problems(args.root, args.mode or "all")
+    found = problems(args.root, args.mode or "all", args.message)
     for path, number, why in found:
         print(f"{path}:{number}: {why}", file=sys.stderr)
     if found:

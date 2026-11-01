@@ -1,0 +1,4 @@
+#!/bin/sh
+# Refuse a commit message that names private terms, secrets or real addresses: history is public too.
+# Enabled with the pre-commit hook by `git config core.hooksPath .githooks`. See AGENTS.md.
+exec python3 -B "$(git rev-parse --show-toplevel)/tests/check_public.py" --message "$1"
