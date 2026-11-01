@@ -10,6 +10,7 @@ Needs bun, google-chrome, gifsicle and the Nerd Font described in statusline.py.
 import array
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +26,8 @@ IMAGES = ROOT / "docs/images"
 WORK = Path(os.environ.get("README_WORK", "/tmp/readme-work"))
 FRAMES = 48
 DELAY_MS = 120
+# the scene's height in pixels is Wake's own constant, so a taller sky reaches the images without an edit here
+SCENE_H = int(re.search(r"SCENE_H = (\d+)", (WAKE / "hooks/landscapes/kit.ts").read_text()).group(1))
 
 BASE = statusline.BASE
 TEXT, SUBTLE, SURFACE2 = (205, 214, 244), (108, 112, 134), (88, 91, 112)
@@ -38,17 +41,17 @@ def run(*cmd, cwd=None):
     subprocess.run(cmd, cwd=cwd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def cells(path, width):
+def cells(path, width, height=SCENE_H):
     data = array.array("I")
     data.frombytes(Path(path).read_bytes())
-    return data, width * 16
+    return data, width * height
 
 
-def scene(data, size, index, scale):
+def scene(data, size, index, scale, height=SCENE_H):
     """Frame `index` of a rendered scene, each cell a scale x scale block."""
-    image = Image.new("RGB", (size // 16, 16))
+    image = Image.new("RGB", (size // height, height))
     image.putdata([((v >> 16) & 255, (v >> 8) & 255, v & 255) for v in data[index * size : (index + 1) * size]])
-    return image.resize((image.width * scale, 16 * scale), Image.NEAREST)
+    return image.resize((image.width * scale, height * scale), Image.NEAREST)
 
 
 def save_gif(frames, path, delay=DELAY_MS):
@@ -85,11 +88,12 @@ def landscapes():
     data, size = cells(WORK / "showcase180.bin", 180)
     font = label_font(False, 17)
     frames = []
+    pitch = SCENE_H * 6 + 30
     for i in range(FRAMES):
-        sheet = Image.new("RGB", (1080, len(titles) * (96 + 30)), BASE)
+        sheet = Image.new("RGB", (1080, len(titles) * pitch), BASE)
         draw = ImageDraw.Draw(sheet)
         for s, title in enumerate(titles):
-            y = s * 126
+            y = s * pitch
             draw.text((16, y + 5), title, font=font, fill=(166, 173, 200))
             sheet.paste(scene(data, size, s * FRAMES + i, 6), (0, y + 30))
         frames.append(sheet)
@@ -102,7 +106,7 @@ def hero():
     base = WORK / "hero-base.png"
     run(
         "google-chrome", "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-        "--force-device-scale-factor=1", "--window-size=1200,770", f"--screenshot={base}",
+        "--force-device-scale-factor=1", f"--window-size=1200,{250 + 4 * SCENE_H * 6 + 136}", f"--screenshot={base}",
         f"file://{ROOT / 'docs/hero.html'}",
     )
     page = Image.open(base).convert("RGB")
@@ -111,7 +115,7 @@ def hero():
     for i in range(FRAMES):
         frame = page.copy()
         for k, s in enumerate((1, 2, 3, 7)):  # harbor, beach, mountains, tundra
-            frame.paste(scene(data, size, s * FRAMES + i, 6), (0, 250 + k * 96))
+            frame.paste(scene(data, size, s * FRAMES + i, 6), (0, 250 + k * SCENE_H * 6))
         frames.append(frame)
     save_gif(frames, IMAGES / "hero.gif")
 
@@ -126,30 +130,79 @@ LEGEND = {  # name: (title, what it is, colour), left to right
     "live": ("This turn", "a building going up", TEAL),
     "mochi": ("Mochi", "the session's mood", PINK),
 }
-ROWS = [  # (left, right) per row, coloured segments
-    ([("◷ Checking the parser", TEXT)],
-     [("turn 7 · 1:02", SUBTLE), (" │ ", SURFACE2), ("☼ 24° Demo coast mainly clear", YELLOW), (" │ ", SURFACE2), ("7 turns ", SUBTLE), ("+82", (166, 227, 161)), ("-19", (243, 139, 168))]),
-    ([("◆ Tests ", PEACH), ("▰▰▱ ", SUBTLE), ("claude·Explore · 1m", TEXT), (" │ ", SURFACE2), ("⠿ Parser fix (parser) ", BLUE), ("codex·01 sol ▰▰▱ high · 3m", TEXT), (" │ ", SURFACE2), ("✦ Visual review (review) ", MAUVE), ("agy·a1 opus ▰▰▰ high · 2m", TEXT)], []),
-    ([("quota ", SUBTLE), ("codex ", BLUE), ("01* w71 · 02 w34 · 03 h62 w88 · 04 h9 w41", TEXT), (" │ ", SURFACE2), ("agy ", MAUVE), ("a1 G h99 w98 · C h4 w2 · A w85 · a2 G h100 w100 · C h100 w50 · A w98", TEXT)], []),
-]
+GREEN, RED = (166, 227, 161), (243, 139, 168)
+FAMILY = {"codex": TEAL, "agy": BLUE, "claude": PINK, "opencode": GREEN}  # a harness's colour, as Wake's rows use it
+BADGE = {"codex": "Co", "agy": "Ag", "claude": "Cl", "opencode": "Op"}  # stands in for the round logo
+SPIN = {"codex": "⠴", "agy": "✦", "claude": "◆"}  # one frame of each harness's own spinner
+GROUP = (30, 30, 46)
+
+
+def blend(color, over, amount):
+    return tuple(round(o + (c - o) * amount) for c, o in zip(color, over))
+
+
+def crew_row(row):
+    """One crew row from the real row builder: logo, spinner, title, model mark, state, effort dots, time."""
+    ink = FAMILY[row["backend"]]
+    return [
+        (BADGE[row["backend"]] + " ", ink), (SPIN[row["backend"]] + " ", ink), (row["title"].ljust(15), TEXT),
+        (row["mark"] + " ", ink), (row["glyph"], TEAL), ("  ", TEXT),
+        ("●" * row["lit"], ink), ("○" * (row["total"] - row["lit"]), SURFACE2), (row["after"].rstrip(), SUBTLE),
+    ]
+
+
+def quota_segments(chunks):
+    """Quota runs per harness: one faint tint behind each run, hard edges at the │ between harnesses,
+    remaining allowance green with plenty left, yellow getting low, red nearly gone."""
+    out, last = [], None
+    for chunk in chunks:
+        ink = FAMILY[chunk["cli"]]
+        text = chunk["text"][1:]  # the mark is replaced by the harness logo
+        head, *tokens = text.split(" ")
+        tint = blend(ink, GROUP, 0.13)
+        if chunk["cli"] != last:
+            if last:
+                out.append((" │ ", SURFACE2, None))
+            out.append((BADGE[chunk["cli"]] + " ", ink, tint))
+        else:
+            out.append((" · ", SUBTLE, tint))
+        out.append((head, TEXT if head.endswith("*") else SUBTLE, tint))
+        for token in tokens:
+            part = re.match(r"^([A-Za-z]+)(\d+)%(.*)$", token)
+            if part:
+                pct = int(part[2])
+                out.append((" " + part[1], SUBTLE, tint))
+                out.append((f"{pct}%{part[3]}", GREEN if pct >= 50 else YELLOW if pct >= 20 else RED, tint))
+            else:
+                out.append((" " + token, SUBTLE, tint))
+        last = chunk["cli"]
+    return out
 
 
 def dock():
     meta = json.loads((WORK / "dock.json").read_text())
-    data, size = cells(WORK / "dock.bin", meta["w"])
+    data, size = cells(WORK / "dock.bin", meta["w"], meta["h"])
     S, face = 12, statusline.Typeface(15)
     width = meta["w"] * S
+    # the rows are the real builders' output for demo workers and accounts (dev/dock.ts)
+    rows = [
+        ([("◑ ", TEAL), ("Testing · pytest", TEXT)],
+         [("turn 7 · 1:02", SUBTLE), (" │ ", SURFACE2), ("☼ 24° Demo coast mainly clear", YELLOW), (" │ ", SURFACE2), ("7 turns ", SUBTLE), ("+82", GREEN), ("-19", RED)]),
+        *[(crew_row(row), []) for row in meta["rows"]["crew"]],
+        ([("Cl ", PINK), ("◆ ", PINK), ("Explore".ljust(15), TEXT), ("  ", TEXT), ("●●○", PINK), ("  1m", SUBTLE)], []),
+    ]
+    quota_line = quota_segments(meta["rows"]["quota"])
     band, rows_h, gap = 132, face.ch + 3, 12
     scene_y = band
-    text_y = scene_y + 16 * S + gap
-    prompt_y = text_y + 3 * rows_h + gap
+    text_y = scene_y + meta["h"] * S + gap
+    prompt_y = text_y + (len(rows) + 1) * rows_h + gap
     status_y = prompt_y + 46 + gap
     status_h = 2 * face.ch
     height = status_y + status_h + 8
 
     chrome = Image.new("RGB", (width, height), BASE)  # everything that does not move
     draw = ImageDraw.Draw(chrome)
-    for r, (left, right) in enumerate(ROWS):
+    for r, (left, right) in enumerate(rows):
         y = text_y + r * rows_h
         for segments, align in ((left, "l"), (right, "r")):
             total = sum(len(t) for t, _ in segments) * face.cw
@@ -158,6 +211,14 @@ def dock():
                 for char in text:
                     face.put(draw, x, y, char, color)
                     x += face.cw
+    y = text_y + len(rows) * rows_h  # the quota runs, each harness on its own faint tint
+    x = 6
+    for text, color, tint in quota_line:
+        if tint:
+            draw.rectangle([x, y, x + len(text) * face.cw - 1, y + rows_h - 1], fill=tint)
+        for char in text:
+            face.put(draw, x, y, char, color)
+            x += face.cw
     draw.rounded_rectangle([4, prompt_y, width - 5, prompt_y + 40], 10, outline=SURFACE2, width=2)
     typed, pitch = "❯ Fix the failing parser test", face.cw * 5 // 4
     for x, char in enumerate(typed):
@@ -171,7 +232,7 @@ def dock():
     for i in range(FRAMES):
         frame = chrome.copy()
         d = ImageDraw.Draw(frame)
-        frame.paste(scene(data, size, i, S), (0, scene_y))
+        frame.paste(scene(data, size, i, S, meta["h"]), (0, scene_y))
         for k, name in enumerate(order):  # call-outs: a label above the scene, a leader to the thing itself
             title, what, color = LEGEND[name]
             found = meta["anchors"][i][name] or held.get(name)
