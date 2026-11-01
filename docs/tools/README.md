@@ -8,7 +8,7 @@ README capture never needs a screenshot of a live session and never shows person
 
 | Script | Makes | Source of the pixels |
 | --- | --- | --- |
-| `readme_gifs.py` | `hero.gif`, `wake-landscapes.gif`, `wake-dock.gif` | Wake's `dev/showcase.ts` and `dev/dock.ts` frames (crew, message packets and the rows under the scene come from the real builders, at Wake's own `SCENE_H`); `statusline.py`; `../hero.html` |
+| `readme_gifs.py` | `hero.gif`, `wake-landscapes.gif`, `wake-dock.gif` | Wake's `dev/showcase.ts` and `dev/dock.ts` frames (the crew, the message trails, the crew rows under the scene with their logos, peer lane and root graph, and the quota line come from the real builders and Wake's own logo images, at Wake's own `SCENE_H`; the call-outs are placed from the scene's hover map); `statusline.py`; `../hero.html` |
 | `baton_gif.py` | `baton.gif` | The real Baton page server, screenshotted by Chrome; `baton-toast.png` is a real capture of its toast |
 | `flow_gifs.py` | one GIF per diagram in `flows/*.svg` | The SVG itself, rendered by Chrome with a packet on every arrow |
 | `model_effort.py` | `flows/model-effort.svg` | Exact model/setting rows in Model Guide's public benchmark snapshot, with its retrieval timestamp; no account data |

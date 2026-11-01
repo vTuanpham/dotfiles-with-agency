@@ -21,7 +21,7 @@ Each tool is a separate, small CLI or mod. Take one, or all of them.
 
 | You get | What it does that is hard to get elsewhere |
 | --- | --- |
-| **[Wake](claude/README.md#wake-mod-live)**, a Claude Code mod | A pixel landscape above the prompt that is the session's live state: eight places, weather and time, a building that rises with each turn, and a crew of real workers. Messages between workers are drawn as packets on the exact edge they travelled. It also shows per-harness quota with tinted backgrounds, effort inferred from what each model supports, hover cards, and a spinner that changes with the command being run. |
+| **[Wake](claude/README.md#wake-mod-live)**, a Claude Code mod | A pixel landscape above the prompt that is the session's live state: eight places, weather and time, a building that rises with each turn, and a crew of real workers. Each Codex worker is the craft its place would build (a steamship at sea, a paraglider in the mountains, a ski-plane in the tundra), and a message between workers is a comet with a long fading tail, drawn behind the scene. It also shows per-harness quota with tinted backgrounds, effort inferred from what each model supports, hover cards, and a spinner that changes with the command being run. |
 | **[Agent Bridge](agent-bridge/README.md)** | A Codex root can hand a job to Claude, Antigravity or OpenCode (and the reverse). Jobs persist, can be watched and steered live, message each other (`TO <peer>:`), survive a root change (`handoff`), and archive when finished. |
 | **[Agent Baton](agent-baton/README.md)** | The agent asks; you answer from a Windows toast or your phone. For passwords, 2FA and API keys the value goes straight into the field or env file and **never reaches the agent or its transcript**. |
 | **[Agent Inbox](agent-inbox/README.md)** | Your existing Codex, Claude Code and OpenCode conversations on your phone: chat, images, tool steps, pending questions and native `/` commands, over Tailscale. |
@@ -39,11 +39,13 @@ Each tool is a separate, small CLI or mod. Take one, or all of them.
 **[Wake](claude/README.md#wake-mod-live)** puts the session, its workers and account quota above the
 Claude Code prompt. The landscape is not decoration: every sprite is a fact about the session.
 
-<img src="docs/images/wake-dock.gif" alt="Wake's beach scene animating above the session's activity, crew and account quota rows, a prompt and the Claude Code status line. Call-outs name what each sprite is: street lamps are plan steps, a boat is a Codex worker, a bird is a Claude subagent, a constellation is an agy worker, the rising building is the current turn and Mochi shows the session's mood." width="100%">
+<img src="docs/images/wake-dock.gif" alt="Wake's beach scene animating above the session's activity, crew and account quota rows, a prompt and the Claude Code status line. Call-outs name what each sprite is: street lamps are plan steps, a boat is a Codex worker, a bird is a Claude subagent, a constellation is an agy worker, a comet is a message in flight, the rising building is the current turn and Mochi shows the session's mood. Notes under the crew rows name their parts: the round harness logo with its own spinner, effort dots from the model's own levels, a peer lane that lights when one worker messages another, and the root graph where a message to the root travels up and the quota line below is tinted per harness." width="100%">
 
-- **Crew that works.** Each worker patrols its own patch of sky, sea or street in the sprite of its harness
-  and model class. Activity flashes when something real happens, and a packet crosses between two workers
-  only while a message is actually arriving. Nothing loops once the job is idle.
+- **Crew that works.** Each worker patrols its own patch of sky or sea in the sprite of its harness and
+  model class, and a Codex worker is whatever its place would build. Activity flashes when something real
+  happens. A message between two workers is a comet in the sender's colour with a long fading tail, drawn
+  behind the scene so it never covers anything, and the same message lights the peer lane and the root
+  graph in the rows below. Nothing moves once the job is idle.
 - **Honest rows.** Quota is coloured per harness, effort is shown as dots inferred from each model's
   supported levels, and every item has a hover card.
 - **Eight places** that follow time, weather and session state: success, failure, waiting and sleeping all
