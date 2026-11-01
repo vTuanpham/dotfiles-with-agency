@@ -2,9 +2,12 @@
 
 [← Packages](../README.md#packages) · **Snapshot** · `./install.sh --apply snapshots`
 
-`~/.npmrc`: one line, `prefix=`, pointing npm's global prefix at an NVM-managed Node
-directory so global installs land beside that Node. The path carries this machine's NVM version; edit it to
-the one you use. See [Node and NVM](../shell/README.md#node-and-nvm) for how the shell preserves
-`~/.local/bin/{node,npm,npx}` and handles the global prefix.
+`~/.npmrc`: one line, `prefix=${HOME}/.npm-global` (npm expands `${HOME}`), the same global prefix
+`shell/.config/shell/env.sh` exports as `NPM_CONFIG_PREFIX`. Global packages therefore survive Node upgrades
+and land in the same place whether or not a process sourced the shell environment (systemd units, hooks).
+
+Node itself is pinned by `install.sh`'s npm step: it links `~/.local/bin/{node,npm,npx}` to the newest Node
+under `$NVM_DIR/versions/node`, and re-points those links after you install a newer one. See
+[Node and NVM](../shell/README.md#node-and-nvm).
 
 Global packages the other tools expect (Claude Code, Codex, `codex-auth`) are installed by `install.sh`.

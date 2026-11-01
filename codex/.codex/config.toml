@@ -1,7 +1,7 @@
 model = "gpt-6.1-sol"
 # Keep per-model context in the catalog; do not add a global model_context_window override.
 # The catalog is generated (live server catalog + overrides.json); see model-catalogs/README.md.
-model_catalog_json = "/home/tuanpham/.codex/model-catalogs/gpt-6-models.json"
+model_catalog_json = "model-catalogs/gpt-6-models.json" # relative to CODEX_HOME
 personality = "pragmatic"
 approvals_reviewer = "auto_review"
 plan_mode_reasoning_effort = "max"

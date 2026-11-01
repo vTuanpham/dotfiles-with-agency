@@ -60,8 +60,10 @@ step_uvtools() {
     dependencies=()
     case $tool in
       agent-models) dependencies=(--with-editable "$REPO/agent-accounts") ;;
+      agent-resources | agent-baton | agent-lab) dependencies=(--with-editable "$REPO/agent-session") ;;
       agent-bridge) dependencies=(--with-editable "$REPO/codex-wake" --with-editable "$REPO/agent-models"
-        --with-editable "$REPO/agent-resources" --with-editable "$REPO/agent-accounts") ;;
+        --with-editable "$REPO/agent-resources" --with-editable "$REPO/agent-accounts"
+        --with-editable "$REPO/agent-session") ;;
     esac
     if uv tool list 2>/dev/null | grep -q "^$tool "; then say "  $tool installed"; else act uv tool install "${dependencies[@]}" --editable "$REPO/$tool"; fi
   done
@@ -69,6 +71,22 @@ step_uvtools() {
 
 # --- npm globals (Node comes from nvm) -------------------------------------------------------------------------
 step_npm() {
+  # Pin ~/.local/bin/{node,npm,npx} to the newest NVM Node, so tool installers cannot swap the Node on PATH.
+  local newest tool dest
+  newest=$(find "${NVM_DIR:-$HOME/.nvm}/versions/node" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -1)
+  if [[ -x $newest/bin/node ]]; then
+    for tool in node npm npx; do
+      dest="$HOME/.local/bin/$tool"
+      if [[ $(readlink "$dest" 2>/dev/null) == "$newest/bin/$tool" ]]; then continue; fi
+      if [[ -L $dest || ! -e $dest ]]; then
+        act mkdir -p "$HOME/.local/bin"
+        act ln -sfn "$newest/bin/$tool" "$dest"
+      else
+        say "  CONFLICT $dest is not a link; resolve it by hand"
+        CONFLICTS=1
+      fi
+    done
+  fi
   if ! have npm; then say "  npm is missing: install Node 24 with nvm (see README), then rerun this step"; return 0; fi
   local installed missing=() pkg
   installed=$(npm ls -g --depth=0 2>/dev/null || true)

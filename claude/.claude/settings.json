@@ -48,12 +48,12 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "/home/tuanpham/.claude/statusline-starship.sh",
+    "command": "~/.claude/statusline-starship.sh",
     "refreshInterval": 1
   },
   "subagentStatusLine": {
     "type": "command",
-    "command": "python3 -I /home/tuanpham/.claude/subagent_statusline.py"
+    "command": "python3 -I ~/.claude/subagent_statusline.py"
   },
   "enabledPlugins": {
     "ponytail@ponytail": true

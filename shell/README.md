@@ -99,11 +99,12 @@ and [Zsh's public hook API](https://zsh.sourceforge.io/Doc/Release/User-Contribu
 ## Node and NVM
 
 Bash exposes NVM with its documented `--no-use` option, preserving the inherited
-Node executable: `~/.local/bin/{node,npm,npx}` are machine-local links to an
-NVM install, so tool installers can't silently replace the
-Node on PATH. Node uses Ubuntu's updated CA store through `--use-openssl-ca`
+Node executable: `~/.local/bin/{node,npm,npx}` link to the newest NVM install
+(`./install.sh --apply npm` creates or re-points them), so tool installers can't
+silently replace the Node on PATH. Node uses Ubuntu's updated CA store through `--use-openssl-ca`
 until installed runtimes include the emergency CA blocklist; restart existing
-Node processes to apply it. The existing npm global prefix is retained. NVM's manual
+Node processes to apply it. npm's global prefix is `~/.npm-global` (`NPM_CONFIG_PREFIX` here and in
+[`~/.npmrc`](../npm/README.md)), independent of the Node version. NVM's manual
 version switching is incompatible with that prefix; resolve the prefix before
 using `nvm use`, as described in [NVM's documentation](https://github.com/nvm-sh/nvm).
 
