@@ -12,6 +12,7 @@ name = "agent-baton"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "agent-session" },
     { name = "mcp" },
 ]
 
@@ -22,12 +23,29 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "mcp", specifier = ">=2.3.0,<3" }]
+requires-dist = [
+    { name = "agent-session", editable = "../agent-session" },
+    { name = "mcp", specifier = ">=2.3.0,<3" },
+]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest" },
     { name = "ruff" },
+]
+
+[[package]]
+name = "agent-session"
+version = "0.1.0"
+source = { editable = "../agent-session" }
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = "==9.2.0" },
+    { name = "ruff", specifier = "==0.17.3" },
+    { name = "ty", specifier = "==0.0.94" },
 ]
 
 [[package]]

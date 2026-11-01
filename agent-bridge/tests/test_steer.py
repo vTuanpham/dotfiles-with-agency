@@ -146,6 +146,30 @@ def test_idle_steer_watch_reads_from_before_enqueue(job, monkeypatch, capfd):
     assert seen == [((["owner/job"], True), {"timeout": 20, "offsets": {job: before}})]
 
 
+def test_idle_steer_watch_releases_the_owner_lock_while_it_follows(job, monkeypatch, capfd):
+    import fcntl
+
+    monkeypatch.setattr(cli.codex, "run", deliver)
+    free = []
+
+    def watch(*args, **kwargs):
+        # Another steer, ack or watch on this owner must not queue behind a 30-minute follow.
+        fd = os.open(job.parent / "root.lock", os.O_RDWR)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            free.append(True)
+        except BlockingIOError:
+            free.append(False)
+        finally:
+            os.close(fd)
+        return True
+
+    monkeypatch.setattr(cli, "watch", watch)
+    steer("follow up", "--watch", "20")
+    wait_idle(job)
+    assert free == [True]
+
+
 def test_concurrent_steers_share_one_resume_and_deliver_in_queue_order(job, monkeypatch, capfd):
     ctx = multiprocessing.get_context("fork")
     release = ctx.Event()

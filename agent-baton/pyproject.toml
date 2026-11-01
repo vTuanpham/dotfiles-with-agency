@@ -2,7 +2,10 @@
 name = "agent-baton"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["mcp>=2.3.0,<3"]
+dependencies = ["mcp>=2.3.0,<3", "agent-session==0.1.0"]
+
+[tool.uv.sources]
+agent-session = { path = "../agent-session", editable = true }
 
 [build-system]
 requires = ["setuptools>=68"]

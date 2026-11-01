@@ -19,8 +19,10 @@ agent-resources guide
 Arguments, environment, stdin, signals and exit status pass through. Bridge
 filters its worker environment before launch; this runner does not strip secrets
 from an ordinary command. Jobs can run concurrently when their declared needs
-fit. Reserve exclusivity for measurements, not test suites. Keep commands in the
-foreground; detached descendants are outside the lease's guarantee.
+fit. Reserve exclusivity for measurements, not test suites. Never detach the
+command; detached descendants are outside the lease's guarantee. Agents start
+long or queued runs as a native harness background job so steers still arrive
+([guide](src/agent_resources/guide.md)).
 
 The private queue is `/tmp/agent-resources-<uid>` or `$AGENT_RESOURCES_HOME`,
 independent of HOME/TMPDIR. All participants on a host use the same queue path.

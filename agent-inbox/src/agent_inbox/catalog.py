@@ -1,6 +1,7 @@
 import json
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import asdict, replace
 from threading import Lock
 
@@ -12,15 +13,31 @@ from .store import binding
 class Catalog:
     def __init__(self, store):
         self.store = store
-        self.lock = Lock()
+        self.lock = Lock()  # guards the published listing only, never a scan
+        self.scan = Lock()
         self.checked = None
         self.live = {}
         self.rows = []
         self.warnings = []
 
-    def refresh(self):
+    def fresh(self):
         with self.lock:
-            if self.checked is not None and time.monotonic() - self.checked < 10:
+            return self.checked is not None and time.monotonic() - self.checked < 10
+
+    @contextmanager
+    def scanning(self):
+        """One discovery at a time. A slow source (ACP discovery may take 30 s) must not queue every phone
+        request behind it: once a listing exists, other callers keep it until the running scan publishes."""
+        acquired = self.scan.acquire(blocking=self.checked is None)
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                self.scan.release()
+
+    def refresh(self):
+        with self.scanning() as scanning:
+            if not scanning or self.fresh():
                 return
             registered = {binding(t): t for t in self.store.targets()}
             sources = {}
@@ -69,8 +86,9 @@ class Catalog:
             registered_ids = {t.id for t in registered.values()}
             rows.sort(key=lambda row: (row["id"] not in registered_ids,
                                        row["label"].casefold(), row["id"]))
-            self.live, self.rows, self.warnings = live, rows, warnings
-            self.checked = time.monotonic()
+            with self.lock:
+                self.live, self.rows, self.warnings = live, rows, warnings
+                self.checked = time.monotonic()
 
     def listing(self):
         self.refresh()

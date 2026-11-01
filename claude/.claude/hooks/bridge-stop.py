@@ -115,7 +115,8 @@ def main():
         if result.returncode:
             return
         snapshot = json.loads(result.stdout)
-        state = Path(os.environ.get("XDG_STATE_HOME", "~/.local/state")).expanduser()
+        state = Path(os.environ.get("XDG_STATE_HOME", ""))
+        state = state if state.is_absolute() else Path.home() / ".local/state"  # XDG ignores empty/relative
         decision = decide(payload, snapshot, state / "agent-bridge/stop-guard")
         if decision:
             print(json.dumps(decision))

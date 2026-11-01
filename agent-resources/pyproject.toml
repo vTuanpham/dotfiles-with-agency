@@ -3,7 +3,10 @@ name = "agent-resources"
 version = "0.1.0"
 description = "Cooperative host resource admission for foreground commands"
 requires-python = ">=3.11,<3.15"
-dependencies = []
+dependencies = ["agent-session==0.1.0"]
+
+[tool.uv.sources]
+agent-session = { path = "../agent-session", editable = true }
 
 [build-system]
 requires = ["setuptools>=68"]

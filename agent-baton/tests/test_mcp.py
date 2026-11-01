@@ -3,6 +3,7 @@ import json
 import os
 import sys
 
+import agent_session
 import pytest
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters
@@ -20,7 +21,7 @@ def state(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_BATON_HOME", str(tmp_path))
     monkeypatch.setenv("AGENT_BATON_CONFIG", str(tmp_path / "config.toml"))
     monkeypatch.setattr(core, "BATONS", tmp_path / "batons")
-    for key, _ in core.SESSION_KEYS:
+    for key in (*agent_session.VARIABLES, "AGENT_BATON_SESSION"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CODEX_THREAD_ID", "session-a")
     return monkeypatch

@@ -5,6 +5,7 @@ import os
 import sys
 from typing import Annotated
 
+import agent_session
 from mcp.server import MCPServer
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
 
@@ -14,7 +15,8 @@ server = MCPServer(
     "agent-baton",
     instructions=(
         "Pass your conversation's session on every call: codex:<CODEX_THREAD_ID>, "
-        "claude:<CLAUDE_CODE_SESSION_ID>, or explicit:<unique conversation id>. "
+        "claude:<CLAUDE_CODE_SESSION_ID>, agy:<ANTIGRAVITY_CONVERSATION_ID>, "
+        "or explicit:<unique conversation id>. "
         "Never use another conversation's id. Use native questions first; only the root sends reminders. "
         "Ask collects secrets from the human; tools never accept or return secret values. "
         "env_secret has a human enter a secret into environment files; never provide secret values. "
@@ -45,12 +47,13 @@ class SecretField(BaseModel):
 def environment(session):
     """A per-call environment keeps concurrent MCP sessions out of each other's state."""
     namespace, separator, identifier = session.partition(":")
-    keys = {namespace: key for key, namespace in core.SESSION_KEYS}
-    if separator != ":" or namespace not in keys:
-        raise ValueError("session must be codex:<id>, claude:<id> or explicit:<id>")
-    identity = {keys[namespace]: identifier}
+    if separator != ":" or namespace not in ("explicit", *agent_session.HARNESSES):
+        raise ValueError("session must be <claude|codex|agy|opencode>:<id> or explicit:<id>")
+    identity = ({"AGENT_BATON_SESSION": identifier} if namespace == "explicit"
+                else agent_session.environment(namespace, identifier))
     core.session(identity)
-    return {**{k: v for k, v in os.environ.items() if k not in dict(core.SESSION_KEYS)}, **identity}
+    inherited = (*agent_session.VARIABLES, "AGENT_BATON_SESSION")
+    return {**{k: v for k, v in os.environ.items() if k not in inherited}, **identity}
 
 
 async def invoke(session, *args, timeout=60):

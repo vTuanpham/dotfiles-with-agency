@@ -24,6 +24,7 @@ dependencies = [
     { name = "agent-accounts" },
     { name = "agent-models" },
     { name = "agent-resources" },
+    { name = "agent-session" },
     { name = "codex-wake" },
 ]
 
@@ -39,6 +40,7 @@ requires-dist = [
     { name = "agent-accounts", editable = "../agent-accounts" },
     { name = "agent-models", editable = "../agent-models" },
     { name = "agent-resources", editable = "../agent-resources" },
+    { name = "agent-session", editable = "../agent-session" },
     { name = "codex-wake", editable = "../codex-wake" },
 ]
 
@@ -75,6 +77,24 @@ dev = [
 name = "agent-resources"
 version = "0.1.0"
 source = { editable = "../agent-resources" }
+dependencies = [
+    { name = "agent-session" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "agent-session", editable = "../agent-session" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = "==9.2.0" },
+    { name = "ruff", specifier = "==0.17.3" },
+    { name = "ty", specifier = "==0.0.94" },
+]
+
+[[package]]
+name = "agent-session"
+version = "0.1.0"
+source = { editable = "../agent-session" }
 
 [package.metadata]
 

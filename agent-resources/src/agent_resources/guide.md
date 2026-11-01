@@ -9,7 +9,13 @@ Everything else runs directly; commands are never automatically wrapped.
 Declare the expected peak with `--mem` (for example `1G` or `2500M`). Add
 `--exclusive` only for timing measurements, never for test suites. Fitting jobs
 run concurrently. Wrap a compound job with `agent-resources run --mem 1G -- sh -c '...'`.
-Keep servers in the foreground for their whole lifetime. Do not nest wrappers.
+Never detach the command (`&`, `nohup`, `setsid`, `disown`, self-daemonizing):
+the wrapper must stay the command's own process for its whole lifetime, servers
+included. Do not nest wrappers. Do not hold your turn on it either: start any run
+that may queue or last more than a short wait as the harness's native background
+job (a background shell or yielded terminal), keep working, and collect it through
+the harness's completion notice. A blocking tool call holds back coordinator steers
+until it returns.
 Waiting for a slot is normal, never a blocker or progress message to send. Report
 only a holder shown dead while still blocked or a wait exceeding 30 minutes,
 excluding time paused by root. A root pause is normal; wait for resume.
@@ -46,7 +52,7 @@ running request sends **SIGTERM**, then **SIGKILL after five seconds** if still
 alive. New commands have their own process group, so foreground children are
 stopped too and the worker runner continues. Running commands retain their
 normal signal exit status. A process that escapes its process group by
-daemonizing is unsupported; keep servers in the foreground.
+daemonizing is unsupported; keep servers attached to the wrapper.
 
 Cancellation verifies process identity against the inherited request descriptor
 and checks process start times before escalation; it never signals a worker
@@ -80,8 +86,8 @@ Exit, SIGKILL or an OOM kill releases the lock and reservation; the next scan
 discards unlocked request files without PID-based stale-lock guesses.
 Command stdio, signals and exit status pass through. An application that explicitly
 closes inherited descriptors can drop its lock early; keep such an application
-under a foreground shell that waits for it. Backgrounding or daemonizing outside
-the wrapper is unsupported. This is cooperative admission, not sandbox enforcement.
+under a shell that waits for it (`sh -c 'app'`). Detaching or daemonizing outside
+the wrapper is unsupported; a native harness background job is not detaching. This is cooperative admission, not sandbox enforcement.
 
 Each private `.request` file next to `gate.lock` records job name, executable
 basename (no command arguments), start time, PID and PID namespace. Host PID is

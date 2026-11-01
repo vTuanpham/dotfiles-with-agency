@@ -7,15 +7,12 @@ import tomllib
 from contextlib import contextmanager
 from pathlib import Path
 
+import agent_session
+
 STATE = Path(os.environ.get("AGENT_BATON_HOME", "~/.local/state/agent-baton")).expanduser()
 CONFIG = Path(os.environ.get("AGENT_BATON_CONFIG", "~/.config/agent-baton/config.toml")).expanduser()
 BATONS = STATE / "batons"
 KEEP_RESOLVED_S = 86400
-SESSION_KEYS = (  # an explicit id wins; the harness ids are each conversation's own
-    ("AGENT_BATON_SESSION", "explicit"),
-    ("CODEX_THREAD_ID", "codex"),
-    ("CLAUDE_CODE_SESSION_ID", "claude"),
-)
 DEFAULTS = {
     "ttl": 600,  # seconds the human has before the baton expires
     "port": 0,  # fixed port for the human page; needed when `url` points at a proxy such as tailscale serve
@@ -59,14 +56,19 @@ def now():
 def session(environ=None):
     """A conversation owner, never a shared harness name, working directory or terminal."""
     environ = os.environ if environ is None else environ
-    for key, namespace in SESSION_KEYS:
-        value = environ.get(key)
-        if value is not None:
-            if not value or value != value.strip() or len(value) > 200 or any(c.isspace() for c in value):
-                raise ValueError(
-                    f"{key} must be a nonempty session id without whitespace (max 200 characters)"
-                )
-            return f"{namespace}:{value}"
+    explicit = environ.get("AGENT_BATON_SESSION")
+    if explicit is not None:
+        if not explicit or len(explicit) > 200 or any(c.isspace() for c in explicit):
+            raise ValueError(
+                "AGENT_BATON_SESSION must be a nonempty session id without whitespace (max 200 characters)"
+            )
+        return f"explicit:{explicit}"
+    try:
+        found = agent_session.native(environ)  # the running harness, never an inherited enclosing session
+    except ValueError as error:
+        raise ValueError(f"{error}: session ids must be nonempty, without whitespace, max 200") from None
+    if found and found[1]:
+        return f"{found[0]}:{found[1]}"
     raise ValueError(
         "no session identity: set AGENT_BATON_SESSION to a unique conversation id on every Baton call; "
         "reuse it only in this conversation (Codex and Claude Code supply their own automatically)"

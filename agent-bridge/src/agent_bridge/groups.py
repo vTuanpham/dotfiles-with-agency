@@ -10,8 +10,6 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 
-from agent_resources.heavy import write_state
-
 from . import core, owner_binding
 from .status_inputs import timestamp
 from .status_model import GroupNotice, WakeGroup, WakePolicy
@@ -136,7 +134,7 @@ def assign(job, group, new_turn=False):
             data["members"].pop(job.name, None)
         elif new_turn or previous is None or previous["group"] != group:
             data["members"][name(job.name)] = assignment(job, group, new_turn)
-        write_state(job.parent / "groups.json", data)
+        core.atomic_save(job.parent / "groups.json", data)
 
 
 def configure(owner, group, policy, members=()):
@@ -151,7 +149,7 @@ def configure(owner, group, policy, members=()):
             old = data["members"].get(member)
             if old is None or old["group"] != group:
                 data["members"][member] = assignment(owner / member, group)
-        write_state(owner / "groups.json", data)
+        core.atomic_save(owner / "groups.json", data)
 
 
 def clear(owner, group):
@@ -159,7 +157,7 @@ def clear(owner, group):
     with locked(owner):
         data = settings(owner, [])
         data["policies"].pop(name(group), None)
-        write_state(owner / "groups.json", data)
+        core.atomic_save(owner / "groups.json", data)
 
 
 def ledger(owner):
@@ -216,7 +214,7 @@ def decode_notice(raw):
 
 
 def write_ledger(owner, data):
-    write_state(owner / "group-wakes.json", {**data, "notices": [asdict(n) for n in data["notices"]]})
+    core.atomic_save(owner / "group-wakes.json", {**data, "notices": [asdict(n) for n in data["notices"]]})
 
 
 def iso(seconds):

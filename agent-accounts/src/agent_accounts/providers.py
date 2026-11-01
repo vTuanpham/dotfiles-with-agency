@@ -15,8 +15,8 @@ from .readers import agy_quota, claude_quotas, codex_quotas
 
 ACCOUNTS = Path.home() / ".agy-accounts"
 TOKEN = Path(".gemini/antigravity-cli/antigravity-oauth-token")
-CLAUDE_CACHE = (Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
-                / "agent-accounts/claude.json")
+_STATE = Path(os.environ.get("XDG_STATE_HOME", ""))  # XDG: an empty or relative value is ignored
+CLAUDE_CACHE = (_STATE if _STATE.is_absolute() else Path.home() / ".local/state") / "agent-accounts/claude.json"
 
 
 def account_env(account, root=None):

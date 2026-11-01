@@ -59,7 +59,8 @@ def store(name, value, paths, prefix=""):
 
     backup = None
     if originals:
-        root = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "backups/env-secrets"
+        state = Path(os.environ.get("XDG_STATE_HOME", ""))  # empty/relative would put secrets under the cwd
+        root = (state if state.is_absolute() else Path.home() / ".local/state") / "backups/env-secrets"
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         root.chmod(0o700)
         backup = root / datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")

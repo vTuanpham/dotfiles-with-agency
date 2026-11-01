@@ -3,7 +3,10 @@ name = "agent-lab"
 version = "0.1.0"
 description = "Persistent experiment workspaces with provenance and safe retirement"
 requires-python = ">=3.11,<3.15"
-dependencies = []
+dependencies = ["agent-session==0.1.0"]
+
+[tool.uv.sources]
+agent-session = { path = "../agent-session", editable = true }
 
 [build-system]
 requires = ["setuptools>=68"]

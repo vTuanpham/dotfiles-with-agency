@@ -69,14 +69,6 @@ WATCH = {
 }
 
 
-def harness():
-    if os.environ.get("CLAUDECODE") == "1":
-        return "claude"
-    if os.environ.get("CODEX_THREAD_ID"):
-        return "codex"
-    return "unknown"
-
-
 def record_root(job):
     owner = Path(job).parent
     owner_binding.record(owner, root_identity())
@@ -797,17 +789,19 @@ def main():
                         runner_pid = current.get("runnerPid")
                     except (OSError, json.JSONDecodeError):
                         runner_pid = None
-                    if runner_pid == pid and Path(f"/proc/{runner_pid}").exists():
-                        print(launch_message, flush=True)
-                        return follow(job, before, watching)
+                    started = runner_pid == pid and Path(f"/proc/{runner_pid}").exists()
                     try:
-                        exited, exit_status = os.waitpid(pid, os.WNOHANG)
+                        exited, exit_status = (0, 0) if started else os.waitpid(pid, os.WNOHANG)
                     except ChildProcessError:
                         exited = 0
-                    if exited:
-                        if os.WIFEXITED(exit_status) and os.WEXITSTATUS(exit_status) == 0:
-                            print(launch_message, flush=True)
-                            return follow(job, before, watching)
+                    if exited and not (os.WIFEXITED(exit_status) and os.WEXITSTATUS(exit_status) == 0):
+                        raise RuntimeError(f"detached runner exited before startup (status {exit_status})")
+                    if started or exited:
+                        # The runner owns the job now. The parent's copy of the owner lock would
+                        # otherwise block every steer, ack and watch on this owner while it follows.
+                        root_guard.close()
+                        print(launch_message, flush=True)
+                        return follow(job, before, watching)
                         raise RuntimeError(f"detached runner exited before startup (status {exit_status})")
                     time.sleep(0.1)
                 tail = (

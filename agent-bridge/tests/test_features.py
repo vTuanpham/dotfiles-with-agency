@@ -86,17 +86,6 @@ def test_worker_peers_are_limited_to_current_owner(monkeypatch, tmp_path, capsys
     assert "hidden" not in output
 
 
-def test_harness_detection_uses_documented_markers(monkeypatch):
-    monkeypatch.setenv("CLAUDECODE", "1")
-    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    assert cli.harness() == "claude"
-    monkeypatch.delenv("CLAUDECODE")
-    monkeypatch.setenv("CODEX_THREAD_ID", "thread")
-    assert cli.harness() == "codex"
-    monkeypatch.delenv("CODEX_THREAD_ID")
-    assert cli.harness() == "unknown"
-
-
 def test_owners_summarizes_root_activity_and_unanswered_questions(monkeypatch, tmp_path, capsys):
     jobs = tmp_path / "jobs"
     job = jobs / "owner" / "question"

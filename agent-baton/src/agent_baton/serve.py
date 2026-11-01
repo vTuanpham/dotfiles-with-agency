@@ -100,6 +100,11 @@ ASK_DONE = """\
 ENV_DONE = """\
 <h1>Saved</h1><p>{name} was stored in the listed files. You can close this tab.</p>"""
 LOGIN_ANSWERS = {"back": "Handed back. The agent carries on.", "cancel": "Cancelled. The agent was told."}
+# One page for every refused request: it must not reveal whether a token, baton or path exists.
+STALE = """\
+<h1>This link is not active</h1><p>Each Baton link works once, for one request. It may be from an earlier
+request, already answered or expired, or opened from browser history.</p><p>Open the link in the latest
+notification. If none is waiting, ask the agent to send a new one.</p>"""
 QUESTION = """\
 <h1>{by} has a question</h1>
 {title}
@@ -305,7 +310,7 @@ def make_handler(baton_id, token, hosts, command, asker):
             return (parts[1:] if ok else None), baton
 
         def missing(self):
-            self.send(404, b"not found", "text/plain")
+            self.send(404, render(STALE))
 
         def do_GET(self):
             rest, baton = self.route()

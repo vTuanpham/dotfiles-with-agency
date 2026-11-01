@@ -99,8 +99,12 @@ function renderAttachments() {
 }
 async function api(path, data) {
   const options = {credentials:'same-origin',mode:'same-origin',redirect:'error',
-    ...(data ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)} : {})};
-  const response = await fetch(path, options);
+    // A read that hangs must not freeze polling: give up, show the failure and let the next poll retry.
+    ...(data ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}
+      : typeof AbortSignal!=='undefined' && AbortSignal.timeout ? {signal:AbortSignal.timeout(20000)} : {})};
+  const response = await fetch(path, options).catch(error=>{
+    throw error?.name==='TimeoutError' ? new Error('Inbox is not responding; retrying') : error;
+  });
   const result = await response.json();
   if (response.status === 401) { $('pairing').hidden=false; $('inbox').hidden=true; }
   if (!response.ok) {

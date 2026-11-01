@@ -41,9 +41,10 @@ MESSAGING_RULE = (
     "concrete cross-area requests or hand-offs, not chatter; replies arrive as '[from <name>] ...'. "
     "Coordinator steers may arrive mid-turn as user messages; follow them. You are a delegated worker "
     "and must never start agent-bridge jobs, subagents, or other agents yourself. "
-    "For heavy foreground commands use agent-resources run --mem SIZE -- <command>; "
+    "For heavy commands use agent-resources run --mem SIZE -- <command>; "
     "read agent-resources guide first for admission, sizing, cancellation and inherited caps. "
-    "Light commands run directly. Keep the entire heavy command in the foreground, without nesting. "
+    "Light commands run directly. Never detach or nest the wrapper; start a heavy run as your harness's "
+    "background job and collect it on completion, so coordinator steers still reach you meanwhile. "
     "Use --exclusive only for timing measurements. Queue waits and root pauses are normal; "
     "report only a dead holder or an unpaused wait over 30 minutes. "
     "Before a long silent build, benchmark, peer or external wait, use agent-bridge waiting "
@@ -89,10 +90,16 @@ def state_lock(job):
 
 
 def atomic_save(path, state):
+    """Private, whole-file replacement; a unique temporary keeps concurrent writers from sharing one."""
     path = Path(path)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    tmp = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
+    fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(state, indent=2) + "\n")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def resolve_job(value):

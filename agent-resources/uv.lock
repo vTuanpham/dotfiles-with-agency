@@ -6,6 +6,9 @@ requires-python = ">=3.11, <3.15"
 name = "agent-resources"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "agent-session" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -13,6 +16,21 @@ dev = [
     { name = "ruff" },
     { name = "ty" },
 ]
+
+[package.metadata]
+requires-dist = [{ name = "agent-session", editable = "../agent-session" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = "==9.2.0" },
+    { name = "ruff", specifier = "==0.17.3" },
+    { name = "ty", specifier = "==0.0.94" },
+]
+
+[[package]]
+name = "agent-session"
+version = "0.1.0"
+source = { editable = "../agent-session" }
 
 [package.metadata]
 

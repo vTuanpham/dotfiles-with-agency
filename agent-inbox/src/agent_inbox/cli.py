@@ -16,19 +16,23 @@ from .server import App, Server
 from .store import Store
 
 
+def state_home():
+    """XDG_STATE_HOME when absolute; the spec says to ignore an empty or relative value."""
+    value = Path(os.environ.get("XDG_STATE_HOME", ""))
+    return value if value.is_absolute() else Path.home() / ".local/state"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state", type=Path, default=Path(os.environ.get(
-        "AGENT_INBOX_HOME", str(Path(os.environ.get("XDG_STATE_HOME", "~/.local/state")).expanduser()
-                                / "agent-inbox"))))
+        "AGENT_INBOX_HOME", str(state_home() / "agent-inbox"))))
     sub = parser.add_subparsers(dest="action", required=True)
     add = sub.add_parser("add-codex", help="register an existing root on a running local daemon")
     add.add_argument("--session", required=True)
     add.add_argument("--label", required=True)
     add.add_argument("--command", default="codex")
     opencode = sub.add_parser("add-opencode", help="connect to an already-running native v2 service")
-    opencode.add_argument("--service", type=Path, default=Path(os.environ.get(
-        "XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "opencode/service.json")
+    opencode.add_argument("--service", type=Path, default=state_home() / "opencode/service.json")
     acp = sub.add_parser("add-acp", help="connect to an installed ACP agent's own saved sessions")
     acp.add_argument("--harness", required=True)
     acp.add_argument("--bridge-backend", choices=("codex", "claude", "agy", "opencode"))

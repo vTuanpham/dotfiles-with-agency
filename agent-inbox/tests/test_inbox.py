@@ -520,6 +520,36 @@ def test_discovery_disappearance_and_reconnect_leave_no_registry_rows(store, pro
     assert store.targets() == [seed]
 
 
+def test_a_slow_discovery_never_blocks_readers_of_the_last_listing(store, provider, monkeypatch):
+    store.register(target())
+    now = [100]
+    monkeypatch.setattr("agent_inbox.catalog.time.monotonic", lambda: now[0])
+    entered, release = threading.Event(), threading.Event()
+    slow = [False]
+
+    def discover(seed):
+        if slow[0]:
+            entered.set()
+            release.wait(5)
+        return [RootInfo("first", "Existing", "active")]
+
+    monkeypatch.setattr(provider, "discover", discover)
+    catalog = Catalog(store)
+    before = catalog.listing()["roots"]
+    slow[0] = True
+    now[0] += 11
+    scanning = threading.Thread(target=catalog.listing)
+    scanning.start()
+    assert entered.wait(5)
+    try:
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:  # served at once, not after the running scan
+            assert pool.submit(catalog.listing).result(timeout=1)["roots"] == before
+            assert pool.submit(catalog.target, "first").result(timeout=1).session_id == "first"
+    finally:
+        release.set()
+        scanning.join(5)
+
+
 def test_catalog_scans_shared_connection_once_and_hides_unavailable_sources(store, provider, monkeypatch):
     store.register(target())
     store.register(target("second"))

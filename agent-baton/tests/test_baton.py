@@ -7,6 +7,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import agent_session
 import pytest
 
 from agent_baton import cli, core, doctor, guard, notify, question, serve
@@ -18,9 +19,8 @@ dismissed = []  # ids whose toast the daemon took down
 def home(tmp_path, monkeypatch):
     monkeypatch.setattr(core, "BATONS", tmp_path / "batons")
     monkeypatch.setattr(core, "CONFIG", tmp_path / "config.toml")
-    monkeypatch.delenv("CLAUDECODE", raising=False)
-    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    for name in agent_session.VARIABLES:
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("AGENT_BATON_BY", raising=False)
     monkeypatch.setenv("AGENT_BATON_SESSION", "test-session")
     monkeypatch.setattr(notify, "dismiss", lambda baton: dismissed.append(baton["id"]))
@@ -136,6 +136,25 @@ def test_guard_main_exit_codes_and_fail_closed(monkeypatch, capsys):
     for baton in core.held():
         core.resolve(baton["id"], "returned")
     assert run_guard(monkeypatch, {"tool_name": "Read"}) == 0  # broken guard + nothing out = open
+
+
+def test_stale_links_explain_themselves_without_revealing_which_part_was_wrong(monkeypatch):
+    baton = core.create("github.com", "", "Codex", 600)
+    link, thread = open_serve(monkeypatch, baton["id"])
+    base = link.rsplit("/", 1)[0]
+
+    def body(url, host=None):
+        request = urllib.request.Request(url, headers={"Host": host} if host else {})
+        try:
+            urllib.request.urlopen(request, timeout=5)
+        except urllib.error.HTTPError as error:
+            return error.code, error.read().decode()
+        raise AssertionError("expected a refusal")
+
+    pages = {body(f"{base}/old-token/back"), body(link, host="evil.example"), body(f"{link}/frobnicate")}
+    assert len(pages) == 1  # wrong token, wrong host and stale path look identical
+    code, page = pages.pop()
+    assert code == 404 and "not active" in page and "latest" in page
 
 
 def test_human_page_is_one_use_token_and_host_bound(monkeypatch):
@@ -885,12 +904,15 @@ def test_session_identity_uses_conversation_ids_and_never_the_display_name(monke
 
 def test_claude_code_session_is_picked_up_without_a_shared_namespace(monkeypatch):
     monkeypatch.delenv("AGENT_BATON_SESSION")
+    monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "same-id")
     claude = core.session()
+    monkeypatch.setenv("CODEX_THREAD_ID", "enclosing-thread")  # Claude started from a Codex terminal
+    assert core.session() == claude == "claude:same-id"  # the inherited thread never owns its batons
+    monkeypatch.delenv("CLAUDECODE")
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
     monkeypatch.setenv("CODEX_THREAD_ID", "same-id")
     assert core.session() != claude  # one id string in two harnesses is two owners
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "same-id")
     monkeypatch.setenv("AGENT_BATON_SESSION", "mine")
     assert core.session() == "explicit:mine"  # an explicit id still wins
 

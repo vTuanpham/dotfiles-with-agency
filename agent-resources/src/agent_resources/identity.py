@@ -2,6 +2,8 @@
 
 import os
 
+import agent_session
+
 
 def identity():
     explicit = os.environ.get("AGENT_RESOURCES_OWNER")
@@ -9,12 +11,8 @@ def identity():
         if not explicit or len(explicit) > 400 or any(ord(c) < 33 for c in explicit):
             raise ValueError("invalid resource controller identity")
         return explicit
-    keys = (("CLAUDE_CODE_SESSION_ID", "claude"),) if os.environ.get("CLAUDECODE") == "1" else (
-        ("CODEX_THREAD_ID", "codex"), ("ANTIGRAVITY_CONVERSATION_ID", "agy"),
-        ("CLAUDE_CODE_SESSION_ID", "claude"))
-    for name, harness in keys:
-        if value := os.environ.get(name):
-            if len(value) > 200 or any(ord(c) < 33 for c in value):
-                raise ValueError("invalid native controller identity")
-            return harness + ":" + value
-    return None
+    try:
+        found = agent_session.native()
+    except ValueError:
+        raise ValueError("invalid native controller identity") from None
+    return f"{found[0]}:{found[1]}" if found and found[1] else None

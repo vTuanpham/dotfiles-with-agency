@@ -9,6 +9,8 @@ from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
+import agent_session
+
 from .models import decode_json, text
 
 SESSION = re.compile(r"[A-Za-z0-9_-]{1,200}\Z")
@@ -139,17 +141,12 @@ def infer() -> Context:
     try:
         if os.environ.get("AGENT_BRIDGE_WORKER") == "1":
             result = bridge()
-        elif os.environ.get("CLAUDECODE") == "1":
-            home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude").expanduser()
-            result = Context("claude", claude_session(home))
-        elif os.environ.get("ANTIGRAVITY_CONVERSATION_ID"):
-            result = Context("agy", os.environ["ANTIGRAVITY_CONVERSATION_ID"])
-        elif os.environ.get("CODEX_THREAD_ID"):
-            result = Context("codex", os.environ["CODEX_THREAD_ID"])
-        elif os.environ.get("AGENT_BRIDGE_ROOT_HARNESS") in KEYS:
-            result = Context(
-                os.environ["AGENT_BRIDGE_ROOT_HARNESS"], os.environ.get("AGENT_BRIDGE_ROOT_SESSION")
-            )
+        elif found := agent_session.native():
+            harness, session = found
+            if harness == "claude" and session is None:  # Claude hides its id from some shells
+                home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude").expanduser()
+                session = claude_session(home)
+            result = Context(harness, session)
         if result.session is None or not SESSION.fullmatch(result.session):
             return Context(result.harness)
         if result.harness == "codex":

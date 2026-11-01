@@ -133,7 +133,7 @@ def test_detached_prestart_failure_is_logged(monkeypatch, tmp_path):
     real_open = cli.os.open
 
     def open_detached_stdio(path, *args, **kwargs):
-        if Path(path).name == "root.lock":
+        if Path(path).name == "root.lock" or Path(path).suffix == ".tmp":  # locks and atomic state writes
             return real_open(path, *args, **kwargs)
         return 56
 

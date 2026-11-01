@@ -7,6 +7,8 @@ from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
+import agent_session
+
 from .core import save, stamp
 
 BACKENDS = {"codex", "claude", "agy", "opencode"}
@@ -18,21 +20,13 @@ class RootMismatch(RuntimeError):
 
 
 def identity():
-    if os.environ.get("CLAUDECODE") == "1":
-        backend, session = "claude", os.environ.get("CLAUDE_CODE_SESSION_ID")
-    elif os.environ.get("CODEX_THREAD_ID"):
-        backend, session = "codex", os.environ.get("CODEX_THREAD_ID")
-    else:
-        backend = os.environ.get("AGENT_BRIDGE_ROOT_HARNESS")
-        session = os.environ.get("AGENT_BRIDGE_ROOT_SESSION")
-    if (
-        backend not in BACKENDS
-        or not session
-        or len(session) > 200
-        or any(ord(char) < 32 for char in session)
-    ):
+    try:
+        found = agent_session.native()
+    except ValueError:
+        return None  # malformed native ids never bind an owner
+    if found is None or found[0] not in BACKENDS or found[1] is None:
         return None
-    return {"backend": backend, "session_id": session}
+    return {"backend": found[0], "session_id": found[1]}
 
 
 def read(owner):
