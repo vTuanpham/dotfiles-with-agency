@@ -10,18 +10,25 @@ import tempfile
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
+from dataclasses import asdict
 from datetime import UTC, date, datetime
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from agent_accounts import providers
 from agent_accounts.models import loads
 
-from . import coverage
+from . import coverage, harness, specialists
 from .shortlist import frontier, table_views
 from .state import HOME
+from .transport import urlopen
+
+PRELOADED = ContextVar("benchmark_preloaded", default={})
+PREVIOUS = ContextVar("benchmark_previous", default={})
 
 MAX_BYTES = 8_000_000
 LIVE = "https://livebench.ai/"
@@ -29,14 +36,43 @@ ARENA = "https://datasets-server.huggingface.co/parquet?"
 DATASET = "lmarena-ai/leaderboard-dataset"
 CACHE = HOME / "benchmarks"
 DOMAINS = ("overall", "reasoning", "backend", "coding", "terminal", "design", "browser", "research", "data",
-           "writing", "vision", "documents", "long-context", "tools", "finance", "legal", "tax")
+           "writing", "vision", "documents", "long-context", "tools", "finance", "legal", "tax",
+           "performance", "debugging")
 ARENA_BOARDS = {"agent": "agent", "webdev": "webdev", "text": "text_style_control",
                 "vision": "vision_style_control", "document": "document_style_control", "search": "search"}
+ARENA_DECISION_VIEWS = frozenset(ARENA_BOARDS)
+ARENA_BOARDS.update({name: name for name in (
+    "agent_bash_recovery_steps", "agent_bash_reliability", "agent_praise_complaint", "agent_steerability",
+    "agent_task_outcome_explicit", "agent_tool_hallucination", "text_raw", "text_factuality",
+    "vision_raw", "search_factuality", "search_style_control")})
+ARENA_BOARDS.update(text_raw="text", vision_raw="vision")
+SOURCE_URLS = {"LiveBench": LIVE,
+               "SWE-bench": "https://www.swebench.com/",
+               "OSWorld": "https://osworld-v2.xlang.ai/",
+               "BFCL": "https://gorilla.cs.berkeley.edu/leaderboard.html",
+               "LiveCodeBench": "https://livecodebench.github.io/leaderboard.html",
+               "KernelBench.com": "https://kernelbench.com/",
+               "Bug Hunt": "https://bughunt.productcompass.pm/",
+               "Artificial Analysis": "https://artificialanalysis.ai/leaderboards/models",
+               "Vals Index": "https://www.vals.ai/benchmarks/vals_index",
+               "Vals Terminal-Bench": "https://www.vals.ai/benchmarks/vals_index",
+               **{f"Arena/{name}": f"https://huggingface.co/datasets/{DATASET}" for name in ARENA_BOARDS}}
 
 
-def fetch_bytes(url):
-    with urlopen(Request(url, headers={"User-Agent": "model-guide/0.1"}), timeout=25) as response:
-        data = response.read(MAX_BYTES + 1)
+def fetch_bytes(url, headers=None):
+    if url in PRELOADED.get():
+        return PRELOADED.get()[url]
+    from . import polling
+
+    polling.available(url)
+    try:
+        with urlopen(Request(url, headers={"User-Agent": "model-guide/0.1", **(headers or {})}),
+                     timeout=25) as response:
+            data = response.read(MAX_BYTES + 1)
+    except HTTPError as error:
+        if error.code in (429, 503) or error.headers.get("x-ratelimit-remaining") == "0":
+            polling.defer(url, dict(error.headers.items()))
+        raise
     if len(data) > MAX_BYTES:
         raise ValueError("source exceeds size limit")
     return data
@@ -140,20 +176,26 @@ def livebench():
         raise ValueError("LiveBench version not published in page title")
     efforts = dict(re.findall(r'"([^"{}]+)":\{displayName:"[^"{}]+"[^{}]*?effort:"([^"{}]+)"', code))
     return {"url": LIVE, "release": release, "version": version[1], "efforts": efforts,
+            "release_script": script[1],
             "rows": rows, "categories": categories, "weights": weights,
             "cost_rows": list(costs.values()), "points": points,
             "frontiers": {name: frontier(values) for name, values in points.items()},
             "sha256": {base + name: hashlib.sha256(text.encode()).hexdigest()
                        for name, text in raw.items()},
+            "coverage": {"available_rows": len(rows), "captured_rows": len(rows),
+                         "harness_captured": "not published", "newest_available": release,
+                         "efforts": sorted(set(efforts.values()))},
             "limits": "One run per suite; effort must be checked in site metadata. "
                       "Overall cost/success divides mean task cost by weighted overall score; "
                       "it is a composite proxy, not a retry guarantee. Incomplete rows excluded "
                       "from the frontier, never filled with zero. Time per task unavailable."}
 
 
-def arena(config, catalog):
+def arena(config, catalog=None):
     import polars as pl
 
+    if catalog is None:
+        catalog = loads(fetch(ARENA + urlencode({"dataset": DATASET})))
     if type(catalog) is not dict or catalog.get("partial") is not False:
         raise ValueError("incomplete Arena export catalog")
     files = [item for item in catalog["parquet_files"]
@@ -177,10 +219,10 @@ def arena(config, catalog):
             total += frame.height
             if total > 20000:
                 raise ValueError("Arena export exceeds row limit")
-            rows.extend(frame.filter(pl.col("category") == "overall").to_dicts())
+            rows.extend(frame.to_dicts())
         except pl.exceptions.PolarsError as error:
             raise ValueError("invalid Arena Parquet/schema") from error
-    score_fields = (("score", "score_ci_lower", "score_ci_upper") if config == "agent"
+    score_fields = (("score", "score_ci_lower", "score_ci_upper") if config.startswith("agent")
                     else ("rating", "rating_lower", "rating_upper"))
     for row in rows:
         for key in score_fields:
@@ -193,15 +235,19 @@ def arena(config, catalog):
         date.fromisoformat(row["leaderboard_publish_date"][:10])
     if not rows or len({json.dumps(r, sort_keys=True) for r in rows}) != len(rows):
         raise ValueError("empty or duplicate Arena records")
-    names = Counter(r["model_name"] for r in rows)
+    names = Counter((r["category"], r["model_name"]) for r in rows)
     dates = {r["leaderboard_publish_date"] for r in rows}
-    if len(dates) != 1:
-        raise ValueError("mixed Arena publication dates")
     return {"url": f"https://huggingface.co/datasets/{DATASET}", "config": config,
-            "metric": "net improvement" if config == "agent" else "preference rating",
-            "published": next(iter(dates)), "rows": rows, "sha256": digests,
-            "ambiguous_names": [name for name, count in names.items() if count > 1],
-            "limits": "Arena-published overall category for this modality; raw score scale and "
+            "metric": "published agent score" if config.startswith("agent") else "preference rating",
+            "published": max(dates), "publication_dates": sorted(dates), "rows": rows, "sha256": digests,
+            "ambiguous_names": [name for (_, name), count in names.items() if count > 1],
+            "coverage": {"available_rows": total, "captured_rows": len(rows),
+                         "categories": sorted({r["category"] for r in rows}),
+                         "available_configs": sorted({r["config"] for r in catalog["parquet_files"]}),
+                         "harness_captured": "not published"},
+            "limits": "All categories in this modality's latest export; overall used in decision views. "
+                      "Historical full split and other modality/config exports are not this snapshot. "
+                      "Raw score scale and "
                       "confidence intervals retained. Preference and agent net-improvement scores "
                       "are distinct. Dataset does not supply task cost/time. CC-BY-4.0, Arena."}
 
@@ -253,14 +299,17 @@ def webpage(url):
     text = " ".join(" ".join(parsed.text).split())
     metadata = re.findall(r"(?:Version \d+(?:\.\d+)*|Updated \d{1,2}/\d{1,2}/\d{4})", text)
     methodology = None
+    methodology_sha256 = None
     if "artificialanalysis.ai" in url:
         methodology = "https://artificialanalysis.ai/methodology/intelligence-benchmarking"
         methods = fetch(methodology)
+        methodology_sha256 = hashlib.sha256(methods.encode()).hexdigest()
         versions = re.findall(r"Intelligence Index v(\d+\.\d+)", methods)
         if not versions:
             raise ValueError("Artificial Analysis methodology version missing")
         metadata.append("Intelligence Index v" + versions[0])
     return {"url": url, "metadata": metadata, "methodology_url": methodology, "tables": tables,
+            "methodology_sha256": methodology_sha256,
             "effort_tradeoffs": effort_tradeoffs(tables) if methodology else [],
             "sha256": hashlib.sha256(raw.encode()).hexdigest(),
             "limits": "Published table cells retained verbatim, including effort/harness and "
@@ -269,7 +318,7 @@ def webpage(url):
                       "completion time; retain the source's exact duration/workload label."}
 
 
-def vals_terminal():
+def vals_terminal(*, structured=False):
     index = "https://www.vals.ai/benchmarks/vals_index"
     raw = fetch(index)
     paths = set(re.findall(r'href=[\"\'](?:https://www\.vals\.ai)?'
@@ -277,7 +326,10 @@ def vals_terminal():
     if not paths:
         raise ValueError("Vals Index no longer links a Terminal-Bench release")
     path = max(paths, key=lambda p: tuple(int(v) for v in re.findall(r"\d+", p)))
-    return {**webpage("https://www.vals.ai" + path), "discovered_from": index}
+    from . import boards
+
+    loader = boards.vals if structured else webpage
+    return {**loader("https://www.vals.ai" + path), "discovered_from": index}
 
 
 def effort_tradeoffs(tables):
@@ -300,7 +352,8 @@ def effort_tradeoffs(tables):
             for name, index in indexes.items():
                 if name != "Model":
                     value = row[index].removeprefix("$").replace(",", "")
-                    measurements[name] = None if value in ("--", "") else number(value)
+                    measurements[name] = None if value in ("--", "") else number(
+                        value, maximum=100 if name == "Artificial Analysis Intelligence Index" else None)
             setting = match[2]
             configuration = "with fallback" if setting.endswith(" with fallback") else ""
             setting = setting.removesuffix(" with fallback")
@@ -324,6 +377,29 @@ def effort_tradeoffs(tables):
     return result
 
 
+def bug_hunt_source():
+    raw = fetch(specialists.BUG)
+    summary = loads(fetch(specialists.BUG_SUMMARY))
+    published, measurements, coverage_info = specialists.bug_runs(raw, summary)
+    methods = fetch("https://raw.githubusercontent.com/phuryn/bug-hunt-bench/main/results/run-notes.md")
+    data = {"runs_csv": raw, "summary_annotations": summary, "run_notes_md": methods}
+    return {"url": SOURCE_URLS["Bug Hunt"], "data_url": specialists.BUG, "published": published,
+            "metadata": ["Methodology version Unverified; dated dataset, not a versioned standard"],
+            "methodology_url": specialists.BUG_METHOD,
+            "methodology_sha256": hashlib.sha256(json.dumps(methods, sort_keys=True).encode()).hexdigest(),
+            "sha256": {specialists.BUG: hashlib.sha256(raw.encode()).hexdigest()},
+            "measurements": [asdict(row) for row in measurements], "raw": data,
+            "coverage": coverage_info,
+            "limits": ("Unversioned method. Single maintainer; no independent replication established. "
+                       "Small task set; "
+                       "model plus vendor CLI/harness, not isolated model ability. Unmatched names "
+                       "and missing cells are Unverified. "
+                       "105 planted bugs in two repos; no bug report; hidden answer key, judge-graded. "
+                       "Bill/list/floor/free costs are distinct; wall times can be contended; "
+                       "small score gaps may be run variance. Every CSV effort/run retained; "
+                       "superseded receipts retained in raw only; means never cross harness versions.")}
+
+
 def collect(name, loader):
     try:
         return name, {"status": "ok", **loader()}
@@ -331,21 +407,44 @@ def collect(name, loader):
         return name, {"status": "unavailable", "error": f"{type(error).__name__}: {error}"}
 
 
-def prepare(directory=CACHE):
-    started = time.monotonic()
+def loaders():
+    from . import artificial, boards, kernel_source
+
     loaders = [("LiveBench", livebench)]
-    _, arena_catalog = collect("Arena catalog", lambda: {
-        "data": loads(fetch(ARENA + urlencode({"dataset": DATASET})))})
-    loaders += [(f"Arena/{name}", lambda config=config: arena(config, arena_catalog["data"])
-                 if arena_catalog["status"] == "ok" else arena_catalog)
+    loaders += [(f"Arena/{name}", lambda config=config: arena(config))
                 for name, config in ARENA_BOARDS.items()]
-    loaders += [(name, lambda url=url: webpage(url)) for name, url in (
-        ("Artificial Analysis", "https://artificialanalysis.ai/leaderboards/models"),
-        ("Vals Index", "https://www.vals.ai/benchmarks/vals_index"),
-    )]
-    loaders.append(("Vals Terminal-Bench", vals_terminal))
+    loaders.append(("Artificial Analysis", artificial.load))
+    loaders.append(("Vals Index", lambda: boards.vals(SOURCE_URLS["Vals Index"])))
+    loaders.append(("Vals Terminal-Bench", lambda: vals_terminal(structured=True)))
+    loaders += [("SWE-bench", boards.swe), ("OSWorld", boards.osworld),
+                ("BFCL", boards.bfcl), ("LiveCodeBench", boards.lcb)]
+    loaders += [
+        ("KernelBench.com", kernel_source.load), ("Bug Hunt", bug_hunt_source),
+    ]
+    return dict(loaders)
+
+
+def prepare(directory=CACHE, *, names=None, previous=None, fetched=None):
+    started = time.monotonic()
+    available = loaders()
+    selected = set(available) if names is None else set(names)
+    if selected - available.keys():
+        raise ValueError("unknown benchmark source")
+
+    def capture(item):
+        token = PRELOADED.set(fetched or {})
+        prior = PREVIOUS.set(previous or {})
+        try:
+            name, result = collect(*item)
+            result["retrieved"] = datetime.now(UTC).isoformat()
+            return name, result
+        finally:
+            PRELOADED.reset(token)
+            PREVIOUS.reset(prior)
+
+    sources = dict((previous or {}).get("sources", {}))
     with ThreadPoolExecutor(max_workers=4) as pool:
-        sources = dict(pool.map(lambda item: collect(*item), loaders))
+        sources.update(pool.map(capture, [(name, available[name]) for name in available if name in selected]))
     directory.mkdir(parents=True, exist_ok=True)
     snapshot = {"retrieved": datetime.now(UTC).isoformat(),
                 "elapsed_seconds": round(time.monotonic() - started, 3), "sources": sources}
@@ -363,8 +462,8 @@ def prepare(directory=CACHE):
         if source["status"] != "ok":
             failures.append(f"- {name}: {source['error']}")
     lines += ["", *failures]
-    live = sources["LiveBench"]
-    if live["status"] == "ok":
+    live = sources.get("LiveBench", {})
+    if live.get("status") == "ok":
         lines += ["", "## Cost-performance frontiers", live["limits"],
                   "Candidate set: all complete model rows in this LiveBench release. Higher score, "
                   "lower estimated USD per successful task; each suite compared separately. "
@@ -404,14 +503,21 @@ def snapshot():
     return loads(path.read_text())
 
 
-def search(domain, query="", limit=5, catalog=None):
+def search(domain, query="", limit=5, catalog=None, *, data=None):
     """Bounded offline evidence, grouped by source; never blend unlike metrics."""
-    data = snapshot()
+    data = snapshot() if data is None else data
     native = coverage.summarize(catalog, data, query) if catalog is not None else None
 
-    def selected(label):
-        return (name_matches(query, label) if native is None else any(
-            coverage.matches(model, label) for model in native["models"]))
+    unsupported = set()
+
+    def selected(label, effort=coverage.UNSPECIFIED):
+        if native is None:
+            return name_matches(query, label)
+        models = [m for m in native["models"] if coverage.matches(m, label)]
+        if models and all(coverage.supported(m, label, effort) is False for m in models):
+            unsupported.add((label, effort))
+            return False
+        return bool(models)
     suite = {"overall": "Overall", "reasoning": "Reasoning", "coding": "Coding", "backend": "Coding",
              "design": "Design",
              "browser": "Browser", "research": "Research", "data": "Data Analysis"}.get(domain)
@@ -420,10 +526,22 @@ def search(domain, query="", limit=5, catalog=None):
     wanted = ({"LiveBench"} if suite else set())
     if arena_config:
         wanted.add("Arena/" + arena_config)
+        stem = {"text": "text", "vision": "vision", "search": "search", "agent": "agent"}.get(arena_config)
+        if stem:
+            wanted.update("Arena/" + key for key in ARENA_BOARDS if key.startswith(stem + "_"))
     if domain in ("overall", "finance", "legal", "tax", "data"):
         wanted.add("Vals Index")
     if domain in ("backend", "coding", "terminal"):
         wanted.add("Vals Terminal-Bench")
+    if domain in ("backend", "coding", "debugging"):
+        wanted.add("SWE-bench")
+    if domain == "coding":
+        wanted.add("LiveCodeBench")
+    if domain == "tools":
+        wanted.add("BFCL")
+    if domain == "browser":
+        wanted.add("OSWorld")
+    wanted.update({"performance": {"KernelBench.com"}, "debugging": {"Bug Hunt"}}.get(domain, set()))
     if domain == "overall" or query:
         wanted.add("Artificial Analysis")
     results = {}
@@ -432,22 +550,63 @@ def search(domain, query="", limit=5, catalog=None):
             continue
         info = {key: value for key, value in source.items()
                 if key not in ("rows", "tables", "cost_rows", "points", "frontiers", "sha256", "efforts",
-                               "effort_tradeoffs", "categories", "weights")}
+                               "effort_tradeoffs", "categories", "weights", "measurements", "raw")}
         if source["status"] != "ok":
             results[name] = info
             continue
-        if name == "LiveBench":
+        if "measurements" in source:
+            def relevant(row):
+                if name == "Vals Index":
+                    task = row["configuration"].split(":", 1)[0]
+                    return task in {"overall": ("overall",), "finance": ("finance_agent", "emb"),
+                                   "data": ("finance_agent", "emb"), "legal": ("legal_research",
+                                   "legal_agent_benchmark"), "tax": ("tax_agent_bench",)}.get(domain, ())
+                if name == "Vals Terminal-Bench":
+                    return row["configuration"].startswith("overall:")
+                if name == "Artificial Analysis":
+                    return row["metric"] == "artificial_analysis_intelligence_index"
+                return True
+
+            raw_matches = [r for r in source["measurements"] if relevant(r)
+                           and selected(r["model"], r["effort"])]
+            matches = specialists.cohorts(raw_matches) if name == "Bug Hunt" else raw_matches
+            info["unverified_measurements"] = sum(r["score"] is None for r in matches)
+            info["run_dates"] = [r["date"] for r in raw_matches]
+            # Bound each metric/hardware/harness/cost basis independently; never merge units.
+            groups = {}
+            for row in matches:
+                if row["score"] is None:
+                    continue
+                groups.setdefault((row["metric"], row["unit"], row["direction"],
+                                   row["harness"], row.get("harness_version"), row.get("configuration"),
+                                   row["cost_kind"]), []).append(row)
+            info["measurements"] = []
+            for key, rows in sorted(groups.items(), key=lambda item: str(item[0])):
+                quality = sorted(rows, key=lambda r: (r["score"] is None,
+                    -(r["score"] or 0) if r["direction"] == "higher" else (r["score"] or 0), r["model"]))
+                points = [{"model": i, "score": (r["score"] if r["direction"] == "higher" else -r["score"])
+                           if r["score"] is not None else None, "cost": r["cost"]}
+                          for i, r in enumerate(rows)]
+                efficient = sorted(frontier(points), key=lambda p: (p["cost"], -p["score"]))
+                found = quality[:limit] + [rows[p["model"]] for p in efficient[:limit]]
+                info["measurements"].extend(r for i, r in enumerate(found) if r not in found[:i])
+            info["measurements"].sort(key=lambda r: (
+                harness.native(r["harness"], catalog["backend"]) is not True if catalog else False,
+                r["metric"], r["unit"], -r["score"] if r["direction"] == "higher" else r["score"],
+                r["model"], str(r["effort"]), str(r["harness"]), str(r["cost_kind"])))
+            info["frontier_scope"] = "Per metric/unit/hardware/harness/cost basis; not an aggregate rank."
+        elif name == "LiveBench":
             assert suite is not None
             values = source["points"][suite]
-            matches = [p for p in values if selected(p["model"])]
+            matches = [p for p in values if selected(p["model"], source["efforts"].get(p["model"]))]
             efficient = sorted(frontier(matches), key=lambda p: (p["cost"], -p["score"]))
             pareto = {p["model"] for p in efficient}
-            info["metric"] = suite + " score; estimated USD per successful task"
+            info["metric"] = suite + " score"
+            info["cost_metric"] = "estimated USD/success"
             quality = sorted(matches, key=lambda p: (p["score"] is None, -(p["score"] or 0)))
             for field, points in (("results", quality), ("efficient_results", efficient)):
                 info[field] = [{"model": p["model"], "effort": source["efforts"].get(p["model"]),
-                                "score": round(p["score"], 2) if p["score"] is not None else None,
-                                "usd_per_success": round(p["cost"], 4) if p["cost"] is not None else None,
+                                "score": p["score"], "usd_per_success": p["cost"],
                                 "time_per_task": None, "on_frontier": p["model"] in pareto}
                                for p in points[:limit]]
             info["efficient_matches"] = len(efficient)
@@ -455,7 +614,8 @@ def search(domain, query="", limit=5, catalog=None):
                 "Matching candidates in this release/suite after native/query filtering; "
                 "higher score, lower estimated USD/success. Not subscription usage.")
         elif name.startswith("Arena/"):
-            matches = [r for r in source["rows"] if selected(r["model_name"])]
+            matches = [r for r in source["rows"] if r.get("category", "overall") == "overall"
+                       and selected(r["model_name"])]
             info["results"] = sorted(matches, key=lambda r: r["rank"])[:limit]
         else:
             info["tables"] = []
@@ -473,7 +633,8 @@ def search(domain, query="", limit=5, catalog=None):
                 matches.extend(found)
                 if name != "Artificial Analysis" or domain == "overall":
                     info["tables"].append(table_views(table[header:start], found, limit))
-            trades = [r for r in source.get("effort_tradeoffs", []) if selected(r["model"])]
+            trades = [r for r in source.get("effort_tradeoffs", [])
+                      if selected(r["model"], r["from"]) and selected(r["model"], r["to"])]
             info["effort_tradeoffs"] = trades[:limit]
             info["effort_tradeoff_matches"] = len(trades)
             if trades:
@@ -494,6 +655,7 @@ def search(domain, query="", limit=5, catalog=None):
                         row = info[field][index]
                         returned.append(row.get("model", row.get("model_name", "")))
             returned.extend(r["model"] for r in info.get("effort_tradeoffs", []))
+            returned.extend(r["model"] for r in info.get("measurements", []))
             for table in info.get("tables", []):
                 header = next(r for r in table["headers"] if any("Model" in c for c in r))
                 index = next(i for i, c in enumerate(header) if "Model" in c)
@@ -517,11 +679,17 @@ def search(domain, query="", limit=5, catalog=None):
         native["unmeasured_ids"] = missing[:limit]
         native["coverage_command"] = "model-guide models --backend " + native["backend"] + " --json"
     return {"retrieved": data["retrieved"], "domain": domain, "query": query,
+            "missing_sources": sorted(wanted - data["sources"].keys()),
+            "unsupported_effort_count": len(unsupported),
             "native_catalog": native,
             "coverage_notes": (["Backend uses coding and terminal proxies; database design, security "
                                 "and service architecture are not directly measured."] if domain == "backend"
                                else ["Writing uses style-controlled text preference, not a dedicated "
                                      "writing-quality or factual-accuracy benchmark."] if domain == "writing"
+                               else ["GPU/kernel engineering only; separate operations/hardware/units, "
+                                     "not general CPU/server performance."] if domain == "performance"
+                               else ["Planted-bug discovery without a bug report in two repos, judge-graded; "
+                                     "not production incident diagnosis."] if domain == "debugging"
                                else []),
             "sources": results, "gaps": "Missing measurements/settings are unknown; source scales differ.",
             "review_sources": (
@@ -532,6 +700,4 @@ def search(domain, query="", limit=5, catalog=None):
 
 def name_matches(query, value):
     # Display names and native IDs differ in separators; search never establishes identity.
-    def normalize(text):
-        return "".join(c for c in text.casefold() if c.isalnum())
-    return normalize(query) in normalize(value)
+    return coverage.query_matches(query, value)

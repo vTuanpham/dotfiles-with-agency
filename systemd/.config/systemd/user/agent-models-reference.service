@@ -1,12 +1,13 @@
 [Unit]
-Description=Check the shared model reference and, weekly, propose a refresh
+Description=Check reference drift and poll benchmark changes
 After=network-online.target
 
 [Service]
 Type=oneshot
+EnvironmentFile=-%h/.config/agent-models/environment
 # stale exits 1 when something is out of date; that is its answer, not a failure
 ExecStart=-%h/.local/bin/model-guide stale --live
-# refresh runs a sandboxed worker at most once a week and only writes a proposal for the user to confirm
-ExecStart=%h/.local/bin/model-guide refresh
-TimeoutStartSec=3000
+# Conditional probes, per-source backoff, changed sources only; never auto-apply
+ExecStart=%h/.local/bin/model-guide refresh --poll
+TimeoutStartSec=600
 Nice=10

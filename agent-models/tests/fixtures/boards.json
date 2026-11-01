@@ -1,0 +1,897 @@
+{
+  "vals": {
+    "metadata": {
+      "benchmark": "Vals Index",
+      "slug": "vals_index",
+      "description": "A single measure of AI's potential economic impact — agentic model performance across finance, coding, legal, and tax tasks, weighted by each sector's share of U.S. GDP.",
+      "benchmark_id": "vals_index",
+      "family": "vals_index",
+      "version": "2.2",
+      "updated": "2026-10-29",
+      "dataset_type": "private",
+      "industry": "index",
+      "tasks": {
+        "overall": "Overall",
+        "finance_agent": "Finance Agent v2.1",
+        "emb": "EMB v1.1",
+        "terminal_bench_4": "Terminal-Bench 4.0",
+        "vibe_code_bench": "Vibe Code Bench v1.1",
+        "code_migration": "Code Migration v1.1",
+        "legal_research": "Legal Research",
+        "legal_agent_benchmark": "HLAB-Vals-1.1",
+        "tax_agent_bench": "Tax Agent"
+      },
+      "models": [
+        "alibaba/qwen3.8-max-internal",
+        "anthropic/claude-haiku-5-5",
+        "anthropic/claude-opus-5-5",
+        "anthropic/claude-sonnet-5-5",
+        "baseten/nemotron-3.5-super-vl-120b-a12b",
+        "deepseek/deepseek-v4-pro-0813",
+        "deepseek/deepseek-v4.1-flash-1017",
+        "google/gemini-3.8-flash",
+        "google/gemini-4-argon",
+        "google/gemini-4-carbon",
+        "grok/grok-4.7",
+        "inception/mercury-3",
+        "kimi/kimi-k3",
+        "kimi/kimi-k3.1-pro",
+        "meta/muse-spark-open",
+        "meta/muse-wonder",
+        "meta/muse-wonder-full",
+        "minimax/MiniMax-M3.1-flash",
+        "mistralai/mistral-large-4-oss",
+        "openai/gpt-6-astra",
+        "openai/gpt-6-luna",
+        "openai/gpt-6.1-sol",
+        "openai/gpt-6.1-terra",
+        "reflection/Beam-1.0",
+        "stepfun/step-5-preview",
+        "tencent/hy4-preview",
+        "thinkingmachines/inkling",
+        "thinkingmachines/inkling-small",
+        "xiaomi/mimo-v2.6-flash",
+        "xiaomi/mimo-v2.6-pro",
+        "zai/glm-5.3",
+        "zai/glm-5.3-flash"
+      ],
+      "partners": [],
+      "showBadge": false,
+      "visible": true,
+      "use_cost_per_test": true,
+      "runner": "external",
+      "mode": "agentic",
+      "archived": false,
+      "partner": false,
+      "total_models": 32
+    },
+    "tasks": {
+      "overall": {
+        "anthropic/claude-sonnet-5-5": {
+          "accuracy": 70.854,
+          "latency": 5158.766,
+          "stderr": 0.928,
+          "cost_per_test": 18.69955,
+          "avg_input_tokens": 77990774.9,
+          "avg_output_tokens": 594549.6,
+          "avg_reasoning_tokens": 405075.1,
+          "avg_cache_read_tokens": 76487919.7,
+          "avg_cache_write_tokens": 1502345.7,
+          "token_totals": {
+            "input_tokens": 45087854954,
+            "output_tokens": 654942865,
+            "reasoning_tokens": 510663474,
+            "cache_read_tokens": 43320518175,
+            "cache_write_tokens": 1766865965
+          },
+          "temperature": 1,
+          "top_p": null,
+          "max_output_tokens": 128000,
+          "reasoning": null,
+          "reasoning_effort": null,
+          "verbosity": null,
+          "compute_effort": "max",
+          "provider": "Anthropic",
+          "harness": null
+        },
+        "google/gemini-4-carbon": {
+          "accuracy": 70.355,
+          "latency": 2864.864,
+          "stderr": 0.973,
+          "cost_per_test": 10.508065,
+          "avg_input_tokens": 18080265.7,
+          "avg_output_tokens": 205620.3,
+          "avg_reasoning_tokens": 93952.5,
+          "avg_cache_read_tokens": 17241005,
+          "avg_cache_write_tokens": 0,
+          "token_totals": {
+            "input_tokens": 11273612554,
+            "output_tokens": 240391208,
+            "reasoning_tokens": 139499436,
+            "cache_read_tokens": 10287814407,
+            "cache_write_tokens": 0
+          },
+          "temperature": null,
+          "top_p": null,
+          "max_output_tokens": 1048576,
+          "reasoning": null,
+          "reasoning_effort": "high",
+          "verbosity": null,
+          "compute_effort": null,
+          "provider": "Google",
+          "harness": null
+        }
+      },
+      "vibe_code_bench": {
+        "anthropic/claude-sonnet-5-5": {
+          "accuracy": 92.392,
+          "latency": 3672.106,
+          "stderr": 1.26,
+          "cost_per_test": 31.250578,
+          "token_totals": {
+            "input_tokens": 5822927217,
+            "output_tokens": 25491041,
+            "reasoning_tokens": 11893204,
+            "cache_read_tokens": 5760733058,
+            "cache_write_tokens": 62167153
+          },
+          "token_tasks_measured": 50,
+          "turn_metrics": {
+            "tasks_measured": 50,
+            "avg_turns": 219.9,
+            "avg_query_seconds": 16.7,
+            "median_query_seconds": 7.8,
+            "avg_ttft_seconds": 11.7,
+            "output_time_split": null
+          },
+          "temperature": 1,
+          "top_p": null,
+          "max_output_tokens": 128000,
+          "reasoning": null,
+          "reasoning_effort": null,
+          "verbosity": null,
+          "compute_effort": "max",
+          "provider": "Anthropic",
+          "harness": "OpenHands"
+        },
+        "google/gemini-4-argon": {
+          "accuracy": 91.906,
+          "latency": 2247.675,
+          "stderr": 1.899,
+          "cost_per_test": 8.10797,
+          "token_totals": {
+            "input_tokens": 451864686,
+            "output_tokens": 5436370,
+            "reasoning_tokens": 849287,
+            "cache_read_tokens": 397575696,
+            "cache_write_tokens": 0
+          },
+          "token_tasks_measured": 50,
+          "turn_metrics": {
+            "tasks_measured": 50,
+            "avg_turns": 72.8,
+            "avg_query_seconds": 30.9,
+            "median_query_seconds": 13.9,
+            "avg_ttft_seconds": 15,
+            "output_time_split": {
+              "reasoning_pct": 82.5,
+              "content_pct": 0,
+              "tool_call_pct": 17.5
+            }
+          },
+          "temperature": 1,
+          "top_p": null,
+          "max_output_tokens": 262144,
+          "reasoning": null,
+          "reasoning_effort": "high",
+          "verbosity": null,
+          "compute_effort": null,
+          "provider": "Google",
+          "harness": "OpenHands"
+        }
+      },
+      "finance_agent": {
+        "anthropic/claude-opus-5-5": {
+          "accuracy": 67.846,
+          "latency": 1980.122,
+          "stderr": 2.051,
+          "cost_per_test": 8.908721,
+          "token_totals": {
+            "input_tokens": 711290297,
+            "output_tokens": 106934250,
+            "reasoning_tokens": 92568283,
+            "cache_read_tokens": 362746415,
+            "cache_write_tokens": 348503177
+          },
+          "token_tasks_measured": 444,
+          "temperature": 1,
+          "top_p": null,
+          "max_output_tokens": 128000,
+          "reasoning": null,
+          "reasoning_effort": null,
+          "verbosity": null,
+          "compute_effort": "max",
+          "provider": "Anthropic",
+          "harness": null
+        },
+        "google/gemini-4-argon": {
+          "accuracy": 67.658,
+          "latency": 793.03,
+          "stderr": 2,
+          "cost_per_test": 4.315759,
+          "token_totals": {
+            "input_tokens": 602790494,
+            "output_tokens": 31627905,
+            "reasoning_tokens": 14149611,
+            "cache_read_tokens": 291037965,
+            "cache_write_tokens": 0
+          },
+          "token_tasks_measured": 449,
+          "temperature": null,
+          "top_p": null,
+          "max_output_tokens": 262144,
+          "reasoning": null,
+          "reasoning_effort": "high",
+          "verbosity": null,
+          "compute_effort": null,
+          "provider": "Google",
+          "harness": null
+        }
+      },
+      "emb": {
+        "google/gemini-4-carbon": {
+          "accuracy": 76.468,
+          "latency": 1648.59,
+          "stderr": 2.205,
+          "cost_per_test": 5.755811,
+          "token_totals": {
+            "input_tokens": 739870971,
+            "output_tokens": 13114543,
+            "reasoning_tokens": 8580332,
+            "cache_read_tokens": 693337374,
+            "cache_write_tokens": 0
+          },
+          "token_tasks_measured": 102,
+          "turn_metrics": {
+            "tasks_measured": 102,
+            "avg_turns": 38.2,
+            "avg_query_seconds": 43.1,
+            "median_query_seconds": 21.6,
+            "avg_ttft_seconds": 11.9,
+            "output_time_split": null
+          },
+          "temperature": null,
+          "top_p": null,
+          "max_output_tokens": 1048576,
+          "reasoning": null,
+          "reasoning_effort": "high",
+          "verbosity": null,
+          "compute_effort": null,
+          "provider": "Google",
+          "harness": null
+        },
+        "anthropic/claude-sonnet-5-5": {
+          "accuracy": 75.899,
+          "latency": 2204.991,
+          "stderr": 2.468,
+          "cost_per_test": 8.792863,
+          "token_totals": {
+            "input_tokens": 2367951142,
+            "output_tokens": 29328538,
+            "reasoning_tokens": 22320203,
+            "cache_read_tokens": 2311427347,
+            "cache_write_tokens": 56507215
+          },
+          "token_tasks_measured": 102,
+          "turn_metrics": {
+            "tasks_measured": 102,
+            "avg_turns": 77.9,
+            "avg_query_seconds": 28.3,
+            "median_query_seconds": 10.8,
+            "avg_ttft_seconds": 24.5,
+            "output_time_split": null
+          },
+          "temperature": 1,
+          "top_p": null,
+          "max_output_tokens": 128000,
+          "reasoning": null,
+          "reasoning_effort": null,
+          "verbosity": null,
+          "compute_effort": "max",
+          "provider": "Anthropic",
+          "harness": null
+        }
+      },
+      "code_migration": {
+        "anthropic/claude-sonnet-5-5": {
+          "accuracy": 87.372,
+          "latency": 14850.395,
+          "stderr": 2.388,
+          "cost_per_test": 45.405088,
+          "token_totals": {
+            "input_tokens": 20450605917,
+            "output_tokens": 74788366,
+            "reasoning_tokens": 34898228,
+            "cache_read_tokens": 20245723628,
+            "cache_write_tokens": 204790865
+          },
+          "token_tasks_measured": 60,
+          "turn_metrics": {
+            "tasks_measured": 60,
+            "avg_turns": 757.4,
+            "avg_query_seconds": 13.2,
+            "median_query_seconds": 7.2,
+            "avg_ttft_seconds": null,
+            "output_time_split": null
+          },
+          "temperature": null,
+          "top_p": null,
+          "max_output_tokens": 128000,
+          "reasoning": null,
+          "reasoning_effort": null,
+          "verbosity": null,
+          "compute_effort": "max",
+          "provider": "Anthropic",
+          "harness": null
+        },
+        "anthropic/claude-opus-5-5": {
+          "accuracy": 80.487,
+          "latency": 12635.272,
+          "stderr": 4.08,
+          "cost_per_test": 72.30083,
+          "token_totals": {
+            "input_tokens": 16604648219,
+            "output_tokens": 56658262,
+            "reasoning_tokens": 20731364,
+            "cache_read_tokens": 16430817403,
+            "cache_write_tokens": 173755296
+          },
+          "token_tasks_measured": 60,
+          "turn_metrics": {
+            "tasks_measured": 60,
+            "avg_turns": 625.4,
+            "avg_query_seconds": 14.7,
+            "median_query_seconds": 6.5,
+            "avg_ttft_seconds": null,
+            "output_time_split": null
+          },
+          "temperature": null,
+          "top_p": null,
+          "max_output_tokens": 128000,
+          "reasoning": null,
+          "reasoning_effort": null,
+          "verbosity": null,
+          "compute_effort": "max",
+          "provider": "Anthropic",
+          "harness": null
+        }
+      },
+      "legal_research": {
+        "google/gemini-4-carbon": {
+          "accuracy": 55.769,
+          "latency": 3112.579,
+          "stderr": 3.452,
+          "cost_per_test": 8.743524,
+          "token_totals": {
+            "input_tokens": 1062929092,
+            "output_tokens": 52772544,
+            "reasoning_tokens": 36254828,
+            "cache_read_tokens": 918030058,
+            "cache_write_tokens": 0
+          },
+          "token_tasks_measured": 208,
+          "turn_metrics": {
+            "tasks_measured": 208,
+            "avg_turns": 39.2,
+            "avg_query_seconds": 79.5,
+            "median_query_seconds": 33.5,
+            "avg_ttft_seconds": 12.7,
+            "output_time_split": null
+          },
+          "temperature": null,
+          "top_p": null,
+          "max_output_tokens": 1048576,
+          "reasoning": null,
+          "reasoning_effort": "high",
+          "verbosity": null,
+          "compute_effort": null,
+          "provider": "Google",
+          "harness": null
+        },
+        "google/gemini-4-argon": {
+          "accuracy": 54.808,
+          "latency": 1881.045,
+          "stderr": 3.459,
+          "cost_per_test": 6.44908,
+          "token_totals": {
+            "input_tokens": 915877177,
+            "output_tokens": 24432059,
+            "reasoning_tokens": 11886477,
+            "cache_read_tokens": 739668768,
+            "cache_write_tokens": 0
+          },
+          "token_tasks_measured": 208,
+          "turn_metrics": {
+            "tasks_measured": 208,
+            "avg_turns": 38.2,
+            "avg_query_seconds": 49.2,
+            "median_query_seconds": 16.4,
+            "avg_ttft_seconds": 8.1,
+            "output_time_split": {
+              "reasoning_pct": 79,
+              "content_pct": 3,
+              "tool_call_pct": 18.1
+            }
+          },
+          "temperature": 1,
+          "top_p": null,
+          "max_output_tokens": 262144,
+          "reasoning": null,
+          "reasoning_effort": "high",
+          "verbosity": null,
+          "compute_effort": null,
+          "provider": "Google",
+          "harness": null
+        }
+      },
+      "legal_agent_benchmark": {
+        "google/gemini-4-argon": {
+          "accuracy": 27.083,
+          "latency": 1755.397,
+          "stderr": 3.738,
+          "cost_per_test": 10.54836,
+          "token_totals": {
+            "input_tokens": 812145091,
+            "output_tokens": 18424207,
+            "reasoning_tokens": 5211457,
+            "cache_read_tokens": 733823568,
+            "cache_write_tokens": 0
+          },
+          "token_tasks_measured": 120,
+          "turn_metrics": {
+            "tasks_measured": 120,
+            "avg_turns": 23.9,
+            "avg_query_seconds": 70.3,
+            "median_query_seconds": 12.8,
+            "avg_ttft_seconds": 13.1,
+            "output_time_split": null
+          },
+          "temperature": null,
+          "top_p": null,
+          "max_output_tokens": 262144,
+          "reasoning": null,
+          "reasoning_effort": "high",
+          "verbosity": null,
+          "compute_effort": null,
+          "provider": "Google",
+          "harness": null
+        },
+        "meta/muse-spark-open": {
+          "accuracy": 25,
+          "latency": 14355.684,
+          "stderr": 3.599,
+          "cost_per_test": 13.6316,
+          "token_totals": {
+            "input_tokens": 2657733432,
+            "output_tokens": 13857658,
+            "reasoning_tokens": 6185749,
+            "cache_read_tokens": 1586608896,
+            "cache_write_tokens": 0
+          },
+          "token_tasks_measured": 120,
+          "turn_metrics": {
+            "tasks_measured": 120,
+            "avg_turns": 80.6,
+            "avg_query_seconds": 107.7,
+            "median_query_seconds": 20.4,
+            "avg_ttft_seconds": 65,
+            "output_time_split": null
+          },
+          "temperature": 1,
+          "top_p": 1,
+          "max_output_tokens": 131072,
+          "reasoning": null,
+          "reasoning_effort": "xhigh",
+          "verbosity": null,
+          "compute_effort": null,
+          "provider": "Together AI",
+          "harness": null
+        }
+      },
+      "terminal_bench_4": {
+        "anthropic/claude-opus-5-5": {
+          "accuracy": 65.152,
+          "latency": 3810.852,
+          "stderr": 0,
+          "cost_per_test": 13.198632,
+          "token_totals": {
+            "input_tokens": 1850938631,
+            "output_tokens": 14913437,
+            "reasoning_tokens": 10690470,
+            "cache_read_tokens": 1824613192,
+            "cache_write_tokens": 26310456
+          },
+          "token_tasks_measured": 66,
+          "turn_metrics": {
+            "tasks_measured": 66,
+            "avg_turns": 112.2,
+            "avg_query_seconds": 22.3,
+            "median_query_seconds": 10.1,
+            "avg_ttft_seconds": null,
+            "output_time_split": null
+          },
+          "temperature": 1,
+          "top_p": null,
+          "max_output_tokens": 128000,
+          "reasoning": null,
+          "reasoning_effort": null,
+          "verbosity": null,
+          "compute_effort": "max",
+          "provider": "Anthropic",
+          "harness": null
+        },
+        "anthropic/claude-sonnet-5-5": {
+          "accuracy": 64.141,
+          "latency": 4928.927,
+          "stderr": 1.01,
+          "cost_per_test": 16.513006,
+          "token_totals": {
+            "input_tokens": 3839535071,
+            "output_tokens": 23509474,
+            "reasoning_tokens": 17732859,
+            "cache_read_tokens": 3801766853,
+            "cache_write_tokens": 37747686
+          },
+          "token_tasks_measured": 66,
+          "turn_metrics": {
+            "tasks_measured": 66,
+            "avg_turns": 154.2,
+            "avg_query_seconds": 19.2,
+            "median_query_seconds": 9.4,
+            "avg_ttft_seconds": 18.6,
+            "output_time_split": null
+          },
+          "temperature": 1,
+          "top_p": null,
+          "max_output_tokens": 128000,
+          "reasoning": null,
+          "reasoning_effort": null,
+          "verbosity": null,
+          "compute_effort": "max",
+          "provider": "Anthropic",
+          "harness": null
+        }
+      },
+      "tax_agent_bench": {
+        "alibaba/qwen3.8-max-internal": {
+          "accuracy": 49.663,
+          "latency": 5231.239,
+          "stderr": 3.603,
+          "cost_per_test": 4.068548,
+          "token_totals": {
+            "input_tokens": 1079323232,
+            "output_tokens": 52945750,
+            "reasoning_tokens": 44742935,
+            "cache_read_tokens": 987261824,
+            "cache_write_tokens": null
+          },
+          "token_tasks_measured": 184,
+          "turn_metrics": {
+            "tasks_measured": 184,
+            "avg_turns": 46.3,
+            "avg_query_seconds": 113,
+            "median_query_seconds": 39.1,
+            "avg_ttft_seconds": 12.3,
+            "output_time_split": {
+              "reasoning_pct": 83.1,
+              "content_pct": 0.1,
+              "tool_call_pct": 16.8
+            }
+          },
+          "temperature": 0.7,
+          "top_p": null,
+          "max_output_tokens": 128000,
+          "reasoning": null,
+          "reasoning_effort": null,
+          "verbosity": null,
+          "compute_effort": null,
+          "provider": "Alibaba",
+          "harness": null
+        },
+        "google/gemini-4-carbon": {
+          "accuracy": 48.86,
+          "latency": 2086.243,
+          "stderr": 3.415,
+          "cost_per_test": 6.340026,
+          "token_totals": {
+            "input_tokens": 508535487,
+            "output_tokens": 35250232,
+            "reasoning_tokens": 23824734,
+            "cache_read_tokens": 398821489,
+            "cache_write_tokens": 0
+          },
+          "token_tasks_measured": 193,
+          "turn_metrics": {
+            "tasks_measured": 193,
+            "avg_turns": 25.1,
+            "avg_query_seconds": 83.3,
+            "median_query_seconds": 24.8,
+            "avg_ttft_seconds": 12.5,
+            "output_time_split": null
+          },
+          "temperature": null,
+          "top_p": null,
+          "max_output_tokens": 1048576,
+          "reasoning": null,
+          "reasoning_effort": "high",
+          "verbosity": null,
+          "compute_effort": null,
+          "provider": "Google",
+          "harness": null
+        }
+      }
+    }
+  },
+  "swe": {
+    "leaderboards": [
+      {
+        "name": "Multilingual",
+        "results": [
+          {
+            "agent": "mini-SWE-agent",
+            "agent_org": "SWE-agent",
+            "checked": true,
+            "cost": 105.55067604999999,
+            "date": "2026-02-13",
+            "folder": "20260213_mini-v2.0.0a0_gemini-3-flash",
+            "instance_calls": 52.45333333333333,
+            "instance_cost": 0.3518355868333333,
+            "logo": [
+              "img/logos/20260213_mini-v2.0.0a0_gemini-3-flash.svg",
+              "img/mini-icon.svg"
+            ],
+            "logs": "s3://swe-bench-submissions/multilingual/20260213_mini-v2.0.0a0_gemini-3-flash/logs",
+            "mini-swe-agent_version": "2.0.0a0",
+            "model_display": "Gemini 3 Flash",
+            "model_org": "Google DeepMind",
+            "model_release_date": 20251217,
+            "name": "Gemini 3 Flash",
+            "os_model": false,
+            "os_system": true,
+            "reasoning_effort": null,
+            "resolved": 72.7,
+            "site": "https://ai.google.dev/gemini-api/docs/models",
+            "tags": [
+              "Model: gemini-3-flash",
+              "Org: Google DeepMind",
+              "System: Attempts - 1",
+              "Mini: 2.0.0a0"
+            ],
+            "trajs": "s3://swe-bench-submissions/multilingual/20260213_mini-v2.0.0a0_gemini-3-flash/trajs",
+            "trajs_docent": "https://docent.transluce.org/dashboard/babc7da2-92e1-494d-8c53-b45e7ec30eeb",
+            "warning": null
+          },
+          {
+            "agent": "mini-SWE-agent",
+            "agent_org": "SWE-agent",
+            "checked": true,
+            "cost": 198.892073,
+            "date": "2026-02-13",
+            "folder": "20260213_mini-v2.0.0a0_claude-4-6-opus",
+            "instance_calls": 28.85333333333333,
+            "instance_cost": 0.6629735766666667,
+            "logo": [
+              "img/logos/20260213_mini-v2.0.0a0_claude-4-6-opus.jpg",
+              "img/mini-icon.svg"
+            ],
+            "logs": "s3://swe-bench-submissions/multilingual/20260213_mini-v2.0.0a0_claude-4-6-opus/logs",
+            "mini-swe-agent_version": "2.0.0a0",
+            "model_display": "Claude 4.6 Opus",
+            "model_org": "Anthropic",
+            "model_release_date": 20260205,
+            "name": "Claude 4.6 Opus",
+            "os_model": false,
+            "os_system": true,
+            "reasoning_effort": null,
+            "resolved": 72,
+            "site": "https://www.anthropic.com/news/claude-opus-4-5",
+            "tags": [
+              "Model: claude-opus-4-6",
+              "Org: Anthropic",
+              "System: Attempts - 1",
+              "Mini: 2.0.0a0"
+            ],
+            "trajs": "s3://swe-bench-submissions/multilingual/20260213_mini-v2.0.0a0_claude-4-6-opus/trajs",
+            "trajs_docent": "https://docent.transluce.org/dashboard/8dc7c4e5-2423-470c-88d8-12dafb1870ec",
+            "warning": null
+          }
+        ]
+      }
+    ]
+  },
+  "osworld": {
+    "benchmarkVersion": "OSWorld 2.0",
+    "taskVersion": "v2026.06.24",
+    "releaseVersions": [
+      "v2026.06.24",
+      "v2026.08.08",
+      "v2.1"
+    ],
+    "defaultResultReleaseVersion": "v2026.06.24",
+    "defaultResultDatasetScope": "full",
+    "datasetSize": 108,
+    "updatedAt": "2026-10-15",
+    "defaultStepBudget": 500,
+    "defaultReleaseVersion": "all",
+    "defaultDatasetScope": "full",
+    "defaultMetric": "binaryAccuracy",
+    "metrics": {
+      "binaryAccuracy": "Binary Accuracy",
+      "partialScore": "Partial Score"
+    },
+    "results": [
+      {
+        "model": "Claude Opus 5",
+        "modelFamily": "Claude",
+        "reasoning": "low",
+        "toolSetting": "batch tool",
+        "stepBudget": 500,
+        "releaseVersion": "v2.1",
+        "datasetScope": "full",
+        "binaryAccuracy": 18.81,
+        "partialScore": 59.09,
+        "outputTokensPerTask": 29242,
+        "estimatedCostUsd": null,
+        "official": true,
+        "modelType": "e2e"
+      },
+      {
+        "model": "Claude Opus 5",
+        "modelFamily": "Claude",
+        "reasoning": "medium",
+        "toolSetting": "batch tool",
+        "stepBudget": 500,
+        "releaseVersion": "v2.1",
+        "datasetScope": "full",
+        "binaryAccuracy": 33.01,
+        "partialScore": 64.85,
+        "outputTokensPerTask": 48645,
+        "estimatedCostUsd": null,
+        "official": true,
+        "modelType": "e2e"
+      },
+      {
+        "model": "Darwinx w/ Claude Opus 4.8",
+        "company": "Salesforce AI Research",
+        "modelFamily": "Claude",
+        "modelType": "agent",
+        "basePlannerModel": "anthropic/claude-opus-4-8",
+        "reasoning": "max (thinking disabled)",
+        "toolSetting": "",
+        "stepBudget": 450,
+        "releaseVersion": "v2.1",
+        "datasetScope": "full",
+        "binaryAccuracy": 44.44,
+        "partialScore": 75.97,
+        "binarySuccessThreshold": 0.99,
+        "estimatedCostUsd": null,
+        "trajectoryUrl": "https://huggingface.co/datasets/LoyoTheNerd/darwinx_v21_20261012",
+        "reproductionUrl": "https://arxiv.org/abs/2607.22798",
+        "reproductionLabel": "Paper",
+        "reproductionGuideUrl": "https://github.com/SalesforceAIResearch/Beagle",
+        "reproductionGuideLabel": "GitHub"
+      },
+      {
+        "model": "MuseSpark 1.3",
+        "official": true,
+        "company": "Meta",
+        "modelFamily": "MuseSpark",
+        "reasoning": "max",
+        "toolSetting": "batch tool",
+        "stepBudget": 500,
+        "releaseVersion": "v2.1",
+        "datasetScope": "full",
+        "binaryAccuracy": 39.25,
+        "partialScore": 69.56,
+        "estimatedCostUsd": null,
+        "modelType": "e2e",
+        "trajectoryUrl": "https://huggingface.co/datasets/xlangai/osworld2.0-trajectory/blob/main/v2.1-muse_spark_1.3-1015-merged-106tasks.zip"
+      },
+      {
+        "model": "MuseSpark 1.2",
+        "company": "Meta",
+        "modelFamily": "MuseSpark",
+        "reasoning": "xhigh",
+        "toolSetting": "batch tool",
+        "stepBudget": 500,
+        "releaseVersion": "v2.1",
+        "datasetScope": "full",
+        "binaryAccuracy": 15.84,
+        "partialScore": 44.08,
+        "estimatedCostUsd": null,
+        "modelType": "e2e",
+        "trajectoryUrl": "https://huggingface.co/datasets/xlangai/osworld2.0-trajectory/blob/main/v2.1-muse_spark_1.2-1015-merged-105tasks.zip"
+      }
+    ]
+  },
+  "lcb": {
+    "performances": [
+      {
+        "question_id": "1873_A",
+        "model": "DeepSeek-V3",
+        "date": 1692662400000,
+        "difficulty": "easy",
+        "pass@1": 100,
+        "platform": "codeforces"
+      },
+      {
+        "question_id": "1873_B",
+        "model": "DeepSeek-V3",
+        "date": 1692662400000,
+        "difficulty": "easy",
+        "pass@1": 100,
+        "platform": "codeforces"
+      },
+      {
+        "question_id": "1873_D",
+        "model": "DeepSeek-V3",
+        "date": 1692662400000,
+        "difficulty": "easy",
+        "pass@1": 100,
+        "platform": "codeforces"
+      },
+      {
+        "question_id": "1883_B",
+        "model": "DeepSeek-V3",
+        "date": 1695427200000,
+        "difficulty": "medium",
+        "pass@1": 60,
+        "platform": "codeforces"
+      }
+    ],
+    "models": [
+      {
+        "model_name": "deepseek-chat",
+        "model_repr": "DeepSeek-V3",
+        "model_style": "DeepSeekAPI",
+        "release_date": 1719705600000,
+        "link": "https://huggingface.co/deepseek-ai/DeepSeek-V3"
+      },
+      {
+        "model_name": "gpt-4-turbo-2024-04-09",
+        "model_repr": "GPT-4-Turbo-2024-04-09",
+        "model_style": "OpenAIChat",
+        "release_date": 1682812800000,
+        "link": "https://platform.openai.com/docs/models/gpt-4-turbo-and-gpt-4"
+      }
+    ],
+    "date_marks": [
+      1682899200000,
+      1685577600000,
+      1688169600000,
+      1690848000000,
+      1693526400000,
+      1696118400000,
+      1698796800000,
+      1701388800000,
+      1704067200000,
+      1706745600000,
+      1709251200000,
+      1711929600000,
+      1714521600000,
+      1717200000000,
+      1719792000000,
+      1722470400000,
+      1725148800000,
+      1727740800000,
+      1730419200000,
+      1733011200000,
+      1735689600000,
+      1738368000000,
+      1740787200000,
+      1743465600000,
+      1746057600000
+    ]
+  },
+  "bfcl": "Rank,Overall Acc,Model,Model Link,Total Cost ($),Latency Mean (s),Latency Standard Deviation (s),Latency 95th Percentile (s),Non-Live AST Acc,Non-Live Simple AST,Non-Live Multiple AST,Non-Live Parallel AST,Non-Live Parallel Multiple AST,Live Acc,Live Simple AST,Live Multiple AST,Live Parallel AST,Live Parallel Multiple AST,Multi Turn Acc,Multi Turn Base,Multi Turn Miss Func,Multi Turn Miss Param,Multi Turn Long Context,Web Search Acc,Web Search Base,Web Search No Snippet,Memory Acc,Memory KV,Memory Vector,Memory Recursive Summarization,Relevance Detection,Irrelevance Detection,Format Sensitivity Max Delta,Format Sensitivity Standard Deviation,Organization,License\r\n1,77.47%,Claude-Opus-4-5-20251101 (FC),https://www.anthropic.com/news/claude-4,86.55,4.38,3.13,7.56,88.58%,76.83%,95.50%,93.50%,88.50%,79.79%,86.43%,78.16%,87.50%,75.00%,68.38%,81.00%,64.00%,58.00%,70.50%,84.50%,84.00%,85.00%,73.76%,70.97%,72.90%,77.42%,62.50%,84.72%,N/A,N/A,Anthropic,Proprietary\r\n2,73.24%,Claude-Sonnet-4-5-20250929 (FC),https://www.anthropic.com/news/claude-sonnet-4-5,43.73,4.31,4.43,7.27,88.65%,72.58%,95.50%,94.50%,92.00%,81.13%,89.53%,78.92%,87.50%,83.33%,61.37%,69.00%,65.00%,52.50%,59.00%,81.00%,82.00%,80.00%,64.95%,54.19%,57.42%,83.23%,68.75%,86.61%,N/A,N/A,Anthropic,Proprietary\r\n"
+}

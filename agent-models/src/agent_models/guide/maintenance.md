@@ -1,52 +1,46 @@
 # Maintaining the shared model reference
 
-`model-guide check` reads document drift and review age as JSON without provider processes.
-Add `--live` to explicitly query native inventory.
-`model-guide stale --live` also caches inventory warnings for consumers. Missing or signed-out
-providers do not establish that their models disappeared.
+`model-guide check` reads document drift and review age as JSON without provider
+processes. Add `--live` to query native inventory. `stale --live` also caches
+inventory warnings; a missing or signed-out provider does not prove disappearance.
 
-Read `model-guide read sources` before source review. Keep strengths, measurements
-and effort advice in models.md; published tiers in subscriptions.md. Neither
-document records local accounts or balances.
+The daily timer adds 2h jitter; `refresh --poll` checks sources when due (36h).
+Conditional validators or parsed-row digests skip unchanged data; only changed
+sources refresh. Private poll state retains validators and exponential backoff,
+honouring Retry-After/429. Pending review pauses polling. AA uses the official
+keyed API via ARTIFICIAL_ANALYSIS_API_KEY (optional service EnvironmentFile);
+without a key its automatic poll is disabled under the website terms. Manual
+refresh retains the public-page adapter. Keys never enter reports or snapshots.
+`model-guide refresh --force` fetches the snapshot and replaces only the
+delimited numeric sections in a pending models.md proposal. No agent is launched,
+no prose or subscription facts are reviewed, and nothing auto-applies.
+Manual force also honours server backoff. `benchmarks --coverage --backend BACKEND --brief`
+shows export/configuration/harness gaps and unmatched current-family names.
 
-Each review covers the capability domains and source limits in sources.md, not
-just the overall effort table. Keep a concise evidence matrix in models.md and
-record coverage/gaps in the proposal notes even when nothing changes. Use the
-latest release and its methodology; date changes to tasks, weights, judges and
-harnesses invalidate cross-version comparisons. Missing results stay Unverified.
-Review cost-performance frontiers per domain and candidate set, including the
-marginal gain from more effort. Do not merge unlike scores or cost definitions.
+Read report.md for digests/methodology notes; models.md contains bounded decision views.
+Inspect source failures, release identities, retrieval dates, settings and frontier scope.
+Missing measurements stay Unverified; versions, harnesses and cost definitions
+must not be blended. Then `model-guide refresh --apply --yes`, or `--discard`.
+Apply regenerates the sections from the saved snapshot and rejects tampering or
+intervening guide edits. Only apply/record advances models.lock; edits stay uncommitted.
 
-`model-guide refresh --prepare` collects facts and computes per-suite cost frontiers
-without an agent. Normal refresh includes preprocessing before the proposal worker.
-Inspect unavailable sources, exact settings and methodology changes; preprocessing
-is not completed source review. Search bounded evidence with
-`model-guide benchmarks --domain design --query sonnet --limit 5 --brief`.
-Inspect both quality and efficiency views; their frontiers use the matching
-candidate set and keep execution harnesses separate. Omit `--brief` for JSON.
-Local account/plan/quota hints come automatically from existing stores and native
-status, not hardcoded plans. Confirm the selected session binding and billing mode
-before treating them as eligibility. Unknown access remains unknown.
+`model-guide refresh --prepare` only fetches evidence and computes frontiers.
+Search it with `model-guide benchmarks --domain design --query sonnet --limit 5 --brief`;
+inspect quality and efficiency separately. Omit `--brief` for JSON.
+`model-guide models --backend BACKEND --json` shows native coverage and unmatched IDs.
+Account hints do not establish the selected session's identity, access or billing mode.
 
-For a worker proposal, `model-guide refresh --force` uses an installed Bridge
-only as its sandboxed worker launcher. The reference tool owns proposal storage,
-validation, reports and review. No proposal applies automatically, including
-one with no changes. Read the report, fetch cited sources and verify changed
-claims; then use `model-guide refresh --apply --yes`, or `--discard`.
+Qualitative advice, class mapping and domain limits stay hand-written. For chosen
+prose/subscription changes, read `model-guide read sources`, source-check claims,
+retain unresolved Unverified markers and update the document's Checked date.
+`model-guide refresh --record --yes` validates against the committed baseline and
+records hashes without editing text. It cannot bless hand edits to generated sections.
+Benchmark-only application does not advance the prose's Checked date.
 
-For direct edits, source-check the claims, retain unresolved Unverified markers,
-inspect generated coverage (`model-guide models --backend BACKEND --json`),
-update meaningful family/domain advice, and update Checked dates when facts
-change. `model-guide refresh --record --yes` compares against the committed
-baseline, validates both documents and records their hashes without editing text.
-New/moved references need a committed baseline before this command can run.
+Sources not fetched by the snapshot (including vendor token prices, throughput
+and additional domain boards) stay Unverified here. Adding one needs a reviewed
+decoder and methodology, not a transcription worker. Reference maintenance never
+changes accounts, model defaults, delegation permissions or the OpenCode privacy gate.
 
-Only apply/record advances models.lock. Both leave changes uncommitted. Concurrent
-document edits invalidate a proposal. Model roles and effort advice stay under
-root review; proposals cannot change the reviewed OpenCode zero-retention list
-in agent_models.inventory. Reference maintenance never switches accounts, sets
-model defaults or changes delegation permissions.
-
-When publishing changed benchmark figures, regenerate their README assets from
-the reviewed snapshot and inspect the render. `docs/tools/README.md` owns the
-generators; `model_effort.py` derives plotted settings, values and dates from data.
+When publishing benchmark figures, regenerate their README assets from the reviewed
+snapshot and inspect the render; `docs/tools/README.md` owns those generators.

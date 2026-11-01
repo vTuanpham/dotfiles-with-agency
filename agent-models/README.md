@@ -24,14 +24,17 @@ model-guide check --live           # explicitly query native inventories
 model-guide refresh --prepare      # public data + cost curves; no model worker
 model-guide benchmarks --backend claude --domain design --query sonnet --limit 5 --brief
 model-guide benchmarks --backend codex --domain backend --limit 3 --brief
+model-guide suggest --backend codex --task "UI refactor"  # design + coding; alternatives, no automatic pick
+model-guide benchmarks --domain performance --query sol --brief
+model-guide benchmarks --domain debugging --query sonnet --brief
 model-guide read maintenance
 ```
 
-The daily `agent-models-reference.timer` checks drift; at most weekly it asks
-an installed Bridge to run a sandboxed proposal worker. Bridge is an optional
-execution route for proposals, not an import dependency. Reading, checking,
-source review and recording direct edits work without it. No update applies
-automatically. State belongs to `$AGENT_MODELS_HOME` or
+The daily `agent-models-reference.timer` checks drift and conditionally polls due
+sources (36h, with backoff); changed sources regenerate a pending numeric proposal.
+No agent or Bridge is launched. Qualitative advice and subscription facts stay
+hand-written and are source-reviewed on demand with `refresh --record --yes`.
+No update applies automatically. State belongs to `$AGENT_MODELS_HOME` or
 `${XDG_STATE_HOME:-~/.local/state}/agent-models`; documents and review hashes live
 in `src/agent_models/guide/`. Reference edits remain uncommitted.
 
@@ -39,6 +42,20 @@ Benchmark search returns bounded source evidence: release/retrieval dates, domai
 scores, effort, available cost/time and automatically read local account hints.
 Missing measurements stay unknown. The full local snapshot supports rechecks
 without loading an entire leaderboard into the agent's context.
+
+Repeat `--domain` for mixed tasks, or use explicit keyword routing with `--task`;
+unrecognized tasks require a domain. `suggest` returns up to four alternatives
+from comparable source/domain observations, with ties, conflicts, supported effort
+and missing/stale evidence exposed. It never averages benchmark scales or chooses
+for the agent. `--choice`/`--effort` preserve a user or project selection and report
+problems instead of substituting. `--allowance-pressure`, `--max-usd`, `--max-seconds`
+and `--min-class` are optional; unknown measurements cannot establish a bound.
+Native aliases share one resolved model. Effort labels distinguish measurements
+from quality/value effort alternatives; the latter show retained score and relative
+published cost, with broad-index advice explicitly scoped outside task-specific gains.
+Costs/durations keep their source definitions; API cost is not subscription quota.
+Use `--json` for evidence and constraint details. Account overrides are supported
+only by agy's native listing; other backends must use their selected native session.
 
 Queries show **quality leaders** and **cost-efficient choices** as separate bounded
 views, so a small limit does not hide cheap workers. Frontiers are recalculated

@@ -23,8 +23,12 @@ advice. This reference is independent of delegation and Agent Bridge.
   proxies with explicit coverage gaps. Omit `--brief` for structured JSON.
   Inspect `model-guide models --backend BACKEND --json` for generated coverage and unmatched IDs.
   Unknown effort ranges remain unknown; never borrow another model's controls.
-  Refresh facts without a worker with
-  `model-guide refresh --prepare`; follow source links for gaps or rechecks.
+  `model-guide refresh --prepare` fetches evidence; `refresh` generates a pending
+  numeric proposal in code. Follow source links for gaps or rechecks.
+  `model-guide suggest --backend BACKEND --task "UI refactor"` returns alternatives; repeat `--domain` for scope.
+  Preserve user/project choices with `--choice MODEL --effort LEVEL`; `--json` explains evidence and constraints.
+  Compare model × harness/version × effort; prefer the target backend's scaffold and label cross-harness evidence.
+  Curves show quality and value effort alternatives, never a default maximum; the agent makes the final call.
 - Separate model positioning, measured performance, effort and account allowance.
   A benchmark or advertised model does not establish access in this session.
 - Select only models and effort levels exposed by the current harness/tool.
@@ -35,5 +39,5 @@ advice. This reference is independent of delegation and Agent Bridge.
   `agent-accounts snapshot` is a separate machine-wide cache inventory.
 - Check the reference date and `model-guide check` when freshness matters. Before
   updating claims, read `model-guide read sources` and `model-guide read maintenance`.
-  Changes require source review; never turn a reference update into a model default
-  or account-policy change.
+  Numbers are generated; qualitative advice stays hand-written and source-reviewed.
+  Never turn a reference update into a model default or account-policy change.

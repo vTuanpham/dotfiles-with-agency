@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily check of the shared model reference
+Description=Daily light benchmark poll and reference drift check
 
 [Timer]
 OnCalendar=daily

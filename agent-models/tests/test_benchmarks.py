@@ -1,5 +1,6 @@
 import io
 import json
+from datetime import date
 
 import polars as pl
 import pytest
@@ -9,6 +10,12 @@ from agent_models import benchmarks
 
 @pytest.fixture
 def live(monkeypatch):
+    class SnapshotDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 10, 30)
+
+    monkeypatch.setattr(benchmarks, "date", SnapshotDate)
     data = {
         benchmarks.LIVE: '<title>LiveBench 2.0 - Benchmark</title>'
                          '<script src="./static/js/main.abc.js"></script>',
@@ -106,7 +113,7 @@ def exports(shards, config="agent"):
     return {"partial": False, "parquet_files": files}, blobs
 
 
-@pytest.mark.parametrize("fault", ["partial", "size", "duplicate", "date", "nan", "unsafe_url"])
+@pytest.mark.parametrize("fault", ["partial", "size", "duplicate", "nan", "unsafe_url"])
 def test_arena_partial_or_ambiguous_data_is_not_a_complete_snapshot(monkeypatch, fault):
     rows = [row(0)["row"], row(1)["row"]]
     if fault == "duplicate":
@@ -137,6 +144,17 @@ def test_same_display_name_different_evaluations_are_preserved_and_flagged(monke
     assert result["ambiguous_names"] == [rows[0]["model_name"]]
 
 
+def test_arena_keeps_nondefault_categories_and_their_individual_dates(monkeypatch):
+    rows = [row(0)["row"], row(1, category="coding")["row"]]
+    rows[1]["leaderboard_publish_date"] = "2026-10-27"
+    catalog, blobs = exports([rows])
+    monkeypatch.setattr(benchmarks, "fetch_bytes", blobs.__getitem__)
+    result = benchmarks.arena("agent", catalog)
+    assert len(result["rows"]) == 2 and result["published"] == "2026-10-28"
+    assert result["publication_dates"] == ["2026-10-27", "2026-10-28"]
+    assert result["coverage"]["categories"] == ["coding", "overall"]
+
+
 def test_setting_deltas_are_observed_not_a_universal_effort_ladder():
     header = ["Model", "Artificial Analysis Intelligence Index", "Cost per Task USD",
               "Latency First Chunk (s)", "Total Response (s)"]
@@ -149,6 +167,16 @@ def test_setting_deltas_are_observed_not_a_universal_effort_ladder():
     assert trade["delta"]["Artificial Analysis Intelligence Index"] == -1
     assert trade["delta"]["Cost per Task USD"] == 2
     assert trade["delta"]["Total Response (s)"] == 3
+
+
+@pytest.mark.parametrize("score", ["NaN", "inf", "-1", "101"])
+def test_artificial_analysis_rejects_invalid_index_measurements(score):
+    header = ["Model", "Artificial Analysis Intelligence Index", "Cost per Task USD",
+              "Latency First Chunk (s)", "Total Response (s)"]
+    with pytest.raises(ValueError):
+        benchmarks.effort_tradeoffs([[
+            header, ["Example (high)", score, "$1", "1", "2"],
+        ]])
 
 
 def test_search_is_bounded_keeps_unknowns_and_does_not_fetch(monkeypatch, tmp_path, live):

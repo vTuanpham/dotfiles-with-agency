@@ -1,0 +1,239 @@
+{
+  "catalog": {
+    "generated": "2026-10-29T16:22:11Z",
+    "legend": [
+      {
+        "code": "pass",
+        "label": "pass",
+        "blurb": "correct on the tests"
+      },
+      {
+        "code": "wrong",
+        "label": "wrong",
+        "blurb": "ran, but answers did not match"
+      },
+      {
+        "code": "build",
+        "label": "build",
+        "blurb": "could not compile or import"
+      },
+      {
+        "code": "timeout",
+        "label": "timeout",
+        "blurb": "agent session timed out"
+      },
+      {
+        "code": "check_timeout",
+        "label": "check t/o",
+        "blurb": "correctness check timed out"
+      },
+      {
+        "code": "benchmark_timeout",
+        "label": "bench t/o",
+        "blurb": "benchmark timed out"
+      },
+      {
+        "code": "benchmark_failed",
+        "label": "bench fail",
+        "blurb": "correctness passed but benchmark failed"
+      },
+      {
+        "code": "memory",
+        "label": "OOM",
+        "blurb": "ran out of GPU memory"
+      },
+      {
+        "code": "empty",
+        "label": "empty",
+        "blurb": "never wrote a kernel"
+      },
+      {
+        "code": "incomplete",
+        "label": "cut",
+        "blurb": "session ended before a final result"
+      },
+      {
+        "code": "rate_limit",
+        "label": "rate",
+        "blurb": "provider rate-limited the session"
+      },
+      {
+        "code": "credits",
+        "label": "credits",
+        "blurb": "provider account ran out of credits"
+      },
+      {
+        "code": "provider_cut",
+        "label": "early stop",
+        "blurb": "provider stopped before a useful answer"
+      },
+      {
+        "code": "provider_unavailable",
+        "label": "route",
+        "blurb": "requested provider route was unavailable"
+      },
+      {
+        "code": "harness",
+        "label": "harness",
+        "blurb": "agent harness failed"
+      },
+      {
+        "code": "hardware",
+        "label": "wrong gpu",
+        "blurb": "measurement used the wrong GPU SKU"
+      },
+      {
+        "code": "ungraded",
+        "label": "ungraded",
+        "blurb": "no publishable measurement was produced"
+      },
+      {
+        "code": "reward_hack",
+        "label": "hack",
+        "blurb": "audit found evaluator exploitation"
+      },
+      {
+        "code": "contamination",
+        "label": "contam",
+        "blurb": "run used another attempt's artifacts"
+      },
+      {
+        "code": "rubric_leak",
+        "label": "rubric",
+        "blurb": "candidate only satisfied the exposed rubric"
+      },
+      {
+        "code": "suspect",
+        "label": "suspect",
+        "blurb": "audit found the transcript was contaminated"
+      },
+      {
+        "code": "not_megakernel",
+        "label": "not mega",
+        "blurb": "audit found the submission was not one megakernel"
+      },
+      {
+        "code": "flagged",
+        "label": "flag",
+        "blurb": "audit rejected the run for another reason"
+      },
+      {
+        "code": "other",
+        "label": "failed",
+        "blurb": "did not pass for another recorded reason"
+      }
+    ],
+    "n_cells": 467,
+    "cells": [
+      {
+        "id": "hard/rtxpro6000/grok-4.5/07_w4a16_gemm",
+        "bench": "hard",
+        "gpu": "rtxpro6000",
+        "model": "grok-4.5",
+        "problem": "07_w4a16_gemm",
+        "run_id": "20260719_030522_grok_grok-4.5_07_w4a16_gemm",
+        "correct": false,
+        "score": null,
+        "outcome": "incomplete",
+        "failure_reason": "incomplete_session",
+        "retryable_infra_failure": true,
+        "session_complete": false,
+        "has_solution": true,
+        "verdict": "unaudited",
+        "solution_url": "/runs/20260719_030522_grok_grok-4.5_07_w4a16_gemm_solution.py.txt",
+        "trace_url": "https://huggingface.co/datasets/Infatoshi/kernelbench-hard-traces/blob/main/20260719_030522_grok_grok-4.5_07_w4a16_gemm.jsonl",
+        "elapsed_seconds": 3349
+      },
+      {
+        "id": "hard/h100/gpt-5.5/01_fp8_gemm",
+        "bench": "hard",
+        "gpu": "h100",
+        "model": "gpt-5.5",
+        "problem": "01_fp8_gemm",
+        "run_id": "20260618_041754_codex_gpt-5.5_01_fp8_gemm",
+        "correct": true,
+        "score": 0.2445,
+        "outcome": "pass",
+        "failure_reason": "pass",
+        "retryable_infra_failure": false,
+        "session_complete": true,
+        "has_solution": true,
+        "verdict": "unaudited",
+        "solution_url": "/runs/20260618_041754_codex_gpt-5.5_01_fp8_gemm_solution.py.txt",
+        "trace_url": "https://huggingface.co/datasets/Infatoshi/kernelbench-hard-traces/blob/main/h100/20260618_041754_codex_gpt-5.5_01_fp8_gemm.jsonl",
+        "elapsed_seconds": 1696
+      },
+      {
+        "id": "hard/b200/grok-4.5/07_w4a16_gemm",
+        "bench": "hard",
+        "gpu": "b200",
+        "model": "grok-4.5",
+        "problem": "07_w4a16_gemm",
+        "run_id": "20260719_030522_grok_grok-4.5_07_w4a16_gemm",
+        "correct": false,
+        "score": null,
+        "outcome": "incomplete",
+        "failure_reason": "incomplete_session",
+        "retryable_infra_failure": true,
+        "session_complete": false,
+        "has_solution": true,
+        "verdict": "unaudited",
+        "solution_url": "/runs/20260719_030522_grok_grok-4.5_07_w4a16_gemm_solution.py.txt",
+        "trace_url": "https://huggingface.co/datasets/Infatoshi/kernelbench-hard-traces/blob/main/b200/20260719_030522_grok_grok-4.5_07_w4a16_gemm.jsonl",
+        "elapsed_seconds": 2517
+      }
+    ]
+  },
+  "details": {
+    "20260719_030522_grok_grok-4.5_07_w4a16_gemm": {
+      "run_id": "20260719_030522_grok_grok-4.5_07_w4a16_gemm",
+      "harness": "grok",
+      "stats": {
+        "agent_s": 3319,
+        "total_s": 3349,
+        "check_s": 25,
+        "benchmark_s": null,
+        "output_tokens": null,
+        "input_tokens": null,
+        "cost_usd": null,
+        "template_mutated": false
+      }
+    },
+    "20260618_041754_codex_gpt-5.5_01_fp8_gemm": {
+      "run_id": "20260618_041754_codex_gpt-5.5_01_fp8_gemm",
+      "harness": "codex",
+      "stats": {
+        "agent_s": 1518,
+        "total_s": 1696,
+        "check_s": 26,
+        "benchmark_s": 152,
+        "output_tokens": 79908,
+        "input_tokens": 12591701,
+        "cost_usd": null,
+        "template_mutated": false
+      }
+    }
+  },
+  "manifests": [
+    {
+      "_comment": "Curation allowlist for the published RTX_PRO_6000 CUDA board. build_v2_leaderboard.py restricts candidate runs to these run_ids (see KBH_PUBLISHED_MANIFEST). To publish a new run, add its run_id here; to retire one, remove it. Runs absent from this list stay archived but unpublished (e.g. embargoed pre-release models). A clean+correct RTX annotation must be in run_ids or in \"excluded\" (run_id -> reason) or kb publish fails (scripts/check_publish_gates.py).",
+      "hardware": "RTX_PRO_6000",
+      "run_ids": [
+        "20260715_212751_grok_grok-4.5_01_glm52_fused_moe"
+      ],
+      "excluded": {
+        "20260716_112833_kinetic-claude_kinetic-0715_01_glm52_fused_moe": "not in the manifest when check_publish_gates.py landed (2026-09-07); move to run_ids to publish",
+        "20260903_010315_muse_muse-spark-1.3_02_deepseek_nsa": "not in the manifest when check_publish_gates.py landed (2026-09-07); move to run_ids to publish",
+        "20261018_065859_or-fable_deepseek_deepseek-v4.1-flash-1017_04_grid_mingru_sps": "infra: session killed at 51 min by a sibling cell's `pkill -f nsys` (shared PID namespace); rerun alone"
+      }
+    },
+    {
+      "_comment": "Curation allowlist for the published RTX_PRO_6000 hard board. build_v2_leaderboard.py restricts candidate runs to these run_ids (see KBH_PUBLISHED_MANIFEST). Unlimited-time only: run_id timestamp must be >= CAMPAIGN_EPOCH 20260613_042249 (45-min generation excluded). To publish a new run, add its run_id here; to retire one, remove it.",
+      "hardware": "RTX_PRO_6000",
+      "run_ids": [
+        "20260613_042257_claude_claude-opus-4-8_02_kda_cutlass"
+      ]
+    }
+  ],
+  "mega_csv": "gpu,harness,model,problem,correct,score,tok_s,elapsed_s,output_tokens,ctx2048,ctx8192,ctx16384,framework,kernels,megakernel,megakernel_judged,has_viewer,run_id\r\nB200,or-fable,anthropic/claude-fable-5,02_kimi_linear_decode,true,35.435,4118,13773,,34.04,35.48,36.84,ptx,4,pass,true,false,20260721_103731_or-fable_anthropic_claude-fable-5_02_kimi_linear_decode\r\nB200,claude,claude-opus-4-8,02_kimi_linear_decode,true,19.351,2199,9177,382429,18.61,19.16,20.32,triton,9,fail,false,false,20260618_170335_claude_claude-opus-4-8_02_kimi_linear_decode\r\n"
+}
