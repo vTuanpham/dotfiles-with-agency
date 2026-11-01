@@ -141,6 +141,14 @@ def test_transport_failure_is_bounded_and_does_not_echo_server_data(transport):
     assert transport[0][0].closed and transport[1][0].closed
 
 
+def test_sandbox_permission_failure_names_the_delivery_context_not_the_transport(transport):
+    transport[2]["mcpServerStatus/list"] = PermissionError("socket denied")
+    with pytest.raises(RuntimeError, match="host hook") as error:
+        client.Wake("target-thread").check()
+    assert "socket denied" not in str(error.value)
+    assert "never escalate codex-wake run" in str(error.value)
+
+
 @pytest.mark.parametrize("thread", [None, "", "a\nb", "x" * 201, 1])
 def test_invalid_target_never_opens_connection(transport, thread):
     with pytest.raises(RuntimeError, match="target thread"):

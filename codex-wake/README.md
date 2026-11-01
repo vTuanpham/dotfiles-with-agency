@@ -2,117 +2,190 @@
 
 [← Packages](../README.md#packages) · **uv tool** (editable) · Codex-specific
 
-Wake an existing Codex conversation when something needs its attention. Builds,
-file watchers, timers and other tools can send native task notifications after
-the model goes idle. The command is `codex-wake`; Claude's visual
+Host lifecycle hooks observe Codex background work and deliver a native task
+message to the same conversation. The job stays in Codex's command sandbox;
+only observation and delivery run on the host. Claude's visual
 [Wake mod](../claude/README.md#wake-mod-live) is a separate feature.
-No Bridge installation is required.
 
-![Command completion and external events use Codex's native task channel to resume the selected conversation; worker recovery verifies an idle parent before sending one wake.](../docs/images/codex-notifications.gif)
+## Default workflow
 
-## Use
+Launch a command normally with Codex's background terminal, continue independent
+work, then end the model turn. No wrapper, hand-written completion message, OS
+PID or terminal handle is required for the notification. The `Stop` hook captures
+newly observed running command items and starts a host observer. Once a
+captured command ends and the target is idle, it sends one notification with the
+native exit status and a private captured-output path.
+
+`SubagentStart` records the native worker's launch generation.
+Async `SubagentStop` gives native delivery a two-second head start, verifies the
+actual parent through `thread/read`, checks it is still idle without having
+continued during that grace period, and reports the captured result once per child turn. It leaves active and
+input-blocked parents to their native message flow. Posting a blocker without
+ending the child turn has no corresponding hook: use the
+[bounded native recovery](../codex/.codex/skills/codex-wake/SKILL.md#native-worker-blocked-on-its-root).
+A result being reported does not prove the whole task is done.
+
+### Install (user step)
 
 ```sh
 uv tool install --editable ~/dotfiles-with-agency/codex-wake
-codex-wake check
-codex-wake send --message "The preview is ready for review."
-codex-wake run --message "Build finished; inspect its terminal output." -- make build
-codex-wake run --message "Recheck the pending deployment." -- sleep 180
+./install.sh --apply hooks
 ```
 
-Run `run` in the harness's background terminal and continue independent work.
-It stays attached to its command, then sends one notification on success or
-failure. A one-shot watcher works the same way: use its “exit on event” option.
-Continuous event producers call `send` for each event they choose to surface.
-The harness's usual background-process lifetime still applies; this tool is not
-a service manager and cannot survive its own process being killed.
+Review and trust the merged hooks in Codex's `/hooks` UI, then restart Codex.
+The snapshot is [hooks.json](../codex/.codex/hooks.json); nothing in this change
+installs hooks or edits live `~/.codex` settings. A running user systemd manager
+is required. The observer is a transient `codex-wake-*.service`, launched with
+`systemd-run --user --collect --service-type=exec`. Its command is the fixed Python
+observer module and a private job file, **never the user's shell command**.
 
-The target defaults to `CODEX_THREAD_ID` and `CODEX_HOME` (otherwise `~/.codex`).
-Use `--thread THREAD --home /path/to/codex-home` on any subcommand when the producer
-runs outside that session. Capture the intended target before starting a job;
-never substitute whichever conversation happens to be active later.
+The hook itself has a 60-second setup budget. The observer service has
+`RuntimeMaxSec=infinity`, so it can outlive the hook and watch jobs longer than
+600 seconds. It ends when its captured items finish, the target unloads/fails,
+or its generation is cancelled. See [systemd 249's service lifecycle](https://www.freedesktop.org/software/systemd/man/249/systemd-run.html).
+The service does not keep the Codex app server or the original terminal alive.
 
-| Command | Behavior |
-| --- | --- |
-| `check` | Verify the socket and native tool without waking a conversation. |
-| `send --message TEXT` | Deliver one automatic task notification. |
-| `run --message TEXT -- PROGRAM ARG…` | Preflight, run the exact argument list, then notify with its exit status. |
+### Cancellation and duplicates
 
-`run` inherits stdin/stdout/stderr and preserves the command's exit status
-(signals use `128 + signal`). No shell is inserted; use an explicit shell if
-your command needs shell syntax. An unavailable program returns 127 after
-notification; setup or delivery failure returns 125 with an error on stderr.
-Delivery failure can happen after the command ran: inspect its output before
-retrying. Messages must fit **1,000 UTF-8 bytes**, including the CLI's automatic
-notification label and command status; oversized messages fail before execution.
-Command output is not copied into the notification. Keep credentials out of messages.
+`Interrupt` and `SessionEnd` pause the generation; the next parent
+`UserPromptSubmit` starts a new one only after such a pause. Ordinary parent and
+child prompts preserve ongoing observers. Each command is registered by native
+item ID, so later Stop events do not re-arm it. Delivery waits for idle across
+turns and never answers a question or grants approval. Use Codex's interrupt
+control to pause automatic delivery; a new chat prompt alone does not cancel it.
 
-## Agent workflow
+Each command item/child turn has a persistent claim written **before** submission.
+An uncertain receipt is never retried. This provides at most one send attempt
+per incident, not exactly-once receipt across crashes. Bridge watch and explicit
+`codex-wake run` commands keep their own producer; the automatic command observer
+skips those launch forms. Avoid burying completion producers inside opaque shell
+scripts: command-text inspection cannot discover arbitrary nested behavior.
+Unparseable shell syntax is conservatively skipped without preventing other
+commands from being observed; those jobs need an explicit host producer.
 
-Use the harness's native completion trigger when it already resumes the session.
-Otherwise start `codex-wake run --message "What finished and what to do next" -- COMMAND`
-in a persistent background terminal, retain its handle, and continue independent work.
-When only the event remains pending, end the model turn; the notification resumes
-the same conversation. Read the original terminal for command output after waking.
-Use `send` from an existing event producer. Bridge watch already uses this client;
-wrapping it again would produce duplicate notifications. A timer inside a yielded
-model-runtime code cell is not a persistent terminal process.
+State, claims and logs live under absolute `$XDG_STATE_HOME/codex-wake/`, or
+`~/.local/state/codex-wake/` when XDG_STATE_HOME is absent or relative,
+in private session directories (0700); files are 0600. Delete old state only when
+its observer services have stopped. The native output can already be truncated
+by Codex's retained-output limit (1 MiB in 0.166.0); the log preserves that captured
+text, not an invented full transcript. The hook does not alter command I/O or TTYs.
 
-The [Codex-only skill](../codex/.codex/skills/codex-wake/SKILL.md) is live-linked
-under `~/.codex/skills/codex-wake` by `./install.sh --apply links`. Codex can select
-it on demand, or it can be invoked as `$codex-wake`. The shared global instructions
-stay harness-neutral. The CLI includes examples and defaults to its originating
-session without manual thread IDs or setup flags.
+Stop reads only background-terminal metadata, with 32 entries per page and a
+four-page budget; it never scans turn history. The observer keeps one connection
+open and fetches only watched IDs through the 0.166.0 experimental
+[`thread/items/read` contract](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L1875).
+Each read requests one item because its captured output can expand near the
+client's 8 MiB response limit. Completed output is cached while waiting for idle.
+Quiet polls back off from 2 to 4, 8, 16 and then 30 seconds, resetting on progress.
+The [documented event stream](https://learn.chatgpt.com/docs/app-server#events)
+requires starting/resuming a thread; 0.166.0 has no passive subscribe request.
+This observer uses read-only calls instead of resuming or altering the target.
 
-### Recover an idle root
+## Why this mechanism
 
-A native Codex worker can use the same task-message MCP directly when ordinary
-collaboration messages have not resumed its root. The
-[skill](../codex/.codex/skills/codex-wake/SKILL.md#native-worker-blocked-on-its-root)
-owns the bounded retry, verified-parent and fresh-idle checks, and the one-wake
-limit. It does not wake unrelated, unloaded or user-paused conversations.
-This is an agent-selected recovery path, not a daemon polling all sessions.
+Checked against installed **codex-cli 0.166.0**, its `--help`, app-server help and
+feature list, current official docs, and versioned upstream source. A live TUI
+payload could not be captured from this worker; tests use documented/source-derived
+shapes. Installation remains a user step pending the live checks below.
 
-## Shared delivery client
+| Candidate | Finding | Decision |
+| --- | --- | --- |
+| Native unified-exec completion | The [exit watcher](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/unified_exec/async_watcher.rs#L167) emits command events; it does not itself submit a new model turn. | Prefer a native trigger wherever idle resumption is proven, but do not assume this event is one. |
+| Async hook stdout | [Codex delivers it on the next user turn when idle](https://learn.chatgpt.com/docs/hooks#how-background-hooks-run). | A host hook must call the task-message channel explicitly. |
+| `PostToolUse` on yielded exec | The [0.166.0 implementation](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/tools/context.rs#L481) returns **no hook payload while a process ID is present**. The final response is text, not a background PID/output-file record. [Docs](https://learn.chatgpt.com/docs/hooks#tool-coverage) mention later `write_stdin` delivery. | Reject the proposed post-tool process observer; it cannot arm at background launch. |
+| Host `Stop` + `SubagentStop` | [Lifecycle hooks](https://learn.chatgpt.com/docs/hooks) run at the needed boundaries. [Item pagination](https://learn.chatgpt.com/docs/app-server#list-thread-items) provides native identity/status/output; task delivery already exists locally. | Implement these without rewriting or unsandboxing jobs. |
+| Delivery-only execpolicy rule | [An explicit `allow` can bypass the sandbox](https://learn.chatgpt.com/docs/agent-configuration/rules#understand-rule-fields), not merely skip a prompt. Source [requires every parsed segment to be explicitly allowed](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/exec_policy.rs#L442). A rule for exact `codex-wake send/check` would help separate delivery calls, but cannot elevate a nested child inside an already-sandboxed `run`, or automatically arm completion. | Not installed or recommended over the host hook. Never allow `codex-wake run`, a shell, Python, or the whole executable prefix. |
+| Writable socket path / broader network | [`sandbox_workspace_write` controls filesystem roots/network](https://learn.chatgpt.com/docs/config-file/config-reference), not a per-method exception for the privileged control API. Linux [masks the app-server socket directory and aliases](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/linux-sandbox/src/daemon_mounts.rs#L24); [legacy Landlock is rejected for restricted policies](https://learn.chatgpt.com/docs/permissions#how-enforcement-works). | Do not make `~/.codex` writable or relax socket isolation. |
+| Explicit AF_UNIX proxy allowlist | [Permission profiles support named Unix sockets](https://learn.chatgpt.com/docs/permissions#unix-sockets), but this is endpoint access for sandbox programs, not a `send`-only RPC capability. It would expose a powerful control API more broadly than delivery requires. | Reject for this task; no network/permission-profile changes. |
+
+Native terminal/process IDs are **app-server handles**, not host PIDs. The
+[app-server reference](https://learn.chatgpt.com/docs/app-server#clean-background-terminals)
+states this explicitly. Using command item IDs avoids PID namespaces, reuse,
+invisible processes and unavailable exit codes. The old agent-facing
+`wait --pid` command and its process poll were removed rather than retained as
+a second attachment workflow. The PermissionError diagnostic now routes to the
+host hook or authorized delivery-only calls and explicitly forbids escalating `run`.
+
+The [parity matrix and hook inventory](PARITY.md) distinguish implemented paths
+from remaining gaps. The [wait-time audit](WAIT_TIMES.md) records source-backed
+defaults and recommendations; no unrelated package's timer was changed.
+
+## Explicit producers and fallback
+
+```sh
+codex-wake check
+codex-wake send --message "The preview is ready for review."
+codex-wake run -- make build
+```
+
+`check` and `send` use the current `CODEX_THREAD_ID` and `CODEX_HOME` (otherwise
+`~/.codex`). Use `--thread THREAD --home PATH` only for an explicitly intended
+different target. Existing host event producers can call `send`; Bridge watch
+already uses the shared client, so never wrap it again.
+
+`run -- COMMAND` remains a fallback **only where delivery already works**. It
+preflights, runs the exact argument list with inherited stdin, tees combined
+stdout/stderr to stdout and a 0600 temporary log, then sends the executable name,
+exit status and output path. `--message` is optional. Arguments are omitted from
+the notification; output is never pasted into it. No shell is inserted. Piped
+output can change buffering and terminal formatting; use normal Codex terminals
+with the installed hook as the default.
+
+`run` preserves command exit codes (signals return `128 + signal`), returns 127
+for an unavailable program, and 125 for setup/capture/delivery failure. Inspect
+the printed log path before retrying: the job may already have executed.
+Messages, including automatic context, must fit 1,000 UTF-8 bytes and are checked
+before execution. Temporary logs persist until deleted or system cleanup and
+have no size cap. **Never request sandbox bypass for `run`.** Allowing its delivery
+would also unsandbox its arbitrary wrapped job. A separate narrow `send/check`
+rule cannot change the sandbox of subprocesses already started by `run`.
+
+## Shared client and compatibility
 
 ```python
 from codex_wake.client import Wake
 
 target = Wake(thread_id, home=codex_home)
-target.check()  # before consuming an event or starting expensive work
-target.send("Automatic build notification: inspect the result. Not user approval.")
+target.check()
+target.send("Automatic event notification. Not user approval.")
 ```
 
-The target is fixed at construction. Each check/send opens and closes its own
-connection. Callers own event detection, batching, cancellation, acknowledgement
-and whether a notification warrants more work. Bridge keeps those policies in
-its [watch adapter](../agent-bridge/src/agent_bridge/root_wake.py).
-
-## Compatibility and failures
-
-The transport uses the running Codex home's Unix control socket and discovers
-`codex_tui.send_message_to_thread` for the requested conversation. This is the
-existing harness capability Bridge used; the socket and native tool are **local
-integration details**, not a promised cross-version OpenAI wake API. The
+Each check/send opens and closes its own connection, freezes the target at
+construction, validates discovery/receipts, and bounds each RPC wait to 15 seconds.
+The Unix control socket and `codex_tui.send_message_to_thread` are **local
+integration details**, not a promised public OpenAI wake API. The
 [official app-server protocol](https://learn.chatgpt.com/docs/app-server) documents
-initialization, paginated MCP discovery and tool calls. The client checks the
-returned thread receipt, bounds each RPC wait to 15 seconds and rejects malformed
-responses. It does not start another app server or silently switch delivery routes.
+the surrounding initialization, discovery and read APIs. There is no route
+fallback, automatic send retry, second app server or silently selected session.
+Receipt acceptance proves submission, not completion of the next turn or task.
 
-Acceptance confirms submission to the target, not completion of its next turn.
-A busy session receives the native follow-up behavior of its harness. A lost
-receipt leaves delivery uncertain; no automatic retry risks a duplicate.
-Notifications never grant approval or authorize new work.
-
-Claude Code's [async hook wake](https://code.claude.com/docs/en/hooks#run-hooks-in-the-background)
-is a useful counterpart: event completion can resume an idle agent. This tool
-provides that usage pattern for Codex through its available native task channel;
-other harnesses keep their own supported mechanisms.
-
-## Checks
+## Checks and remaining live verification
 
 From this directory: `uv run --locked pytest` and
 `uv run --locked ruff check src tests`.
-For live compatibility, run `codex-wake check` inside the target session. To verify
-idle resumption, arm a short `run -- sleep …` notification with a recognizable
-marker, finish the model turn, and confirm the same session resumes on that marker.
+
+This worker cannot access an interactive Codex TUI or its user systemd bus;
+`codex-wake check` returned an unavailable-control-socket `OSError`. After the
+user installs/trusts the snapshot, perform these checks in that TUI:
+
+1. Have Codex launch `sh -c 'sleep 10; echo wake-parity-check; exit 7'` normally
+   with `exec_command` and `yield_time_ms=1000`, then end its model turn. Confirm
+   one automatic resume in the same thread, status 7 and the marker in the
+   notified private log. Repeat with exit 0 and multiple background commands.
+2. Let a native worker end with a final result or blocker while its parent is
+   idle. Confirm one parent resume and the correct captured result; replaying
+   the same child-turn event must not send again. Repeat with a busy parent and
+   pending human input/approval: no forced wake or automatic answer.
+3. Send a new parent prompt before completion. Confirm the command still wakes
+   once after the parent returns idle. Separately interrupt before completion
+   and confirm the cancelled incident cannot wake it. Check multiple observers
+   across successive task-message wakes as well.
+4. Run a job exceeding 600 seconds. Confirm its `codex-wake-*.service` survives
+   hook exit and delivers once; inspect `journalctl --user -u UNIT` if it fails.
+5. Capture hook stdin privately in an isolated test configuration: a yielded
+   exec must produce no `PostToolUse` payload, whereas the final poll produces
+   a Bash payload with `tool_input.command` and text `tool_response`. Verify the
+   Stop/SubagentStop IDs, child ancestry and item output against that live payload.
+
+These are integration acceptance checks, not claims already established by the
+schema-derived unit fixtures. No live hooks, trust state, settings or rules were installed.

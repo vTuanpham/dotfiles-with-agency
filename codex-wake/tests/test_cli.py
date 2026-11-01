@@ -1,5 +1,6 @@
 import signal
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -8,7 +9,8 @@ from codex_wake.client import validate_message
 
 
 @pytest.fixture
-def target(monkeypatch):
+def target(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli.tempfile, "tempdir", str(tmp_path))
     class Target:
         def __init__(self, thread, home):
             self.thread, self.home = thread, home
@@ -58,11 +60,74 @@ def test_run_preserves_command_output_and_failure(target, capfd, code):
     )
     assert "$(must stay literal); hello" in capfd.readouterr().out
     assert f"status {code}" in target.messages[0]
+    assert len(target.messages) == 1
+
+
+def test_run_defaults_to_command_status_and_private_complete_output(target, capfd):
+    payload = b"\x00\xff" + b"x" * 100000
+    assert cli.main([
+        "run", "--", sys.executable, "-c",
+        "import os; os.write(1, b'out\\n'); os.write(2, b'err\\n'); "
+        "os.write(1, b'\\x00\\xff' + b'x' * 100000)",
+        "argument-not-for-notifications",
+    ]) == 0
+    assert len(target.messages) == 1
+    message = target.messages[0]
+    assert f"Command {Path(sys.executable).name}." in message and "status 0" in message
+    assert "argument-not-for-notifications" not in message
+    output = Path(message.split("Output: ", 1)[1].split("\n", 1)[0])
+    assert output.read_bytes() == b"out\nerr\n" + payload
+    assert output.stat().st_mode & 0o777 == 0o600
+    captured = capfd.readouterr()
+    assert "out\nerr\n" in captured.out and str(output) in captured.err
+
+
+def test_log_setup_failure_never_starts_command(target, monkeypatch, tmp_path):
+    def fail(**kwargs):
+        raise OSError("no log storage")
+
+    monkeypatch.setattr(cli.tempfile, "NamedTemporaryFile", fail)
+    marker = tmp_path / "must-not-exist"
+    assert cli.main([
+        "run", "--", sys.executable, "-c",
+        "from pathlib import Path; import sys; Path(sys.argv[1]).touch()", str(marker),
+    ]) == 125
+    assert not marker.exists() and not target.messages
+
+
+def test_log_write_failure_stops_the_child_without_claiming_success(target, monkeypatch, tmp_path):
+    popen = cli.subprocess.Popen
+    started = []
+
+    def start(*args, **kwargs):
+        process = popen(*args, **kwargs)
+        started.append(process)
+        return process
+
+    class FullLog:
+        name = str(tmp_path / "full.log")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def write(self, chunk):
+            raise OSError("full disk")
+
+    monkeypatch.setattr(cli.tempfile, "NamedTemporaryFile", lambda **kwargs: FullLog())
+    monkeypatch.setattr(cli.subprocess, "Popen", start)
+    assert cli.main([
+        "run", "--", sys.executable, "-c",
+        "import os, time; os.write(1, b'output'); time.sleep(60)",
+    ]) == 125
+    assert started[0].returncode == -signal.SIGKILL and not target.messages
 
 
 def test_run_notifies_when_program_is_missing(target):
     assert cli.main(["run", "--message", "Import", "--", "/nonexistent/codex-wake-test"]) == 127
-    assert "could not start" in target.messages[0]
+    assert "could not start (127)" in target.messages[0] and "Output:" in target.messages[0]
 
 
 def test_signal_exit_is_reported(target):
@@ -92,7 +157,7 @@ def test_delivery_failure_is_not_reported_as_command_success(target, monkeypatch
     assert "delivery failed" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("failure", ["preflight", "message"])
+@pytest.mark.parametrize("failure", ["preflight", "message", "context"])
 def test_invalid_setup_never_starts_command(target, monkeypatch, tmp_path, failure):
     def fail():
         raise RuntimeError("missing capability")
@@ -105,7 +170,7 @@ def test_invalid_setup_never_starts_command(target, monkeypatch, tmp_path, failu
             [
                 "run",
                 "--message",
-                "x" * 1000 if failure == "message" else "Check",
+                "x" * {"message": 1000, "context": 950}.get(failure, 5),
                 "--",
                 sys.executable,
                 "-c",

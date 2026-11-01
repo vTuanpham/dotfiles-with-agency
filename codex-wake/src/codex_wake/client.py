@@ -68,6 +68,13 @@ def connection(home):
         )
         websocket.send(json.dumps({"method": "initialized"}))
         yield call
+    except PermissionError:
+        raise RuntimeError(
+            "Codex control socket is not reachable from here (PermissionError): a sandboxed command "
+            "cannot deliver. Use the installed host hook or an authorized delivery-only send/check; "
+            "never escalate codex-wake run, which would unsandbox its command. "
+            "A command it wrapped may already have run"
+        ) from None
     except (OSError, WebSocketException, ValueError) as exc:
         raise RuntimeError(f"Codex native wake delivery failed ({type(exc).__name__})") from None
     finally:

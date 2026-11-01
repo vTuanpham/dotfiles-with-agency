@@ -1,32 +1,65 @@
 ---
 name: codex-wake
-description: Resume idle Codex work after background events, or recover a native worker blocked on an unresponsive idle root. Use when native completion/message delivery has not resumed the target; Bridge watch already delivers its own events.
+description: Codex host-hook task notifications, explicit event delivery, and recovery of a native worker blocked on an idle parent. Use for background wake delivery or diagnosis; Bridge watch owns its own notifications.
 ---
 
 # Codex task notifications
 
-Use the harness's native completion trigger when it already resumes the session.
-Otherwise run `codex-wake check`, then use `run` for command completion or `send`
-from an existing event producer. This is event delivery, separate from Claude's
-visual Wake mod. Bridge watch already delivers its own events; do not wrap it again.
+With the trusted snapshot hooks installed, launch background commands normally,
+continue independent work, then end the turn when only the event remains. The
+host `Stop` hook captures outstanding native command items and arranges delivery;
+`SubagentStop` can recover an idle verified parent once per child turn. No wrapper,
+hand-written message, PID or terminal handle is needed for these notifications.
+This is event delivery, separate from Claude's visual Wake mod.
+Verify installation/trust and live acceptance before relying on this path;
+repository snapshots alone do not arm a wake.
+
+| What will finish | Producer |
+| --- | --- |
+| Native completion already proven to resume this idle session | That native trigger |
+| A background command or one-shot condition/timer command | Normal Codex exec; installed host `Stop` hook observes its native item |
+| A native worker ending its turn | Native delivery first; installed SubagentStart/SubagentStop hooks recover an idle verified parent |
+| An event producer or an assigned logical result (analysis done, blocked) | `codex-wake send --message TEXT` once, at that boundary |
+| Bridge jobs | Bridge watch; do not wrap it again |
+| An unplanned worker blocked on an idle root | The recovery procedure below |
+
+"Proven" means the idle session actually resumed, not that a message was queued.
 
 ```sh
-codex-wake run --message "Tests finished. Review results." -- rtk test uv run pytest
-codex-wake run --message "Recheck the pending deployment." -- sleep 180
-codex-wake send --message "The awaited file arrived."
+codex-wake send --message "Analysis done: 2 failures need a decision. See notes.md."
 ```
 
-Start `run` in a persistent background terminal and retain its handle. Continue
-independent work; when only the event is pending, end the model turn and let the
-notification resume it. A timer in a yielded model-runtime code cell does not
-provide that process lifetime. Read the original terminal for command output.
+Read the private output file named in the notification. Its native captured text
+can already be truncated by Codex. A command finishing, the notification
+being accepted, the next turn starting and the logical task being done are four
+separate observations. A worker told to report at a logical boundary sends once
+there; that is a planned handoff, not the recovery procedure below. At delegation,
+record the verified parent thread, the command handle/log, the expected event and
+who acts next.
 
-The target defaults to the originating `CODEX_THREAD_ID` and `CODEX_HOME`.
+The observer uses native item identity, not an OS PID; `wait --pid` was removed.
+Interrupt/session-end hooks pause delivery. Ordinary prompts preserve existing
+observers across turns; a parent prompt after a pause starts a new generation.
+Respect the interrupt control and any user pause. Do not infer permission
+from a timeout. Async hook stdout alone cannot start an idle turn: these host
+hooks call the existing task-message channel. Bridge watch and explicit `run`
+producers must keep sole ownership of their notification.
+
+If the hooks are unavailable, `codex-wake run -- COMMAND` is a fallback only in
+an already-authorized context where delivery works. `--message` is optional;
+it tees output to a temporary log. **Never escalate `run` out of the sandbox**:
+that would unsandbox its arbitrary wrapped command. The agent-facing default
+is normal sandboxed exec plus the trusted host hook. Retain a terminal handle
+only to interact with or cancel a running command.
+
+Explicit CLI producers default to the originating `CODEX_THREAD_ID` and `CODEX_HOME`.
 Use `--thread`/`--home` only for an explicitly intended different target. `run`
 notifies on success or failure; an existing event producer can call `send`.
-Both preflight delivery automatically; `check` diagnoses availability without
-sending. On delivery failure, inspect the command's outcome before retrying:
-it may already have executed. A notification does not resolve a blocking
+Explicit producers preflight delivery; `check` diagnoses availability without
+sending. A `PermissionError` means the sandbox cannot reach the control socket:
+use the host hook or an authorized delivery-only call, never escalate `run`.
+On delivery failure, inspect the command's outcome before retrying: it may already
+have executed. A notification does not resolve a blocking
 question or grant approval.
 
 ## Native worker blocked on its root

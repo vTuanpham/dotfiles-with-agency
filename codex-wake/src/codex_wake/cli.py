@@ -4,6 +4,8 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 from .client import Wake, validate_message
 
@@ -17,17 +19,18 @@ def main(argv=None):
         epilog=(
             "Examples:\n"
             "  codex-wake check\n"
-            '  codex-wake run --message "Tests finished. Review the results." -- uv run pytest\n'
+            "  codex-wake run -- uv run pytest\n"
             '  codex-wake send --message "The awaited file arrived."\n'
             "\nTargets this session by default (CODEX_THREAD_ID and CODEX_HOME).\n"
             "Start run in a persistent background terminal, then continue independent work.\n"
             "Its notification can resume this conversation after the model turn ends.\n"
-            "Read command output from the original terminal after waking.\n"
+            "The notification gives the exit status and captured output file.\n"
             "Bridge watch already handles delivery; do not wrap it again.\n"
             "Use SUBCOMMAND --help for explicit target options."
         ),
     )
     commands = parser.add_subparsers(dest="action", required=True)
+    commands.add_parser("hook", help="internal host lifecycle hook (JSON on stdin)")
     for action in ("check", "send", "run"):
         command = commands.add_parser(
             action,
@@ -45,11 +48,16 @@ def main(argv=None):
         command.add_argument("--home", help="target Codex home (default: CODEX_HOME or ~/.codex)")
         if action != "check":
             command.add_argument(
-                "--message", required=True, help="short event context; never include secrets"
+                "--message", required=action != "run",
+                help="short event context; optional for run; never include secrets",
             )
         if action == "run":
             command.add_argument("command", nargs=argparse.REMAINDER, help="-- PROGRAM [ARG ...]")
     args = parser.parse_args(argv)
+    if args.action == "hook":
+        from .hooks import main as hook_main
+
+        return hook_main()
     if args.action == "run":
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
         if not command:
@@ -57,11 +65,10 @@ def main(argv=None):
     try:
         target = Wake(args.thread, args.home)
         if args.action != "check":
-            prompt = f"{args.message}\n{NOTICE}"
-            validate_message(args.message)
-            validate_message(
-                prompt if args.action == "send" else f"Command exited with status -255. {prompt}"
-            )
+            prompt = f"{args.message}\n{NOTICE}" if args.message is not None else NOTICE
+            if args.message is not None:
+                validate_message(args.message)
+            validate_message(prompt)
         target.check()
         if args.action == "check":
             print(f"Native Codex wake delivery ready: {target.thread}")
@@ -69,13 +76,29 @@ def main(argv=None):
         if args.action == "send":
             target.send(prompt)
             return 0
-        try:
-            code = subprocess.run(command, check=False).returncode
-        except OSError as exc:
-            target.send(f"Command could not start. {prompt}")
-            print(f"codex-wake: command could not start ({type(exc).__name__})", file=sys.stderr)
-            return 127
-        target.send(f"Command exited with status {code}. {prompt}")
+        # Private temporary logs persist after exit so a failed delivery still leaves output available.
+        with tempfile.NamedTemporaryFile(prefix="codex-wake-", suffix=".log", delete=False) as output:
+            context = f"Command {Path(command[0]).name}. Output: {output.name}\n{prompt}"
+            validate_message(f"Command exited with status -255. {context}")
+            print(f"codex-wake: output: {output.name}", file=sys.stderr, flush=True)
+            try:
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            except OSError as exc:
+                target.send(f"Command could not start (127). {context}")
+                print(f"codex-wake: command could not start ({type(exc).__name__})", file=sys.stderr)
+                return 127
+            with process:
+                try:
+                    while chunk := process.stdout.read1(65536):
+                        output.write(chunk)
+                        output.flush()
+                        sys.stdout.buffer.write(chunk)
+                        sys.stdout.buffer.flush()
+                    code = process.wait()
+                except BaseException:
+                    process.kill()
+                    raise
+        target.send(f"Command exited with status {code}. {context}")
         return code if code >= 0 else 128 - code
     except (RuntimeError, OSError) as exc:
         print(f"codex-wake: {exc}", file=sys.stderr)

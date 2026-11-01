@@ -12,7 +12,7 @@ Codex CLI config under `~/.codex`.
   loaded on demand for background wake-ups. Invoke explicitly as `$codex-wake`.
 - `config.toml`: model, agents, plugins, features and the status line. A snapshot. Machine-local state
   (trusted projects, hook trust hashes, UI hints) is deliberately not tracked; Codex asks again.
-- `hooks.json`: RTK/Baton checks, the [process-match guard](../shell/README.md#agent-process-matching)
+- `hooks.json`: [automatic task notifications](../codex-wake/README.md), RTK/Baton checks, the [process-match guard](../shell/README.md#agent-process-matching)
   and the [browser idle reminder](../chrome/README.md#idle-reminder). `install.sh --apply hooks`
   adds any that the live `~/.codex/hooks.json` lacks, keeping the rest; Codex then asks you to trust them
   with `/hooks`.
@@ -44,8 +44,14 @@ question. No question-cancellation hook is installed here.
 
 [Codex task notifications](../codex-wake/README.md) deliver native task messages to an
 existing conversation from background commands, hooks and event producers.
-`codex-wake check` verifies availability; `codex-wake run --message "Build finished"
--- make build` runs a command and wakes the same session on completion. Bridge
+With the trusted snapshot hooks installed, launch commands normally: host
+`Stop` and `SubagentStop` handlers arrange command/worker notifications without
+unsandboxing the job. Notifications include a private captured-output path.
+The [parity matrix](../codex-wake/PARITY.md) separates implemented paths from
+remaining gaps, and the [wait-time audit](../codex-wake/WAIT_TIMES.md) records
+source-backed defaults. `codex-wake send` remains available to host producers;
+`run -- COMMAND` is a fallback where delivery already works, never an allowed
+sandbox escape. Bridge
 uses its shared client and retains its own event and reminder policies.
 
 Native Baton and GitHub servers use the installed `agent-baton mcp` and
