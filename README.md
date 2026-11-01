@@ -160,6 +160,7 @@ One folder per package; paths mirror `$HOME`. Each README states its install flo
 | [agent-session](agent-session/README.md) | Library | The calling conversation's identity, shared by the tools above |
 | [portlink](portlink/README.md) | uv tool | Private preview URLs, QR codes and route expiry |
 | [agents](agents/README.md) | Live | Shared instructions, engineering skills and the feedback workflow |
+| [computer-use](computer-use/README.md) | Live + user-local binary | Baton-guarded Windows agent-desktop launcher and shared desktop skill |
 | [opencode](opencode/README.md), [gemini](gemini/README.md) | Snapshot + live | Harness preferences, shared instructions and native hooks |
 | [systemd](systemd/README.md), [tests](tests/README.md) | Live + reference, n/a | User timers and service PATH; installer, shell and public-facing checks |
 

@@ -107,6 +107,6 @@ Rules
   - Never put a secret in agent-visible chat or a command line. Use `env` only when the human asked to store it in environment files.
   - `back` and `cancel` belong to the human; the guard denies them to you. Agents may withdraw only ordinary questions.
   - cancelled or expired means stop and ask the user; do not retry on your own.
-  - While a `pass` baton is out, browser, screen and cua-driver tools are denied. That is expected.
+  - While a `pass` baton is out, browser and desktop tools are denied. That is expected.
   - Password managers, saved passwords and chrome://settings/passwords are never to be browsed.
   - If no channel reached the human, tell them in chat. `agent-baton doctor` names what is broken.

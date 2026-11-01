@@ -59,6 +59,8 @@ MCP adds no HTTP listener or global conversation state.
   until they hand it back.
 - `agent-baton guard` is the `PreToolUse` hook that does the blocking; `install.sh --apply hooks` adds it to
   the Claude and Codex configs.
+  The [agent-desktop launcher](../computer-use/README.md) also checks it on every call,
+  including in harnesses without those hooks.
 
 ## Workflow overview
 

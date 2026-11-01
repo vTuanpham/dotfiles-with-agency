@@ -51,6 +51,9 @@ enforced contract or native tool behavior when it can replace a remembered rule.
   provenance, size warnings and retirement. Its CLI owns layout and cleanup checks.
 - `resource-admission`: heavy foreground work from any harness, using the independent
   agent-resources queue rather than requiring Bridge orchestration.
+- `agent-desktop`: Windows native GUI work from WSL through a Baton-guarded launcher;
+  loads installed upstream guides and owns desktop session cleanup. Setup and limits:
+  [computer-use](../computer-use/README.md).
 
 The global rules retain authorization, question escalation, ownership,
 verification and boundary safety. Detailed language-specific workflows belong

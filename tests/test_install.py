@@ -36,6 +36,7 @@ class InstallTests(unittest.TestCase):
             for name in (".zshrc", ".claude/CLAUDE.md", ".config/systemd/user/agent-models-reference.timer",
                          ".local/libexec/chatgpt-browser-idle.py", ".codex/skills/codex-wake",
                          ".local/libexec/agent-process-guard.py",
+                         ".local/bin/agent-desktop",
                          ".config/opencode/plugins/agent-process-guard.js",
                          ".config/systemd/user/agent-lab-gc.timer",
                          ".config/systemd/user/agent-lab-gc.service"):
@@ -44,7 +45,7 @@ class InstallTests(unittest.TestCase):
                 self.assertTrue(str(link.resolve()).startswith(str(root)), name)
             for skill in ("correct", "benchmark-checklist", "create-verification-skill",
                           "maintain-verification-skill", "how", "why", "blast-radius", "arena", "unslop",
-                          "python-project", "agent-lab"):
+                          "python-project", "agent-lab", "agent-desktop"):
                 source = root / "agents/.agents/skills" / skill
                 self.assertTrue((source / "SKILL.md").is_file(), skill)
                 for directory in (".agents/skills", ".claude/skills", ".gemini/config/skills"):

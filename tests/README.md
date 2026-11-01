@@ -9,6 +9,7 @@ python3 -B tests/test_shell_startup.py   # Bash and Zsh start quietly, keep cwd 
 python3 -B tests/test_install.py         # install.sh against a throwaway HOME: dry runs, links, conflicts
 uv run --no-project --python '>=3.11' python -B tests/test_chatgpt_browser.py # browser transport and doctor
 python3 -B tests/test_github_mcp.py      # credential handoff without token output or command-line arguments
+python3 -B tests/test_agent_desktop.py   # guarded desktop transport and verified installer, without a real GUI
 python3 -B tests/test_rtk_filters.py     # isolated filter fixtures, actual dispatch and failure exit status
 python3 -B tests/test_public.py          # the public-facing check: what it refuses, and that this repo passes it
 ```

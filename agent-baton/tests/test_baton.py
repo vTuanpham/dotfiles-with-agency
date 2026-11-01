@@ -79,6 +79,9 @@ def test_guard_is_open_without_a_baton_and_shut_with_one():
     [
         ("Bash", "command", "cua-driver call screenshot"),
         ("Bash", "command", "rtk cua-driver call screenshot"),
+        ("Bash", "command", "agent-desktop snapshot --app notepad.exe"),
+        ("exec_command", "cmd", 'rtk summary "/tmp/agent-desktop.exe" screenshot'),
+        ("Bash", "command", "agent-baton wait && agent-desktop screenshot"),
         ("exec_command", "cmd", "bash -c 'npx playwright test'"),
         ("Bash", "command", "agent-baton wait && cua-driver call screenshot"),
         ("Bash", "command", "agent-baton wait $(cua-driver call screenshot)"),
@@ -112,6 +115,7 @@ def test_deny_list_holds_with_no_baton_and_only_for_browser_tools():
         "mcp__claude-in-chrome__navigate", url="chrome://password-manager/passwords"
     )
     assert "never-browse" in verdict("Bash", command="cua-driver call click https://my.1password.com/x")
+    assert "never-browse" in verdict("Bash", command="agent-desktop snapshot --app bitwarden.com")
     assert verdict("Bash", command="curl https://1password.com/docs") is None
     core.CONFIG.write_text('deny = ["mybank.example"]')
     assert verdict("mcp__playwright__navigate", url="https://mybank.example/login")

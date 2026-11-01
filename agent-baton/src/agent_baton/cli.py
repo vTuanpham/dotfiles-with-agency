@@ -71,7 +71,7 @@ def start(args):
     channels = ", ".join(baton["notified"]) or "nobody"
     print(f"baton with the human: {site} [{baton['id']}], {core.left(baton)} left, notified: {channels}")
     print(
-        f"Do not use the browser, screen or cua-driver until it returns. Run: agent-baton wait {baton['id']}"
+        f"Do not use browser or desktop tools until it returns. Run: agent-baton wait {baton['id']}"
     )
     return 0
 

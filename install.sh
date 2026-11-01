@@ -9,7 +9,7 @@
 #   ./install.sh --apply          do everything
 #   ./install.sh --apply links    do only the named steps
 #
-# Steps, in order: apt tools uvtools npm links systemd snapshots hooks githooks cron check
+# Steps, in order: apt tools uvtools npm desktop-tools links systemd snapshots hooks githooks cron check
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -96,6 +96,46 @@ step_npm() {
   if ((${#missing[@]})); then act npm install -g "${missing[@]}"; else say "  all present"; fi
 }
 
+# --- Windows desktop control from WSL ------------------------------------------------------------------------
+step_desktop_tools() {
+  if ! grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+    say "  Windows desktop tools require WSL; skipped"
+    return 0
+  fi
+  local target version=v1.0.2
+  case $(uname -m) in
+    x86_64) target=x86_64-pc-windows-msvc ;;
+    aarch64) target=aarch64-pc-windows-msvc ;;
+    *) say "  unsupported WSL architecture"; return 1 ;;
+  esac
+  local dest="${XDG_DATA_HOME:-$HOME/.local/share}/agent-desktop/windows/agent-desktop.exe"
+  if [[ -e $dest ]]; then say "  agent-desktop Windows binary present (left alone)"; return 0; fi
+  say "  install agent-desktop $version ($target), with checksum and build attestation verification"
+  if ((!APPLY)); then return 0; fi
+  local tool
+  for tool in curl gh tar sha256sum; do
+    have "$tool" || { say "  missing $tool; run the apt step first"; return 1; }
+  done
+  (
+    umask 077
+    local tmp asset base checksum
+    mkdir -p "${dest%/*}"
+    tmp=$(mktemp -d "${dest%/*}/.install.XXXXXX")
+    trap 'rm -rf "$tmp"' EXIT
+    asset="agent-desktop-$version-$target.tar.gz"
+    base="https://github.com/vercel-labs/agent-desktop/releases/download/$version"
+    curl -fLsS "$base/$asset" -o "$tmp/$asset"
+    curl -fLsS "$base/checksums.txt" -o "$tmp/checksums.txt"
+    checksum=$(tr -d '\r' <"$tmp/checksums.txt" | awk -v asset="$asset" '$2 == asset {print $1}')
+    [[ $checksum =~ ^[a-fA-F0-9]{64}$ ]] || { say "  invalid or missing archive checksum"; exit 1; }
+    (cd "$tmp" && printf '%s  %s\n' "$checksum" "$asset" | sha256sum --check)
+    gh attestation verify "$tmp/$asset" --repo vercel-labs/agent-desktop
+    tar -xzf "$tmp/$asset" -C "$tmp" agent-desktop.exe
+    chmod 755 "$tmp/agent-desktop.exe"
+    mv -T -n "$tmp/agent-desktop.exe" "$dest"
+  )
+}
+
 # --- live symlinks -------------------------------------------------------------------------------------------
 # <path in the repo> <link under $HOME>. Every other package is a snapshot (see the snapshots step).
 LINKS=(
@@ -125,6 +165,7 @@ LINKS=(
   "codex/.codex/skills/codex-wake .codex/skills/codex-wake"
   "chrome/.local/bin/chatgpt-browser .local/bin/chatgpt-browser"
   "chrome/.local/libexec/chatgpt-browser-idle.py .local/libexec/chatgpt-browser-idle.py"
+  "computer-use/.local/bin/agent-desktop .local/bin/agent-desktop"
   "opencode/.config/opencode/AGENTS.md .config/opencode/AGENTS.md"
   "gemini/.gemini/AGENTS.md .gemini/AGENTS.md"
   "gemini/.gemini/config/skills/agent-baton .gemini/config/skills/agent-baton"
@@ -136,7 +177,7 @@ LINKS=(
   "systemd/.config/environment.d/999-local-bin.conf .config/environment.d/999-local-bin.conf"
 )
 PSTACK_SKILLS=(correct benchmark-checklist create-verification-skill maintain-verification-skill how why blast-radius arena unslop)
-for skill in "${PSTACK_SKILLS[@]}" python-project agent-lab model-selection delegation resource-admission; do
+for skill in "${PSTACK_SKILLS[@]}" python-project agent-lab model-selection delegation resource-admission agent-desktop; do
   for directory in .agents/skills .claude/skills .gemini/config/skills; do
     LINKS+=("agents/.agents/skills/$skill $directory/$skill")
   done
@@ -295,7 +336,7 @@ step_check() {
   python3 -B "$REPO/tests/check_public.py" --changed && say "  nothing uncommitted breaks the public-facing rules"
 }
 
-STEPS=(apt tools uvtools npm links systemd snapshots hooks githooks cron check)
+STEPS=(apt tools uvtools npm desktop-tools links systemd snapshots hooks githooks cron check)
 selected=()
 for arg in "$@"; do
   case $arg in
@@ -308,7 +349,7 @@ done
 
 for step in "${selected[@]}"; do
   say "== $step"
-  "step_$step"
+  "step_${step//-/_}"
 done
 
 say

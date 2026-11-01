@@ -38,7 +38,9 @@ DEFAULTS = {
         "codex",
     ],
     "browser_tools": r"(?i)^mcp__.*(browser|chrome|computer|playwright|puppeteer|cua|devtools)",
-    "browser_commands": r"(?i)\b(cua-driver|playwright|puppeteer|agent-browser|chrome-devtools)\b",
+    "browser_commands": (
+        r"(?i)\b(cua-driver|agent-desktop|playwright|puppeteer|agent-browser|chrome-devtools)\b"
+    ),
 }
 
 

@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Baton-guarded Windows agent-desktop entry point for WSL."""
+
+import json
+import os
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+
+def main():
+    executable = (
+        Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+        / "agent-desktop/windows/agent-desktop.exe"
+    )
+    if not executable.is_file():
+        print(
+            "agent-desktop: run ./install.sh --apply desktop-tools in dotfiles-with-agency",
+            file=sys.stderr,
+        )
+        return 1
+    event = {
+        "tool_name": "mcp__computer__agent_desktop",
+        "tool_input": {"command": shlex.join(["agent-desktop", *sys.argv[1:]])},
+    }
+    try:
+        guarded = subprocess.run(
+            ["agent-baton", "guard"],
+            input=json.dumps(event),
+            text=True,
+            stdout=sys.stderr,
+            check=False,
+        )
+        if guarded.returncode:
+            return guarded.returncode if guarded.returncode > 0 else 1
+        os.execv(executable, [str(executable), *sys.argv[1:]])
+    except OSError as error:
+        print(f"agent-desktop: {error}", file=sys.stderr)
+        print(
+            "Requires agent-baton and Windows interoperability from WSL. A sandbox interop failure "
+            "needs the authorized host execution context, not Windows administrator rights.",
+            file=sys.stderr,
+        )
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
