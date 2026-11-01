@@ -52,17 +52,16 @@ test('flyers choose deterministic clear lanes and reserve space for the next spr
   expect(overlaps(first, second)).toBe(false)
 })
 
-test('small daytime flyers get a contrasting outline selected from their surroundings', () => {
+test('flyers are drawn without an outline or backing, on any sky', () => {
   const job: Job = { kind: 'codex', tier: 1, seed: 0, isStale: false }
-  const day = { ...look, night: 0, top: P.blue }
-  const light = canvas(40, 20), dark = canvas(40, 20)
-  light.rect(0, 0, 40, 20, P.snow)
-  dark.rect(0, 0, 40, 20, P.crust)
-  fly(light, day, 20, 10, job)
-  fly(dark, day, 20, 10, job)
-  expect(light.get(20, 8)).not.toBe(P.snow)
-  expect(dark.get(20, 8)).not.toBe(P.crust)
-  expect(light.get(20, 8)).not.toBe(dark.get(20, 8))
+  for (const night of [0, 1]) {
+    const c = canvas(40, 20)
+    c.rect(0, 0, 40, 20, P.snow)
+    fly(c, { ...look, night, top: P.blue }, 20, 10, job)
+    const painted = Array.from(c.px).flatMap((color, i) => color !== P.snow ? [i] : [])
+    // only the sprite's own pixels and their soft glow: nothing within a pixel of the art but empty sky
+    expect(painted.length).toBeLessThanOrEqual(14)
+  }
 })
 
 test('a crowded sky places twelve mixed flyers without covering reserved decor', () => {

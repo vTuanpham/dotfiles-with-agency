@@ -10,7 +10,7 @@ import { airJobs, packBoats, placeBoat, stations } from './crew'
 
 const GROUND = SCENE_H - 5 // the sand where Mochi sits; huts stand on the row above
 const SHORE = GROUND - 2 // the surf line
-const HORIZON = 4
+const HORIZON = SCENE_H - 12 // the sea keeps its depth above the shore; any extra scene height is sky
 const FEET = SCENE_H - 1 // the sand row nearest the viewer
 const STRIPES = [P.red, P.blue, P.green, P.mauve, P.pink, P.peach, P.teal]
 const THATCH = [0xc9a24a, 0xb8923a, 0xa8832e]

@@ -1,4 +1,5 @@
 import type { WakeChip, WakeMood, WakePulse, WakeStep, WakeSurroundings, WakeTally, WakeWeather } from '../types'
+import { PACKET_RUN_MS, activityFlash, messageFade, packetWindow } from './crew-row'
 import type { Season } from './landscapes/kit'
 import { seedOf } from './pixels'
 import type { SceneEffect, SceneInput, SceneTurn, SceneWeather } from './scene'
@@ -59,7 +60,61 @@ function turnsOf(beats: { kind: SceneTurn['kinds'][number]; turn: number }[], cu
   return { turns: finished, live: live ? { ...(byTurn.get(current) ?? { kinds: [] }), turn: current } : null }
 }
 
+/** Which way a message to or from the root is passing Mochi right now (Bridge just observed it), if one is. */
+function mailAt(chips: WakeChip[], now: number): 'in' | 'out' | undefined {
+  for (const job of chips) for (const peer of job.peers ?? []) {
+    if (peer.target === 'root' && peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt < 2_000) return peer.outgoing ? 'in' : 'out'
+  }
+  return undefined
+}
+
+/**
+ * A running worker with no message of its own stays tied to the root: a faint, still thread from Mochi. It is a
+ * relationship, not a message, so nothing travels it. Native subagents and Bridge jobs both wear one; four at most,
+ * so a big crew never turns the sky into wiring.
+ */
+function tethers(state: BandState, now: number): NonNullable<SceneInput['peerEdges']> {
+  const talking = new Set(state.chips.filter(job => (job.peers ?? []).some(peer => peer.target === 'root')).map(job => job.id))
+  const edges: NonNullable<SceneInput['peerEdges']> = [
+    ...state.subagents.map(agent => ({ id: agent.id, family: 'claude' as const, name: agent.name ?? agent.description, what: `Claude subagent · ${agent.type}`, activeAt: undefined as number | undefined })),
+    ...state.chips.filter(job => job.running && job.id && !talking.has(job.id)).map(job => ({
+      id: job.id!, family: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const), name: job.title ?? job.name, what: `Bridge job · ${job.backend}`, activeAt: job.lastEventAt,
+    })),
+  ].slice(0, 4).map(worker => ({
+    source: 'mochi', target: worker.id,
+    // as present as the worker is busy: bright just after its last real event, fading over minutes of silence (a subagent has no event feed: steady)
+    strength: worker.activeAt === undefined ? 0.45 : 0.12 + 0.55 * Math.exp(-Math.max(0, now - worker.activeAt) / 180_000),
+    preview: `${worker.what} · working for the root`, count: 1, family: worker.family,
+  }))
+  return edges
+}
+
+/**
+ * How high each worker hops right now, from real events only: it just did something (its activity flash), its message
+ * is leaving (the sender hops as the packet sets off), or one is landing on it (the recipient hops as it arrives).
+ */
+export function crewLifts(chips: WakeChip[], now: number): Map<string, number> {
+  const lifts = new Map<string, number>()
+  const raise = (id: string | undefined, amount: number) => { if (id && amount > 0) lifts.set(id, Math.max(lifts.get(id) ?? 0, Math.min(1, amount))) }
+  for (const job of chips) {
+    if (!job.running) continue
+    raise(job.id, activityFlash(job.activitySeenAt, now))
+    for (const peer of job.peers ?? []) {
+      if (peer.observedAt === undefined || now < peer.observedAt) continue
+      const t = now - peer.observedAt
+      if (t > packetWindow(peer.fresh ?? 1) + 500) continue
+      const sender = peer.outgoing ? job.id : peer.target === 'root' ? undefined : peer.target
+      const recipient = peer.outgoing ? (peer.target === 'root' ? undefined : peer.target) : job.id
+      raise(sender, t < 500 ? 1 - t / 500 : 0)
+      const landing = t - PACKET_RUN_MS
+      raise(recipient, landing > -150 && landing < 500 ? 1 - Math.abs(landing - 100) / 400 : 0)
+    }
+  }
+  return lifts
+}
+
 export function sceneInput(state: BandState, width: number, frame: number, effect: SceneEffect | null, now: number): SceneInput {
+  const lifts = crewLifts(state.chips, now)
   const here = state.here
   const weather = here?.weather ?? null
   const { turns, live } = turnsOf(state.pulse, state.tally.turns, state.turnStartedAt !== null)
@@ -81,7 +136,8 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
     turns,
     live,
     mood: state.mood,
-    peerEdges: state.chips.filter(job => job.running && job.id).flatMap(job => (job.peers ?? [])
+    mail: mailAt(state.chips, now),
+    peerEdges: [...state.chips.filter(job => job.running && job.id).flatMap(job => (job.peers ?? [])
       .filter(peer => (peer.target === 'root' ? peer.messageState !== undefined : peer.outgoing)
         && now >= peer.lastAt && now - peer.lastAt <= 900_000)
       .map(peer => {
@@ -91,14 +147,21 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
         return {
           source: rootMessage && !peer.outgoing ? 'mochi' : job.id!,
           target: rootMessage ? peer.outgoing ? 'mochi' : job.id! : peer.target,
-          strength: pulse ? 0.65 + 0.35 * (Math.floor((now - peer.observedAt!) / 400) % 2) : Math.max(0.25, 1 - age / 900_000 * 0.75),
+          strength: pulse ? 0.65 + 0.35 * (Math.floor((now - peer.observedAt!) / 400) % 2) : messageFade(age),
           preview: peer.preview ?? null,
           messageState: rootMessage ? peer.messageState : undefined,
+          count: peer.count,
+          // packets run only for messages arriving in view right now, one per new message
+          arriving: peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1)
+            ? now - peer.observedAt : undefined,
+          fresh: peer.fresh,
+          family: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const),
         }
-      })),
+      })), ...tethers(state, now)],
     jobs: state.chips.filter(job => job.running).map(job => {
       const peer = [...(job.peers ?? [])].filter(p => now - p.lastAt <= 900_000 && now >= p.lastAt).sort((a, b) => b.lastAt - a.lastAt)[0]
       return {
+      lift: job.id ? lifts.get(job.id) : undefined,
       isStale: job.isStale, seed: seedOf(job.name), tier: modelTier(job.backend ?? 'codex', job.model),
       kind: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const), maker: job.maker,
       signal: !!peer && peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt < 2_000 && Math.floor((now - peer.observedAt) / 400) % 2 === 1,

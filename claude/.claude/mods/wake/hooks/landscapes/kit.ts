@@ -22,7 +22,7 @@ import { type Canvas, hash, mix } from '../pixels'
 // the building's `index` and positions. Never Math.random: a frame must be
 // reproducible.
 
-export const SCENE_H = 16
+export const SCENE_H = 20 // ten terminal rows: landscapes stand on the ground at the bottom, the extra height is sky for the crew
 
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter'
 
@@ -52,6 +52,7 @@ export type Look = {
   wind: number // km/h
   seed: number // per place: vary layouts by it
   working: boolean // Claude is mid-turn
+  place?: WakePreset // the landscape being drawn, so the crew can wear its weather
   crewZones?: { x: number; y: number; w: number; h: number }[]
   crewAnchors?: number[]
   crewSpriteZones?: { x: number; y: number; w: number; h: number }[]
@@ -71,7 +72,8 @@ export type Building = {
 
 /** A crew member: the seed is who it is (its place, lane and motion come from it, never from its place in the list); the harness picks
  *  the family (kind), the model the class, and a maker with its own family (Claude inside agy) lends one mark its colour. */
-export type Job = { isStale: boolean; seed: number; kind?: 'codex' | 'agy' | 'claude' | 'opencode'; tier?: 1 | 2 | 3 | 4; maker?: 'claude'; signal?: boolean; hit?: WakeSceneHit; hitOwner?: number }
+/** lift: 0..1, how high the sprite hops right now, only from real events (it did something, sent or received a message). */
+export type Job = { isStale: boolean; seed: number; kind?: 'codex' | 'agy' | 'claude' | 'opencode'; tier?: 1 | 2 | 3 | 4; maker?: 'claude'; signal?: boolean; lift?: number; hit?: WakeSceneHit; hitOwner?: number }
 
 /** Each backend keeps a distinct accent; agy's mauve reads on day and night skies, unlike blue; OpenCode's green, unlike the sky's own blues. */
 export const jobAccent = (job: Job, codex: number): number => (job.kind === 'agy' ? P.mauve : job.kind === 'claude' ? P.pink : job.kind === 'opencode' ? P.green : codex)
@@ -169,7 +171,10 @@ export function foliage(season: Season, seed: number): [number, number] {
 
 /** A lit window: the kind's colour, dim by day, bright at night; a fail is always red. */
 export function windowColor(kind: WakePulseKind, wall: number, look: Look): number {
-  return kind === 'fail' ? KIND_COLOR.fail : mix(KIND_COLOR[kind], wall, 0.55 - 0.4 * look.night)
+  // by day a window is tinted glass in its kind's hue (a failure stays the one warm red); at night it is a lit pane
+  const lit = mix(KIND_COLOR[kind], wall, 0.15)
+  const glass = mix(mix(wall, KIND_COLOR[kind], kind === 'fail' ? 0.75 : 0.4), P.ink, 0.12)
+  return mix(glass, lit, look.night)
 }
 
 /**

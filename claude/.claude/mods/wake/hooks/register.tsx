@@ -11,7 +11,8 @@ import { EFFECT_FRAMES, SCENE_ROWS, type SceneEffect, type SceneHitMap, type Sce
 import { PRESETS, nextRain, skyOf } from './sources/weather'
 import { lookAround, namePlace, pinPreset } from './surroundings'
 import { COLOR, readable, clock, commandHead, hash, isAnswerText, isTestCommand, lines, patchCounts, shortPath, span } from './util'
-import { crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
+import { CLASS_GLYPH, activityFlash, cells, packetWindow, type RootCell, type RootLink, rootSpine, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
+import { type EffortLevels, effortDots, levelsFor, scanEfforts } from './sources/efforts'
 import { PeerMessageTracker } from './peer-messages'
 import { LOGOS, modelLogo } from './logos'
 
@@ -27,12 +28,16 @@ const CODEX_POLL_MS = 15_000
 const QUOTA_POLL_MS = 60_000 // Read provider caches; only agy refreshes on this schedule.
 const AGY_REFRESH = 30
 const ANIMATE_MS = 400
+const PACKET_FRAME_MS = 120 // rows redraw this often only while a real message's packets are on their way
 const SCENE_MS = 50 // the diorama paints 20 a second: half steps of its frame, which motion paces at 10 a second
 const AGENTS_MS = 2_000
 const SURROUNDINGS_MS = 10 * 60_000
 const NOTICE = '◈ wake'
 const dimPeer = (color: string, subtle: string, strength: number) => '#' + [1, 3, 5].map(i =>
   Math.round(parseInt(color.slice(i, i + 2), 16) * strength + parseInt(subtle.slice(i, i + 2), 16) * (1 - strength)).toString(16).padStart(2, '0')).join('')
+
+/** `color` lifted toward `light` by `amount` (0..1). */
+const glint = (color: string, light: string, amount: number) => amount <= 0 ? color : dimPeer(light, color, Math.min(1, amount) * 0.8)
 
 /** Nerd Font glyphs (escaped: editors drop private-use characters); the dingbat marks are missing from many fonts. */
 const G = {
@@ -62,9 +67,23 @@ const spinner = (frame: number) => String.fromCodePoint(0xf0a9e + (frame % 8))
 /** What a bridge job is called to the person: its title, else (old jobs) its name. */
 const titleOf = (job: { name: string; title?: string }) => job.title ?? job.name
 
-/** The original three-pip row, with a fourth pip for class 4. */
-const pips = (tier: 1 | 2 | 3 | 4) => '▰'.repeat(tier) + '▱'.repeat(Math.max(0, 3 - tier))
 const diamond = (frame: number) => '◆◇◈◇◆◇◈◇'[frame % 8]!
+/** A running worker's own spinner, one motion per harness like Claude's diamond: Codex orbits, agy twinkles, OpenCode's balloon rises and falls. */
+const HARNESS_SPIN: Record<string, string> = { codex: '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏', agy: '✦✧⋆·⋆✧', claude: '◆◇◈◇', opencode: '⠠⠐⠈⠁⠈⠐' }
+/** The working headline's spinner takes its shape from the landscape the session is standing in. */
+const SCENE_SPIN: Record<WakePreset, string> = {
+  city: '▁▃▅▇▅▃', harbor: '≈∽~∽', beach: '∽≈~≈', mountains: '▁▂▃▄▅▆▇▆▅▄▃▂', countryside: '✿❀✾❀', forest: '❦❧☙❧', desert: '◜◠◝◞◡◟', tundra: '❄❅❆❅',
+}
+const sceneSpin = (place: WakePreset, frame: number) => { const set = [...SCENE_SPIN[place]]; return set[frame % set.length]! }
+/** What the headline is doing sets its motion: a shell spins, tests fill a gauge, edits grow a caret, reads fill a page, searches circle, agents turn a gem, the web turns a globe; thinking keeps the landscape's own. */
+const KIND_SPIN: Partial<Record<WakePulseKind, string>> = {
+  run: '⣾⣽⣻⢿⡿⣟⣯⣷', test: '○◔◑◕●◕◑◔', edit: '▏▎▍▌▋▊▉▊▋▌▍▎', read: '⠁⠃⠇⡇⣇⣧⣷⣿', search: '◜◝◞◟', agent: '◇◈◆◈', web: '◐◓◑◒',
+}
+const workSpin = (place: WakePreset, kind: WakePulseKind | undefined, frame: number) => {
+  const set = [...(kind && KIND_SPIN[kind] || '')]
+  return set.length ? set[frame % set.length]! : sceneSpin(place, frame)
+}
+const harnessSpin = (backend: string, frame: number) => { const set = [...(HARNESS_SPIN[backend] ?? HARNESS_SPIN.codex!)]; return set[frame % set.length]! }
 
 const hex = (rgb: number) => '#' + rgb.toString(16).padStart(6, '0')
 
@@ -90,6 +109,9 @@ const calls = atom({ plugin: 'wake', key: 'calls' } as const, [] as WakeCall[])
 const chips = atom({ plugin: 'wake', key: 'chips' } as const, [] as WakeChip[])
 const owners = atom({ plugin: 'wake', key: 'owners' } as const, [] as string[])
 const quotas = atom({ plugin: 'wake', key: 'quotas' } as const, [] as WakeQuota[])
+// which effort levels each model offers, read from the native inventory; refreshed a few times a day, not hardcoded
+const effortLevels = atom({ plugin: 'wake', key: 'effortLevels' } as const, { at: 0, levels: {} as EffortLevels })
+const EFFORT_LEVELS_MS = 6 * 60 * 60_000
 const recap = atom({ plugin: 'wake', key: 'recap' } as const, null as WakeRecap | null)
 const digest = atom({ plugin: 'wake', key: 'digest' } as const, freshDigest(0))
 const turnStartedAt = atom({ plugin: 'wake', key: 'turnStartedAt' } as const, null as number | null)
@@ -101,6 +123,8 @@ const tally = atom({ plugin: 'wake', key: 'tally' } as const, { turns: 0, added:
 const subagents = atom({ plugin: 'wake', key: 'subagents' } as const, [] as WakeAgent[])
 const agentModels = atom({ plugin: 'wake', key: 'agentModels' } as const, {} as Record<string, string>) // subagent id -> the model its spawn resolved to
 const parentModel = atom({ plugin: 'wake', key: 'parentModel' } as const, '')
+const parentEffort = atom({ plugin: 'wake', key: 'parentEffort' } as const, '') // the session's effort level, what a subagent inherits
+const agentEfforts = atom({ plugin: 'wake', key: 'agentEfforts' } as const, {} as Record<string, string>) // subagent id -> the effort its tool calls reported
 const surroundings = atom({ plugin: 'wake', key: 'surroundings' } as const, null as WakeSurroundings | null)
 const crewPageIndex = atom({ plugin: 'wake', key: 'crewPage' } as const, 0)
 
@@ -115,8 +139,11 @@ async function safely(work: () => unknown): Promise<void> {
 
 // Module state resets on a hot reload; the timers are restarted where they are needed.
 let animation: Timer | null = null
+let laneLoop: Timer | null = null // redraws the crew rows while a message is fresh or a job works
+let laneEvery = 0
 let codexPoll: Timer | null = null
 let quotaPoll: Timer | null = null
+let effortPoll: Timer | null = null
 let quotaTicks = 0
 let awayTimer: Timer | null = null
 let recapGeneration = 0
@@ -254,7 +281,9 @@ async function pollAgents($: EngineInterface) {
   const prior = await read($, subagents)
   const now = await $.clock.now()
   const models = await read($, agentModels)
-  const next = live.map(agent => ({ id: agent.id, type: agent.type, description: agent.description, name: agent.name, since: prior.find(p => p.id === agent.id)?.since ?? now, model: models[agent.id] }))
+  const efforts = await read($, agentEfforts)
+  const inherited = await read($, parentEffort)
+  const next = live.map(agent => ({ id: agent.id, type: agent.type, description: agent.description, name: agent.name, since: prior.find(p => p.id === agent.id)?.since ?? now, model: models[agent.id], effort: efforts[agent.id] ?? (inherited || undefined) }))
   if (JSON.stringify(next) !== JSON.stringify(prior)) await update($, subagents, () => next)
 }
 
@@ -275,12 +304,43 @@ function animate($: EngineInterface, on: boolean) {
   }
 }
 
+/**
+ * Redraw the crew rows only while something real moves: a message's packets on their way, or a worker's activity flash.
+ * Packets cross a lane in about a second, so frames are quick while they run; otherwise the rows rest and nothing redraws.
+ */
+function animateLanes($: EngineInterface, mode: 'packets' | null) {
+  const every = PACKET_FRAME_MS
+  if (mode === null || laneEvery !== every) {
+    laneLoop?.cancel()
+    laneLoop = null
+    laneEvery = 0
+  }
+  if (mode !== null && !laneLoop) {
+    laneLoop = $.clock.every(every, () => void update($, tick, n => n + 1).catch(() => {}))
+    laneEvery = every
+  }
+}
+
 function pollCodex($: EngineInterface) {
   codexPoll ??= $.clock.every(CODEX_POLL_MS, () => void safely(() => codexTick($)))
+  if (!effortPoll) {
+    // its own slow schedule: the inventory changes rarely and is independent of quota polling
+    $.clock.after(5_000, () => void safely(() => effortTick($)))
+    effortPoll = $.clock.every(EFFORT_LEVELS_MS, () => void safely(() => effortTick($)))
+  }
   if (!quotaPoll) {
     void safely(() => quotaTick($))
     quotaPoll = $.clock.every(QUOTA_POLL_MS, () => void safely(() => quotaTick($)))
   }
+}
+
+/** Which effort levels each model offers, from the native inventory: once on start, then a few times a day. */
+async function effortTick($: EngineInterface) {
+  const known = await read($, effortLevels)
+  const now = await $.clock.now()
+  if (now - known.at < EFFORT_LEVELS_MS) return
+  const levels = await scanEfforts($, ['codex', 'claude', 'agy', 'opencode'], known.levels)
+  await update($, effortLevels, () => ({ at: now, levels }))
 }
 
 export async function quotaTick($: EngineInterface) {
@@ -372,11 +432,18 @@ export async function codexTick($: EngineInterface) {
   const newPeerMessages = peerMessages.observe(peerScope, scan.jobs)
   const projectChips = (previous: WakeChip[]) => scan.jobs
     .filter(job => job.running || job.awaitingRoot || (job.finishedAt ?? 0) > now - 30 * 60_000)
-    .map(job => ({ id: job.id, owner: job.owner, name: job.name, title: titleOf(job), backend: job.backend, account: job.account, model: job.model, effort: job.effort, running: job.running, isStale: job.isStale, since: job.finishedAt ?? job.lastEventAt, startedAt: job.startedAt, lastEventAt: job.eventKnown ? job.lastEventAt : undefined, awaitingRoot: job.awaitingRoot, waitingForRoot: job.waitingForRoot, maker: makerOf(job.model), state: job.state, reason: job.reason, memoryBytes: job.memoryBytes, memoryCap: job.memoryCap, peers: job.peers.map(peer => {
+    .map(job => ({ id: job.id, owner: job.owner, name: job.name, title: titleOf(job), backend: job.backend, account: job.account, model: job.model, effort: job.effort, running: job.running, isStale: job.isStale, since: job.finishedAt ?? job.lastEventAt, startedAt: job.startedAt, lastEventAt: job.eventKnown ? job.lastEventAt : undefined, activitySeenAt: (() => {
+      // When this view first saw the worker do something new; the first sight of a job is not an event.
+      const oldJob = previous.find(old => old.id === job.id)
+      const last = job.eventKnown ? job.lastEventAt : undefined
+      return oldJob && last !== undefined && last !== oldJob.lastEventAt ? now : oldJob?.activitySeenAt
+    })(), awaitingRoot: job.awaitingRoot, waitingForRoot: job.waitingForRoot, maker: makerOf(job.model), state: job.state, reason: job.reason, memoryBytes: job.memoryBytes, memoryCap: job.memoryCap, peers: job.peers.map(peer => {
       const oldJob = previous.find(old => old.id === job.id)
       const old = oldJob?.peers?.find(p => p.target === peer.target && p.outgoing === peer.outgoing)
       const changed = peer.messageId && newPeerMessages.has(JSON.stringify([job.owner, job.id, peer.messageId]))
-      return { ...peer, observedAt: changed ? now : old?.messageId === peer.messageId ? old?.observedAt : undefined }
+      // one packet per message that arrived since the last look (a burst of three runs three), capped so a flood stays legible
+      const fresh = changed ? Math.min(5, Math.max(1, peer.count - (old?.count ?? peer.count - 1))) : old?.messageId === peer.messageId ? old?.fresh : undefined
+      return { ...peer, observedAt: changed ? now : old?.messageId === peer.messageId ? old?.observedAt : undefined, fresh }
     }), waitingPeer: job.waitingPeer }))
   const priorChips = await read($, chips)
   const nextChips = projectChips(priorChips)
@@ -491,7 +558,7 @@ export const register: Register = on => {
       const target = sceneSelection?.target ?? lastSceneTarget
       return { text: target ? [target.title, ...target.details].join('\n') : 'No scene object has been selected.' }
     }
-    if (verb === 'legend') return { text: 'Crew: harness logos identify Codex, agy, Claude and OpenCode; unsupported terminals show text instead. The circle fills with model size, ◔ small to ◉ largest. Hover crew marks for harness or model details; model IDs appear only when known. In the scene, hover a building for its turn and tool kinds, or a sprite for its worker; /wake detail shows its full details. Their windows mark read, search, edit, run, test, agent, web and failed calls. Lamps show plan progress; fireworks mark passing tests, storms mark failed commands, and shooting stars mark finished jobs. ● running · ⌁ heavy queue · = paused · ↻ retrying · ? needs answer · ! stalled · ✓ done · ○ idle. Signal bars ▁▃▄▆█ show thinking effort; the number is time since the last event; ▣▰▱ is memory against the job cap. Colored peer lanes join workers; ← points to the recipient, ─/━/═ means 1/2–4/5+ messages. Message links briefly pulse, then fade and disappear after 15 minutes. Narrow rows use ↗/↙ and the peer name instead. Quota bars show remaining per account/window; hover an account mark for percentages and source reset text when available. ✕ marks signed-out or expired accounts, ? means unknown, ~ means stale numbers.' }
+    if (verb === 'legend') return { text: 'Crew: harness logos identify Codex, agy, Claude and OpenCode; unsupported terminals show text instead. The circle fills with model size, ◔ small to ◉ largest. Hover crew marks for harness or model details; model IDs appear only when known. In the scene, hover a building for its turn and tool kinds, or a sprite for its worker; /wake detail shows its full details. Colour names the harness (Codex teal, agy mauve, Claude pink, OpenCode balloons) and a larger sprite means a larger model class; each landscape leaves its mark on them (a searchlight over the city, a pennant in the harbor, a ribbon on the beach, a contrail in the mountains, petals in the countryside, fireflies in the forest, dust in the desert, aurora glitter in the tundra). Their windows mark read, search, edit, run, test, agent, web and failed calls. Lamps show plan progress; fireworks mark passing tests, storms mark failed commands, and shooting stars mark finished jobs. ● running · ⌁ heavy queue · = paused · ↻ retrying · ? needs answer · ! stalled · ✓ done · ○ idle. Signal bars (five rising bars as an image, ▁▃▄▆█ as text) show thinking effort, for Bridge jobs and Claude subagents alike; the number is time since the last event; ▣▰▱ is memory against the job cap (Claude subagents report none). Colored peer lanes join workers; ← points to the recipient, ─/━/═ means 1/2–4/5+ messages. The root sits at the right edge of the crew rows: ◉ is the root, a spine runs down to the last worker with a tie to it, ─┤ and ─┘ are the branches of workers, ↑ means the last message went to the root, ↓ came from it and · means the worker simply works for it. A bright packet runs each lane and the spine (two for a stream of five or more, faster when new); in the scene a thin thread joins each worker to Mochi with a pulse running along it, and an envelope hops over Mochi when a message reaches or leaves the root. Message links pulse, then melt away gradually over 15 minutes. Narrow rows use ↗/↙ and the peer name instead. One logo opens the accounts of each CLI in the quota line, │ divides CLIs and idle accounts with the same numbers fold into a range (02–04). Quota bars show remaining per account/window; hover an account mark for percentages and source reset text when available. ✕ marks signed-out or expired accounts, ? means unknown, ~ means stale numbers.' }
     if (verb === 'tour') {
       tour = { start: frameNo }
       return { text: `Touring ${PRESETS.length} landscapes, 12 s each, a whole day in each; your own scene comes back after.` }
@@ -679,6 +746,19 @@ export const register: Register = on => {
     return out
   }).catch(($, e, next) => next(e))
 
+  // what effort each loop thinks at: every tool use says it, in the loop it ran in (the main one, or a subagent's id)
+  on('classic.PostToolUse', async ($, e, next) => {
+    const level = e.effort?.level
+    if (level) {
+      await safely(async () => {
+        if (e.agent_id) {
+          if ((await read($, agentEfforts))[e.agent_id] !== level) await update($, agentEfforts, m => ({ ...m, [e.agent_id!]: level }))
+        } else if ((await read($, parentEffort)) !== level) await update($, parentEffort, () => level)
+      })
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('classic.SubagentStop', async ($, e, next) => {
     await safely(() =>
       update($, digest, d => ({
@@ -717,7 +797,8 @@ export const register: Register = on => {
     const failures = (await read($, digest)).failures
     const here = await read($, surroundings)
     const crewAgents = await read($, subagents)
-    const parentTier = modelTier('claude', await read($, parentModel))
+    const parentModelId = await read($, parentModel)
+    const parentTier = modelTier('claude', parentModelId)
 
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
@@ -726,10 +807,17 @@ export const register: Register = on => {
     const Client = 'Client' in ui ? ui.Client : undefined // terminal pointer surface
     const now = await $.clock.now()
     const working = e.props.isWorking || started !== null
+    // Redraw only while something real is moving: a packet still on its way, or a worker's activity flash still fading.
+    animateLanes($, jobs.some(job => job.running && ((job.peers ?? []).some(peer => peer.observedAt !== undefined
+      && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1))
+      || activityFlash(job.activitySeenAt, now) > 0.02)) ? 'packets' : null)
     const width = e.props.bodyColumns
     const bridgeCount = jobs.filter(job => job.running || job.awaitingRoot).length
     const crewRowsNeeded = bridgeCount + crewAgents.length > 0 ? 2 : 0
-    const withScene = Raster !== undefined && !waiting && !open.length && !allCalls.length && e.props.maxRows >= SCENE_ROWS + 2 + crewRowsNeeded && width >= 40
+    // The scene stays while a need, a call or a recap waits below it, as long as the prompt's room fits both (a need is
+    // never pushed out: urgent rows are placed before the crew); it only gives way when there is no space for the two.
+    const urgentRowsNeeded = Math.min(2, open.length + allCalls.length)
+    const withScene = Raster !== undefined && !waiting && e.props.maxRows >= SCENE_ROWS + 2 + crewRowsNeeded + urgentRowsNeeded && width >= 40
     band = withScene ? { id: e.requestId, width } : null
     sceneRetryAt = 0
     sceneRetryDelay = 50
@@ -752,7 +840,7 @@ export const register: Register = on => {
     if (working) {
       headline = (
         <Text wrap="truncate-end">
-          <Text color={ink.teal}>{spinner(frame)} </Text>
+          <Text color={ink.teal}>{workSpin(input.preset, act?.kind, frame)} </Text>
           <Text color={ink.text} weight="bold">{act?.label ?? 'Working'}</Text>
         </Text>
       )
@@ -793,7 +881,9 @@ export const register: Register = on => {
     const w = here?.weather
     const sky = w ? skyOf(w.code, w.isDay) : undefined
     const rain = w ? nextRain(w.hours) : undefined
+    const levels = (await read($, effortLevels)).levels
     const running = jobs.filter(job => job.running || job.awaitingRoot)
+      .map(job => ({ ...job, effortLevels: levelsFor(levels, job.backend, job.model) }))
     const weather = here ? (
       <Text>
         {sky && w ? <Text color={ink.yellow}>{String.fromCodePoint(sky.icon)} </Text> : <Text color={ink.subtle}>{G.pin} </Text>}
@@ -823,47 +913,119 @@ export const register: Register = on => {
     const rows: RenderElement[] = []
     // Keep Claude's native subagent row intact; bridge jobs each get their own line.
     const rowWidth = Math.max(0, width - 2) // extras has one cell of padding on either side
+    // The worker rows end where the root's graph stands: a column in the middle, leaning right (about 62%), so every worker
+    // reaches it with a dotted leader and the root reads as one shared spot; a narrow band keeps it at the right edge.
+    // It stands at 58% of the band at the least and moves right only as far as the longest row needs, so words are never
+    // squeezed for it: the graph takes the room the text leaves.
+    const natural = Math.max(0,
+      ...crewRows(running, now, rowWidth - 7).map(row => 9 + cells(row.title) + cells(row.detail) + 8),
+      ...crewAgents.map(agent => 5 + cells(agent.name ?? agent.description) + 24))
+    const rowBox = rowWidth >= 80 ? Math.min(rowWidth, Math.max(Math.round(rowWidth * 0.58), natural + 3) + 4) : rowWidth
+    // a logo always keeps one cell of air before the text beside it
     const logo = (backend: string, alt = ({ codex: 'Codex', agy: 'Antigravity', claude: 'Claude', opencode: 'OpenCode' } as Record<string, string>)[backend] ?? backend) => Image && LOGOS[backend]
-      ? <Image source={{ png: LOGOS[backend] }} columns={2} rows={1} alt={alt} />
-      : <Box width={2}><Text wrap="truncate-end">{alt}</Text></Box>
-    const hoverPopup = (title: string, details: string[], maker?: string) => (
-      <Box position="absolute" top={1} left={0} display="none" hover={{ display: 'flex' }} flexDirection="column" width={Math.max(1, Math.min(56, rowWidth))} overflow="hidden" backgroundColor="#11111b" paddingX={1}>
+      ? <Box flexDirection="row" flexShrink={0}><Image source={{ png: LOGOS[backend] }} columns={2} rows={1} alt={alt} /><Text> </Text></Box>
+      : <Box width={3} flexShrink={0}><Text wrap="truncate-end">{alt}</Text></Box>
+    // Popups open upward: an absolute Box paints over what came before it (the scene and rows above) but under anything
+    // after it, and the band clips below its last row, so a downward card was hidden by the quota rows. Cells near the
+    // right edge (the root graph, peer lanes) anchor on their right so the card stays inside the band.
+    const hoverPopup = (title: string, details: string[], maker?: string, align: 'left' | 'right' = 'left') => (
+      <Box position="absolute" bottom={1} {...(align === 'right' ? { right: 0 } : { left: 0 })} display="none" hover={{ display: 'flex' }} flexDirection="column" width={Math.max(1, Math.min(56, rowWidth))} overflow="hidden" backgroundColor="#11111b" paddingX={1}>
         <Box flexDirection="row">{maker ? logo(maker, maker === 'codex' ? 'OpenAI' : 'Anthropic') : ''}<Text color={COLOR.text} weight="bold" wrap="wrap">{title}</Text></Box>
         {details.map((detail, index) => <Text key={`detail-${index}`} color={COLOR.subtext} wrap="wrap">{detail}</Text>)}
       </Box>
     )
-    for (const [index, agent] of crewAgents.entries()) {
-      rows.push(
-            <Box width={rowWidth} flexShrink={0} flexDirection="row">
-              <Text color={ink.pink}>{diamond(frame)} </Text>
-              <Text color={ink.text} wrap="truncate-end">{agent.name ?? agent.description}</Text>
-              <Box key={`wake-agent-model-${index}`} position="relative" flexShrink={0}>
-                <Text color={ink.pink}>{` ${pips(agent.model ? modelTier('claude', agent.model) : parentTier)}`}</Text>
-                {hoverPopup('Claude subagent · model mark', [
-                  agent.model ? `Model ID: ${agent.model}` : parentModel ? `Model ID unavailable; size mark follows parent ${parentModel}` : 'Model ID unavailable; size mark uses the default class',
-                ], modelLogo(agent.model))}
-              </Box>
+    // the root's graph, in the right edge of every worker row (native subagents first, then Bridge jobs): see rootSpine
+    const nativeLink = (agent: WakeAgent): RootLink => ({ dir: 'tether', family: 'claude', at: now, count: 1, description: [`${agent.name ?? agent.description} · Claude subagent`, 'Working for the root'] })
+    const bridgeLink = (job: WakeChip): RootLink | undefined => {
+      const message = [...(job.peers ?? [])].filter(peer => peer.target === 'root' && now >= peer.lastAt && now - peer.lastAt <= 900_000).sort((a, b) => b.lastAt - a.lastAt)[0]
+      if (message) {
+        return {
+          dir: message.outgoing ? 'out' : 'in', family: job.backend ?? 'codex', at: message.lastAt, count: message.count, observedAt: message.observedAt, fresh: message.fresh,
+          description: [
+            message.outgoing ? `${titleOf(job)} → root` : `Root → ${titleOf(job)}`,
+            message.messageState === 'observed' ? 'Observed by Bridge; root read state unknown' : message.messageState === 'sent' ? 'Bridge sent; worker read state unknown' : 'Bridge message state unavailable',
+            message.preview ?? 'Message preview unavailable',
+          ],
+        }
+      }
+      return job.running ? { dir: 'tether', family: job.backend ?? 'codex', at: now, count: 1, activeAt: job.lastEventAt ?? job.since, description: [`${titleOf(job)} · ${job.backend}`, job.lastEventAt === undefined ? 'Working for the root' : `Working for the root · last event ${span(now - job.lastEventAt)} ago`] } : undefined
+    }
+    const spineOf = (agents: WakeAgent[], jobs: WakeChip[]) => rootSpine([...agents.map(nativeLink), ...jobs.map(bridgeLink)], now)
+    const rootCells = spineOf(crewAgents, running)
+    const familyInk = (family: string) => family === 'agy' ? ink.blue : family === 'claude' ? ink.pink : family === 'opencode' ? ink.green : ink.teal
+    /** One row's cell of the graph: branch in the worker's colour, spine and arrow in the root's, brightened while a packet passes. */
+    const rootCell = (cell: RootCell | undefined, key: string) => cell ? <Box key={key} position="relative" flexShrink={0}>
+      <Text>{' '}</Text>
+      <Text color={glint(dimPeer(cell.family ? familyInk(cell.family) : ink.yellow, ink.subtle, cell.strength), ink.text, cell.flow)}>{cell.branch}</Text>
+      <Text color={glint(dimPeer(ink.yellow, ink.subtle, cell.strength), ink.text, cell.flow)} weight={cell.flow > 0.65 ? 'bold' : undefined}>{cell.spine === '◉' && cell.flow > 0.55 ? '◎' : cell.spine}</Text>
+      <Text color={glint(dimPeer(cell.family ? familyInk(cell.family) : ink.yellow, ink.subtle, cell.strength), ink.text, cell.flow)}>{cell.arrow}</Text>
+      {cell.spine === '◉' || cell.spine === '◎' ? <Text color={ink.subtle}> root</Text> : ''}
+      {cell.description.length ? hoverPopup('Root', cell.description, undefined, 'right') : ''}
+    </Box> : ''
+    /** The dotted leader from the end of a worker's words to its branch in the graph, so the row visibly reaches the root. */
+    /** The leader's dots with a bead marching along them: toward the root for a message to it, away for one from it, slowly for a tether. */
+    const march = (cell: RootCell) => {
+      // Beads run only while this row's message is arriving, toward the root for a message to it and away for one from it;
+      // otherwise the leader is plain dots. A tether never moves: working for the root is a relationship, not a message.
+      const period = 9
+      if (cell.arriving === undefined) return '┈'.repeat(rowWidth + period)
+      const step = Math.floor(cell.arriving / PACKET_FRAME_MS) % period // whole cells per frame: even, never skipped or doubled
+      const phase = cell.dir === 'in' ? step : period - 1 - step
+      return ('┈'.repeat(period - 1) + '●').repeat(Math.ceil(rowWidth / period) + 1).slice(phase)
+    }
+    // (a long unbroken run wrapped inside a one-row box shows exactly the room there is: clipped, never an ellipsis)
+    const leader = (cell: RootCell | undefined) => <Box width={1} height={1} flexGrow={1} flexShrink={1} overflow="hidden">
+      {cell && cell.branch === '─' ? <Text color={glint(dimPeer(familyInk(cell.family), ink.subtle, cell.strength * 0.7), ink.text, 0.15 + cell.flow * 0.5)} wrap="wrap">{march(cell)}</Text> : ''}
+    </Box>
+    const renderNative = (agent: WakeAgent, index: number, cell?: RootCell) => {
+      return (
+            <Box width={rowBox} flexShrink={0} flexDirection="row">
               <Box key={`wake-agent-harness-${index}`} position="relative" flexShrink={0}>
-                <Text> </Text>{logo('claude')}
+                {logo('claude')}
                 {hoverPopup(`Claude subagent · ${agent.type}`, [agent.name ?? agent.description, span(now - agent.since)])}
               </Box>
-              <Text color={ink.subtle} wrap="truncate-end">·{agent.type} · {span(now - agent.since)}</Text>
-            </Box>,
+              <Text color={ink.pink}> {diamond(frame)} </Text>
+              <Text color={ink.text} wrap="truncate-end">{agent.name ?? agent.description}</Text>
+              <Box key={`wake-agent-model-${index}`} position="relative" flexShrink={0}>
+                <Text color={ink.pink}>{` ${CLASS_GLYPH[(agent.model ? modelTier('claude', agent.model) : parentTier) - 1]}`}</Text>
+                {hoverPopup('Claude subagent · model mark', [
+                  agent.model ? `Model ID: ${agent.model}` : parentModelId ? `Model ID unavailable; size mark follows parent ${parentModelId}` : 'Model ID unavailable; size mark uses the default class',
+                ], modelLogo(agent.model))}
+              </Box>
+              {/* the same columns as a Bridge job's row: effort, time, memory (a subagent reports no memory of its own) */}
+              <Text color={ink.subtle}> </Text>
+              {(() => {
+                // the subagent's effort on its own model's scale (the parent's model when it reports none)
+                const scale = levelsFor(levels, 'claude', agent.model || parentModelId)
+                const dots = agent.effort ? effortDots(agent.effort, scale) : undefined
+                if (!dots) return <Text color={ink.subtle}>{agent.effort || '?'}</Text>
+                const lit = dots.indexOf('○') < 0 ? dots.length : dots.indexOf('○')
+                return <Box key={`wake-agent-effort-${index}`} position="relative" flexShrink={0}>
+                  <Text><Text color={ink.pink}>{dots.slice(0, lit)}</Text><Text color={ink.surface}>{dots.slice(lit)}</Text></Text>
+                  {hoverPopup('Effort', [`${agent.effort} · ${lit} of ${scale!.length} levels this model offers`, scale!.join(' → ')])}
+                </Box>
+              })()}
+              <Text color={ink.subtle} wrap="truncate-end"> {span(now - agent.since)}{agent.type === 'general-purpose' ? '' : ` · ${agent.type}`}</Text>
+              {leader(cell)}
+              {rootCell(cell, `root-native-${index}`)}
+            </Box>
       )
     }
-    const renderBridgeRow = (job: WakeChip, index: number, row: ReturnType<typeof crewRows>[number]) => {
+    for (const [index, agent] of crewAgents.entries()) rows.push(renderNative(agent, index, rootCells[index]))
+    const renderBridgeRow = (job: WakeChip, index: number, row: ReturnType<typeof crewRows>[number], cell?: RootCell) => {
       const familyColor = job.backend === 'agy' ? ink.blue : job.backend === 'claude' ? ink.pink : job.backend === 'opencode' ? ink.green : ink.teal
       const stateColor = row.state === 'stalled' ? ink.red : row.state === 'blocked_on_question' ? ink.peach
         : row.state === 'paused' || row.state === 'waiting_for_heavy' ? ink.yellow
         : row.state === 'retrying' ? ink.mauve : row.state === 'done' || row.state === 'waiting_for_root' ? ink.green : ink.teal
       const [, modelMark] = [...row.family]
-      return <Box width={rowWidth} flexDirection="row" position="relative">
-        <Text color={ink.text}>{row.title}</Text>
-        {row.family && <Text> </Text>}
+      return <Box width={rowBox} flexDirection="row" position="relative">
         {row.family && <Box key={`wake-crew-harness-${index}`} position="relative" flexShrink={0}>
           {logo(job.backend)}
           {hoverPopup(`Crew · ${job.backend}`, [row.title.trim(), `State: ${row.state}`, ...(job.waitingPeer ? [`Waiting for: ${job.waitingPeer.target}`] : [])])}
         </Box>}
+        {row.family && <Text color={familyColor}> {row.state === 'running' ? harnessSpin(job.backend ?? 'codex', frame) : ' '} </Text>}
+        <Text color={ink.text}>{row.title}</Text>
+        {row.family && <Text> </Text>}
         {row.family && <Box key={`wake-crew-model-${index}`} position="relative" flexShrink={0}>
           <Text color={familyColor}>{modelMark}</Text>
           {hoverPopup('Model-size mark', [
@@ -872,9 +1034,17 @@ export const register: Register = on => {
             'Unknown model families use the default middle mark',
           ], modelLogo(job.model))}
         </Box>}
-        {row.family && <Text color={stateColor}> {row.glyph}</Text>}
+        {row.family && <Text color={glint(stateColor, ink.text, row.beat * 0.7)}> {row.glyph}</Text>}
         <Box position="relative" flexShrink={0}>
-          <Text color={ink.subtle}>{row.detail}</Text>
+          {row.effortSlot ? <Box flexDirection="row">
+            <Text color={ink.subtle}>{row.effortSlot.before + ' '}</Text>
+            {/* lit dots in the harness colour, the levels left dim: the model's own scale */}
+            <Box key={`wake-crew-effort-${index}`} position="relative" flexShrink={0}>
+              <Text><Text color={familyColor}>{'●'.repeat(row.effortSlot.lit)}</Text><Text color={ink.surface}>{'○'.repeat(row.effortSlot.total - row.effortSlot.lit)}</Text></Text>
+              {hoverPopup('Effort', [row.effortSlot.label])}
+            </Box>
+            <Text color={ink.subtle}>{' '.repeat(Math.max(0, row.effortSlot.size - row.effortSlot.total)) + row.effortSlot.after}</Text>
+          </Box> : <Text color={ink.subtle}>{row.detail}</Text>}
           {row.columns.includes('peers') && hoverPopup(
             job.peers?.some(peer => peer.target === 'root') ? 'Bridge messages' : 'Peer communication',
             (job.peers ?? [])
@@ -890,17 +1060,22 @@ export const register: Register = on => {
             ])
           )}
         </Box>
-        {row.gutter.map((segment, lane) => {
+        {row.gutter.slice(0, row.rootAt ?? row.gutter.length).map((segment, lane) => {
           const color = [ink.teal, ink.mauve, ink.yellow, ink.blue, ink.pink, ink.green][segment.color % 6]!
+          // a packet passing lights its cell toward white (and bold at its head): the lane shows who sent to whom, live
+          const lit = glint(dimPeer(color, ink.subtle, segment.strength), ink.text, segment.flow)
           return <Box key={String(lane)} position="relative" flexShrink={0}>
-            <Text color={dimPeer(color, ink.subtle, segment.strength)}>{segment.text}</Text>
-            {segment.text.trim() ? hoverPopup('Peer communication', segment.description) : ''}
+            <Text color={lit} weight={segment.flow > 0.65 ? 'bold' : undefined}>{segment.text}</Text>
+            {segment.text.trim() ? hoverPopup('Peer communication', segment.description, undefined, 'right') : ''}
           </Box>
         })}
+        {/* the root's slot: the same place in every row, at the right edge, so a message to or from the root needs no row of its own */}
+        {leader(cell)}
+        {rootCell(cell, `root-bridge-${index}`)}
       </Box>
     }
-    const bridgeRows = crewRows(running, now, rowWidth)
-    for (const [index, job] of running.entries()) rows.push(renderBridgeRow(job, index, bridgeRows[index]!))
+    const bridgeRows = crewRows(running, now, rowBox - 7) // less the spinner (3) and the root graph's cell (4)
+    for (const [index, job] of running.entries()) rows.push(renderBridgeRow(job, index, bridgeRows[index]!, rootCells[crewAgents.length + index]))
     if (running.some(job => job.running) && accounts.length > 0) {
       const inUse = new Set(running.map(job => job.backend))
       const ordered = [...accounts.filter(q => inUse.has(q.cli)), ...accounts.filter(q => !inUse.has(q.cli))]
@@ -910,23 +1085,44 @@ export const register: Register = on => {
             const scope = `wake-quota-${lineIndex}-${chunkIndex}`
             const quota = chunk.quotas[0]!
             const mark = quotaMark(quota)
-            const details = chunk.quotas.flatMap(account => account.status
+            const details = (quota.status ? chunk.quotas : [quota]).flatMap(account => account.status
               ? [`${account.account}: ${account.status}`]
               : account.parts.length
                 ? account.parts.map(part => `${part.label} · ${Math.round(part.pct)}% remaining${part.resets ? ` · reset: ${truncate(part.resets, 48)}` : ''}`)
                 : ['Quota unavailable'])
             const first = chunk.quotas.length === 1 ? quota.account : `${quota.account}–${chunk.quotas.at(-1)!.account}`
             const hasMark = chunk.text.startsWith(mark)
+            // one logo opens each CLI's run of accounts, a divider closes it; the accounts after it share that logo
+            const opensCli = chunkIndex === 0 || line[chunkIndex - 1]!.quotas[0]!.cli !== quota.cli
+            const popup = hoverPopup(`${quota.cli} quota · ${first}${chunk.quotas.length === 1 && quota.active ? ' · active' : ''}`, [
+              ...details,
+              ...(quota.freshness && quota.freshness !== 'fresh' ? [`Snapshot ${quota.freshness}`] : []),
+            ])
+            const text = hasMark ? chunk.text.slice(mark.length) : chunk.text
+            // Each harness's run of accounts sits on its own faint tint with hard edges at the │ between harnesses;
+            // remaining allowance reads by colour: green with plenty left, yellow getting low, red nearly gone.
+            const tint = dimPeer(familyInk(quota.cli), floor ?? '#1e1e2e', 0.13)
+            const level = (pct: number) => pct >= 50 ? ink.green : pct >= 20 ? ink.yellow : ink.red
+            const [head, ...tokens] = text.split(' ')
+            const body = <Text>
+              <Text color={quota.active ? ink.text : ink.subtle} weight={quota.active ? 'bold' : undefined}>{head}</Text>
+              {tokens.map((token, k) => {
+                const part = /^([A-Za-z]+)(\d+)%(.*)$/.exec(token) // label, percent, bar: anything else (a status, a cut token) stays plain
+                return part
+                  ? <Text key={`part-${k}`}> <Text color={ink.subtle}>{part[1]}</Text><Text color={level(Number(part[2]))}>{part[2]}%{part[3]}</Text></Text>
+                  : <Text key={`part-${k}`} color={ink.subtle}> {token}</Text>
+              })}
+            </Text>
             return <Box key={`quota-${lineIndex}-${chunkIndex}`} flexDirection="row" position="relative" flexShrink={0}>
-              {chunkIndex > 0 && <Text>  </Text>}
-              {hasMark ? <Box key={scope} position="relative" flexDirection="row" flexShrink={0}>
-                {logo(quota.cli)}
-                {hoverPopup(`${quota.cli} quota · ${first}${chunk.quotas.length === 1 && quota.active ? ' · active' : ''}`, [
-                  ...details,
-                  ...(quota.freshness && quota.freshness !== 'fresh' ? [`Snapshot ${quota.freshness}`] : []),
-                ])}
-              </Box> : <Text color={ink.subtle}>{chunk.text}</Text>}
-              {hasMark && <Text color={ink.subtle}>{chunk.text.slice(mark.length)}</Text>}
+              {chunkIndex > 0 && opensCli && <Text color={ink.surface}> │ </Text>}
+              <Box flexDirection="row" flexShrink={0} backgroundColor={tint}>
+                {chunkIndex > 0 && !opensCli && <Text color={ink.surface}> · </Text>}
+                {opensCli ? <Box key={scope} position="relative" flexDirection="row" flexShrink={0}>
+                  {logo(quota.cli)}
+                  {popup}
+                </Box> : ''}
+                {opensCli ? body : <Box position="relative" flexShrink={0}>{body}{popup}</Box>}
+              </Box>
             </Box>
           })}
         </Box>)
@@ -974,6 +1170,8 @@ export const register: Register = on => {
           <Text> </Text>
           <Button key={`drop-${need.id}`} plain label="dismiss" onPress={async () => {
             await update($, needs, list => list.filter(one => one.id !== need.id))
+            // Mochi is alert only while something still needs you: the last dismissal lets her settle
+            if ((await read($, needs)).length === 0) await update($, mood, current => (current === 'alert' ? 'idle' : current))
             await refreshRecap($)
           }} />
         </Box>,
@@ -1014,9 +1212,10 @@ export const register: Register = on => {
       const startBridge = Math.max(0, start - crewAgents.length)
       const endBridge = Math.max(0, end - crewAgents.length)
       const pageJobs = running.slice(startBridge, endBridge)
-      const pageRows = crewRows(pageJobs, now, rowWidth)
-      const agentsOnPage = crew.slice(start, Math.min(end, crewAgents.length))
-      rows.push(...agentsOnPage, ...pageJobs.map((job, i) => renderBridgeRow(job, startBridge + i, pageRows[i]!)))
+      const pageRows = crewRows(pageJobs, now, rowBox - 7)
+      const agentsOnPage = crewAgents.slice(start, Math.min(end, crewAgents.length))
+      const pageCells = spineOf(agentsOnPage, pageJobs) // the graph is drawn for the rows on this page
+      rows.push(...agentsOnPage.map((agent, i) => renderNative(agent, start + i, pageCells[i])), ...pageJobs.map((job, i) => renderBridgeRow(job, startBridge + i, pageRows[i]!, pageCells[agentsOnPage.length + i])))
       rows.push(<Box flexDirection="row">
         <Button key="crew-prev" plain label="‹" onPress={async () => { await update($, crewPageIndex, () => (page + pages - 1) % pages) }} />
         <Text color={ink.subtle}>{` crew ${page + 1}/${pages} `}</Text>

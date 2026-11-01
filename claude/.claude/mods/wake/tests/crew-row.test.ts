@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { cells, crewPage, crewRows, effortMeter, quotaLines, quotaRows, quotaText, STATE_GLYPHS, stateOf } from '../hooks/crew-row'
+import { PACKET_RUN_MS, cells, crewPage, crewRows, messageFade, quotaLines, quotaRows, quotaText, STATE_GLYPHS, stateOf } from '../hooks/crew-row'
 import type { WakeChip } from '../types'
 
 const base: WakeChip = { name: 'worker', title: 'Inspect 長い👩‍💻 worker title', backend: 'codex', account: '01', model: 'gpt-6.1-terra', effort: 'high', running: true, isStale: false, since: 0, lastEventAt: 10_000, memoryBytes: 512 * 1024 ** 2, memoryCap: '1G' }
@@ -30,6 +30,26 @@ test('peer trace pulses briefly, then fades and reports only actual previews', (
   expect(crewRows(jobs, 910_001, 120)[0]!.gutter).toHaveLength(0)
   jobs[0]!.peers![0]!.preview = null
   expect(trace(10_000).description).toContain('Message preview unavailable')
+})
+
+test('a packet crosses the lane once per arriving message, sender to recipient, then the lane rests', () => {
+  // seen at t=0: `fresh` messages arrived together
+  const peers = (fresh: number, observedAt: number | undefined) => [{ target: 'd', count: 6, lastAt: 0, outgoing: true, observedAt, fresh }]
+  const jobs = (fresh: number, observedAt: number | undefined = 0): WakeChip[] => ['a', 'b', 'c', 'd'].map((id, i) => ({ ...base, id, name: id.toUpperCase(), peers: i === 0 ? peers(fresh, observedAt) : [] }))
+  const unseen = (): WakeChip[] => ['a', 'b', 'c', 'd'].map((id, i) => ({ ...base, id, name: id.toUpperCase(), peers: i === 0 ? peers(1, undefined) : [] }))
+  const flows = (now: number, list = jobs(1)) => crewRows(list, now, 120).map(row => row.gutter[0]!.flow)
+  // the single message's packet visits the rows in order a, b, c, d
+  const heads = [0, 300, 600, 900, 1_200].map(t => flows(t).indexOf(Math.max(...flows(t))))
+  expect(heads.every((row, i) => i === 0 || row >= heads[i - 1]!)).toBe(true)
+  expect(new Set(heads).size).toBeGreaterThan(2)
+  // ...and then nothing moves: no loop, however recent the conversation still is
+  for (const t of [PACKET_RUN_MS + 50, 5_000, 60_000, 600_000]) expect(Math.max(...flows(t))).toBe(0)
+  // three messages arriving together send three packets a beat apart, so motion lasts longer
+  const moving = (list: WakeChip[]) => Array.from({ length: 60 }, (_, k) => k * 50).filter(t => Math.max(...flows(t, list)) > 0).length
+  expect(moving(jobs(3))).toBeGreaterThan(moving(jobs(1)))
+  // history this view never saw arrive does not move at all, nor does a lane that only waits on a peer
+  expect(Array.from({ length: 30 }, (_, k) => Math.max(...flows(k * 100, unseen()))).every(flow => flow === 0)).toBe(true)
+  for (const flow of flows(400, jobs(5))) expect(flow).toBeLessThanOrEqual(1)
 })
 
 test('root markers appear only for recorded messages and distinguish Bridge observation from delivery', () => {
@@ -92,11 +112,13 @@ test('every width fits terminal cells even with wide text, emoji, links and mult
 test('known memory, freshness, effort and directed weighted peers render without fabricated values', () => {
   const row = crewRows([{ ...base, peers: [{ target: 'owner/reviewer', count: 3, lastAt: 9_000, outgoing: true }, { target: 'owner/other', count: 2, lastAt: 8_000, outgoing: false }] }], 20_000, 120)[0]!
   expect(row.family + ' ' + row.glyph).toBe('◈◑ ●')
-  expect(row.detail).toContain('▁▃▄··') // high effort: three of five signal steps lit
-  expect(effortMeter('low')).toBe('▁····')
-  expect(effortMeter('MAX')).toBe('▁▃▄▆█')
-  expect(effortMeter('ultra')).toBe('▁▃▄▆█')
-  expect(effortMeter('mystery')).toBeUndefined()
+  // effort without a known scale stays the plain word; with the model's levels it is a meter on that scale
+  expect(row.detail).toContain('high')
+  const scaled = (effortLevels: string[], effort = 'high') => crewRows([{ ...base, effort, effortLevels }], 20_000, 120)[0]!
+  expect(scaled(['low', 'medium', 'high']).detail).toContain('●●●') // a model that tops out at high is full at high
+  expect(scaled(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']).detail).toContain('●●●○○○')
+  expect(scaled(['low', 'medium', 'high']).effortSlot).toMatchObject({ lit: 3, total: 3 })
+  expect(scaled(['low', 'high', 'max'], 'medium').detail).toContain('medium') // not on its scale: never forced onto it
   expect(row.detail).toContain('▰▰▱▱')
   expect(crewRows([{ ...base, memoryBytes: 512, memoryCap: '1024' }], 20_000, 120)[0]!.detail).toContain('▰▰▱▱')
   expect(row.detail).toContain('↗reviewer:3')
@@ -227,4 +249,20 @@ test('opposite directions use separate lanes and freshness boundaries are exact'
   expect(rows[1]!.gutter.map(s => s.text)).toEqual(['←┘ ', '═┘ '])
   expect(rows[0]!.gutter.map(s => s.dim)).toEqual([false, true])
   expect(crewRows(jobs, now + 1, 90)[0]!.gutter).toHaveLength(1)
+})
+
+test('idle accounts with the same numbers fold into one range, and the active one stays alone', () => {
+  const quota = (account: string, pct: number, active = false) => ({ cli: 'codex' as const, account, plan: '', active, parts: [{ label: 'w', pct, resets: null }], freshness: 'fresh' as const })
+  const lines = quotaLines([quota('01', 98, true), quota('02', 0), quota('03', 0), quota('04', 0), quota('05', 51)], 200)
+  expect(lines).toHaveLength(1)
+  expect(lines[0]).toContain('02–04 w0%')
+  expect(lines[0]).toContain('01* w98%')
+  expect(lines[0]).not.toContain('03 ')
+})
+
+test('a message melts away over its fifteen minutes instead of stopping at a floor', () => {
+  const strengths = [0, 150_000, 450_000, 800_000, 899_000].map(age => messageFade(age))
+  expect(strengths.every((s, i) => i === 0 || s < strengths[i - 1]!)).toBe(true)
+  expect(strengths[0]).toBeGreaterThan(0.6)
+  expect(strengths.at(-1)).toBeLessThan(0.1)
 })

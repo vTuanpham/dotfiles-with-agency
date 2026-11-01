@@ -123,7 +123,7 @@ It is Claude-only; [Agent Bridge](../agent-bridge/README.md) and
 | Turns and tool calls | Structures and coloured windows; the current turn is under construction |
 | Bridge workers and Claude subagents | Crew sprites by harness and model class, plus compact crew rows |
 | Job stops making progress | Amber stale marker |
-| Tests pass / command fails / Bridge job finishes | Fireworks / storm / shooting star |
+| Tests pass / command fails / Bridge job finishes | Fireworks / storm / shooting star, in the local style (harbor and beach fireworks mirror in the water; the desert storm is sand and the tundra's a blizzard; a tundra job lights the aurora) |
 | Plan steps / session mood | Lit lamps / Mochi working, waiting, happy, sad or asleep |
 | Place, time and weather | Landscape, sun, moon phase and local weather |
 
@@ -147,9 +147,30 @@ The [Claude Code documentation](https://code.claude.com/docs/en/sub-agents)
 describes its subagent workflow and status access.
 
 Classes are 1 Haiku/Luna, 2 Sonnet/Terra, 3 Opus/Sol and 4 Fable/Astra;
-unrecognized models fall back to class 2. Each harness has four scene sprites.
-A filling circle beside the harness mark (◔ ◑ ◕ ◉) shows the class, and a
-five-step signal meter shows effort, lit steps against dots.
+unrecognized models fall back to class 2. Each harness has four scene sprites that keep
+their colour and character everywhere (Codex a machine, agy light, Claude a living thing,
+OpenCode a festival balloon) and grow with the class; each landscape then dresses them:
+a Codex machine takes the gear of the country (a paraglider canopy in the mountains, a
+pennant in the harbor, a ribbon on the beach, a lateen sail in the desert, skis in the
+tundra, a windmill rotor in the countryside, a lantern in the forest, an aerial and a
+blinking light in the city) and every family wears its weather as soft light (a
+searchlight over the city, a contrail in the mountains, petals in the countryside,
+fireflies in the forest, dust in the desert, aurora glitter in the tundra). Flyers patrol the
+clear sky beside their home, slowly and continuously, so nothing teleports; they pass in front
+of the backdrop but never over turn buildings. A worker hops when something real happens to it:
+Bridge reports it acted, its message sets off (the sender), or one lands on it (the recipient).
+A filling circle beside the harness mark (◔ ◑ ◕ ◉) shows the class, and effort is a
+five-bar signal icon (an image where the terminal shows images, ▁▃▄·· as text) for Bridge
+jobs and Claude subagents alike. Each row opens with the harness logo and, while the worker
+runs, the harness's own spinner (Codex orbits, agy twinkles, OpenCode's balloon bobs); the
+working headline's spinner follows the command: a shell spins, tests fill a gauge, edits grow a caret,
+reads fill a page, searches circle, agents turn a gem, the web turns a globe; thinking keeps the
+landscape's own.
+The root has one place in every worker row, the right edge: a `◉` node on the first row, a
+spine down to the last worker tied to it, `─┤`/`─┘` branches, and `↑`/`↓` for the last message
+to or from the root (`·` when the worker simply works for it); a packet runs the spine as a
+message arrives and a tie fades over 15 minutes. In the scene a faint, still thread joins each
+worker (native or Bridge) to Mochi: working for the root is a relationship, not a message.
 If the crew will not fit alongside the scene, Wake temporarily gives the rows
 the available space instead; an overflow count indicates any remaining rows.
 A stall mark comes from Bridge's shared
@@ -164,10 +185,14 @@ Quota observations come independently from
 Wake maps the shared state and stall reason; heavy waits, root pauses and retry
 backoff stay normal known states. Colored gutter lanes join connected peers;
 ← points to the recipient, ─, ━ and ═ represent 1, 2–4 and 5+ messages,
-and ┄/┆ show a declared peer or dependency wait. Message links dim after five
-minutes and disappear after 15. The gutter shrinks with the terminal; where a
-group cannot fit, the existing ↗/↙ peer marks remain. Root messages have their
-own ↗r (worker → root) and ↙r (root → worker) gutter marks. Clear scene paths
+and ┄/┆ show a declared peer or dependency wait. Motion means a message just arrived: when Wake
+first sees new messages on a link, one packet per message (up to five, a beat apart) crosses the
+lane once from sender to recipient, then the lane rests. History Wake never saw arrive does not
+move, nor does a wait. A worker's state mark lights when it acts, then settles. The scene wire
+between the two sprites carries the same packets in the sender's harness colour and flashes
+where each lands. Message links fade gradually and are gone after 15 minutes. The gutter
+shrinks with the terminal; where a group cannot fit, the existing ↗/↙ peer marks remain.
+Root messages use the root graph at the right edge (above). Clear scene paths
 connect workers to Mochi. Hover details show the scrubbed preview and distinguish
 Bridge observing worker output from sending a root prompt or steer; neither
 proves the recipient read it. The root endpoint is the owner namespace across
@@ -212,8 +237,15 @@ interactive session reloads it when its files change, so edits here apply live.
   when authorized. Type checking does not replace the runtime suite.
 - `bun dev/showcase.ts` and `bun dev/dock.ts` render the animation frames behind the README GIFs
   ([docs/tools](../docs/tools/README.md) turns them into images).
-- `bun dev/crew.ts <codex|agy|claude|opencode>` renders the four sprite classes;
+- `bun dev/crew.ts <codex|agy|claude|opencode>` renders the four sprite classes over every landscape;
   `bun dev/crew-review.ts` renders synthetic before/after rows at three widths.
+- Motion and traffic over time, for nested crews: `bun dev/motion.ts [out.png] [width]` renders the
+  scene through solo, chain, burst and crowded cases at several moments (patrol, hops, packets);
+  `bun dev/rows.ts [width]` prints the inline rows' marks, lanes and root spine per moment as text,
+  to confirm motion starts only on real arrivals and stops after.
+- Live look without a screenshot: run `claude` in a detached `tmux` pane (no prompt needed), then
+  `tmux capture-pane -t PANE -e -p > pane.ans` and `uv run --with pillow python dev/ansi-png.py pane.ans out.png [from] [to]`
+  renders the band with its true colours and half-block pixels.
 - Look at a landscape before changing it: `bun dev/preview.ts <landscape>` writes
   a sheet of every day phase, weather, effect and event to `dev/<landscape>.png`.
 - Paint scene cards in the same Raster as the animation. The Client captures pointers

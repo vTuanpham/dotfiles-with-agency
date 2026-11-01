@@ -10,6 +10,7 @@ import { airJobs } from './crew'
 
 const GROUND = SCENE_H - 4 // buildings stand on the row above; the bank and stream run below
 const BANK = GROUND + 1
+const LIFT = GROUND - 12 // events on the trees were placed for the 16-pixel scene; they stay on the trees as the sky grows
 const BOTTOM = SCENE_H - 1
 const MIN_W = [8, 8, 6, 7] // cabin, treehouse, lookout tower, cottage
 const MIN_H = [6, 8, 8, 6]
@@ -292,9 +293,9 @@ export const forest: Landscape = {
       const pulse = 0.7 + 0.3 * wave(look.frame, 90, k * 23)
       for (let y = 0; y < GROUND; y++) for (let w = 0; w < 3; w++) c.glow(bx + Math.round(y * 0.6) + w, y, look.phase === 'noon' ? P.white : P.yellow, beams * pulse * (1 - y / 14))
     }
-    if (look.night > 0.5) for (let k = 0; k < 2; k++) for (let y = 0; y < 9; y++) c.glow(Math.round(c.W * (0.3 + k * 0.4)) + Math.round(y * 0.4), y, P.blue, 0.06 * look.night) // moonlight
+    if (look.night > 0.5) for (let k = 0; k < 2; k++) for (let y = 0; y < 9 + LIFT; y++) c.glow(Math.round(c.W * (0.3 + k * 0.4)) + Math.round(y * 0.4), y, P.blue, 0.06 * look.night) // moonlight
     const mist = look.wet ? 0 : byPhase(look, { dawn: 0.3, morning: 0.14 })
-    if (mist) for (let y = 7; y < GROUND; y++) for (let x = 0; x < c.W; x++) c.glow(x, y, mix(look.horizon, P.white, 0.6), mist * wave(x * 5 + look.frame, 120, y * 7))
+    if (mist) for (let y = 7 + LIFT; y < GROUND; y++) for (let x = 0; x < c.W; x++) c.glow(x, y, mix(look.horizon, P.white, 0.6), mist * wave(x * 5 + look.frame, 120, y * 7))
   },
 
   floor(c, look) {
@@ -379,15 +380,15 @@ export const forest: Landscape = {
       when: look => look.night > 0.5,
       draw(c, look, age, seed) {
         const ox = 10 + (hash(seed) % Math.max(1, c.W - 30))
-        for (let k = -4; k <= 4; k++) c.set(ox + k, 7, mix(0x5a4a3a, 0x10182a, look.night * 0.3)) // the branch
+        for (let k = -4; k <= 4; k++) c.set(ox + k, 7 + LIFT, mix(0x5a4a3a, 0x10182a, look.night * 0.3)) // the branch
         const blink = age % 50 < 4
         const shown = age >= 12 && age <= 188 // the eyes open first, in the dark
-        if (shown) sprite(c, ox, 3, ['e.e', 'bbb', 'bwb', 'bbb', '.k.'], { e: 0xa89a88, b: 0xa08e78, w: 0xe8dcc0, k: 0x6a5a4a })
+        if (shown) sprite(c, ox, 3 + LIFT, ['e.e', 'bbb', 'bwb', 'bbb', '.k.'], { e: 0xa89a88, b: 0xa08e78, w: 0xe8dcc0, k: 0x6a5a4a })
         for (const dx of [0, 2]) {
-          c.set(ox + dx, 4, blink ? 0x5a4a38 : P.yellow)
-          if (!blink) for (const [gx, gy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(ox + dx + gx, 4 + gy, P.yellow, 0.25)
+          c.set(ox + dx, 4 + LIFT, blink ? 0x5a4a38 : P.yellow)
+          if (!blink) for (const [gx, gy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(ox + dx + gx, 4 + LIFT + gy, P.yellow, 0.25)
         }
-        if (!blink && shown) c.set(ox + 1 + Math.round(Math.sin(age * 0.06)), 4, 0x2a2018) // turning its head
+        if (!blink && shown) c.set(ox + 1 + Math.round(Math.sin(age * 0.06)), 4 + LIFT, 0x2a2018) // turning its head
       },
     },
     {
@@ -413,17 +414,18 @@ export const forest: Landscape = {
       draw(c, look, age, seed) {
         const tx = 14 + (hash(seed) % Math.max(1, c.W - 40))
         const fade = Math.min(1, age / 10, (110 - age) / 10)
-        for (let y = 1; y < GROUND; y++) for (let k = 0; k < 2; k++) c.glow(tx + k, y, dim(look, k ? 0x4a3a2e : 0x6a5442), fade)
+        for (let y = 1 + LIFT; y < GROUND; y++) for (let k = 0; k < 2; k++) c.glow(tx + k, y, dim(look, k ? 0x4a3a2e : 0x6a5442), fade)
         const peck = age >= 22 && age < 88
         const t = age < 22 ? age / 22 : age >= 88 ? 1 + (age - 88) / 22 : 1
         const bx = Math.round(tx + 8 - 7 * Math.min(1, t) + Math.max(0, t - 1) * 30)
-        const by = Math.round(4 - Math.sin(Math.min(1, t) * Math.PI) * 3 - Math.max(0, t - 1) * 8)
+        const by = Math.round(4 + LIFT - Math.sin(Math.min(1, t) * Math.PI) * 3 - Math.max(0, t - 1) * 8)
         const nod = peck && look.frame % 4 < 2 ? 1 : 0
         const bird = (x: number, y: number) => { c.set(x, y, 0x2a2a34); c.set(x + 1, y, 0x2a2a34) }
         if (!peck) { bird(bx, by); c.set(bx + 2, by - (look.frame % 4 < 2 ? 1 : 0), P.white); c.set(bx - 1, by, 0x2a2a34); return }
-        c.set(tx + 2 - nod, 3, P.red) // the red cap
-        c.set(tx + 3, 3, 0x2a2a34); c.set(tx + 3, 4, P.white); c.set(tx + 3, 5, 0x2a2a34); c.set(tx + 4, 6, 0x2a2a34); c.set(tx + 3, 6, P.white)
-        if (nod) c.glow(tx - 1 - (look.frame % 3), 3 + (look.frame % 2), 0xc8a070, 0.8) // chips fly
+        const y0 = 3 + LIFT
+        c.set(tx + 2 - nod, y0, P.red) // the red cap
+        c.set(tx + 3, y0, 0x2a2a34); c.set(tx + 3, y0 + 1, P.white); c.set(tx + 3, y0 + 2, 0x2a2a34); c.set(tx + 4, y0 + 3, 0x2a2a34); c.set(tx + 3, y0 + 3, P.white)
+        if (nod) c.glow(tx - 1 - (look.frame % 3), y0 + (look.frame % 2), 0xc8a070, 0.8) // chips fly
       },
     },
     {

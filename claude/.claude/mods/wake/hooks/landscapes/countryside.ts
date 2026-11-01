@@ -296,7 +296,8 @@ export const countryside: Landscape = {
       }
     }
     const mist = look.wet ? 0 : byPhase(look, { dawn: 0.34, morning: 0.16 })
-    if (mist) for (let y = 6; y < GROUND; y++) for (let x = 0; x < c.W; x++) c.glow(x, y, mix(look.horizon, P.white, 0.6), mist * wave(x * 4 + look.frame, 110, y * 9) * ((y - 5) / 6))
+    // the mist hangs over the meadow: rows counted up from the ground, so a taller sky stays clear
+    if (mist) for (let y = GROUND - 6; y < GROUND; y++) for (let x = 0; x < c.W; x++) c.glow(x, y, mix(look.horizon, P.white, 0.6), mist * wave(x * 4 + look.frame, 110, y * 9) * ((y - (GROUND - 7)) / 6))
   },
 
   floor(c, look) {

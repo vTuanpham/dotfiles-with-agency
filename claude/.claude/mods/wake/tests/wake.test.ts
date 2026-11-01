@@ -1,7 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
+import { crewRows } from '../hooks/crew-row'
 import { LANDSCAPES } from '../hooks/landscapes'
-import { CAT_COLUMNS, sceneCardBounds, sceneFrame, type SceneInput } from '../hooks/scene'
+import { CAT_COLUMNS, SCENE_ROWS, sceneCardBounds, sceneFrame, type SceneInput } from '../hooks/scene'
 import { crewTiming, isTestCommand } from '../hooks/util'
 import ScenePointer from '../hooks/scene-hover'
 import type { WakeAgent, WakeChip } from '../types'
@@ -290,8 +291,12 @@ test('one crew job at 180 columns keeps its status and model next to the title',
   const bar = await mount($, 'AbovePrompt', false, 180)
   const text = flat((await bar.drawn()) as Node)
   expect(text).toContain('Photo ranking feature scan')
-  expect(text).toContain('Co◔ ●')
-  expect(text).toContain('▁▃▄··') // high effort
+  expect(text).toMatch(/Co  . Photo ranking feature scan ◔ ●/) // logo with a cell of air, the Codex spinner, the title, class and state
+  // with no inventory loaded the effort shows as its word, never a guessed scale
+  expect(text).toContain('high')
+  const scaled = crewRows([{ ...job, backend: 'codex', effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] }], 1_000_000, 120)[0]!
+  expect(scaled.detail).toContain('●●●○○○')
+  expect(scaled.effortSlot).toMatchObject({ lit: 3, total: 6 })
   await bar.unmount()
 })
 
@@ -299,14 +304,29 @@ test('a fitted row keeps event age, whatever backend runs the job', async ($, on
   engine(on)
   let shown: WakeChip[] = []
   on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: shown, version: 1 } }))
-  for (const [backend, model, mark] of [['codex', 'gpt-6-luna', 'Co◔'], ['agy', 'gemini-3.8-flash-high', 'An◔']] as const) {
+  for (const [backend, model, mark] of [['codex', 'gpt-6-luna', 'Co  . Face validation ◔'], ['agy', 'gemini-3.8-flash-high', 'An  . Face validation ◔']] as const) {
     shown = [{ name: 'v5', title: 'Face validation', backend, account: '01', model, effort: 'high', running: true, isStale: false, since: 1, lastEventAt: 992_000 }]
     const bar = await mount($, 'AbovePrompt', false, 120)
     const text = flat((await bar.drawn()) as Node)
-    expect(text).toContain(mark)
+    expect(text).toMatch(new RegExp(mark))
     expect(text).toContain('8s')
     await bar.unmount()
   }
+})
+
+test('with the model inventory loaded, effort is a meter on the model scale and its hover card renders', async ($, on) => {
+  // Live sessions have the inventory; without it the meter and its card never render, which once hid a missing Box key.
+  engine(on)
+  const job: WakeChip = { id: 'o/v5', name: 'v5', title: 'Face validation', backend: 'agy', account: '01', model: 'gemini-3.8-flash-high', effort: 'high', running: true, isStale: false, since: 1, lastEventAt: 992_000 }
+  on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: [job], version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'effortLevels' }, () => ({ value: { value: { at: 1, levels: { agy: { 'gemini-3.8-flash-high': ['low', 'medium', 'high'] } } }, version: 1 } }))
+  const bar = await mount($, 'AbovePrompt', false, 120)
+  const tree = (await bar.drawn()) as Node
+  expect(flat(tree)).toContain('Face validation')
+  expect(flat(tree)).toContain('●●●') // a Gemini that tops out at high is full at high
+  // every hover card sits inside a keyed Box, as the engine requires
+  expect(boxes(tree).some(node => node.props?.key === 'wake-crew-effort-0')).toBe(true)
+  await bar.unmount()
 })
 
 test('the quota line leads with the CLI at work and shows unknown accounts', async ($, on) => {
@@ -321,7 +341,7 @@ test('the quota line leads with the CLI at work and shows unknown accounts', asy
   on('state.get', { plugin: 'wake', key: 'quotas' }, () => ({ value: { value: quotas, version: 1 } }))
   const bar = await mount($, 'AbovePrompt')
   const text = flat((await bar.drawn()) as Node)
-  expect(text).toContain('Ana1 Cw0%▱▱▱▱  Co01* w100%▰▰▰▰  Co02 ?')
+  expect(text).toContain('An a1 Cw0%▱▱▱▱ │ Co 01* w100%▰▰▰▰ · 02 ?') // one logo per CLI (with air after it), a divider between CLIs, a dot between its accounts
   await bar.unmount()
 })
 
@@ -380,7 +400,7 @@ test('nonterminal surfaces retain a full text label in the fallback', async ($, 
   const bar = await $.ui.mount({ plugin: 'wake', surface: 'desktop', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 16, bodyColumns: 80, scroll: { offset: 0, bodyRows: 16 } } } as never)
   const harness = boxes((await bar.drawn()) as Node).find(node => node.props?.key === 'wake-crew-harness-0')!
   expect(boxes(harness).some(node => node.type === 'Image')).toBe(false)
-  expect(boxes(harness).some(node => node.type === 'Box' && node.props?.width === 2)).toBe(true)
+  expect(boxes(harness).some(node => node.type === 'Box' && node.props?.width === 3)).toBe(true) // two cells of label, one of air
   expect(flat(harness)).toContain('Antigravity')
   await bar.unmount()
 })
@@ -448,8 +468,9 @@ test('Raster cards stay inside the scene and leave status and crew unchanged at 
   let jobs: WakeChip[] = []
   on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: jobs, version: 1 } }))
   on('state.get', { plugin: 'wake', key: 'surroundings' }, () => ({ value: { value: { place: { key: 'fixture', name: 'Fixture', country: '', lat: 0, lon: 0, source: 'named' }, preset: 'city', presetSource: 'pinned', weather: { fetchedAt: 1_000_000, utcOffsetSeconds: 0, temp: 24, code: 3, isDay: true, cloud: 0.8, precipitation: 0, snowfall: 0, wind: 4, sunrise: 6, sunset: 18, hours: [] } }, version: 1 } }))
-  for (const width of [40, 100, 180]) for (const maxRows of [10, 12, 16]) {
-    jobs = maxRows === 10 ? [] : [job, { ...job, id: 'owner/b', name: 'second' }, { ...job, id: 'owner/c', name: 'third' }]
+  // the scene is SCENE_ROWS tall plus its headline: the smallest band fits just that, the larger ones a crew too
+  for (const width of [40, 100, 180]) for (const maxRows of [SCENE_ROWS + 2, SCENE_ROWS + 4, SCENE_ROWS + 8]) {
+    jobs = maxRows === SCENE_ROWS + 2 ? [] : [job, { ...job, id: 'owner/b', name: 'second' }, { ...job, id: 'owner/c', name: 'third' }]
     const bar = await mount($, 'AbovePrompt', false, width, maxRows)
     const before = (await bar.drawn()) as Node
     const headline = flat(boxes(before).find(node => node.props?.key === 'wake-headline')!)
@@ -499,7 +520,7 @@ test('mouse movement writes no reactive state or band drawing; unrelated redraw 
   let bandReads = 0, writes = 0
   on('state.get', { plugin: 'wake', key: 'tally' }, (_$, e, next) => { bandReads++; return next(e) })
   on('state.set', (_$, e, next) => { writes++; return next(e) })
-  const bar = await mount($, 'AbovePrompt', false, 100, 10)
+  const bar = await mount($, 'AbovePrompt', false, 100, SCENE_ROWS + 2)
   const pointer = bar as unknown as { pointer: (event: { type: 'move' | 'leave'; x: number; y: number }) => Promise<void> }
   const beforeReads = bandReads, beforeWrites = writes
   for (const x of [0, 1, 2, 3]) await pointer.pointer({ type: 'move', x, y: 0 })
@@ -509,7 +530,7 @@ test('mouse movement writes no reactive state or band drawing; unrelated redraw 
   expect(drawn()).toContain('Sky')
   await bar.redraw()
   expect(rasterText(String(boxes((await bar.drawn()) as Node).find(node => node.type === 'Raster')!.props!.cells))).toContain('Sky')
-  await bar.redraw({ hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 40, scroll: { offset: 0, bodyRows: 10 } } as never)
+  await bar.redraw({ hasSurvey: false, isWorking: false, maxRows: SCENE_ROWS + 2, bodyColumns: 40, scroll: { offset: 0, bodyRows: SCENE_ROWS + 2 } } as never)
   const resized = boxes((await bar.drawn()) as Node).find(node => node.type === 'Raster')!
   expect(resized.props?.columns).toBe(40)
   expect(rasterText(String(resized.props!.cells))).toContain('Sky')
@@ -554,8 +575,8 @@ test('Raster card composition changes only its rectangle and emits legal cells f
   expect(card.hits).toEqual(plain.hits)
   expect(card.floor).toBe(plain.floor)
   const before = rasterWords(plain.cells), after = rasterWords(card.cells)
-  const bounds = sceneCardBounds(40, 8, { ...selected, details: target.details })!
-  for (let i = 0; i < 40 * 8; i++) {
+  const bounds = sceneCardBounds(40, SCENE_ROWS, { ...selected, details: target.details })!
+  for (let i = 0; i < 40 * SCENE_ROWS; i++) {
     const x = i % 40, y = Math.floor(i / 40)
     if (x < bounds.left || x >= bounds.left + bounds.width || y < bounds.top || y >= bounds.top + bounds.height) {
       expect(Array.from(after.slice(i * 3, i * 3 + 3))).toEqual(Array.from(before.slice(i * 3, i * 3 + 3)))
@@ -592,10 +613,12 @@ test('mixed model rows keep their own marks in the same columns at each width', 
   for (const width of [32, 60, 100]) {
     const bar = await mount($, 'AbovePrompt', false, width)
     const lines = flat((await bar.drawn()) as Node).split('\n')
-    const marks = ['Co◑', 'Co◕', 'An◉']
-    const rows = marks.map(mark => lines.find(line => line.includes(mark))!)
+    const marks = ['◑', '◕', '◉']
+    const rows = ['Rev', 'Pai', 'Uni'].map(title => lines.find(line => line.includes(title))!)
     expect(rows.every(Boolean)).toBe(true)
-    expect(rows.map((line, i) => line.indexOf(marks[i]!))).toEqual([rows[0]!.indexOf('Co◑'), rows[0]!.indexOf('Co◑'), rows[0]!.indexOf('Co◑')])
+    // each row keeps its own class mark, and every mark sits in the same column
+    expect(rows.map((line, i) => line.includes(marks[i]!))).toEqual([true, true, true])
+    expect(new Set(rows.map((line, i) => line.indexOf(marks[i]!))).size).toBe(1)
     expect(rows.every(line => line.includes('●'))).toBe(true)
     await bar.unmount()
   }
@@ -668,6 +691,24 @@ test('after ten idle minutes a recap waits above the prompt, from the log when n
   expect(drawn).toContain('from the log')
   expect(drawn).not.toContain('<mochi>')
   await bar.unmount()
+})
+
+test('the working headline spins differently for each kind of command', async ($, on) => {
+  const clock = engine(on)
+  await $.prompt.submit({ text: 'fix the parser' } as never)
+  await $.turn.start({ text: 'fix the parser', turnId: 't1' })
+  const spinOf = async (call: Record<string, unknown>, label: string) => {
+    await $.tool.call(call as never)
+    const bar = await mount($, 'AbovePrompt', true)
+    await clock.advance(200)
+    const line = flat((await bar.drawn()) as Node)
+    await bar.unmount()
+    return [...line].find(char => '⣾⣽⣻⢿⡿⣟⣯⣷○◔◑◕●▏▎▍▌▋▊▉⠁⠃⠇⡇⣇⣧⣿◜◝◞◟◇◈◆◐◓◒'.includes(char) && line.indexOf(char) < line.indexOf(label))
+  }
+  expect(await spinOf({ tool: 'Bash', command: 'make build' }, 'Running')).toMatch(/[⣾⣽⣻⢿⡿⣟⣯⣷]/)
+  expect(await spinOf({ tool: 'Bash', command: 'pytest tests' }, 'Testing')).toMatch(/[○◔◑◕●]/)
+  expect(await spinOf({ tool: 'Edit', file_path: '/proj/a.ts', old_string: 'a', new_string: 'b' }, 'Editing')).toMatch(/[▏▎▍▌▋▊▉]/)
+  expect(await spinOf({ tool: 'Grep', pattern: 'parse' }, 'Searching')).toMatch(/[◜◝◞◟]/)
 })
 
 test('turn completion does not recreate a legacy truncated call with a full source answer', async ($, on) => {

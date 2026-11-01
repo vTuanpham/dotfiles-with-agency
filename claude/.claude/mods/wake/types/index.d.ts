@@ -17,9 +17,14 @@ export type WakeChip = {
   owner?: string
   name: string; title?: string; backend: string; account: string; model: string; effort: string
   running: boolean; isStale: boolean; since: number; lastEventAt?: number; startedAt?: number
+  /** when this view first saw lastEventAt change: the worker just did something */
+  activitySeenAt?: number
+  /** the effort levels this model offers, weakest first, from the native inventory; absent when unknown */
+  effortLevels?: string[]
   awaitingRoot?: boolean; waitingForRoot?: boolean; maker?: 'claude'; state?: string; reason?: string
   memoryBytes?: number | null; memoryCap?: string
-  peers?: { target: string; count: number; lastAt: number; outgoing: boolean; preview?: string | null; kind?: string; messageId?: string; observedAt?: number; messageState?: 'observed' | 'sent' }[]
+  /** observedAt: when this view first saw the newest message; fresh: how many messages arrived with it (one packet each) */
+  peers?: { target: string; count: number; lastAt: number; outgoing: boolean; preview?: string | null; kind?: string; messageId?: string; observedAt?: number; fresh?: number; messageState?: 'observed' | 'sent' }[]
   waitingPeer?: { target: string; declaredAt: number }
 }
 
@@ -53,7 +58,7 @@ export type WakePulseKind = 'read' | 'search' | 'edit' | 'run' | 'test' | 'fail'
 export type WakePulse = { kind: WakePulseKind; turn: number }
 
 /** A running Claude Code subagent, from $.agent.list(); `since` is when Wake first saw it; `model` is what its spawn resolved to. */
-export type WakeAgent = { id: string; type: string; name?: string; description: string; since: number; model?: string }
+export type WakeAgent = { id: string; type: string; name?: string; description: string; since: number; model?: string; effort?: string }
 
 /** The landscape the band draws. */
 export type WakePreset = 'city' | 'harbor' | 'beach' | 'mountains' | 'countryside' | 'forest' | 'desert' | 'tundra'
@@ -119,6 +124,9 @@ declare module 'claude-code' {
       subagents: WakeAgent[]
       agentModels: Record<string, string> // subagent id -> the model its spawn resolved to
       parentModel: string
+      parentEffort: string // the session's effort level, what a subagent inherits
+      agentEfforts: Record<string, string> // subagent id -> the effort its tool calls reported
+      effortLevels: { at: number; levels: Record<string, Record<string, string[]>> } // backend -> model -> levels it offers
       surroundings: WakeSurroundings | null
       crewPage: number
     }

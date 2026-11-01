@@ -4,6 +4,7 @@
 //   busy  a crowded sky of mixed families, classes, a stale job and subagent birds, seeded from job names as the band does
 //   opencode also saves dev/balloons.png: six balloons of mixed classes (their palette colours and one stale row) by day and night
 import { type SceneInput, scenePixels } from '../hooks/scene.ts'
+import { SCENE_H } from '../hooks/landscapes/kit.ts'
 import { airSlots, balloonInk } from '../hooks/landscapes/crew.ts'
 import { type Job, P } from '../hooks/landscapes/kit.ts'
 import { hash, seedOf } from '../hooks/pixels.ts'
@@ -62,7 +63,7 @@ if (family === 'opencode') {
 for (const [sheet, states] of sheets) {
   const out = `${import.meta.dir}/${sheet}.png`
   const rows = states.map(([name, s]) => ({ name, px: Array.from(scenePixels({ ...base, ...s })) }))
-  await Bun.write(out + '.json', JSON.stringify({ w: W, h: 16, rows }))
+  await Bun.write(out + '.json', JSON.stringify({ w: W, h: SCENE_H, rows }))
   const r = Bun.spawnSync(['uv', 'run', '-q', '--with', 'pillow', 'python', import.meta.dir + '/sheet.py', out + '.json', out])
   if (r.exitCode !== 0) console.error(r.stderr.toString())
   else console.log(out)

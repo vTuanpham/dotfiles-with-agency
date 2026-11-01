@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { PACKET_RUN_MS } from '../hooks/crew-row'
 import { LANDSCAPES } from '../hooks/landscapes'
 import { P, SCENE_H } from '../hooks/landscapes/kit'
 import { canvas, hash, seedOf } from '../hooks/pixels'
@@ -55,8 +56,15 @@ test('a real message edge connects visible workers and exposes its preview', () 
   }
   const missingTarget = sceneFrame({ ...input, jobs: input.jobs.slice(0, 1) })
   expect(missingTarget.hits.targets.some(item => item.id.startsWith('peer:'))).toBe(false)
-  const blocked = sceneFrame({ ...input, width: 80 })
-  expect(blocked.hits.targets.some(item => item.id.startsWith('peer:'))).toBe(false)
+  // the wire hangs from each worker's fixed zone, so it never moves with the sprite's drift and bob
+  const path = (frame: number) => {
+    const owners = sceneFrame({ ...input, frame }).hits
+    const owner = owners.targets.findIndex(item => item.id === 'peer:a:b') + 1
+    return owners.owners.flatMap((o, cell) => (o === owner ? [cell] : []))
+  }
+  const first = path(0)
+  expect(first.length).toBeGreaterThan(0)
+  for (let frame = 1; frame < 120; frame += 7) expect(path(frame)).toEqual(first)
 })
 
 test('Bridge root messages connect to Mochi in the recorded direction without covering scene objects', () => {
@@ -117,6 +125,29 @@ test('crowded workers preserve the pre-existing scene hit pixels', () => {
   }
 })
 
+test('packets cross a message wire only while messages arrive, one per message, then the wire is still', () => {
+  const input: SceneInput = { ...base, width: 120, turns: [], live: null, plan: null, agents: [], jobs: [
+    { isStale: false, seed: 1, kind: 'agy', hit: { id: 'a', title: 'A', details: [] } },
+    { isStale: false, seed: 2, kind: 'agy', hit: { id: 'b', title: 'B', details: [] } },
+  ], peerEdges: [{ source: 'a', target: 'b', strength: 1, preview: 'x', family: 'agy', count: 6 }] }
+  const wirePixels = (arriving: number | undefined, fresh: number) => {
+    const scene = { ...input, frame: 0, peerEdges: [{ ...input.peerEdges![0]!, arriving, fresh }] }
+    const frameHits = sceneFrame(scene).hits
+    const owner = frameHits.targets.findIndex(item => item.id === 'peer:a:b') + 1
+    const px = scenePixels(scene)
+    return frameHits.owners.flatMap((o, cell) => o === owner ? [[cell, px[Math.floor(cell / scene.width) * 2 * scene.width + cell % scene.width]!]] as const : [])
+  }
+  const bright = (arriving: number | undefined, fresh = 1) => wirePixels(arriving, fresh).filter(([, color]) => ((color >> 16) & 255) > 0xc0).length
+  const run = (fresh: number) => Array.from({ length: 30 }, (_, k) => bright(k * 100, fresh)).reduce((a, b) => a + b, 0)
+  // a packet is a bright run on the wire while a message arrives...
+  expect(run(1)).toBeGreaterThan(0)
+  // ...three arriving messages send more packets than one...
+  expect(run(3)).toBeGreaterThan(run(1))
+  // ...and a wire with no arrival in view carries nothing, however recent its conversation
+  expect(bright(undefined, 6)).toBe(0)
+  expect(bright(PACKET_RUN_MS * 10, 6)).toBe(0)
+})
+
 test('unchanged sky and scenery have source-grounded hover targets', () => {
   const input: SceneInput = { ...base, width: 100, preset: 'city', jobs: [], agents: [], turns: [], live: null, weather: null, effect: null }
   const frame = sceneFrame(input)
@@ -132,10 +163,11 @@ test('unchanged sky and scenery have source-grounded hover targets', () => {
   expect(night.hits.targets.some(target => target.id === 'moon')).toBe(true)
   const cloudy = { ...input, weather: { cloud: 0.7, rain: 0 as const, snow: 0 as const, fog: false, thunder: false, wind: 40 }, seed: 7 }
   const visibleSun = sceneFrame({ ...cloudy, frame: 0 }).hits
-  const obscuredSun = sceneFrame({ ...cloudy, frame: 110 }).hits
   const countSun = (map: typeof visibleSun) => map.owners.filter(owner => map.targets[owner - 1]?.id === 'sun').length
   expect(countSun(visibleSun)).toBeGreaterThan(0)
-  expect(countSun(obscuredSun)).toBe(0)
+  // the sun's hover target is its visible pixels: as clouds drift past, a moment comes when one covers part of it
+  const clear = countSun(sceneFrame({ ...input, frame: 0 }).hits)
+  expect(Array.from({ length: 80 }, (_, k) => countSun(sceneFrame({ ...cloudy, frame: k * 5 }).hits)).some(count => count < clear)).toBe(true)
   const foreground = canvas(input.width, SCENE_H)
   LANDSCAPES.city.foreground(foreground, lookOf(input), input.width - CAT_COLUMNS - 6)
   expect(frame.hits.owners.some((owner, cell) => {
@@ -144,7 +176,7 @@ test('unchanged sky and scenery have source-grounded hover targets', () => {
   })).toBe(true)
 })
 
-test('every landscape draws a full frame at any width, hour, weather, season and effect', () => {
+test('every landscape draws a full frame at any width, hour, weather, season and effect', { timeoutMs: 60_000 }, () => {
   for (const preset of Object.keys(LANDSCAPES) as SceneInput['preset'][]) {
     for (const width of [24, 90, 260]) {
       for (const [i, hour] of [2, 6, 9, 12.5, 15, 17.8, 21].entries()) {

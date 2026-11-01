@@ -1,5 +1,6 @@
 import { type Canvas, hash, mix, sprite } from '../pixels'
-import { byPhase, type Landscape, type Look, P, SCENE_H, editsOf, farTone, foliage, heightFor, lightWindows, wave, jobAccent } from './kit'
+import type { WakePulseKind } from '../../types'
+import { KIND_COLOR, byPhase, type Landscape, type Look, P, SCENE_H, editsOf, farTone, foliage, heightFor, lightWindows, wave, jobAccent } from './kit'
 import { airJobs } from './crew'
 
 // City: towers (one per turn) over a far skyline, shopfronts at street level, and a busy
@@ -11,6 +12,18 @@ const GROUND = SCENE_H - 5 // the sidewalk; the road's four rows (ROAD..) run be
 const ROAD = GROUND + 1
 const AWNINGS: [number, number][] = [[P.red, P.rosewater], [P.green, P.text], [P.blue, P.text], [P.peach, P.yellow], [P.mauve, P.pink]]
 const NEON = [P.pink, P.sky, P.green, P.yellow, P.peach]
+
+/**
+ * A turn's wall: the same town stone as the low-rise filler (so a new tower belongs to the street by day as well as night),
+ * washed a little toward the hue of what the turn mostly did (edits green, tests teal, web peach), reads least of all.
+ */
+function facade(look: Look, b: { index: number; kinds: WakePulseKind[] }): number {
+  const town = mix(mix(BODIES[hash(b.index) % BODIES.length]!, look.horizon, 0.25), P.ink, look.night * 0.3)
+  const weight = new Map<WakePulseKind, number>()
+  for (const kind of b.kinds) weight.set(kind, (weight.get(kind) ?? 0) + (kind === 'read' ? 0.4 : 1))
+  const main = [...weight].sort((a, c) => c[1] - a[1])[0]?.[0]
+  return main ? mix(town, KIND_COLOR[main], 0.16 * (1 - look.night * 0.5)) : town
+}
 
 const dimmed = (look: Look, col: number, t = 0.5) => mix(col, P.ink, look.night * t)
 const wrap = (v: number, m: number) => ((Math.round(v) % m) + m) % m
@@ -51,7 +64,9 @@ export const city: Landscape = {
   },
 
   size(kinds) {
-    return { width: 5 + Math.min(3, editsOf(kinds)), height: heightFor(kinds, 4, GROUND - 3, 1.1) }
+    // Capped so the top five rows stay sky even when a long session fills the street with turns: room for the crew to
+    // patrol, hop and carry wires. A busy turn reads as width and windows instead.
+    return { width: 5 + Math.min(3, editsOf(kinds)), height: heightFor(kinds, 4, GROUND - 5, 1.1) }
   },
 
   gap(index) {
@@ -64,7 +79,7 @@ export const city: Landscape = {
     let style = hash(b.index * 7 + 3) % 11
     if ((style === 7 || style === 8) && b.height < 6) style = 0
     if ((style === 9 || style === 10) && b.height > 7) style = 6
-    const body = BODIES[hash(b.index) % BODIES.length]!
+    const body = facade(look, b)
     const glass = style === 6
     for (let y = y0; y < GROUND; y++) {
       const [xa, xb] = extent(style, b, y)
@@ -95,7 +110,7 @@ export const city: Landscape = {
     if (b.isLive) fence(c, look, b)
     else shop(c, look, b.x0, x1, hash(b.index * 17 + 1), body)
     roof(c, look, b, style, body)
-    if (b.kinds.includes('fail') && look.frame % 10 < 5) c.set(x1, y0 - 1, P.red)
+    if (b.kinds.includes('fail') && look.frame % 20 < 12) c.set(x1, y0 - 1, mix(P.red, look.horizon, 0.4 * (1 - look.night))) // a soft warning light, the red window below still says which call
     if (b.isLive) crane(c, look, b)
   },
 
@@ -287,7 +302,7 @@ function roof(c: Canvas, look: Look, b: { x0: number; width: number; height: num
   if (style === 1 && y0 > 2) {
     c.set(mid, y0 - 1, P.surface1)
     c.set(mid, y0 - 2, P.surface1)
-    if (look.frame % 16 < 8) c.set(mid, y0 - 3, P.red)
+    if (look.night > 0.3 && look.frame % 16 < 8) c.set(mid, y0 - 3, P.red) // an aircraft beacon, only worth seeing in the dark
   } else if (style === 4 && y0 > 2) {
     c.set(b.x0 + 1, y0 - 1, P.surface1)
     c.set(b.x0 + 1, y0 - 2, mix(body, P.text, 0.12))
@@ -324,15 +339,16 @@ function fence(c: Canvas, look: Look, b: { x0: number; width: number }) {
 
 function crane(c: Canvas, look: Look, b: { x0: number; width: number; height: number }) {
   const y0 = GROUND - b.height
-  for (let y = y0; y < GROUND; y++) for (let x = b.x0; x < b.x0 + b.width; x++) if ((x + y) % 3 === 0) c.glow(x, y, P.yellow, 0.18)
+  // a lean tower crane: a mast, a jib and a hook swinging a load, no scaffolding over the building itself
+  const steel = mix(mix(P.yellow, P.overlay1, 0.5), look.horizon, 0.2 * (1 - look.night))
   const mast = b.x0 + b.width
   const jib = Math.max(0, y0 - 3)
-  for (let y = jib; y < GROUND - 1; y++) c.set(mast, y, mix(P.yellow, P.ink, 0.45))
-  for (let x = b.x0 - 3; x <= mast + 1; x++) c.set(x, jib, mix(P.yellow, P.ink, 0.35))
-  const hook = b.x0 - 2 + Math.round(3 * wave(look.frame, 30))
-  c.set(hook, jib + 1, P.surface1)
-  c.set(hook, jib + 2, mix(P.yellow, P.ink, 0.2))
-  if (look.frame % 8 < 4) c.set(mast, jib - 1, P.red)
+  for (let y = jib; y < GROUND - 1; y++) c.set(mast, y, steel)
+  for (let x = b.x0 - 3; x <= mast + 1; x++) c.set(x, jib, steel)
+  const hook = b.x0 - 2 + Math.round(3 * wave(look.frame, 90)) // trolley slides slowly along the jib
+  c.set(hook, jib + 1, P.surface2)
+  c.set(hook, jib + 2, mix(P.peach, steel, 0.4))
+  if (look.night > 0.3 && look.frame % 8 < 4) c.set(mast, jib - 1, P.red)
 }
 
 /** A ground-floor shop: an awning, glass that reflects the sky by day and glows at night, a door. */

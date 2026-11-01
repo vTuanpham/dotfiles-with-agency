@@ -1,6 +1,7 @@
 // bun dev/preview.ts <preset> [out.png] [width]: a sheet of states (phases, weather, effects, events) for one landscape.
 import { lookOf, scenePixels, type SceneInput } from '../hooks/scene.ts'
 import { LANDSCAPES } from '../hooks/landscapes/index.ts'
+import { SCENE_H } from '../hooks/landscapes/kit.ts'
 const preset = (process.argv[2] ?? 'city') as SceneInput['preset']
 const out = process.argv[3] ?? `${import.meta.dir}/${preset}.png`
 const W = Number(process.argv[4] ?? 160)
@@ -25,7 +26,7 @@ const states: [string, Partial<SceneInput>][] = [
   ...LANDSCAPES[preset].events.map(e => [`event: ${e.name}`, { ...calm, hour: [22, 12, 17.8, 6.2].find(hour => !e.when || e.when(lookOf({ ...base, ...calm, hour, season: 'autumn' }))) ?? 22, season: 'autumn', forceEvent: e.name, frame: Math.floor(e.frames * 0.45) }] as [string, Partial<SceneInput>]),
 ]
 const rows = states.map(([name, s]) => ({ name, px: Array.from(scenePixels({ ...base, ...s })) }))
-await Bun.write(out + '.json', JSON.stringify({ w: W, h: 16, rows }))
+await Bun.write(out + '.json', JSON.stringify({ w: W, h: SCENE_H, rows }))
 const r = Bun.spawnSync(['uv', 'run', '-q', '--with', 'pillow', 'python', import.meta.dir + '/sheet.py', out + '.json', out])
 if (r.exitCode !== 0) console.error(r.stderr.toString())
 else console.log(out)

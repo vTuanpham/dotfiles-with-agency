@@ -2,20 +2,53 @@
 // uint32 0xRRGGBB, width x 16 each) plus out.json: per frame, where each thing the legend names is (its bounding box in cells).
 // A thing is found by rendering the scene without it and diffing, so nothing here copies the renderer's layout maths.
 import { scenePixels, type SceneInput } from '../hooks/scene.ts'
+import { SCENE_H } from '../hooks/landscapes/kit.ts'
+import { crewRows, quotaRows } from '../hooks/crew-row.ts'
+import type { WakeChip, WakeQuota } from '../types'
 
 const out = process.argv[2] ?? `${import.meta.dir}/dock.bin`
 const FRAMES = Number(process.argv[3] ?? 48)
 const STEP = 3
+const MS_PER_TICK = 50 // the band redraws at 20 frames a second
 const W = Number(process.argv[4] ?? 117) // x12 = 1404 px, the width of the 156-column status line at 9 px a cell
-const H = 16
+const H = SCENE_H
 const K = ['read', 'read', 'read', 'search', 'edit', 'run', 'test', 'read', 'edit', 'agent', 'web', 'edit'] as const
 const turns = Array.from({ length: 16 }, (_, i) => ({ kinds: K.slice(0, 2 + ((i * 7) % 11)).concat(i % 5 === 2 ? ['fail'] : []) as any }))
 const state: SceneInput = {
-  width: W, frame: 0, hour: 18.3, sun: { rise: 5.9, set: 17.5 }, moonPhase: 0.3, season: 'summer', snowy: false,
+  width: W, frame: 0, hour: 17.0, sun: { rise: 5.9, set: 17.5 }, moonPhase: 0.3, season: 'summer', snowy: false,
   weather: { cloud: 0.2, rain: 0, snow: 0, fog: false, thunder: false, wind: 8 },
   preset: 'beach', seed: 12345, turns, live: { kinds: ['read', 'read', 'edit', 'test', 'edit'] }, mood: 'work',
-  jobs: [{ isStale: false, seed: 3, tier: 2, kind: 'codex' }, { isStale: false, seed: 8, tier: 3, kind: 'agy' }],
+  jobs: [
+    { isStale: false, seed: 3, tier: 2, kind: 'codex', lift: 0, hit: { id: 'parser', title: 'parser', details: [] } },
+    { isStale: false, seed: 8, tier: 3, kind: 'agy', lift: 0, hit: { id: 'review', title: 'review', details: [] } },
+  ],
   agents: [{ seed: 1, tier: 2 }], plan: { done: 3, total: 5 }, effect: null,
+}
+// the Codex worker messages the agy worker every 2.4 s; the packet runs only while a message is on its way (7.2 s loop)
+const talking = (i: number): Partial<SceneInput> => ({
+  peerEdges: [{ source: 'parser', target: 'review', strength: 0.9, preview: 'x', count: 1, family: 'codex', arriving: (i * STEP * MS_PER_TICK) % 2400, fresh: 1 }],
+})
+
+// the rows under the scene come from the real row builders, with demo workers and accounts
+const chip = (name: string, title: string, backend: string, model: string, effort: string, levels: string[], since: number): WakeChip =>
+  ({ name, title, backend, account: '01', model, effort, effortLevels: levels, running: true, isStale: false, since, lastEventAt: since, memoryBytes: 1.4e9, memoryCap: '4G' })
+const now = 600_000
+const crew = [
+  chip('parser', 'Parser fix', 'codex', 'gpt-6.1-sol', 'high', ['low', 'medium', 'high', 'xhigh'], now - 190_000),
+  chip('review', 'Visual review', 'agy', 'claude-opus-5-5', 'high', ['low', 'medium', 'high'], now - 130_000),
+]
+const quota = (cli: WakeQuota['cli'], account: string, active: boolean, h: number, w: number): WakeQuota =>
+  ({ cli, account, plan: '', active, freshness: 'fresh', parts: [{ label: 'h', pct: h, resets: null }, { label: 'w', pct: w, resets: null }] })
+const accounts = [
+  quota('codex', '01', true, 71, 90), quota('codex', '02', false, 34, 77), quota('codex', '03', false, 62, 88),
+  quota('agy', 'a1', true, 99, 98), quota('agy', 'a2', false, 100, 100), quota('claude', 'c1', true, 88, 64),
+]
+const dockRows = {
+  crew: crewRows(crew, now, 100).map((row, i) => ({
+    backend: crew[i]!.backend, title: row.title.trim(), mark: [...row.family][1] ?? '', glyph: row.glyph,
+    lit: row.effortSlot?.lit ?? 0, total: row.effortSlot?.total ?? 0, after: row.effortSlot?.after ?? row.detail,
+  })),
+  quota: quotaRows(accounts, 150).flat().map(chunk => ({ text: chunk.text, cli: chunk.quotas[0]!.cli, percents: chunk.quotas[0]!.parts.map(p => p.pct) })),
 }
 // name -> the same scene without that thing
 const without: Record<string, Partial<SceneInput>> = {
@@ -68,9 +101,10 @@ while (start < 600 && !Array.from({ length: FRAMES }, (_, i) => start + i * STEP
 const pixels = new Uint32Array(FRAMES * W * H)
 const anchors: Record<string, ReturnType<typeof box> | ReturnType<typeof clusters>>[] = []
 for (let i = 0; i < FRAMES; i++) {
+  pixels.set(scenePixels({ ...state, ...talking(i), frame: start + i * STEP }), i * W * H)
+  // boxes are measured without the message wire, which would stretch a worker's box across to its peer
   const at = { ...state, frame: start + i * STEP }
   const full = scenePixels(at)
-  pixels.set(full, i * W * H)
   anchors.push(
     Object.fromEntries(
       Object.entries(without).map(([name, change]) => [
@@ -85,5 +119,5 @@ for (let i = 0; i < FRAMES; i++) {
   )
 }
 await Bun.write(out, pixels)
-await Bun.write(out.replace(/\.bin$/, '.json'), JSON.stringify({ w: W, h: H, frames: FRAMES, anchors }))
+await Bun.write(out.replace(/\.bin$/, '.json'), JSON.stringify({ w: W, h: H, frames: FRAMES, anchors, rows: dockRows }))
 console.log(out, FRAMES, 'frames', W, 'x', H)

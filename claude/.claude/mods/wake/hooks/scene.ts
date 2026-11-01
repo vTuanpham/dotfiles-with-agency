@@ -1,9 +1,9 @@
 import type { WakeMood, WakePreset, WakePulseKind, WakeSceneHit } from '../types'
 import { placeFly, stations } from './landscapes/crew'
-import { type DayPhase, type Job, type Landscape, type Look, P, SCENE_H, type SceneEvent, type Season } from './landscapes/kit'
+import { type DayPhase, type Job, jobAccent, type Landscape, type Look, P, SCENE_H, type SceneEvent, type Season } from './landscapes/kit'
 import { LANDSCAPES } from './landscapes'
 import { type Canvas, canvas, hash, mix, sprite } from './pixels'
-import { cells, truncate } from './crew-row'
+import { MAX_PACKETS, PACKET_RUN_MS, PACKET_STAGGER_MS, cells, truncate } from './crew-row'
 
 // The band's diorama. Every thing in it stands for something real:
 //   buildings      turns of this session (taller: more tool calls; wider: more edits)
@@ -91,7 +91,11 @@ export type SceneInput = {
   live: SceneTurn | null
   mood: WakeMood
   jobs: Job[]
-  peerEdges?: { source: string; target: string; strength: number; preview: string | null; messageState?: 'observed' | 'sent' }[]
+  /** A message in flight: who to whom, how fresh (strength), how many (count, as the crew rows' ─ ━ ═ weights) and whose colour it carries. */
+  /** arriving: ms since the edge's newest message reached this view, only while its packets run; fresh: one packet each */
+  peerEdges?: { source: string; target: string; strength: number; preview: string | null; messageState?: 'observed' | 'sent'; count?: number; family?: NonNullable<Job['kind']>; arriving?: number; fresh?: number }[]
+  /** A message to (in) or from (out) the root is passing: Mochi shows an envelope. */
+  mail?: 'in' | 'out'
   agents: SceneAgent[] // running subagents
   plan: { done: number; total: number } | null
   effect: SceneEffect | null
@@ -378,9 +382,24 @@ function drawWeather(c: Canvas, look: Look, w: SceneWeather, ground: number) {
   }
 }
 
-function drawEffect(c: Canvas, look: Look, fx: SceneEffect, ground: number, right: number) {
+/** How each country celebrates a pass: the shell colours, how far the embers fall, whether the burst echoes off a ridge or mirrors in water. */
+const FIREWORK_STYLE: Record<WakePreset, { inks: number[]; fall: number; echo?: boolean; mirror?: boolean }> = {
+  city: { inks: [P.yellow, P.pink, P.mauve, P.green, P.sky, P.peach], fall: 3 },
+  harbor: { inks: [P.white, P.sky, P.yellow, P.peach, P.red], fall: 3, mirror: true },
+  beach: { inks: [P.pink, P.teal, P.yellow, P.peach, P.white], fall: 3, mirror: true },
+  mountains: { inks: [P.white, P.lavender, P.sky, P.blue], fall: 3, echo: true },
+  countryside: { inks: [P.yellow, P.peach, P.green, P.pink], fall: 3 },
+  forest: { inks: [P.yellow, P.peach, P.red, P.green], fall: 1.5 }, // slow embers, drifting like sparks from a campfire
+  desert: { inks: [P.yellow, P.peach, P.red, P.white], fall: 2 },
+  tundra: { inks: [P.green, P.teal, P.sky, P.mauve, P.white], fall: 4 }, // cold light that hangs, then sinks like the aurora
+}
+
+/** What a failed command does to the weather: rain, or a sandstorm or blizzard where that is the local storm. */
+export const STORM: Partial<Record<WakePreset, 'sand' | 'snow'>> = { desert: 'sand', tundra: 'snow' }
+
+function drawEffect(c: Canvas, look: Look, fx: SceneEffect, ground: number, right: number, preset: WakePreset) {
   if (fx.kind === 'fireworks') {
-    const sparks = [P.yellow, P.pink, P.mauve, P.green, P.sky, P.peach]
+    const { inks: sparks, fall, echo, mirror } = FIREWORK_STYLE[preset]
     for (let b = 0; b < 4; b++) {
       const age = fx.age - b * 7
       if (age < 0 || age > 20) continue
@@ -395,15 +414,25 @@ function drawEffect(c: Canvas, look: Look, fx: SceneEffect, ground: number, righ
       }
       const r = Math.min(5, age - 4)
       const fade = age > 13 ? (age - 13) / 8 : 0
+      const sink = age > 10 ? Math.floor((age - 10) / fall) : 0
       for (let a = 0; a < 12; a++) {
         const ang = (a / 12) * Math.PI * 2
-        c.glow(cx + Math.round(Math.cos(ang) * r * 1.4), cy + Math.round(Math.sin(ang) * r * 0.8) + (age > 10 ? Math.floor((age - 10) / 3) : 0), a % 2 ? color : P.white, 1 - fade)
+        const x = cx + Math.round(Math.cos(ang) * r * 1.4), y = cy + Math.round(Math.sin(ang) * r * 0.8) + sink
+        c.glow(x, y, a % 2 ? color : P.white, 1 - fade)
+        if (mirror) c.glow(x, Math.min(H - 1, ground + 1 + Math.floor(Math.max(0, ground - y) / 2)), color, 0.35 * (1 - fade)) // its reflection in the water
+        if (echo && r > 2) c.glow(cx + Math.round(Math.cos(ang) * (r - 2) * 1.4), cy + Math.round(Math.sin(ang) * (r - 2) * 0.8) + sink, color, 0.45 * (1 - fade)) // the ridge answers
       }
       if (age < 8) c.glow(cx, cy, P.white, 0.9)
     }
   } else if (fx.kind === 'storm') {
-    drawWeather(c, look, { cloud: 1, rain: 3, snow: 0, fog: false, thunder: false, wind: 25 }, ground)
-    if ([3, 4, 14, 30].includes(fx.age)) {
+    const local = STORM[preset]
+    drawWeather(c, look, { cloud: 1, rain: local ? 0 : 3, snow: local === 'snow' ? 3 : 0, fog: false, thunder: false, wind: local === 'snow' ? 40 : 25 }, ground)
+    if (local === 'sand') for (let y = 0; y < ground + 1; y++) for (let x = 0; x < c.W; x++) { // a wall of sand blown across, thickest low down
+      const run = (x + look.frame * 3 + y * 5) % 23
+      if (hash(x * 7 + y * 131 + Math.floor((x + look.frame * 3) / 23)) % 3 === 0 && run < 9) c.glow(x, y, P.sand, 0.25 + 0.4 * (y / ground))
+    }
+    if ([3, 4, 14, 30].includes(fx.age) && local === 'snow') for (let y = 0; y < H; y++) for (let x = 0; x < c.W; x++) c.glow(x, y, P.white, 0.3) // the whiteout pulses
+    else if ([3, 4, 14, 30].includes(fx.age)) {
       for (let y = 0; y < H; y++) for (let x = 0; x < c.W; x++) c.glow(x, y, P.white, 0.18)
       let x = Math.round(right * (0.3 + 0.3 * ((fx.age % 5) / 5)))
       for (let y = 0; y < ground; y++) {
@@ -412,11 +441,25 @@ function drawEffect(c: Canvas, look: Look, fx: SceneEffect, ground: number, righ
         x += hash(y + fx.age) % 3 === 0 ? -1 : 1
       }
     }
+  } else if (preset === 'tundra') {
+    // a finished job lights the aurora: a green ribbon sweeps across the sky and fades
+    const t = fx.age / EFFECT_FRAMES.shoot
+    const head = t * (c.W + 24) - 12
+    for (let x = 0; x < c.W; x++) {
+      const behind = head - x
+      if (behind < 0 || behind > 24) continue
+      const y = 1 + Math.round(1.6 * Math.sin(x * 0.3 + fx.age * 0.4))
+      const strength = (1 - behind / 24) * (1 - Math.max(0, t - 0.7) / 0.3)
+      c.glow(x, y, P.green, 0.9 * strength)
+      c.glow(x, y + 1, P.teal, 0.55 * strength)
+      c.glow(x, y + 2, P.sky, 0.25 * strength)
+    }
   } else {
     const t = fx.age / EFFECT_FRAMES.shoot
     const x = Math.round(t * (c.W + 20)) - 10
     const y = Math.floor(t * 5)
-    for (let k = 0; k < 7; k++) c.glow(x - k * 2, y - Math.floor(k / 3), P.white, 1 - k / 7)
+    const tail = preset === 'desert' ? P.peach : P.white
+    for (let k = 0; k < 7; k++) c.glow(x - k * 2, y - Math.floor(k / 3), k < 2 ? P.white : tail, 1 - k / 7)
   }
 }
 
@@ -438,13 +481,19 @@ function drawMochi(c: Canvas, look: Look, input: SceneInput, ground: number, cat
     for (let k = 1; k < 4; k++) c.glow(lx + k, ground - 1, P.teal, look.frame % 6 < 3 ? 0.35 : 0.2)
     c.glow(catX + 1, top + 4, P.teal, 0.25)
   }
-  const raining = (input.weather?.rain ?? 0) > 0 || fx?.kind === 'storm'
+  const raining = (input.weather?.rain ?? 0) > 0 || (fx?.kind === 'storm' && !STORM[input.preset])
   if (raining && input.mood !== 'sleep') sprite(c, catX, top - 3, UMBRELLA, { p: P.pink, h: P.overlay1 })
   if (input.mood === 'sleep') {
     for (let k = 0; k < 2; k++) {
       const z = (Math.floor(look.frame / 4) + k * 5) % 10
       c.glow(catX + 8 + Math.floor(z / 4), top - 1 - Math.floor(z / 2), P.white, 0.9 - z / 10)
     }
+  }
+  if (input.mail) {
+    // an envelope hops over her head: it drops in for a worker's message, lifts away for the root's
+    const t = (look.frame % 8) / 8, hop = Math.round(Math.sin(t * Math.PI) * 2)
+    const slide = input.mail === 'in' ? Math.round((1 - t) * 2) : Math.round(t * 2)
+    sprite(c, catX + 1, Math.max(0, top - 6 + slide - hop), ['EEEE', 'ELLE', 'EEEE'], { E: P.snow, L: input.mail === 'in' ? P.green : P.peach })
   }
   if (input.mood === 'alert' && look.frame % 8 < 5) {
     c.set(catX + 4, top - 4, P.yellow)
@@ -514,6 +563,7 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
   const c = canvas(input.width, H, localHits !== undefined)
   const look = lookOf(input)
   look.hitTargets = localHits?.targets
+  look.place = input.preset
   const registerHit = (target: WakeSceneHit | undefined) => {
     if (!target || !localHits) return 0
     localHits.targets.push(target)
@@ -585,11 +635,12 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
   }
 
 
-  // Structures and their furniture reserve their painted pixels for the crew.
+  // Turn buildings and their furniture reserve their painted pixels for the crew. Filler (the backdrop between and behind
+  // them) does not: flyers pass in front of it, otherwise a dense skyline like the city's leaves no sky to move in.
   const reference = canvas(c.W, c.H)
   const referenceLook = { ...look, frame: 0, crewZones: [] }
   const beforeStructures = reference.px.slice()
-  const structures = (target: Canvas, state: Look, tag = false) => {
+  const structures = (target: Canvas, state: Look, tag = false, filler = true) => {
     let edge = right
     const place = (kinds: WakePulseKind[], index: number, isLive: boolean) => {
       const { width, height } = land.size(kinds, index, state)
@@ -601,26 +652,28 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
       if (owner) target.withHit(owner, draw)
       else draw()
       const gap = land.gap(index, state)
-      if (gap > 0) land.filler(target, state, x0 - gap, x0)
+      if (gap > 0 && filler) land.filler(target, state, x0 - gap, x0)
       edge = x0 - gap
       return true
     }
     if (input.live) place(input.live.kinds, input.turns.length, true)
     for (let i = input.turns.length - 1; i >= 0; i--) if (!place(input.turns[i]!.kinds, i, false)) break
-    if (edge > 0) land.filler(target, state, 0, edge)
+    if (edge > 0 && filler) land.filler(target, state, 0, edge)
   }
   structures(c, look, true)
-  structures(reference, referenceLook)
+  structures(reference, referenceLook, false, false)
   look.crewZones.push(...referenceLook.crewZones)
 
-  const reserveChanges = (before: Uint32Array) => {
+  // `sway` widens each reserved run by the pixels an animated figure moves (the reference is drawn at frame 0), so a
+  // palm frond mid-sway is still never painted over, while the crew's lanes stay fixed from frame to frame.
+  const reserveChanges = (before: Uint32Array, sway = 0) => {
     for (let y = 0; y < H; y++) {
       let start = -1
       for (let x = 0; x <= right; x++) {
         const changed = x < right && reference.px[y * c.W + x] !== before[y * c.W + x]
         if (changed && start < 0) start = x
         if (!changed && start >= 0) {
-          look.crewZones!.push({ x: start, y: y & ~1, w: x - start, h: 2 })
+          look.crewZones!.push({ x: start - sway, y: y & ~1, w: x - start + 2 * sway, h: 2 })
           start = -1
         }
       }
@@ -650,7 +703,7 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
   if (foregroundOwner) c.withHit(foregroundOwner, () => land.foreground(c, look, right))
   else land.foreground(c, look, right)
   land.foreground(reference, referenceLook, right)
-  reserveChanges(beforeForeground)
+  reserveChanges(beforeForeground, 2)
   const playing = playingEvent(look, [...land.events, ...SHARED_EVENTS], input.forceEvent)
   const eventOwner = playing ? registerHit({ id: `event:${playing.event.name}`, title: playing.event.name, details: ['Ambient scene event'] }) : 0
   if (playing) {
@@ -663,9 +716,10 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
   land.jobs(c, look, jobs, right)
   for (const [bird, j] of stations(agents, 5)) {
     if (j >= 5) continue
-    const tier = bird.tier
-    const x = Math.round((input.frame * (0.5 + j * 0.08) * (tier >= 3 ? 0.7 : 1) + j * 29) % (c.W + 20)) - 10
-    const y = 3 + (j % 3) + Math.round(Math.sin((input.frame + j * 9) * (tier >= 3 ? 0.07 : 0.15)))
+    // A bird keeps a home perch in the sky (its own slot of five) and circles it: placeFly drifts it a few pixels either way
+    // and bobs it, so it glides in place instead of crossing the whole band and jumping around whatever it meets.
+    const x = Math.round(8 + ((j + 0.5) * (right - 16)) / 5)
+    const y = 3 + (j % 3)
     placeFly(c, look, x, y, bird, right)
   }
   if (input.weather) {
@@ -674,7 +728,7 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
     if (weatherOwner) c.withHit(weatherOwner, () => drawWeather(c, look, weather, ground))
     else drawWeather(c, look, weather, ground)
   }
-  if (input.effect) drawEffect(c, look, input.effect, ground, right)
+  if (input.effect) drawEffect(c, look, input.effect, ground, right, input.preset)
   if (mochiOwner) c.withHit(mochiOwner, () => drawMochi(c, look, input, ground, catX))
   else drawMochi(c, look, input, ground, catX)
   // Route only between visible endpoints, through unoccupied sky.
@@ -703,12 +757,25 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
       }
       return (x < right || rootMessage && x === right) && peerBlocked[i] === 0
     }
-    const starts: number[] = [], goals = new Set<number>()
+    const starts: number[] = [], goals = new Set<number>(), zonesSeen = new Set<object>()
     for (let y = 0; y < ground; y++) for (let x = 0; x < bound; x++) {
       const owner = c.hitOwners[y * c.W + x]
       if (owner !== source && owner !== target) continue
       const sprite = owner === mochiOwner ? rootZone : (look.crewSpriteZones ?? []).find(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h)
       if (!sprite) continue
+      if (owner !== mochiOwner) {
+        // A worker drifts and bobs inside its reserved zone; the wire hangs from the zone's edge, which never moves, so the
+        // whole path stays put while the sprite plays about at its end instead of the route being redrawn every frame.
+        if (zonesSeen.has(sprite)) continue
+        zonesSeen.add(sprite)
+        for (let yy = sprite.y - 2; yy <= sprite.y + sprite.h + 1; yy++) for (let xx = sprite.x - 2; xx <= sprite.x + sprite.w + 1; xx++) {
+          if (xx >= sprite.x && xx < sprite.x + sprite.w && yy >= sprite.y && yy < sprite.y + sprite.h) continue
+          if (!free(xx, yy)) continue
+          if (owner === source) starts.push(yy * c.W + xx)
+          else goals.add(yy * c.W + xx)
+        }
+        continue
+      }
       for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
         const reach = owner === mochiOwner ? 2 : Math.max(sprite.w, sprite.h) + 2
         for (let distance = 1; distance <= reach; distance++) {
@@ -748,15 +815,46 @@ export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMa
       edge.preview || 'Message preview unavailable',
     ]
     const owner = registerHit({ id: `peer:${edge.source}:${edge.target}`, title, details })
-    const color = mix(P.surface1, P.teal, edge.strength)
-    c.withHit(owner, () => {
-      for (let i = end;; i = prev[i]!) {
-        c.set(i % c.W, Math.floor(i / c.W), rootMessage && i === end ? P.yellow : color)
-        peerBlocked[i] = 1
-        const sibling = (Math.floor(i / c.W) ^ 1) * c.W + i % c.W
-        if (sibling < peerBlocked.length) peerBlocked[sibling] = 1
-        if (prev[i] === i) break
+    // The wire runs source to target in its sender's colour; when messages arrive, one packet per message crosses it
+    // once, and the last pixel flashes as each one lands.
+    const cellsOnPath: number[] = []
+    for (let i = end;; i = prev[i]!) {
+      cellsOnPath.push(i)
+      peerBlocked[i] = 1
+      const sibling = (Math.floor(i / c.W) ^ 1) * c.W + i % c.W
+      if (sibling < peerBlocked.length) peerBlocked[sibling] = 1
+      if (prev[i] === i) break
+    }
+    cellsOnPath.reverse()
+    const accent = jobAccent({ kind: edge.family } as Job, P.teal)
+    const wire = mix(P.surface1, accent, 0.3 + 0.35 * edge.strength)
+    // The wire itself is only a faint thread; the pulses running along it are what you see. An old message's thread and pulses
+    // melt into the sky as it ages instead of switching off.
+    const presence = 0.16 + 0.3 * Math.min(1, edge.strength / 0.65)
+    const length = cellsOnPath.length
+    // Packets travel only while a message is arriving: one per new message, a beat apart, each crossing the wire once.
+    // Afterwards the wire is a still thread whose brightness says how recent the conversation is; nothing loops.
+    const lit = new Map<number, number>() // path index -> how bright a packet makes it
+    if (edge.arriving !== undefined) {
+      for (let k = 0; k < Math.min(MAX_PACKETS, Math.max(1, edge.fresh ?? 1)); k++) {
+        const t = edge.arriving - k * PACKET_STAGGER_MS
+        if (t < 0 || t > PACKET_RUN_MS) continue
+        const head = Math.round((t / PACKET_RUN_MS) * (length + 5)) - 1
+        for (const [back, glow] of [[0, 1], [1, 0.75], [2, 0.52], [3, 0.34], [4, 0.2], [5, 0.1]] as const) {
+          const at = head - back
+          if (at >= 0 && at < length) lit.set(at, Math.max(lit.get(at) ?? 0, glow))
+        }
       }
+    }
+    c.withHit(owner, () => {
+      cellsOnPath.forEach((i, k) => {
+        const glow = lit.get(k) ?? 0
+        const arrived = k === length - 1 && (lit.get(k) ?? 0) > 0.5
+        const base = rootMessage && k === length - 1 ? mix(P.yellow, wire, 0.2) : wire
+        const x = i % c.W, y = Math.floor(i / c.W)
+        const ink = arrived ? P.white : glow ? mix(base, mix(accent, P.white, 0.75), glow) : base
+        c.set(x, y, mix(c.get(x, y) || ink, ink, Math.max(presence, glow)))
+      })
     })
   }
   return finish()

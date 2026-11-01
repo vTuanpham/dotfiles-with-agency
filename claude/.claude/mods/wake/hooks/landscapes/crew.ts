@@ -2,7 +2,7 @@ import { type Canvas, hash, mix } from '../pixels'
 import { type Job, jobAccent, type Look, P } from './kit'
 
 // The crew's look: one family per harness, four classes that grow in size and detail.
-//   codex     mechanical  probe -> saucer -> mothership (a skiff -> tug -> steamship on the water)
+//   codex     mechanical  drone -> big drone -> airship -> mothership (a skiff -> tug -> steamship on the water)
 //   agy       celestial   spark -> comet -> constellation
 //   claude    living      sparrow -> gull -> eagle (also the subagents' birds)
 //   opencode  festival    hot-air balloons, free to drift: hopper -> striped balloon -> big balloon with a bunting band
@@ -14,6 +14,8 @@ type Kind = NonNullable<Job['kind']>
 type Frames = readonly (readonly string[])[]
 
 const drawWithHit = <T>(c: Canvas, job: Job, draw: () => T): T => job.hitOwner ? c.withHit(job.hitOwner, draw) : draw()
+/** How far a flyer patrols each way from its home, when the sky there is clear: about half a sky slot. */
+const PATROL = 9
 
 const LANE: Record<Kind, readonly string[]> = {
   codex: ['.a.', 'aWa', '.a.'],
@@ -31,15 +33,17 @@ const ROAD: Record<1 | 2 | 3 | 4, readonly string[]> = {
 
 const AIR: Record<Kind, Record<1 | 2 | 3 | 4, Frames>> = {
   codex: {
-    1: [['.aaa.', 'aWaaa', '.ada.'], ['.aaa.', 'aaaWa', '.ada.']],
-    2: [['...W...', '..aaa..', 'aWaWaWa', '.aaaaa.', '...s...'], ['...W...', '..aaa..', 'aWaWaWa', '.aaaaa.', '...d...']],
+    1: [['a...a', '.aWa.'], ['.a.a.', '.aWa.']],
+    2: [['aa...aa', '.aaaaa.', '..aWa..', '..s.s..'], ['.a...a.', '.aaaaa.', '..aWa..', '..s.s..']],
+    // Sol and Astra are airships, four rows so they fit the sky band: a light upper hull, the accent body with its lit
+    // window row, a dark tail fin and a small grey gondola; the windows twinkle, and Astra's nose light blinks.
     3: [
-      ['.....WWW.....', '...aaaaaaa...', '.aaaaaaaaaaa.', 'aWaWaWaWaWaWa', '..aaaaaaaaa..', '.....dsd.....'],
-      ['.....WWW.....', '...aaaaaaa...', '.aaaaaaaaaaa.', 'aWaWaWaWaWaWa', '..aaaaaaaaa..', '.....ddd.....'],
+      ['..llllllll...', 'dlaaaaaaaaal.', 'ddaWaWaWaaad.', '....dkkd.....'],
+      ['..llllllll...', 'dlaaaaaaaaal.', 'ddaaWaWaWaad.', '....dkkd.....'],
     ],
     4: [
-      ['......WWWWW......', '....aaaaaaaaa....', '.aWaWaWaWaWaWaWa.', 'daaaaaaaaaaaaaaad', 'aWaWaWaWaWaWaWaWa', '..aaaaaaaaaaaaa..', '.....s.....W.....'],
-      ['......WWWWW......', '....aaaaaaaaa....', '.aWaWaWaWaWaWaWa.', 'daaaaaaaaaaaaaaad', 'aWaWaWaWaWaWaWaWa', '..aaaaaaaaaaaaa..', '.....d.....s.....'],
+      ['...llllllllll....', 'dllaaaaaaaaaaal..', 'ddaWaWaWaWaWaaads', '.....dkkkkd......'],
+      ['...llllllllll....', 'dllaaaaaaaaaaal..', 'ddaaWaWaWaWaWaad.', '.....dkkkkd......'],
     ],
   },
   agy: {
@@ -106,23 +110,7 @@ function paint(job: Job, look: Look) {
   } as Record<string, number>
 }
 
-function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly string[], pal: Record<string, number>, glow: boolean, outline = false) {
-  if (outline && look.night < 0.5) {
-    const edge = new Set<string>()
-    art.forEach((row, y) => [...row].forEach((ch, x) => {
-      if (ch === '.') return
-      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
-        if ((art[y + dy]?.[x + dx] ?? '.') === '.') edge.add(`${x + dx},${y + dy}`)
-      }
-    }))
-    const points = [...edge].map(point => point.split(',').map(Number) as [number, number])
-    const light = points.reduce((sum, [x, y]) => {
-      const bg = c.get(x0 + x, y0 + y)
-      return sum + ((bg >> 16 & 255) * 299 + (bg >> 8 & 255) * 587 + (bg & 255) * 114) / 1000
-    }, 0) / points.length
-    const ink = light < 65 ? mix(P.text, look.top, 0.5) : mix(P.ink, look.top, 0.3)
-    for (const [x, y] of points) c.set(x0 + x, y0 + y, ink)
-  }
+function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly string[], pal: Record<string, number>, glow: boolean) {
   art.forEach((row, r) => {
     for (let i = 0; i < row.length; i++) {
       const ch = row[i]!
@@ -133,11 +121,128 @@ function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly strin
   })
 }
 
+/** The canvas as a flyer's trimmings may touch it: never a cell inside another thing's reserved zone (the sun, a lamp, a roof sign, another flyer). */
+function onlyOwnAir(c: Canvas, look: Look, cx: number, cy: number): Canvas {
+  // Only this sprite's own zone is exempt; scenery, buildings and other crew stay untouched even when the sprite's
+  // centre happens to fall inside one of their zones.
+  const own = new Set((look.crewSpriteZones ?? []).filter(z => cx >= z.x && cx < z.x + z.w && cy >= z.y && cy < z.y + z.h))
+  const others = (look.crewZones ?? []).filter(z => !own.has(z))
+  const free = (x: number, y: number) => !others.some(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h)
+  return { ...c, set: (x, y, color) => { if (free(x, y)) c.set(x, y, color) }, glow: (x, y, color, t) => { if (free(x, y)) c.glow(x, y, color, t) } }
+}
+
+/**
+ * What each country does to the air around its crew, so a worker belongs to the place it flies over. Only soft light,
+ * never a solid pixel: the sprite stays the silhouette and the place only adds its weather to it.
+ *   city a searchlight beam at night   harbor a pennant streaming from the mast   beach a ribbon trailing behind
+ *   mountains a thin cold contrail     countryside petals and pollen falling    forest fireflies circling
+ *   desert heat-haze dust behind       tundra a drift of aurora light and snow glitter
+ */
+function atmosphere(canvas: Canvas, look: Look, x0: number, y0: number, w: number, h: number, job: Job, ink: number) {
+  const f = look.frame, s = job.seed, cx = x0 + (w >> 1), cy = y0 + (h >> 1), tier = job.tier ?? 1
+  const night = look.night
+  const c = onlyOwnAir(canvas, look, cx, cy)
+  switch (look.place) {
+    case 'city':
+      if (night > 0.3 && tier > 1) for (let k = 1; k <= 4; k++) for (let dx = -(k >> 1); dx <= k >> 1; dx++) c.glow(cx + dx, y0 + h - 1 + k, P.yellow, 0.22 * night * (1 - k / 5) * (dx ? 0.5 : 1)) // a widening beam
+      break
+    case 'harbor':
+      c.glow(cx + 1 + ((f >> 3) & 1), y0 - 1, ink, 0.9)
+      c.glow(cx + 2 + ((f >> 3) & 1), y0 - 1 + ((f >> 2) & 1), ink, 0.45)
+      break
+    case 'beach':
+      for (let k = 1; k <= 4; k++) c.glow(x0 - k, cy + Math.round(Math.sin(f * 0.22 + k * 0.9 + s)), ink, 0.62 - k * 0.12)
+      break
+    case 'mountains':
+      for (let k = 1; k <= 6; k++) c.glow(x0 - k, cy + (k >> 2), P.white, 0.34 * (1 - k / 7) * (1 - night * 0.4))
+      break
+    case 'countryside':
+      for (let k = 0; k < 3; k++) {
+        const t = (f / 5 + k * 3 + s) % 9
+        c.glow(cx - 2 + k * 2 + Math.round(Math.sin(t * 0.9 + k)), y0 + h + Math.floor(t / 2), k % 2 ? P.pink : P.yellow, 0.6 * (1 - t / 9))
+      }
+      break
+    case 'forest':
+      for (let k = 0; k < 2; k++) {
+        const a = f * 0.1 + k * Math.PI + s
+        c.glow(Math.round(cx + Math.cos(a) * (w / 2 + 2)), Math.round(cy + Math.sin(a) * (h / 2 + 1.5)), P.yellow, 0.35 + 0.5 * night)
+      }
+      break
+    case 'desert':
+      for (let k = 1; k <= 5; k++) c.glow(x0 - k * 2, y0 + h - 1 + (k & 1), P.sand, 0.34 * (1 - k / 6))
+      break
+    case 'tundra':
+      c.glow(cx + Math.round(Math.sin(f * 0.1 + s) * (w / 2)), y0 + h, P.green, 0.38)
+      c.glow(cx + Math.round(Math.cos(f * 0.13 + s) * (w / 2 + 1)), y0 + h + 1, P.white, 0.4)
+      break
+  }
+}
+
+/**
+ * A Codex machine takes the gear of the country it flies over, in solid pixels a row or two outside its body, so each place
+ * gives it a different silhouette: a paraglider's canopy over the mountains, a pennant in the harbor, a trailing ribbon on the
+ * beach, a lateen sail in the desert, skis in the tundra, a windmill rotor in the countryside, a hanging lantern in the forest,
+ * an aerial and a blinking light in the city. Class grows the canopy and the ribbon.
+ */
+function dress(canvas: Canvas, look: Look, x0: number, y0: number, w: number, h: number, job: Job, pal: Record<string, number>) {
+  const c = onlyOwnAir(canvas, look, x0 + (w >> 1), y0 + (h >> 1))
+  const f = look.frame, tier = job.tier ?? 1, cx = x0 + (w >> 1), ground = look.crewGround ?? c.H
+  const put = (x: number, y: number, col: number) => { if (y >= 0 && y < ground) c.set(x, y, col) }
+  const { a, l, d } = pal as { a: number; l: number; d: number }
+  switch (look.place) {
+    case 'mountains': { // paraglider: a striped canopy on two lines
+      const cw = Math.max(w, 3 + tier * 2), left = x0 - ((cw - w) >> 1)
+      for (let i = 0; i < cw; i++) put(left + i, y0 - 2 + (i === 0 || i === cw - 1 ? 1 : 0), i % 2 ? l : a)
+      put(left + 1, y0 - 1, d)
+      put(left + cw - 2, y0 - 1, d)
+      break
+    }
+    case 'harbor': // a mast and a fluttering pennant
+      put(cx, y0 - 1, d)
+      put(cx, y0 - 2, d)
+      put(cx + 1 + ((f >> 3) & 1), y0 - 2, l)
+      put(cx + 1, y0 - 3 + ((f >> 4) & 1), a)
+      break
+    case 'beach': // a ribbon streaming behind, longer for a bigger model
+      for (let k = 1; k <= 2 + tier; k++) put(x0 - k, y0 + (h >> 1) + Math.round(Math.sin(f * 0.22 + k * 0.9 + job.seed)), k % 2 ? l : a)
+      break
+    case 'desert': // a lateen sail on a mast
+      put(cx, y0 - 1, d)
+      put(cx, y0 - 2, l)
+      put(cx + 1, y0 - 2, a)
+      put(cx, y0 - 3, a)
+      break
+    case 'tundra': // skis with turned-up tips
+      for (let i = -1; i <= w; i++) put(x0 + i, y0 + h, d)
+      put(x0 - 2, y0 + h - 1, d)
+      break
+    case 'countryside': // a windmill's turning rotor
+      put(cx, y0 - 1, d)
+      for (const dx of f % 8 < 4 ? [-2, 2] : [-1, 1]) put(cx + dx, y0 - 2, l)
+      put(cx, y0 - 2, a)
+      break
+    case 'forest': // a lantern on a string
+      put(cx, y0 + h, d)
+      put(cx, y0 + h + 1, P.yellow)
+      break
+    case 'city': // an aerial with a blinking light
+      put(cx, y0 - 1, d)
+      put(cx, y0 - 2, (f >> 3) % 2 ? (look.night > 0.3 ? P.red : P.white) : d)
+      break
+  }
+}
+
 /** A flyer centred on (cx, cy): its family and class decide the sprite and which frame this beat shows. */
 export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kind: Kind = job.kind ?? 'codex', compact = false) {
   const frames = AIR[kind][compact ? 1 : job.tier ?? 1]
-  const art = frames[(Math.floor(look.frame / (kind === 'claude' ? 8 : kind === 'opencode' ? 14 : 12)) + job.seed) % frames.length]!
-  draw(c, look, cx - (art[0]!.length >> 1), cy - (art.length >> 1), art, paint({ ...job, kind }, look), true, kind === 'agy' || compact || (job.tier ?? 1) <= 2)
+  const art = frames[(Math.floor(look.frame / (kind === 'claude' ? 3 : kind === 'opencode' ? 5 : 4)) + job.seed) % frames.length]!
+  const pal = paint({ ...job, kind }, look)
+  const x0 = cx - (art[0]!.length >> 1), y0 = cy - (art.length >> 1)
+  draw(c, look, x0, y0, art, pal, true)
+  if (!compact) {
+    if (kind === 'codex') dress(c, look, x0, y0, art[0]!.length, art.length, { ...job, kind }, pal)
+    atmosphere(c, look, x0, y0, art[0]!.length, art.length, { ...job, kind }, pal.a!)
+  }
 }
 
 /** Reserve the nearest clear lane; compact silhouettes keep a crowded sky readable. */
@@ -149,10 +254,10 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
   for (const z of zones) for (let py = Math.max(0, z.y); py < Math.min(c.H, z.y + z.h); py++) for (let px = Math.max(0, z.x); px < Math.min(c.W, z.x + z.w); px++) occupied[py * c.W + px] = 1
   const blocked = (px: number, py: number) => px >= 0 && px < c.W && py >= 0 && py < c.H && occupied[py * c.W + px] === 1
   {
-    const art = AIR[job.kind ?? 'codex'][job.tier ?? 1][0]!
+    const frames = AIR[job.kind ?? 'codex'][job.tier ?? 1]
+    const art = frames[0]!
     const w = art[0]!.length, h = art.length
     const pixels: [number, number][] = []
-    const frames = AIR[job.kind ?? 'codex'][job.tier ?? 1]
     for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) {
       if (frames.some(frame => frame[dy]![dx] !== '.')) pixels.push([dx, dy])
     }
@@ -173,13 +278,23 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
     for (const candidate of candidates) {
       const zone = { x: candidate.x - (art[0]!.length >> 1), y: candidate.y - (art.length >> 1), w, h }
       if (pixels.some(([dx, dy]) => padded[(zone.y + dy) * c.W + zone.x + dx])) continue
-      const bob = zone.y > 0 && zone.y + zone.h < (look.crewGround ?? c.H) && pixels.every(([dx, dy]) => !padded[(zone.y + dy - 1) * c.W + zone.x + dx] && !padded[(zone.y + dy + 1) * c.W + zone.x + dx])
-      const offset = bob ? Math.round(Math.sin(look.frame * 0.09 + job.seed)) : 0
-      const reserved = bob ? { ...zone, y: zone.y - 1, h: zone.h + 2 } : zone
+      const clearAt = (rise: number) => zone.y - rise >= 0 && pixels.every(([dx, dy]) => !padded[(zone.y + dy - rise) * c.W + zone.x + dx])
+      const bob = zone.y > 0 && zone.y + zone.h < (look.crewGround ?? c.H) && clearAt(1) && pixels.every(([dx, dy]) => !padded[(zone.y + dy + 1) * c.W + zone.x + dx])
+      // A hop of up to two pixels when something real happens to this worker (it acted, sent or received a message).
+      const hopRoom = bob && clearAt(2) ? 2 : bob ? 1 : 0
+      const hop = Math.round(hopRoom * Math.min(1, job.lift ?? 0))
+      const offset = bob ? Math.round(Math.sin(look.frame * 0.09 + job.seed)) - hop : 0
+      // Patrol: travel the clear sky beside its home, up to PATROL px each way, smoothly (well under a pixel a frame), so a
+      // working crew visibly goes about its business while never crossing a building or another flyer's stretch.
+      let reach = 0
+      while (reach < PATROL && pixels.every(([dx, dy]) => !padded[(zone.y + dy) * c.W + zone.x + dx - reach - 1] && !padded[(zone.y + dy) * c.W + zone.x + dx + reach + 1] && zone.x - reach - 1 >= 0 && zone.x + w + reach + 1 <= c.W)) reach++
+      const speed = [0, 0.045, 0.032, 0.022, 0.016][job.tier ?? 1]! * (job.isStale ? 0.3 : 1)
+      const drift = Math.round(reach * Math.sin(look.frame * speed + job.seed * 5))
+      const reserved = { ...zone, x: zone.x - reach, w: zone.w + 2 * reach, ...(bob ? { y: zone.y - Math.max(1, hopRoom), h: zone.h + 1 + Math.max(1, hopRoom) } : {}) }
       zones.push(reserved)
       sprites.push(reserved)
-      anchors.push((candidate.y + offset) * c.W + candidate.x)
-      drawWithHit(c, job, () => fly(c, look, candidate.x, candidate.y + offset, job, job.kind ?? 'codex'))
+      anchors.push((candidate.y + offset) * c.W + candidate.x + drift)
+      drawWithHit(c, job, () => fly(c, look, candidate.x + drift, candidate.y + offset, job, job.kind ?? 'codex'))
       return zone
     }
   }
@@ -201,11 +316,18 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
   for (const { x: px, y: py } of compactSlots) {
     const zone = { x: px, y: py, w: 3, h: 3 }
     const art = LANE[job.kind ?? 'codex']
-    if (art.some((row, dy) => [...row].some((ch, dx) => ch !== '.' && blocked(px + dx, py + dy)))) continue
-    anchors.push((py + 2) * c.W + px + 1)
-    art.forEach((row, dy) => [...row].forEach((ch, dx) => { if (ch !== '.') zones.push({ x: px + dx, y: py + dy, w: 1, h: 1 }) }))
-    sprites.push(zone)
-    drawWithHit(c, job, () => draw(c, look, px, py, art, paint(job, look), false))
+    const fits = (shift: number) => art.every((row, dy) => [...row].every((ch, dx) => ch === '.' || !blocked(px + dx + shift, py + dy) && px + dx + shift >= 0 && px + dx + shift < right))
+    if (!fits(0)) continue
+    // even the compact mark patrols the clear stretch beside it, so no crew member ever just stands there
+    let reach = 0
+    while (reach < PATROL && fits(-(reach + 1)) && fits(reach + 1)) reach++
+    const speed = [0, 0.045, 0.032, 0.022, 0.016][job.tier ?? 1]! * (job.isStale ? 0.3 : 1)
+    const drift = Math.round(reach * Math.sin(look.frame * speed + job.seed * 5))
+    const lift = -Math.round(Math.min(1, job.lift ?? 0) * (py > 0 && fits(0) ? 1 : 0))
+    anchors.push((py + 2 + lift) * c.W + px + 1 + drift)
+    art.forEach((row, dy) => [...row].forEach((ch, dx) => { if (ch !== '.') zones.push({ x: px + dx - reach, y: py + dy, w: 1 + 2 * reach, h: 1 }) }))
+    sprites.push({ ...zone, x: zone.x - reach, w: zone.w + 2 * reach })
+    drawWithHit(c, job, () => draw(c, look, px + drift, py + lift, art, paint(job, look), false))
     return zone
   }
   return undefined
@@ -235,7 +357,7 @@ export const airSlots = (right: number) => Math.max(1, Math.floor((right - 16) /
 
 /** Where a hovering job sits in the sky, in its slot of `count`: small ones flit about the lower sky, big ones glide high and slow. */
 export function hover(c: Canvas, look: Look, job: Job, slot: number, count: number, right: number): [number, number] {
-  const t = job.seed * 97
+  const t = job.seed * 97 // a flyer's home is fixed by who it is; the drift around it is placeFly's, so a lane never flips
   const tier = job.tier ?? 1
   const width = Math.max(8, right - 16) / count
   const speed = [0, 0.07, 0.045, 0.025, 0.02][tier]!
@@ -299,10 +421,7 @@ function packCompact(c: Canvas, look: Look, jobs: Job[]): boolean {
     look.crewZones!.push({ x, y, w: 3, h: 3 })
     look.crewSpriteZones!.push({ x, y, w: 3, h: 3 })
     look.crewAnchors!.push((y + 2) * c.W + x + 1)
-    drawWithHit(c, job, () => {
-      c.rect(x, y, 3, 3, mix(P.ink, look.top, 0.3))
-      draw(c, look, x, y, art, paint(job, look), false)
-    })
+    drawWithHit(c, job, () => draw(c, look, x, y, art, paint(job, look), false))
   })
   return true
 }
@@ -358,7 +477,7 @@ export function placeBoat(c: Canvas, look: Look, wanted: number, y: number, job:
       if (top < 0 || top + h > c.H) continue
       const zone = { x, y: top, w, h }
       if (zones.some(z => zone.x < z.x + z.w && zone.x + zone.w > z.x && zone.y < z.y + z.h && zone.y + zone.h > z.y)) continue
-    drawWithHit(c, job, () => h === 3 ? draw(c, look, x, top, art, paint(job, look), false) : boat(c, look, x, top, job))
+      drawWithHit(c, job, () => h === 3 ? draw(c, look, x, top, art, paint(job, look), false) : boat(c, look, x, top, job))
       anchors.push((top + h - 1) * c.W + x + (w >> 1))
       zones.push(zone)
       sprites.push(zone)
