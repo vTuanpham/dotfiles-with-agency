@@ -12,6 +12,7 @@ python3 -B tests/test_github_mcp.py      # credential handoff without token outp
 python3 -B tests/test_agent_desktop.py   # guarded desktop transport and verified installer, without a real GUI
 python3 -B tests/test_rtk_filters.py     # isolated filter fixtures, actual dispatch and failure exit status
 python3 -B tests/test_public.py          # the public-facing check: what it refuses, and that this repo passes it
+python3 -B tests/test_docs.py            # the Wake and top READMEs name every place, character, effect and creature in the code; links and images resolve
 ```
 
 `tests/check_public.py` is the check itself, run by the pre-commit and commit-msg hooks (`.githooks/`, enabled

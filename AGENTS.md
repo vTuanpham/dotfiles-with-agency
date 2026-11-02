@@ -30,7 +30,7 @@ README says "live" or "snapshot", and `install.sh` lists the live links (`LINKS`
 | Approvals, trust, auto-mode, generated catalogs | Live only | Leave them where they are; they never belong in this repository |
 
 Adding a new tool's config: decide live link or snapshot, add it to `LINKS` or `SNAPSHOTS` in `install.sh`,
-give its folder a README that says which, and add a row to the top-level Packages table. Stage explicit paths,
+give its folder a README that says which, and add a row to the Packages table in `docs/packages.md`. Stage explicit paths,
 never `git add -A`. Push only when the user says so.
 
 ## Guidance placement
@@ -89,7 +89,7 @@ It reports where and why, never the matching text.
 ## The rest
 
 - Layout is Stow-style packages (paths mirror `$HOME`; `install.sh` links them), one folder each with its own README (live link or snapshot, stated there). Keep
-  that README true when a folder changes, and the top-level Packages table in step.
+  that README true when a folder changes, and the Packages table (`docs/packages.md`) in step.
 - `./install.sh` is a dry run unless given `--apply`, and never overwrites a file that differs from the repo.
 - Tests: `python3 -B tests/test_shell_startup.py`, `tests/test_install.py`, `tests/test_public.py`, and
   `uv run pytest` inside `agent-bridge/` and `agent-baton/`.
