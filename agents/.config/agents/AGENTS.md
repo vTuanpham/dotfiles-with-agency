@@ -99,6 +99,11 @@ reading, searching and running commands.
   before shipping a fix. Before rejecting an approach on contrary numbers,
   check setup, data, sample size and tuning, try its strongest reasonable variant,
   and pause work built on it until there is adequate evidence.
+- Optimizations need behavioral parity, not bit-identical output, unless the bits
+  are the contract (hashes/keys, persisted identity, wire/crypto formats, promised
+  reproducibility). A numerically equivalent change whose gains heavily outweigh
+  its costs is pre-authorized: verify decisions on real data, measure the drift
+  and margin to thresholds, and state the tradeoff.
 - Visual changes require inspecting rendered output at meaningful states and
   widths. Check normal scale and dense/small details for clipping, overlap,
   spacing and legibility; tests alone and blind iteration are insufficient.
