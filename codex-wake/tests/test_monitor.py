@@ -37,9 +37,15 @@ def test_hits_inside_the_cooldown_are_counted_then_announced_with_the_count():
     assert (
         events[1] == "wake-event: 2 at=60s suppressed=5 a"
     )  # the five probes between them are counted, not lost
-    assert (
-        lines[-1] == "wake-end: reason=ttl events=2 suppressed=5"
-    )  # and the five after the last announcement too
+    # and the five after the last announcement too, with what the probe last saw
+    assert lines[-1] == "wake-end: reason=ttl events=2 suppressed=5 latest=a"
+
+
+def test_a_changed_result_held_back_by_the_cooldown_is_still_named_when_it_ends():
+    policy = Policy(every=2, ttl=14, cooldown=30, max_events=5, distinct=True)
+    code, lines = play(policy, [(0, "one")] * 3 + [(0, "two")] * 4)
+    assert [line.split()[0] for line in lines] == [monitor.EVENT, monitor.END]
+    assert lines[-1] == "wake-end: reason=ttl events=1 suppressed=6 latest=two"
 
 
 def test_the_event_limit_ends_the_monitor_with_a_closing_line():

@@ -107,19 +107,24 @@ def probe_once(command):
 
 def run(policy, command, out=None, clock=time.monotonic, sleep=time.sleep, probe=probe_once):
     """Probe until the ttl, the event limit or repeated probe failure; returns 0, or 3 for probe failure."""
-    start, last, events, suppressed, failures, previous = clock(), None, 0, 0, 0, None
+    start, last, events, suppressed, failures, previous, latest = clock(), None, 0, 0, 0, None, ""
 
     def say(line):
         print(line, file=out or sys.stdout, flush=True)
 
+    def ending(reason):
+        # hits held back by the cooldown are only counted; the closing line still says what the probe last saw
+        held = f" latest={latest}" if suppressed and latest else ""
+        say(f"{END} reason={reason} events={events} suppressed={suppressed}{held}")
+
     while True:
         elapsed = clock() - start
         if elapsed >= policy.ttl:
-            say(f"{END} reason=ttl events={events} suppressed={suppressed}")
+            ending("ttl")
             return 0
         code, detail = probe(command)
         if code == 0:
-            failures = 0
+            failures, latest = 0, detail
             quiet = last is not None and clock() - last < policy.cooldown
             same = policy.distinct and detail == previous
             if quiet or same:
@@ -129,13 +134,13 @@ def run(policy, command, out=None, clock=time.monotonic, sleep=time.sleep, probe
                 say(f"{EVENT} {events} at={int(clock() - start)}s suppressed={suppressed} {detail}".rstrip())
                 last, previous, suppressed = clock(), detail, 0
                 if events >= policy.max_events:
-                    say(f"{END} reason=max-events events={events} suppressed=0")
+                    ending("max-events")
                     return 0
         elif code == 1:
             failures = 0
         else:
             failures += 1
             if failures >= MAX_PROBE_FAILURES:
-                say(f"{END} reason=probe-failed events={events} suppressed={suppressed}")
+                ending("probe-failed")
                 return 3
         sleep(max(0.0, min(policy.every, policy.ttl - (clock() - start))))
