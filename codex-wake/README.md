@@ -81,6 +81,35 @@ The [documented event stream](https://learn.chatgpt.com/docs/app-server#events)
 requires starting/resuming a thread; 0.166.0 has no passive subscribe request.
 This observer uses read-only calls instead of resuming or altering the target.
 
+## Monitoring a condition for a while
+
+For "tell me when X happens, for the next half hour", launch the monitor like any background command and end the turn:
+
+```sh
+codex-wake monitor --every 10s --ttl 30m --cooldown 5m --max-events 5 -- test -f build/ready
+```
+
+The probe is an argument list (no shell) run every `--every`: exit 0 means the condition holds, 1 that it does not, anything
+else is a probe error. The monitor prints a `wake-event:` line for each announced hit and a `wake-end:` line when it stops.
+It never talks to Codex, so it runs in the command sandbox like any other command. The `Stop` hook recognises it and the
+host observer reads those lines from the running command, waking the idle session under limits the command cannot loosen:
+
+| Limit | Default | Hard cap | Behaviour |
+| --- | --- | --- | --- |
+| `--ttl` | 30m | 24h | the monitor stops itself; the observer stops listening shortly after the same time |
+| `--cooldown` | 5m | at least 30s | one notice per cooldown at most; hits in between are counted and joined to the next notice |
+| `--max-events` | 5 | 20 | notices stop after this many; the closing notice still arrives |
+| `--every` | 10s | at least 2s | probe interval; five probe errors in a row end it with `reason=probe-failed` |
+
+`--distinct` announces a hit only when the probe's first output line differs from the last announced one (a changed answer,
+not the same answer again). A notice states how many hits are new and how many there have been, and names the private log;
+the probe's own output is never pasted into it. The closing notice is the ordinary one for a finished command.
+
+Delivery waits for the session to be idle, like every other notice here. Live delivery needs the installed hooks and reads
+the command's output while it runs. If a Codex build does not return that output until the command ends, the monitor
+still stops at its limits and the one closing notice carries every hit in its log. Check with a short run (`--ttl 1m
+--cooldown 30s` and a probe that is true) and see whether the first notice arrives before the command ends.
+
 ## Why this mechanism
 
 Checked against installed **codex-cli 0.166.0**, its `--help`, app-server help and

@@ -9,12 +9,15 @@ import sys
 import tempfile
 import time
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 
+from . import monitor
 from .client import Wake, connection, validate_message
 
 POLL = 2
 MAX_POLL = 30
+MONITOR_POLL = 8
 STOP_PAGES = 4
 
 
@@ -133,11 +136,35 @@ def deliver(target, folder, generation, incident, headline, output):
         target.send(prompt)
 
 
+class Stream:
+    """Announces a running `codex-wake monitor`'s hits under its policy, however its own flags were set:
+    one notification per cooldown at most (hits between are coalesced into the next), at most
+    `max_events` of them, none after the ttl."""
+
+    GRACE = 120  # seconds past the ttl the command may take to wind down before the observer stops listening
+
+    def __init__(self, policy):
+        self.policy, self.start, self.seen, self.sent, self.last = policy, time.monotonic(), 0, 0, None
+
+    def due(self, output):
+        """The new event lines to announce now, or [] (nothing new, cooling down, or past its limits)."""
+        lines = [line for line in (output or "").splitlines() if line.startswith(monitor.EVENT)]
+        now = time.monotonic()
+        expired = now - self.start > self.policy.ttl + self.GRACE
+        cooling = self.last is not None and now - self.last < self.policy.cooldown
+        if len(lines) <= self.seen or self.sent >= self.policy.max_events or expired or cooling:
+            return []
+        new, self.seen, self.sent, self.last = lines[self.seen:], len(lines), self.sent + 1, now
+        return new
+
+
 def observe(job, folder):
     target = Wake(identifier(job["thread"]), job["home"])
     pending = set(map(identifier, job["items"]))
     generation, turn = job["generation"], identifier(job["turn"])
     completed, delay = {}, POLL
+    streams = {identifier(name): Stream(monitor.policy_of(**values))
+               for name, values in job.get("monitors", {}).items()}
     with connection(target.home) as call:
         while pending and epoch(folder) == generation:
             progress = False
@@ -149,6 +176,17 @@ def observe(job, folder):
                 if item["status"] != "inProgress":
                     completed[item_id] = item
                     progress = True
+                elif item_id in streams and parent["status"]["type"] == "idle":
+                    output = item.get("aggregatedOutput")
+                    if output is not None and not isinstance(output, str):
+                        raise RuntimeError("Invalid Codex command result")
+                    hits = streams[item_id].due(output)
+                    if hits and thread(call, target.thread)["status"]["type"] == "idle":
+                        stream = streams[item_id]
+                        deliver(target, folder, generation, f"monitor:{item_id}:{stream.sent}",
+                                f"Monitor: {len(hits)} new hit(s), {stream.seen} so far (one notice per "
+                                f"{stream.policy.cooldown}s, {stream.policy.max_events} at most).", output)
+                        progress = True
             if parent["status"]["type"] == "idle":
                 for item_id, item in list(completed.items()):
                     code, output = item.get("exitCode"), item.get("aggregatedOutput")
@@ -167,14 +205,16 @@ def observe(job, folder):
                 if progress:
                     delay = POLL
                 time.sleep(delay)
-                delay = min(delay * 2, MAX_POLL)
+                # a monitor's hits wait on this poll: keep it brisk while one is running
+                delay = min(delay * 2, MONITOR_POLL if streams.keys() & pending else MAX_POLL)
 
 
-def launch(target, folder, generation, turn, items):
+def launch(target, folder, generation, turn, items, monitors=None):
     unit = "codex-wake-" + key(str(target.home) + target.thread + turn)[:32]
     job = folder / (key(turn) + ".json")
     private_write(job, json.dumps({"thread": target.thread, "home": str(target.home.resolve()),
-                                  "generation": generation, "turn": turn, "items": items}))
+                                  "generation": generation, "turn": turn, "items": items,
+                                  "monitors": {n: asdict(p) for n, p in (monitors or {}).items()}}))
     subprocess.run([
         "systemd-run", "--user", "--quiet", "--collect", "--service-type=exec",
         "--unit=" + unit, "--property=UMask=0077", "--property=RuntimeMaxSec=infinity", "--", sys.executable,
@@ -210,7 +250,7 @@ def handle(payload):
         with connection(target.home) as call:
             thread(call, target.thread)
             terminals = list(pages(call, "thread/backgroundTerminals/list", {"threadId": target.thread}))
-        pending = []
+        pending, monitors = [], {}
         for terminal in terminals:
             if not isinstance(terminal, dict) or not isinstance(terminal.get("command"), str):
                 raise RuntimeError("Invalid Codex background terminal")
@@ -218,9 +258,11 @@ def handle(payload):
             watched = folder / (key("command:" + name) + ".watch")
             if not watched.exists() and not managed(terminal["command"]):
                 pending.append(name)
+                if policy := monitor.of_command(terminal["command"]):
+                    monitors[name] = policy  # its hits are announced as they come, under these limits
         if pending:
             target.check()
-            launch(target, folder, generation, turn, pending)
+            launch(target, folder, generation, turn, pending, monitors)
             for name in pending:
                 private_write(folder / (key("command:" + name) + ".watch"), turn)
         return

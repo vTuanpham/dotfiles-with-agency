@@ -7,6 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from . import monitor
 from .client import Wake, validate_message
 
 NOTICE = "Automatic task notification, not user approval."
@@ -31,6 +32,17 @@ def main(argv=None):
     )
     commands = parser.add_subparsers(dest="action", required=True)
     commands.add_parser("hook", help="internal host lifecycle hook (JSON on stdin)")
+    watch = commands.add_parser(
+        "monitor", help="watch a condition for a while; the host hook wakes this session on each hit",
+        description="Run PROBE every --every until --ttl; exit 0 = the condition holds, 1 = it does not.\n"
+                    "Hits are announced as `wake-event:` lines: one per --cooldown at most,\n"
+                    "--max-events in all.\n"
+                    "Start it in a background terminal and end the model turn;\n"
+                    "the installed host hook delivers them.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    monitor.add_arguments(watch)
+    watch.add_argument("command", nargs=argparse.REMAINDER, help="-- PROBE [ARG ...]")
     for action in ("check", "send", "run"):
         command = commands.add_parser(
             action,
@@ -58,6 +70,18 @@ def main(argv=None):
         from .hooks import main as hook_main
 
         return hook_main()
+    if args.action == "monitor":
+        probe = args.command[1:] if args.command[:1] == ["--"] else args.command
+        if not probe:
+            parser.error("monitor requires a probe command after --")
+        try:
+            policy = monitor.policy_of(args.every, args.ttl, args.cooldown, args.max_events, args.distinct)
+        except ValueError as exc:
+            parser.error(str(exc))
+        try:
+            return monitor.run(policy, probe)
+        except KeyboardInterrupt:
+            return 130
     if args.action == "run":
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
         if not command:

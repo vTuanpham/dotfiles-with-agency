@@ -19,6 +19,7 @@ repository snapshots alone do not arm a wake.
 | Native completion already proven to resume this idle session | That native trigger |
 | A background command or one-shot condition/timer command | Normal Codex exec; installed host `Stop` hook observes its native item |
 | A native worker ending its turn | Native delivery first; installed SubagentStart/SubagentStop hooks recover an idle verified parent |
+| A condition to watch for a while (a file, a service, a count), with several possible hits | `codex-wake monitor --ttl 30m --cooldown 5m -- PROBE` in a background terminal (exit 0 = holds, 1 = not); the host hook announces hits under its limits. Details in the codex-wake README |
 | An event producer or an assigned logical result (analysis done, blocked) | `codex-wake send --message TEXT` once, at that boundary |
 | Bridge jobs | Bridge watch; do not wrap it again |
 | An unplanned worker blocked on an idle root | The recovery procedure below |

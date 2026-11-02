@@ -1,11 +1,12 @@
 import json
+import types
 from contextlib import contextmanager
 from io import StringIO
 from pathlib import Path
 
 import pytest
 
-from codex_wake import cli, hooks
+from codex_wake import cli, hooks, monitor
 
 
 @pytest.fixture
@@ -290,6 +291,47 @@ def test_completed_output_is_not_refetched_while_parent_is_busy(host, monkeypatc
                    "turn": "turn", "items": ["command"]}, folder)
     assert len(messages) == 1 and waits == [2, 4, 8]
     assert sum(method == "thread/items/read" for method, _ in data["calls"]) == 1
+
+
+MONITOR = "codex-wake monitor --cooldown 1m --max-events 2 --ttl 1h -- test -f /tmp/ready"
+
+
+def test_a_running_monitor_wakes_an_idle_session_only_within_its_limits(host, monkeypatch):
+    target, data, messages, launches = host
+    data["items"] = [item("watch", command=MONITOR)]
+    hooks.handle(event("Stop"))
+    job = json.loads(Path(launches[0][0][-1]).read_text())
+    policy = {"every": 10, "ttl": 3600, "cooldown": 60, "max_events": 2, "distinct": False}
+    assert job["items"] == ["watch"] and job["monitors"] == {"watch": policy}
+
+    clock, ticks = {"now": 1000.0}, {"n": 0}
+
+    def sleep(seconds):  # every 20 s the monitor prints one more hit; after 8 ticks it ends on its own
+        ticks["n"] += 1
+        clock["now"] += 20
+        output = "\n".join(f"{monitor.EVENT} {i} at={i}s suppressed=0" for i in range(1, ticks["n"] + 1))
+        done = ticks["n"] >= 8
+        closing = f"\n{monitor.END} reason=ttl events={ticks['n']}" if done else ""
+        data["items"] = [item("watch", "completed" if done else "inProgress", command=MONITOR,
+                              exitCode=0 if done else None, aggregatedOutput=output + closing)]
+
+    monkeypatch.setattr(hooks, "time", types.SimpleNamespace(sleep=sleep, monotonic=lambda: clock["now"]))
+    hooks.observe(job, hooks.directory(target))
+    # the first hit at once; the next three arrive inside the cooldown and are coalesced into one
+    # notice a minute later; the cap of two is then spent, so the rest wait for the closing notice
+    assert len(messages) == 3
+    assert "1 new hit(s), 1 so far" in messages[0]
+    assert "3 new hit(s), 4 so far" in messages[1]
+    assert "Background command ended" in messages[2]
+    assert all("test -f" not in message for message in messages)  # the command's text is never in a notice
+
+
+def test_a_monitor_that_cannot_be_trusted_gets_no_live_notices(host):
+    _, data, _, launches = host
+    data["items"] = [item("watch", command="codex-wake monitor --every 1s -- true")]  # under the floor
+    hooks.handle(event("Stop"))
+    # observed to the end as an ordinary command
+    assert json.loads(Path(launches[0][0][-1]).read_text())["monitors"] == {}
 
 
 @pytest.mark.parametrize("state_home", [None, "", "relative/state", "~/.state"])
