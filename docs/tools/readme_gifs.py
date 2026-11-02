@@ -82,7 +82,7 @@ def landscapes():
         "Harbor · needs input · Codex boats and agy crew",
         "Beach · working · bridge jobs and Claude subagent birds",
         "Mountains · tests passed · fireworks",
-        "Countryside · idle · plan lamps show progress",
+        "Countryside · tests pass after a failure · rainbow",
         "Forest · rain · command failed",
         "Desert · dusk · a finished job leaves a shooting star",
         "Tundra · winter night · sleeping",
@@ -275,7 +275,7 @@ def dock():
     width = meta["w"] * S
     images = logos(meta, face)
     quota_line = quota_segments(meta["quota"])
-    band, rows_h, gap, note_h = 132, face.ch + 3, 12, 62
+    band, rows_h, gap, note_h = 132, face.ch + 3, 12, 100
     scene_y = band
     text_y = scene_y + meta["h"] * S + gap
     crew_y = text_y + rows_h  # the turn's status line, then the crew
@@ -335,7 +335,7 @@ def dock():
             d.text((cx, ly0 + 35), what, font=small, fill=(166, 173, 200), anchor="mm")
         spots = {}
         for r, row in enumerate(meta["rows"][i]):
-            spots = crew_row(frame, d, face, images, crew_y + r * rows_h, row, meta["rowBox"], meta["textColumns"])  # the last row has every part
+            spots = crew_row(frame, d, face, images, crew_y + r * rows_h, row, meta["rowBoxes"][i], meta["textColumns"])  # the last row has every part
         # the rows' notes sit in a band of their own below the crew, each on a tick up to the part it names, so none lies on text
         placed = []
         for label, x_target, color in (
@@ -346,7 +346,7 @@ def dock():
         ):
             span = small.getlength(label)
             left = min(max(6, x_target - span / 2), width - span - 6)
-            tier = 0 if all(left > p_right + 12 or left + span < p_left - 12 for p_left, p_right, p_tier in placed if p_tier == 0) else 1
+            tier = next(t for t in range(3) if t == 2 or all(left > p_right + 12 or left + span < p_left - 12 for p_left, p_right, p_tier in placed if p_tier == t))
             placed.append((left, left + span, tier))
             ty = notes_y + 12 + tier * 20
             d.line([(x_target, notes_y + 2), (x_target, ty - 2)], fill=color, width=2)

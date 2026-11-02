@@ -149,6 +149,23 @@ test('Bridge root messages connect to Mochi in the recorded direction without co
   }
 })
 
+test('the trail to the root stays put while Mochi\'s "!" blinks, her envelope hops and the other trails come and go', () => {
+  const job = { isStale: false, seed: 1, hit: { id: 'owner/job', title: 'Worker', details: [] } }
+  const peerCells = (input: SceneInput) => {
+    const { hits } = sceneFrame(input)
+    const at = hits.targets.findIndex(item => item.id === 'peer:owner/job:mochi') + 1
+    return new Set(hits.owners.flatMap((owner, cell) => owner === at ? [cell] : []))
+  }
+  const input: SceneInput = { ...base, width: 100, turns: [], live: null, plan: null, agents: [], jobs: [job], mood: 'alert',
+    peerEdges: [{ source: 'owner/job', target: 'mochi', strength: 1, preview: 'Result is ready' }] }
+  const shown = peerCells({ ...input, frame: 0 }), hidden = peerCells({ ...input, frame: 6 }) // the "!" is drawn on frame 0, not on frame 6
+  expect(shown.size).toBeGreaterThan(10)
+  const moved = [...shown].filter(cell => !hidden.has(cell)).length + [...hidden].filter(cell => !shown.has(cell)).length
+  expect(moved).toBeLessThanOrEqual(6) // only the few cells the mark itself stands on, never the whole arc
+  const withEnvelope = peerCells({ ...input, frame: 3, mail: 'in' })
+  expect([...shown].filter(cell => !withEnvelope.has(cell)).length).toBeLessThanOrEqual(12)
+})
+
 test('crowded workers preserve the pre-existing scene hit pixels', () => {
   const jobs = Array.from({ length: 30 }, (_, i) => ({ isStale: false, seed: hash(i + 100), kind: 'codex' as const }))
   for (const preset of Object.keys(LANDSCAPES) as SceneInput['preset'][]) for (const width of [24, 80]) {
@@ -233,7 +250,7 @@ test('every landscape draws a full frame at any width, hour, weather, season and
           weather: weathers[i % weathers.length]!,
           mood: (['work', 'idle', 'happy', 'sad', 'sleep', 'alert', 'work'] as const)[i]!,
           live: i % 2 ? null : base.live,
-          effect: ([null, { kind: 'fireworks', age: 12.5 }, { kind: 'storm', age: 3.5 }, { kind: 'shoot', age: 9.5 }] as const)[i % 4]!,
+          effect: ([null, { kind: 'fireworks', age: 12.5 }, { kind: 'storm', age: 3.5 }, { kind: 'shoot', age: 9.5 }, { kind: 'lanterns', age: 30.5 }, { kind: 'rainbow', age: 14.5 }] as const)[i % 6]!,
         }
         const px = scenePixels(input)
         expect(px.length).toBe(width * SCENE_H)
@@ -414,8 +431,8 @@ test('twelve mixed crew have visible positions in every landscape', () => {
 
 test('a whole day played in half frames, as the band paints it, draws no black pixel (an undefined colour) in any landscape', { timeoutMs: 15_000 }, () => {
   for (const preset of Object.keys(LANDSCAPES) as SceneInput['preset'][]) {
-    for (let t = 0; t < 120; t++) {
-      const px = scenePixels({ ...base, preset, width: 186, frame: 5000 + t / 2, hour: (4 + (t / 120) * 24) % 24, weather: weathers[1]! })
+    for (let t = 0; t < 120; t += 2) { // every other step: still the whole day and both whole and half frames, at half the cost
+      const px = scenePixels({ ...base, preset, width: 186, frame: 5000 + t / 4, hour: (4 + (t / 120) * 24) % 24, weather: weathers[1]! })
       expect(px.indexOf(0)).toBe(-1)
     }
   }

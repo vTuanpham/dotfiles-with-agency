@@ -2,6 +2,7 @@ import type { WakeChip, WakeMood, WakePulse, WakeStep, WakeSurroundings, WakeTal
 import { PACKET_RUN_MS, activityFlash, messageFade, packetWindow } from './crew-row'
 import type { Season } from './landscapes/kit'
 import { seedOf } from './pixels'
+import type { CharacterId } from './mochi'
 import type { SceneEffect, SceneInput, SceneTurn, SceneWeather } from './scene'
 import { modelTier } from './sources/accounts'
 import { skyOf } from './sources/weather'
@@ -16,6 +17,8 @@ export type BandState = {
   pulse: WakePulse[]
   plan: WakeStep[]
   mood: WakeMood
+  /** Which character stands in Mochi's place (`/wake mochi`). */
+  character?: CharacterId
   chips: WakeChip[]
   subagents: { id: string; name?: string; description: string; type: string; model?: string; tier: 1 | 2 | 3 | 4 }[]
 }
@@ -136,6 +139,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
     turns,
     live,
     mood: state.mood,
+    character: state.character,
     mail: mailAt(state.chips, now),
     peerEdges: [...state.chips.filter(job => job.running && job.id).flatMap(job => (job.peers ?? [])
       .filter(peer => (peer.target === 'root' ? peer.messageState !== undefined : peer.outgoing)

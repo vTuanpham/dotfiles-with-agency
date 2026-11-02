@@ -655,6 +655,18 @@ test('the crew legend is available on demand', async ($, on) => {
   expect(result.text).toContain('↗/↙')
 })
 
+test('/wake mochi lists the characters, picks one and remembers it', async ($, on) => {
+  engine(on)
+  const stored: Record<string, unknown> = {}
+  on('store.get', (_$, e) => ({ value: stored[e.key] }))
+  on('store.set', (_$, e) => { stored[e.key] = e.value; return { value: undefined } as never })
+  const run = async (args: string) => (await $.command.run({ command: 'wake', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as never)).text
+  expect(await run('mochi')).toContain('tabby')
+  expect(await run('mochi poodle')).toContain('No character called "poodle"')
+  expect(await run('mochi tabby')).toContain('Tabby')
+  expect(await run('mochi')).toContain('Now: Tabby')
+})
+
 test('a larger crew is reachable by pages while the scene remains visible', async ($, on) => {
   engine(on)
   const jobs: WakeChip[] = Array.from({ length: 8 }, (_, i) => ({ name: `job${i}`, title: `Worker ${i}`, backend: 'codex', account: '01', model: 'sol', effort: 'high', running: true, isStale: false, since: 1, lastEventAt: 995_000 }))
@@ -712,8 +724,14 @@ test('after ten idle minutes a recap waits above the prompt, from the log when n
   expect(drawn).toContain('−1')
   expect(drawn).toContain('since last activity')
   expect(drawn).toContain('from the log')
-  expect(drawn).not.toContain('<mochi>')
+  expect(drawn).toContain('<mochi>') // the recap shares the band with the scene when there is room for both
   await bar.unmount()
+
+  const tight = await mount($, 'AbovePrompt', false, 100, SCENE_ROWS + 2) // no room for both: the recap wins, as the thing to read
+  const tightDrawn = flat((await tight.drawn()) as Node)
+  expect(tightDrawn).toContain('since last activity')
+  expect(tightDrawn).not.toContain('<mochi>')
+  await tight.unmount()
 })
 
 test('the working headline spins differently for each kind of command', async ($, on) => {

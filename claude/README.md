@@ -114,7 +114,7 @@ It is Claude-only; [Agent Bridge](../agent-bridge/README.md) and
 
 ### Landscapes and session state
 
-<img src="../docs/images/wake-landscapes.gif" alt="Eight animated Wake landscapes: city at work, harbor awaiting input, beach with workers, mountains with fireworks after passed tests, idle countryside, rainy forest after a failure, desert with a shooting star after a completed job, and sleeping winter tundra." width="100%">
+<img src="../docs/images/wake-landscapes.gif" alt="Eight animated Wake landscapes: city at work, harbor awaiting input, beach with workers, mountains with fireworks after passed tests, countryside with a rainbow after tests pass again, rainy forest after a failure, desert with a shooting star after a completed job, and sleeping winter tundra." width="100%">
 
 *Actual renderer output, animating. Each scene is an example state, time and weather. `/wake tour` visits them all; `/wake scene <name>` pins one.*
 
@@ -123,8 +123,11 @@ It is Claude-only; [Agent Bridge](../agent-bridge/README.md) and
 | Turns and tool calls | Structures and coloured windows; the current turn is under construction |
 | Bridge workers and Claude subagents | Crew sprites by harness and model class, plus compact crew rows |
 | Job stops making progress | Amber stale marker |
-| Tests pass / command fails / Bridge job finishes | Fireworks / storm / shooting star, in the local style (harbor and beach fireworks mirror in the water; the desert storm is sand and the tundra's a blizzard; a tundra job lights the aurora) |
+| Tests pass / command fails / Bridge job finishes | Fireworks / storm / shooting star, in the local style (harbor and beach fireworks mirror in the water; the desert storm is sand and the tundra's a blizzard; a tundra job lights the aurora); the shooting star is a streak with a tapering tail and a few embers hanging behind it |
+| Every plan step done / tests pass right after a failed turn | Paper lanterns drift up from the ground / a rainbow draws itself over the scene (the biggest milestone of a turn gets the scene: failure, then a finished plan, then the rainbow, then fireworks) |
 | Plan steps / session mood | Lit lamps / Mochi working, waiting, happy, sad or asleep |
+| A message reaches a worker, or leaves one | The sender pulses as the comet launches and the receiver lights up as it lands, each harness in its own way: Codex a widening ripple, Claude twinkling stars, agy rising sparks, OpenCode a burst of confetti |
+| A message reaches Mochi (or she sends one) | A gadget pops out of her head, one per character: a satellite dish with signal arcs (Mochi), whiskers turned radar with rings sliding in (Tabby), an ear trumpet with notes drifting into it (Tuxedo), rabbit-ear antennae with TV static between them (Bun) |
 | Place, time and weather | Landscape, sun, moon phase and local weather |
 
 ### Crew and quota rows
@@ -167,11 +170,15 @@ runs, the harness's own spinner (Codex orbits, agy twinkles, OpenCode's balloon 
 working headline's spinner follows the command: a shell spins, tests fill a gauge, edits grow a caret,
 reads fill a page, searches circle, agents turn a gem, the web turns a globe; thinking keeps the
 landscape's own.
-The root has one place in every worker row, the right edge: a `◉` node on the first row, a
+The root has one place in every worker row: a `◉` node on the first row, a
 spine down to the last worker tied to it, `─┤`/`─┘` branches, and `↑`/`↓` for the last message
 to or from the root (`·` when the worker simply works for it); a packet runs the spine as a
-message arrives and a tie fades over 15 minutes; the row's leader between its words and the graph
-stays empty except for a few beads while a message arrives. In the scene a trail of faint embers
+message arrives and a tie fades over 15 minutes. The graph's column hugs the longest row (its
+words, metrics and peer lanes) with a small gap, and steps a few cells further out only while a
+message is crossing, so the packets have room; the row's leader stays empty except for a few beads
+while a message arrives. Every metric opens a card under the pointer: effort says which levels the
+model offers, the time says how long the worker has been silent, memory says what is used of the cap
+it was admitted with, and a stall reason is shown in full. In the scene a trail of faint embers
 joins each worker (native or Bridge) to Mochi: working for the root is a relationship, not a message.
 If the crew will not fit alongside the scene, Wake temporarily gives the rows
 the available space instead; an overflow count indicates any remaining rows.
@@ -191,7 +198,7 @@ and ┄/┆ show a declared peer or dependency wait. Motion means a message just
 first sees new messages on a link, one packet per message (up to five, a beat apart) crosses the
 lane once from sender to recipient, then the lane rests. History Wake never saw arrive does not
 move, nor does a wait. A worker's state mark lights when it acts, then settles. In the scene a
-message is a comet in the sender's harness colour whose tail fades slowly behind it, running an
+message is a comet in the sender's harness colour whose short tail fades quickly behind it, running an
 arc between the two workers' fixed places (never their moving sprites). The trail is drawn
 behind the sky's buildings, crew, weather and Mochi, so it takes nothing from them, and a soft
 splash marks where it lands. Message links fade gradually and are gone after 15 minutes. The gutter
@@ -231,7 +238,11 @@ interactive session reloads it when its files change, so edits here apply live.
 - `/wake` summarises; `/wake legend` explains the crew; `/wake tour` plays every landscape for 12 s, a whole day in each; `/wake scene <city|harbor|beach|mountains|countryside|forest|desert|tundra|auto>`
   pins a landscape to the current place; `/wake place <city|auto>` overrides the
   IP-based location (GeoJS, then ipwho.is; weather from Open-Meteo; all keyless).
-- Pins, the place and cached weather live in the mod's store
+- `/wake mochi <mochi|tabby|tuxedo|bun>` chooses who stands in Mochi's place: Mochi (lavender, belled collar),
+  Tabby (orange, striped), Tuxedo (black and white, yellow eyes) or Bun (a white rabbit). `/wake mochi` alone
+  shows the current one. Each is two hand-drawn frames in `hooks/mochi.ts`, and each has its own gadget for
+  catching a message (`hooks/reactions.ts`); adding a character means drawing two frames and giving it a gadget.
+- Pins, the place, the chosen character and cached weather live in the mod's store
   (`~/.claude/plugins/store/wake_*.json`), not here.
 - Checks, from the mod folder: `claude plugin validate .`, `claude plugin test .`,
   and `npx -y -p typescript tsc -p .` (the engine writes `.claude-plugin/types/`

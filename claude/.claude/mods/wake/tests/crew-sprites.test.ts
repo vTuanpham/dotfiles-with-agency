@@ -1,4 +1,18 @@
 import { expect, test } from 'claude-code/testing'
+
+import { CAT_COLUMNS, CHARACTERS, MOCHI_ROWS } from '../hooks/mochi'
+
+test('every character is drawn on the same grid, with a colour for each letter it uses', () => {
+  for (const character of Object.values(CHARACTERS)) {
+    for (const frame of [character.up, character.down]) {
+      expect(frame.length).toBe(MOCHI_ROWS)
+      for (const row of frame) {
+        expect(row.length).toBe(CAT_COLUMNS)
+        for (const letter of row) if (letter !== '.') expect((character.ink as Record<string, number>)[letter]).toBeDefined()
+      }
+    }
+  }
+})
 import { airJobs, boat, fly, placeFly } from '../hooks/landscapes/crew'
 import { ALL_CRAFT, CRAFT_SIZE } from '../hooks/landscapes/craft'
 import { type Job, type Look, P } from '../hooks/landscapes/kit'

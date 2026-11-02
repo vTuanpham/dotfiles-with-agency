@@ -10,8 +10,9 @@ import { type BandState, sceneInput } from './band'
 import { EFFECT_FRAMES, SCENE_ROWS, type SceneEffect, type SceneHitMap, type SceneSelection, readScenePointer, sceneCardBounds, sceneFrame, sceneHitAt } from './scene'
 import { PRESETS, nextRain, skyOf } from './sources/weather'
 import { lookAround, namePlace, pinPreset } from './surroundings'
+import { CHARACTERS, CHARACTER_IDS, type CharacterId, asCharacter, isCharacter } from './mochi'
 import { COLOR, readable, clock, commandHead, hash, isAnswerText, isTestCommand, lines, patchCounts, shortPath, span } from './util'
-import { CLASS_GLYPH, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
+import { CLASS_GLYPH, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, crewBox, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
 import { type EffortLevels, effortDots, levelsFor, scanEfforts } from './sources/efforts'
 import { PeerMessageTracker } from './peer-messages'
 import { LOGOS, modelLogo } from './logos'
@@ -109,6 +110,7 @@ const quotas = atom({ plugin: 'wake', key: 'quotas' } as const, [] as WakeQuota[
 // which effort levels each model offers, read from the native inventory; refreshed a few times a day, not hardcoded
 const effortLevels = atom({ plugin: 'wake', key: 'effortLevels' } as const, { at: 0, levels: {} as EffortLevels })
 const EFFORT_LEVELS_MS = 6 * 60 * 60_000
+const EFFORT_RETRY_MS = 10 * 60_000
 const recap = atom({ plugin: 'wake', key: 'recap' } as const, null as WakeRecap | null)
 const digest = atom({ plugin: 'wake', key: 'digest' } as const, freshDigest(0))
 const turnStartedAt = atom({ plugin: 'wake', key: 'turnStartedAt' } as const, null as number | null)
@@ -120,6 +122,7 @@ const tally = atom({ plugin: 'wake', key: 'tally' } as const, { turns: 0, added:
 const subagents = atom({ plugin: 'wake', key: 'subagents' } as const, [] as WakeAgent[])
 const agentModels = atom({ plugin: 'wake', key: 'agentModels' } as const, {} as Record<string, string>) // subagent id -> the model its spawn resolved to
 const parentModel = atom({ plugin: 'wake', key: 'parentModel' } as const, '')
+const characterAtom = atom({ plugin: 'wake', key: 'character' } as const, 'mochi' as CharacterId) // who stands in Mochi's place (/wake mochi)
 const parentEffort = atom({ plugin: 'wake', key: 'parentEffort' } as const, '') // the session's effort level, what a subagent inherits
 const agentEfforts = atom({ plugin: 'wake', key: 'agentEfforts' } as const, {} as Record<string, string>) // subagent id -> the effort its tool calls reported
 const surroundings = atom({ plugin: 'wake', key: 'surroundings' } as const, null as WakeSurroundings | null)
@@ -149,6 +152,7 @@ let callRevision = 0
 const resolvedCalls = new Map<string, number>()
 let cursor: CodexCursor = {}
 let turnFailed = false
+let previousTurnFailed = false // the turn before this one ended on a failed command: passing tests now clear the weather
 let turnTestsOk = false
 const taskIds = new Map<string, string>() // tool_use_id of a TaskCreate -> its subject, until the id is known
 let frameNo = 0
@@ -262,12 +266,15 @@ async function bandState($: EngineInterface): Promise<BandState> {
     plan: await read($, plan),
     mood: await read($, mood),
     chips: await read($, chips),
+    character: await read($, characterAtom),
     subagents: crew.map(a => ({ id: a.id, name: a.name, description: a.description, type: a.type, model: a.model, tier: modelTier('claude', a.model || parent) })),
   }
 }
 
 /** Looks around (place, landscape, weather) and keeps what it finds. */
 async function refreshSurroundings($: EngineInterface, force = false) {
+  const chosen = asCharacter(await $.store.get('mochi').catch(() => undefined)) // another session may have chosen
+  if (chosen !== (await read($, characterAtom))) await update($, characterAtom, () => chosen)
   const found = await lookAround($, force)
   if (found && JSON.stringify(found) !== JSON.stringify(await read($, surroundings))) await update($, surroundings, () => found)
 }
@@ -323,7 +330,7 @@ function pollCodex($: EngineInterface) {
   if (!effortPoll) {
     // its own slow schedule: the inventory changes rarely and is independent of quota polling
     $.clock.after(5_000, () => void safely(() => effortTick($)))
-    effortPoll = $.clock.every(EFFORT_LEVELS_MS, () => void safely(() => effortTick($)))
+    effortPoll = $.clock.every(EFFORT_RETRY_MS, () => void safely(() => effortTick($))) // cheap: the tick returns until the table is due
   }
   if (!quotaPoll) {
     void safely(() => quotaTick($))
@@ -337,7 +344,8 @@ async function effortTick($: EngineInterface) {
   const now = await $.clock.now()
   if (now - known.at < EFFORT_LEVELS_MS) return
   const levels = await scanEfforts($, ['codex', 'claude', 'agy', 'opencode'], known.levels)
-  await update($, effortLevels, () => ({ at: now, levels }))
+  // a scan that found nothing is retried soon: stamping it would leave every effort a bare word for six hours
+  await update($, effortLevels, () => ({ at: Object.keys(levels).length ? now : now - EFFORT_LEVELS_MS + EFFORT_RETRY_MS, levels }))
 }
 
 export async function quotaTick($: EngineInterface) {
@@ -555,7 +563,7 @@ export const register: Register = on => {
       const target = sceneSelection?.target ?? lastSceneTarget
       return { text: target ? [target.title, ...target.details].join('\n') : 'No scene object has been selected.' }
     }
-    if (verb === 'legend') return { text: 'Crew: harness logos identify Codex, agy, Claude and OpenCode; unsupported terminals show text instead. The circle fills with model size, ◔ small to ◉ largest. Hover crew marks for harness or model details; model IDs appear only when known. In the scene, hover a building for its turn and tool kinds, or a sprite for its worker; /wake detail shows its full details. Colour names the harness (Codex teal, agy mauve, Claude pink, OpenCode balloons) and a larger sprite means a larger model class; each landscape leaves its mark on them (a searchlight over the city, a pennant in the harbor, a ribbon on the beach, a contrail in the mountains, petals in the countryside, fireflies in the forest, dust in the desert, aurora glitter in the tundra). Their windows mark read, search, edit, run, test, agent, web and failed calls. Lamps show plan progress; fireworks mark passing tests, storms mark failed commands, and shooting stars mark finished jobs. ● running · ⌁ heavy queue · = paused · ↻ retrying · ? needs answer · ! stalled · ✓ done · ○ idle. Signal bars (five rising bars as an image, ▁▃▄▆█ as text) show thinking effort, for Bridge jobs and Claude subagents alike; the number is time since the last event; ▣▰▱ is memory against the job cap (Claude subagents report none). Colored peer lanes join workers; ← points to the recipient, ─/━/═ means 1/2–4/5+ messages. The root sits at the right edge of the crew rows: ◉ is the root, a spine runs down to the last worker with a tie to it, ─┤ and ─┘ are the branches of workers, ↑ means the last message went to the root, ↓ came from it and · means the worker simply works for it. A bright packet runs each lane and the spine (two for a stream of five or more, faster when new); in the scene a trail behind everything joins workers to one another and to Mochi, and a comet with a long fading tail runs along it when a message arrives, and an envelope hops over Mochi when a message reaches or leaves the root. Message links pulse, then melt away gradually over 15 minutes. Narrow rows use ↗/↙ and the peer name instead. One logo opens the accounts of each CLI in the quota line, │ divides CLIs and idle accounts with the same numbers fold into a range (02–04). Quota bars show remaining per account/window; hover an account mark for percentages and source reset text when available. ✕ marks signed-out or expired accounts, ? means unknown, ~ means stale numbers.' }
+    if (verb === 'legend') return { text: 'Crew: harness logos identify Codex, agy, Claude and OpenCode; unsupported terminals show text instead. The circle fills with model size, ◔ small to ◉ largest. Hover crew marks for harness or model details; model IDs appear only when known. In the scene, hover a building for its turn and tool kinds, or a sprite for its worker; /wake detail shows its full details. Colour names the harness (Codex teal, agy mauve, Claude pink, OpenCode balloons) and a larger sprite means a larger model class; each landscape leaves its mark on them (a searchlight over the city, a pennant in the harbor, a ribbon on the beach, a contrail in the mountains, petals in the countryside, fireflies in the forest, dust in the desert, aurora glitter in the tundra). Their windows mark read, search, edit, run, test, agent, web and failed calls. Lamps show plan progress; fireworks mark passing tests, storms mark failed commands, shooting stars mark finished jobs, lanterns rise when a plan is complete and a rainbow follows tests that pass right after a failed turn. ● running · ⌁ heavy queue · = paused · ↻ retrying · ? needs answer · ! stalled · ✓ done · ○ idle. Signal bars (five rising bars as an image, ▁▃▄▆█ as text) show thinking effort, for Bridge jobs and Claude subagents alike; the number is time since the last event; ▣▰▱ is memory against the job cap (Claude subagents report none). Colored peer lanes join workers; ← points to the recipient, ─/━/═ means 1/2–4/5+ messages. The root sits at the right edge of the crew rows: ◉ is the root, a spine runs down to the last worker with a tie to it, ─┤ and ─┘ are the branches of workers, ↑ means the last message went to the root, ↓ came from it and · means the worker simply works for it. A bright packet runs each lane and the spine (two for a stream of five or more, faster when new); in the scene a trail behind everything joins workers to one another and to Mochi, and a comet with a short, quickly fading tail runs along it when a message arrives, and an envelope hops over Mochi when a message reaches or leaves the root. Message links pulse, then melt away gradually over 15 minutes. Narrow rows use ↗/↙ and the peer name instead. One logo opens the accounts of each CLI in the quota line, │ divides CLIs and idle accounts with the same numbers fold into a range (02–04). Quota bars show remaining per account/window; hover an account mark for percentages and source reset text when available. ✕ marks signed-out or expired accounts, ? means unknown, ~ means stale numbers.' }
     if (verb === 'tour') {
       tour = { start: frameNo }
       return { text: `Touring ${PRESETS.length} landscapes, 12 s each, a whole day in each; your own scene comes back after.` }
@@ -564,6 +572,14 @@ export const register: Register = on => {
       const text = await pinPreset($, await read($, surroundings), arg)
       await refreshSurroundings($)
       return { text }
+    }
+    if (verb === 'mochi') {
+      const list = CHARACTER_IDS.map(id => `${id} (${CHARACTERS[id].note})`).join(', ')
+      if (!arg) return { text: `Now: ${CHARACTERS[asCharacter(await $.store.get('mochi'))].label}. Choose with /wake mochi <name>: ${list}.` }
+      if (!isCharacter(arg)) return { text: `No character called "${arg}". ${list}.` }
+      await $.store.set('mochi', arg) // remembered for every session on the machine
+      await update($, characterAtom, () => arg) // and what the band reads (the render never touches the store)
+      return { text: `${CHARACTERS[arg].label} stands in Mochi's place now.` }
     }
     if (verb === 'place') {
       if (!arg) return { text: 'Usage: /wake place <city> (or auto to follow your IP).' }
@@ -717,8 +733,14 @@ export const register: Register = on => {
         await update($, lastActivity, () => now)
         const open = (await read($, needs)).length > 0
         await update($, mood, () => (open ? 'alert' : turnTestsOk && !turnFailed ? 'happy' : turnFailed ? 'sad' : 'idle'))
-        if (turnTestsOk && !turnFailed) play('fireworks')
-        else if (turnFailed) play('storm')
+        // the biggest milestone of the turn gets the scene: a failure, then a finished plan, then tests passing again after a
+        // failed turn (a rainbow), then plain passing tests (fireworks)
+        const steps = plan ? await read($, plan) : []
+        const planDone = steps.length > 0 && steps.every(step => step.status === 'completed')
+        if (turnFailed) play('storm')
+        else if (planDone) play('lanterns')
+        else if (turnTestsOk) play(previousTurnFailed ? 'rainbow' : 'fireworks')
+        previousTurnFailed = turnFailed
         awayTimer?.cancel()
         awayTimer = $.clock.after(AWAY_MS, () => void safely(() => goAway($, now)))
         if (plan && (await read($, plan)).every(step => step.status === 'completed')) await update($, plan, () => [])
@@ -814,7 +836,9 @@ export const register: Register = on => {
     // The scene stays while a need, a call or a recap waits below it, as long as the prompt's room fits both (a need is
     // never pushed out: urgent rows are placed before the crew); it only gives way when there is no space for the two.
     const urgentRowsNeeded = Math.min(2, open.length + allCalls.length)
-    const withScene = Raster !== undefined && !waiting && e.props.maxRows >= SCENE_ROWS + 2 + crewRowsNeeded + urgentRowsNeeded && width >= 40
+    // A waiting recap shares the room with the scene (it asks for one row, the rest is paged by "+N more"); it never evicts it.
+    const recapRowsNeeded = waiting ? 1 : 0
+    const withScene = Raster !== undefined && e.props.maxRows >= SCENE_ROWS + 2 + crewRowsNeeded + urgentRowsNeeded + recapRowsNeeded && width >= 40
     band = withScene ? { id: e.requestId, width } : null
     sceneRetryAt = 0
     sceneRetryDelay = 50
@@ -910,14 +934,13 @@ export const register: Register = on => {
     const rows: RenderElement[] = []
     // Keep Claude's native subagent row intact; bridge jobs each get their own line.
     const rowWidth = Math.max(0, width - 2) // extras has one cell of padding on either side
-    // The worker rows end where the root's graph stands: a column in the middle, leaning right (about 62%), so every worker
-    // reaches it by its branch and the root reads as one shared spot; a narrow band keeps it at the right edge.
-    // It stands at 58% of the band at the least and moves right only as far as the longest row needs, so words are never
-    // squeezed for it: the graph takes the room the text leaves.
-    const natural = Math.max(0,
-      ...crewRows(running, now, rowWidth - 7).map(row => 9 + cells(row.title) + cells(row.detail) + 8),
-      ...crewAgents.map(agent => 5 + cells(agent.name ?? agent.description) + 24))
-    const rowBox = rowWidth >= 80 ? Math.min(rowWidth, Math.max(Math.round(rowWidth * 0.58), natural + 3) + 4) : rowWidth
+    // The worker rows end where the root's graph stands: one shared column that hugs the longest row (its words, metrics and
+    // peer lanes), so every worker reaches it by a short branch instead of a long empty run. At rest it keeps a small gap;
+    // while a message is crossing (a packet on a lane, beads on a branch) it stands a little further out, so the packets
+    // have room and nothing is squeezed. A narrow band keeps it at the right edge.
+    const crossing = jobs.some(job => job.running && ((job.peers ?? []).some(peer => peer.observedAt !== undefined
+      && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1))))
+    const rowBox = crewBox(crewRows(running, now, rowWidth - 7), crewAgents.map(agent => agent.name ?? agent.description), rowWidth, crossing)
     // a logo always keeps one cell of air before the text beside it
     const logo = (backend: string, alt = ({ codex: 'Codex', agy: 'Antigravity', claude: 'Claude', opencode: 'OpenCode' } as Record<string, string>)[backend] ?? backend) => Image && LOGOS[backend]
       ? <Box flexDirection="row" flexShrink={0}><Image source={{ png: LOGOS[backend] }} columns={2} rows={1} alt={alt} /><Text> </Text></Box>
@@ -1034,15 +1057,21 @@ export const register: Register = on => {
         </Box>}
         {row.family && <Text color={glint(stateColor, ink.text, row.beat * 0.7)}> {row.glyph}</Text>}
         <Box key={`wake-crew-detail-${index}`} position="relative" flexShrink={0}>
-          {row.effortSlot ? <Box flexDirection="row">
-            <Text color={ink.subtle}>{row.effortSlot.before + ' '}</Text>
-            {/* lit dots in the harness colour, the levels left dim: the model's own scale */}
-            <Box key={`wake-crew-effort-${index}`} position="relative" flexShrink={0}>
-              <Text><Text color={familyColor}>{'●'.repeat(row.effortSlot.lit)}</Text><Text color={ink.surface}>{'○'.repeat(row.effortSlot.total - row.effortSlot.lit)}</Text></Text>
-              {hoverPopup('Effort', [row.effortSlot.label])}
-            </Box>
-            <Text color={ink.subtle}>{' '.repeat(Math.max(0, row.effortSlot.size - row.effortSlot.total)) + row.effortSlot.after}</Text>
-          </Box> : <Text color={ink.subtle}>{row.detail}</Text>}
+          {/* each column is a part of its own, so each metric can explain itself under a pointer */}
+          <Box flexDirection="row">
+            {row.parts.map(part => part.column === 'effort' && row.effortSlot ? <Box key={`wake-crew-effort-${index}`} flexDirection="row" flexShrink={0}>
+              <Text color={ink.subtle}> </Text>
+              {/* lit dots in the harness colour, the levels left dim: the model's own scale */}
+              <Box key={`wake-crew-effort-dots-${index}`} position="relative" flexShrink={0}>
+                <Text><Text color={familyColor}>{'●'.repeat(row.effortSlot.lit)}</Text><Text color={ink.surface}>{'○'.repeat(row.effortSlot.total - row.effortSlot.lit)}</Text></Text>
+                {hoverPopup('Effort', [row.effortSlot.label])}
+              </Box>
+              <Text color={ink.subtle}>{' '.repeat(Math.max(0, row.effortSlot.size - row.effortSlot.total))}</Text>
+            </Box> : <Box key={`wake-crew-${part.column}-${index}`} position="relative" flexShrink={0}>
+              <Text color={ink.subtle}>{part.text}</Text>
+              {part.hover ? hoverPopup(part.hover.title, part.hover.lines, undefined, part.column === 'memory' || part.column === 'elapsed' ? 'right' : 'left') : ''}
+            </Box>)}
+          </Box>
           {row.columns.includes('peers') && hoverPopup(
             job.peers?.some(peer => peer.target === 'root') ? 'Bridge messages' : 'Peer communication',
             (job.peers ?? [])

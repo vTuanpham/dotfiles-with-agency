@@ -3,7 +3,11 @@ import { placeFly, stations } from './landscapes/crew'
 import { type DayPhase, type Job, jobAccent, type Landscape, type Look, P, SCENE_H, type SceneEvent, type Season } from './landscapes/kit'
 import { LANDSCAPES } from './landscapes'
 import { type Canvas, canvas, hash, mix, sprite } from './pixels'
-import { MAX_PACKETS, PACKET_RUN_MS, PACKET_STAGGER_MS, cells, truncate } from './crew-row'
+import { MAX_PACKETS, PACKET_RUN_MS, PACKET_STAGGER_MS, cells, packetWindow, truncate } from './crew-row'
+import { type Reaction, type ReactionKind, react } from './reactions'
+import { drawMeteor } from './meteor'
+import { CAT_COLUMNS, CHARACTERS, type CharacterId, MOCHI_ROWS, asCharacter } from './mochi'
+import { drawLanterns, drawRainbow } from './flourishes'
 
 // The band's diorama. Every thing in it stands for something real:
 //   buildings      turns of this session (taller: more tool calls; wider: more edits)
@@ -18,15 +22,16 @@ import { MAX_PACKETS, PACKET_RUN_MS, PACKET_STAGGER_MS, cells, truncate } from '
 //                  a cloud when a command failed, asleep while you're away
 //   the sky        the real sun and moon (phase too) where you are
 //   weather        the real weather where you are
-//   fireworks      tests passed; a storm: a command failed; a shooting star: a bridge job finished
+//   fireworks      tests passed; a storm: a command failed; a shooting star: a bridge job finished;
+//                  lanterns: the plan is complete; a rainbow: tests passed right after a failed turn
 // The landscape (city, harbor, beach, ...) and the ambient events only set the mood.
 
 const H = SCENE_H
 export const SCENE_ROWS = H / 2
 
 export type SceneTurn = { turn?: number; kinds: WakePulseKind[] }
-export type SceneEffect = { kind: 'fireworks' | 'storm' | 'shoot'; age: number }
-export const EFFECT_FRAMES: Record<SceneEffect['kind'], number> = { fireworks: 40, storm: 48, shoot: 24 }
+export type SceneEffect = { kind: 'fireworks' | 'storm' | 'shoot' | 'lanterns' | 'rainbow'; age: number }
+export const EFFECT_FRAMES: Record<SceneEffect['kind'], number> = { fireworks: 40, storm: 48, shoot: 40, lanterns: 64, rainbow: 56 }
 
 export type SceneWeather = { cloud: number; rain: 0 | 1 | 2 | 3; snow: 0 | 1 | 2 | 3; fog: boolean; thunder: boolean; wind: number }
 
@@ -96,17 +101,17 @@ export type SceneInput = {
   peerEdges?: { source: string; target: string; strength: number; preview: string | null; messageState?: 'observed' | 'sent'; count?: number; family?: NonNullable<Job['kind']>; arriving?: number; fresh?: number }[]
   /** A message to (in) or from (out) the root is passing: Mochi shows an envelope. */
   mail?: 'in' | 'out'
+  /** Who stands in Mochi's place (see mochi.ts); the default is Mochi herself. */
+  character?: CharacterId
   agents: SceneAgent[] // running subagents
   plan: { done: number; total: number } | null
   effect: SceneEffect | null
   forceEvent?: string // previews: play this event now
 }
 
-export const CAT_COLUMNS = 10
+export { CAT_COLUMNS }
 
-// Mochi, 10x7, bottom row on the ground: B body, S shade, E eye, P cheek, N nose, I inner ear, T tail.
-const CAT = ['.B.....B..', '.BI...IB..', '.BBBBBBB..', '.BEBBBEB..', '.BPBNBPB..', '..BBBBS..T', '..BSBBSTT.']
-const CAT_TAIL_DOWN = ['.B.....B..', '.BI...IB..', '.BBBBBBB..', '.BEBBBEB..', '.BPBNBPB..', '..BBBBS...', '..BSBBSTTT']
+// Mochi and the characters one can pick in her place are drawn in mochi.ts; every one is CAT_COLUMNS x MOCHI_ROWS.
 const UMBRELLA = ['..ppppp..', '.ppppppp.', 'pp.p.p.pp', '....h....', '....h....']
 
 // ── sky ────────────────────────────────────────────────────────────────────
@@ -441,6 +446,10 @@ function drawEffect(c: Canvas, look: Look, fx: SceneEffect, ground: number, righ
         x += hash(y + fx.age) % 3 === 0 ? -1 : 1
       }
     }
+  } else if (fx.kind === 'lanterns') {
+    drawLanterns(c, fx.age / EFFECT_FRAMES.lanterns, ground, right)
+  } else if (fx.kind === 'rainbow') {
+    drawRainbow(c, fx.age / EFFECT_FRAMES.rainbow, ground, right)
   } else if (preset === 'tundra') {
     // a finished job lights the aurora: a green ribbon sweeps across the sky and fades
     const t = fx.age / EFFECT_FRAMES.shoot
@@ -455,11 +464,7 @@ function drawEffect(c: Canvas, look: Look, fx: SceneEffect, ground: number, righ
       c.glow(x, y + 2, P.sky, 0.25 * strength)
     }
   } else {
-    const t = fx.age / EFFECT_FRAMES.shoot
-    const x = Math.round(t * (c.W + 20)) - 10
-    const y = Math.floor(t * 5)
-    const tail = preset === 'desert' ? P.peach : P.white
-    for (let k = 0; k < 7; k++) c.glow(x - k * 2, y - Math.floor(k / 3), k < 2 ? P.white : tail, 1 - k / 7)
+    drawMeteor(c, fx.age / EFFECT_FRAMES.shoot, preset === 'desert' ? P.peach : P.sky, ground)
   }
 }
 
@@ -469,10 +474,11 @@ function drawMochi(c: Canvas, look: Look, input: SceneInput, ground: number, cat
   const fx = input.effect
   const jump = fx?.kind === 'fireworks' && fx.age < 28 && look.frame % 6 < 3 ? 1 : 0
   const blink = input.mood !== 'sleep' && look.frame % 61 < 2
-  const rows = input.mood === 'work' || look.frame % 24 < 12 ? CAT : CAT_TAIL_DOWN
-  const top = ground - CAT.length - jump
-  const eye = input.mood === 'sleep' || blink ? P.overlay0 : P.crust
-  sprite(c, catX, top, rows, { B: P.lavender, T: P.lavender, S: 0x9399d6, E: eye, P: P.pink, I: P.pink, N: P.maroon })
+  const character = CHARACTERS[asCharacter(input.character)]
+  const rows = input.mood === 'work' || look.frame % 24 < 12 ? character.up : character.down
+  const top = ground - MOCHI_ROWS - jump
+  const eye = input.mood === 'sleep' || blink ? P.overlay0 : character.ink.E!
+  sprite(c, catX, top, rows, { ...character.ink, E: eye })
   if (look.snowy && input.weather && input.weather.snow > 0) c.set(catX + 3, top + 2, P.white) // a snowflake on her head
   if (input.mood === 'work') {
     const lx = catX - 4
@@ -566,16 +572,32 @@ export function lookOf(input: SceneInput): Look {
  */
 export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMap?: SceneHitMap): Uint32Array {
   if (!input.peerEdges?.length) return drawScene(input, crewAnchors, hitMap)
-  const ends = new Map<string, Anchor>()
   const want = new Set(input.peerEdges.flatMap(edge => [edge.source, edge.target]))
+  return drawScene(input, crewAnchors, hitMap, { ends: anchorsOf(input, crewAnchors, want) })
+}
+
+/**
+ * Where each wanted worker and Mochi stand, for the trails' ends. Finding them takes a whole extra drawing of the scene, but
+ * they are fixed by the layout (the crew, the place, the weather, the plan), not by the frame, so the last answer is kept
+ * and reused until something of that kind changes. Messages, effects and the frame are left out of the key on purpose.
+ */
+let anchorCache: { key: string; ends: Map<string, Anchor> } | undefined
+function anchorsOf(input: SceneInput, crewAnchors: number[], want: Set<string>): Map<string, Anchor> {
+  const key = JSON.stringify([{ ...input, frame: 0, effect: null, peerEdges: undefined, mail: undefined }, crewAnchors, [...want].sort()])
+  if (anchorCache?.key === key) return anchorCache.ends
+  const ends = new Map<string, Anchor>()
   drawScene({ ...input, peerEdges: undefined }, crewAnchors, undefined, { collect: ends, want })
-  return drawScene(input, crewAnchors, hitMap, { ends })
+  anchorCache = { key, ends }
+  return ends
 }
 
 type TrailPlan = { collect?: Map<string, Anchor>; want?: Set<string>; ends?: Map<string, Anchor> }
 
 function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap | undefined, plan: TrailPlan = {}): Uint32Array {
-  const localHits = hitMap ?? (plan.collect ? { columns: input.width, rows: SCENE_ROWS, owners: [], targets: [] } : undefined)
+  // (a scene with a message landing needs the hit owners even when nobody asked for the map: the reactions find sprites by them)
+  const reacting = plan.ends !== undefined && (input.peerEdges ?? []).some(edge => edge.arriving !== undefined)
+  const localHits = hitMap ?? (plan.collect || reacting ? { columns: input.width, rows: SCENE_ROWS, owners: [], targets: [] } : undefined)
+  const reactions: Reaction[] = []
   const c = canvas(input.width, H, localHits !== undefined)
   const look = lookOf(input)
   look.hitTargets = localHits?.targets
@@ -625,14 +647,14 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
     id: 'plan-lamps', title: input.plan ? 'Plan progress' : 'Night lamps',
     details: [input.plan ? `${input.plan.done} of ${input.plan.total} steps complete` : 'Lamps light at night when no plan is active'],
   })
-  const mochiOwner = registerHit({ id: 'mochi', title: 'Mochi', details: [`Session mood: ${input.mood}`] })
+  const mochiOwner = registerHit({ id: 'mochi', title: CHARACTERS[asCharacter(input.character)].label, details: [`Session mood: ${input.mood}`] })
 
   drawSky(c, look, input, celestialOwner)
   if (localHits) skyPixels = c.px.slice()
   land.backdrop(c, look)
   land.floor(c, look)
   if (localHits) sceneryPixels = c.px.slice()
-  if (plan.ends) drawTrails(c, input, plan.ends, target => {
+  if (plan.ends) drawTrails(c, input, plan.ends, reactions, target => {
     const owner = registerHit(target)
     if (owner) trails.add(owner)
     return owner
@@ -754,15 +776,17 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
     if (!plan.collect || !localHits || !c.hitOwners) return
     for (const [i, hit] of localHits.targets.entries()) {
       if (!plan.want?.has(hit.id) || (hit.id === 'mochi') !== mochi) continue
+      if (mochi) {
+        // her body's fixed top, never her marks: the "!", the envelope, the umbrella and the jump all come and go above it
+        plan.collect.set(hit.id, { x: catX + (CAT_COLUMNS >> 1), y: Math.max(0, ((ground - MOCHI_ROWS - 5) & ~1) - 1) })
+        continue
+      }
       const owner = i + 1
-      let top = H, found = false // (a harbor's boats sit in the water, below `ground`)
-      for (let y = 0; y < H && !plan.collect.has(hit.id); y++) for (let x = 0; x < c.W; x++) {
+      for (let y = 0; y < H && !plan.collect.has(hit.id); y++) for (let x = 0; x < c.W; x++) { // (a harbor's boats sit in the water, below `ground`)
         if (c.hitOwners[y * c.W + x] !== owner) continue
-        if (mochi) { top = Math.min(top, y); found = true; continue }
         const zone = (look.crewSpriteZones ?? []).find(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h)
         if (zone) { plan.collect.set(hit.id, { x: zone.x + (zone.w >> 1), y: Math.max(0, (zone.y & ~1) - 1) }); break } // the last row of the cell row above the sprite's
       }
-      if (found) plan.collect.set(hit.id, { x: catX + (CAT_COLUMNS >> 1), y: Math.max(0, (top & ~1) - 1) })
     }
   }
   collectPlaces(false)
@@ -776,15 +800,29 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   if (mochiOwner) c.withHit(mochiOwner, () => drawMochi(c, look, input, ground, catX))
   else drawMochi(c, look, input, ground, catX)
   collectPlaces(true) // Mochi, now she is drawn
+  // the crew reacts to the messages that just left or landed (each harness its own way: see reactions.ts)
+  const kindOf = (id: string): ReactionKind => id === 'mochi' ? asCharacter(input.character) : input.jobs.find(job => job.hit?.id === id)?.kind ?? (input.agents.some(agent => agent.hit?.id === id) ? 'claude' : 'codex')
+  // the root's gadget stands on her body, wherever the marks above her happen to be
+  const rootBox = { x0: catX, x1: catX + 8, y0: ground - MOCHI_ROWS, y1: ground - 1 }
+  if (localHits) react(c, localHits.targets, reactions, kindOf, { mochi: rootBox })
   return finish()
 }
 
 /** Paint the message trails into the background, under everything the scene draws after them. */
-function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, registerHit: (target: WakeSceneHit | undefined) => number) {
+function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, reactions: Reaction[], registerHit: (target: WakeSceneHit | undefined) => number) {
   const titleOf = (id: string) => id === 'mochi' ? 'root' : [...input.jobs, ...input.agents].find(job => job.hit?.id === id)?.hit?.title ?? id
-  for (const [lane, edge] of (input.peerEdges ?? []).entries()) {
+  // Lanes belong to the pair, never to the list: a message arriving elsewhere must not shift an arc that has not changed. The
+  // arcs to the root give way (rise a little higher) only while a worker-to-worker message is passing, easing out and back.
+  const toRoot = (edge: { source: string; target: string }) => edge.source === 'mochi' || edge.target === 'mochi'
+  const yielding = (input.peerEdges ?? []).reduce((most, edge) => {
+    if (toRoot(edge) || edge.arriving === undefined) return most
+    return Math.max(most, Math.max(0, Math.min(1, edge.arriving / 300, (packetWindow(edge.fresh ?? 1) - edge.arriving) / 600)))
+  }, 0)
+  for (const edge of input.peerEdges ?? []) {
     const from = ends.get(edge.source), to = ends.get(edge.target)
     if (!from || !to || edge.source === edge.target) continue
+    const pair = [...`${edge.source}>${edge.target}`].reduce((sum, ch) => (sum * 31 + ch.charCodeAt(0)) >>> 0, 7)
+    const lane = toRoot(edge) ? 1.5 * yielding : pair & 1 // two heights, fixed per pair
     const path = arcCells(from, to, c.W, H, lane)
     const length = path.length
     if (length < 3) continue
@@ -803,7 +841,7 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, reg
     // behind it and is gone by the time the last packet has landed. At rest the trail is only embers, a faint mote every few
     // pixels that says who is in touch (brighter the fresher the message); nothing loops.
     const accent = jobAccent({ kind: edge.family } as Job, P.teal)
-    const tail = Math.max(5, Math.min(12, length * 0.25)) // cells over which the light fades to a third
+    const tail = Math.max(2.5, Math.min(6, length * 0.125)) // cells over which the light fades to a third (a short, quick fade)
     const ember = 0.04 + 0.1 * Math.min(1, edge.strength / 0.65)
     const light = new Float32Array(length) // how bright each cell of the trail is just now, 0..1
     let landing = 0
@@ -812,6 +850,10 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, reg
         const t = edge.arriving - k * PACKET_STAGGER_MS
         if (t < 0 || t > PACKET_RUN_MS) continue
         const head = (t / PACKET_RUN_MS) * (length + 4 * tail) // the head runs on past the end so the tail finishes crossing
+        // the sender pulses as the comet leaves; the receiver as its head reaches the end
+        reactions.push({ id: edge.source, role: 'send', v: Math.exp(-t / 320), t: edge.arriving })
+        const landsAt = (PACKET_RUN_MS * (length - 1)) / (length + 4 * tail)
+        if (t >= landsAt) reactions.push({ id: edge.target, role: 'land', v: Math.exp(-(t - landsAt) / 420), t: edge.arriving })
         for (let at = 0; at < length; at++) if (at <= head) light[at] = Math.max(light[at]!, Math.exp(-(head - at) / tail))
         if (head > length - 1) landing = Math.max(landing, Math.exp(-(head - (length - 1)) / tail))
       }

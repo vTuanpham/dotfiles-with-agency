@@ -33,7 +33,7 @@ export const SCENES: [string, Partial<SceneInput>][] = [
   ['Harbor · needs input · Codex boats and agy crew', { preset: 'harbor', hour: 19.8, mood: 'alert', agents: [], live: null }],
   ['Beach · working · bridge jobs and Claude subagent birds', { preset: 'beach', hour: 13 }],
   ['Mountains · tests passed · fireworks', { ...calm, preset: 'mountains', hour: 20.2, mood: 'happy', effect: fx('fireworks') }],
-  ['Countryside · idle · plan lamps show progress', { ...calm, preset: 'countryside', hour: 11, plan: { done: 3, total: 5 } }],
+  ['Countryside · tests pass after a failure · rainbow', { ...calm, preset: 'countryside', hour: 14, mood: 'happy', plan: { done: 3, total: 5 }, effect: fx('rainbow') }],
   ['Forest · rain · command failed', { ...calm, preset: 'forest', hour: 15, mood: 'sad', weather: { ...clear, cloud: 0.9, rain: 2, wind: 18 }, effect: fx('storm') }],
   ['Desert · dusk · a finished job leaves a shooting star', { ...calm, preset: 'desert', hour: 18.6, effect: fx('shoot') }],
   ['Tundra · winter night · sleeping', { ...calm, preset: 'tundra', hour: 2, mood: 'sleep', season: 'winter', snowy: true, moonPhase: 0.5, weather: { ...clear, cloud: 0.4, snow: 2, wind: 5 }, jobs: [] }],

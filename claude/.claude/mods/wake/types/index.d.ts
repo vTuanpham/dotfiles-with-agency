@@ -129,6 +129,7 @@ declare module 'claude-code' {
       effortLevels: { at: number; levels: Record<string, Record<string, string[]>> } // backend -> model -> levels it offers
       surroundings: WakeSurroundings | null
       crewPage: number
+      character: 'mochi' | 'tabby' | 'tuxedo' | 'bun' // who stands in Mochi's place (/wake mochi); see hooks/mochi.ts
     }
   }
 }

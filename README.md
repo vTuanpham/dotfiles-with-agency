@@ -26,7 +26,7 @@ Each tool is a separate, small CLI or mod. Take one, or all of them.
 | **[Agent Baton](agent-baton/README.md)** | The agent asks; you answer from a Windows toast or your phone. For passwords, 2FA and API keys the value goes straight into the field or env file and **never reaches the agent or its transcript**. |
 | **[Agent Inbox](agent-inbox/README.md)** | Your existing Codex, Claude Code and OpenCode conversations on your phone: chat, images, tool steps, pending questions and native `/` commands, over Tailscale. |
 | **[Model Guide](agent-models/README.md)** | Picks nothing for you, and says why. It reads the live native model lists, then compares eleven public leaderboards (Arena, LiveBench, Vals, SWE-bench, OSWorld, BFCL, LiveCodeBench, KernelBench, Bug Hunt and more) **per effort level and per harness**, in plain code. A 36-hour conditional poll notices board changes; updates stay a pending proposal until reviewed. |
-| **[codex-wake](codex-wake/README.md)** | Codex background tasks and subagents wake the idle conversation through native lifecycle hooks: end your turn, and the result arrives. |
+| **[codex-wake](codex-wake/README.md)** | Codex background tasks and subagents wake the idle conversation through native lifecycle hooks: end your turn, and the result arrives. `codex-wake monitor` watches a condition for a bounded time and wakes it on each hit, with a cooldown and a hard time limit. |
 | **[Portlink](portlink/README.md)** | `portlink open 3000` gives a private, expiring HTTPS link and QR to a local app, build folder or file, for your phone. |
 | **[agent-resources](agent-resources/README.md)** | Kernel-lock admission for heavy commands, so five agents do not run five test suites at once. Released automatically when the process exits. |
 | **[agent-accounts](agent-accounts/README.md)** | Cached, address-free quota and freshness across Codex, Claude Code and Antigravity accounts, with remaining allowance rounded down. |
@@ -43,17 +43,20 @@ Claude Code prompt. The landscape is not decoration: every sprite is a fact abou
 
 - **Crew that works.** Each worker patrols its own patch of sky or sea in the sprite of its harness and
   model class, and a Codex worker is whatever its place would build. Activity flashes when something real
-  happens. A message between two workers is a comet in the sender's colour with a long fading tail, drawn
+  happens. A message between two workers is a comet in the sender's colour with a short, quickly fading tail, drawn
   behind the scene so it never covers anything, and the same message lights the peer lane and the root
   graph in the rows below. Nothing moves once the job is idle.
+- **Crew that reacts.** When a message lands the receiver lights up and the sender pulses, each harness in its
+  own way, and a gadget pops out of Mochi's head to catch a message for the root: a dish, radar whiskers, an ear
+  trumpet or rabbit-ear antennae, depending on which of four characters you chose (`/wake mochi`).
 - **Honest rows.** Quota is coloured per harness, effort is shown as dots inferred from each model's
-  supported levels, and every item has a hover card.
+  supported levels, and every item (effort, time, memory, stall reason) has a hover card.
 - **Eight places** that follow time, weather and session state: success, failure, waiting and sleeping all
   change the scene.
 
 [Scene, crew and quota legend](claude/README.md#crew-and-quota-rows).
 
-<img src="docs/images/wake-landscapes.gif" alt="Eight animated Wake landscapes: city at work, harbor awaiting input, beach with workers, mountains with fireworks after passed tests, idle countryside, rainy forest after a failure, desert with a shooting star after a completed job, and sleeping winter tundra." width="100%">
+<img src="docs/images/wake-landscapes.gif" alt="Eight animated Wake landscapes: city at work, harbor awaiting input, beach with workers, mountains with fireworks after passed tests, countryside with a rainbow after tests pass again, rainy forest after a failure, desert with a shooting star after a completed job, and sleeping winter tundra." width="100%">
 
 [Landscapes, time, weather and session state](claude/README.md#landscapes-and-session-state).
 

@@ -47,6 +47,14 @@ function memoryFraction(job: WakeChip): number | undefined {
   const cap = Number(match[1]) * 1024 ** (match[2] ? 'KMGT'.indexOf(match[2]) + 1 : 0)
   return cap > 0 ? job.memoryBytes / cap : undefined
 }
+const bytesText = (n: number) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GiB` : `${Math.round(n / 1024 ** 2)} MiB`)
+/** The memory card: what is used against the cap the worker was admitted with, or why there is no number. */
+function memoryLines(job: WakeChip, fraction: number | undefined): string[] {
+  if (fraction === undefined || job.memoryBytes == null) {
+    return ['Memory use is not reported for this worker', job.memoryCap ? `Admitted with a ${job.memoryCap} cap` : 'No memory cap is known (a Claude subagent has none of its own)']
+  }
+  return [`${bytesText(job.memoryBytes)} of the ${job.memoryCap} cap · ${Math.round(fraction * 100)}%`, '▰ fills as the worker nears the cap it was admitted with']
+}
 const MARK: Record<string, string> = { codex: '◈', agy: '✦', claude: '◆', opencode: '○' }
 /** Model class as a circle that fills with size (quarter to full), so a bigger model reads as more. */
 export const CLASS_GLYPH = ['◔', '◑', '◕', '◉'] as const
@@ -60,7 +68,10 @@ const RECENT_PEER_MS = 900_000 // a conversation older than the stall window is 
 const ROOT_GUTTER_WIDTH = cells('↗r ')
 /** How present a message still is, 1 just after it to ~0 when its 15 minutes are up: a slow ease-out, so it melts away rather than vanishing. */
 export const messageFade = (age: number) => 0.04 + 0.7 * (1 - Math.min(1, age / RECENT_PEER_MS)) ** 1.6
-export type CrewRow = { title: string; family: string; state: string; glyph: string; /** 0..1, how far a working job's mark has brightened this beat */ beat: number; detail: string; effortSlot?: { lit: number; total: number; size: number; label: string; before: string; after: string }; rootAt?: number; columns: CrewColumn[]; gutter: { text: string; color: number; dim: boolean; strength: number; flow: number; description: string[] }[] }
+/** One column of a row's detail: its text, and the card a pointer opens over it (every metric explains itself). */
+export type CrewPart = { column: CrewColumn; text: string; hover?: { title: string; lines: string[] } }
+
+export type CrewRow = { title: string; family: string; state: string; glyph: string; /** 0..1, how far a working job's mark has brightened this beat */ beat: number; detail: string; /** the same detail, column by column */ parts: CrewPart[]; effortSlot?: { lit: number; total: number; size: number; label: string; before: string; after: string }; rootAt?: number; columns: CrewColumn[]; gutter: { text: string; color: number; dim: boolean; strength: number; flow: number; description: string[] }[] }
 /** One packet's trip from sender to recipient; each further new message follows a beat behind. */
 export const PACKET_RUN_MS = 1_400
 export const PACKET_STAGGER_MS = 350
@@ -129,6 +140,21 @@ function peerLanes(jobs: WakeChip[], now: number, width: number, reservedGutter 
   return lanes
 }
 
+export const ROOT_GAP = 3 // cells between the longest crew row and the root's graph at rest
+export const ROOT_GAP_CROSSING = 11 // and while a message is crossing: room for beads to march and a lane's packet to run
+
+/**
+ * How wide the worker rows are, which is where the root's graph stands: one shared column hugging the longest row (words,
+ * metrics and peer lanes), a little further out while a message is crossing. A band under 80 cells keeps it at the right edge.
+ * `rows` are the Bridge rows laid out at the full width; `agentNames` the native subagents'.
+ */
+export function crewBox(rows: CrewRow[], agentNames: string[], rowWidth: number, crossing: boolean): number {
+  const natural = Math.max(0,
+    ...rows.map(row => 9 + cells(row.title) + cells(row.detail) + row.gutter.slice(0, row.rootAt ?? row.gutter.length).reduce((sum, segment) => sum + cells(segment.text), 0) + 8),
+    ...agentNames.map(name => 5 + cells(name) + 24))
+  return rowWidth >= 80 ? Math.min(rowWidth, natural + (crossing ? ROOT_GAP_CROSSING : ROOT_GAP)) : rowWidth
+}
+
 export function crewPage(total: number, room: number, requested: number): { page: number; pages: number; start: number; end: number } | null {
   if (total <= room || room < 2) return null
   const pageSize = room - 1
@@ -163,7 +189,7 @@ export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[
     ['memory', 5],
   ]
   // A two-cell harness image, class and state fit once there are seven cells.
-  if (width < 7) return jobs.map(job => ({ title: truncate(job.title || job.name, width), family: '', state: stateOf(job), glyph: '', beat: 0, detail: '', columns: [], gutter: [] }))
+  if (width < 7) return jobs.map(job => ({ title: truncate(job.title || job.name, width), family: '', state: stateOf(job), glyph: '', beat: 0, detail: '', parts: [], columns: [], gutter: [] }))
   let used = 7 // space + two-cell harness image and its cell of air + class circle + space + state
   const minimumTitle = Math.min(24, Math.max(6, Math.floor(width * 0.35)))
   const selected: [CrewColumn, number][] = []
@@ -206,6 +232,13 @@ export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[
     // Where the effort meter sits in the detail, so the renderer can colour its lit dots
     const slot = selected.findIndex(([name]) => name === 'effort')
     const cellText = ([name, size]: [CrewColumn, number]) => ' ' + pad(truncate(values[name], size), size)
+    // what each metric means, in the card a pointer opens over it (the effort card is drawn from `effortSlot` below)
+    const hovers: Partial<Record<CrewColumn, NonNullable<CrewPart['hover']>>> = {
+      elapsed: { title: 'Last event', lines: [age === undefined ? 'No event seen from this worker yet' : `${span(age)} since this worker last did something`, 'A long silence marks it stalled'] },
+      memory: { title: 'Memory', lines: memoryLines(job, memory) },
+      ...(values.reason ? { reason: { title: state === 'stalled' ? 'Why it is marked stalled' : 'Why it is waiting', lines: [values.reason] } } : {}),
+    }
+    const parts: CrewPart[] = selected.map(column => ({ column: column[0], text: cellText(column), hover: hovers[column[0]] }))
     const effortSlot = slot < 0 || !dots ? undefined : {
       lit: dots.lit, total: dots.total, size: selected[slot]![1],
       label: `${job.effort} · ${dots.lit} of ${dots.total} levels this model offers (${job.effortLevels!.join(', ')})`,
@@ -266,7 +299,7 @@ export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[
     return {
       title: pad(truncate(job.title || job.name, titleWidth), titleWidth),
       family: `${MARK[job.backend] ?? '◇'}${CLASS_GLYPH[modelTier(job.backend, job.model) - 1] ?? CLASS_GLYPH[1]}`,
-      state, glyph: STATE_GLYPHS[state] ?? '?', beat: state === 'running' ? activityFlash(job.activitySeenAt, now) : 0, detail, effortSlot, columns: selected.map(([name]) => name), gutter, rootAt,
+      state, glyph: STATE_GLYPHS[state] ?? '?', beat: state === 'running' ? activityFlash(job.activitySeenAt, now) : 0, detail, parts, effortSlot, columns: selected.map(([name]) => name), gutter, rootAt,
     }
   })
 }

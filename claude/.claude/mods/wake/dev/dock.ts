@@ -4,7 +4,7 @@
 // workers message each other and the root.
 import { arcCells, sceneFrame, scenePixels, type SceneInput } from '../hooks/scene.ts'
 import { SCENE_H } from '../hooks/landscapes/kit.ts'
-import { CLASS_GLYPH, cells, crewRows, harnessSpin, packetWindow, quotaRows, rootSpine, type RootLink } from '../hooks/crew-row.ts'
+import { CLASS_GLYPH, crewBox, crewRows, harnessSpin, packetWindow, quotaRows, rootSpine, type RootLink } from '../hooks/crew-row.ts'
 import { LOGOS } from '../hooks/logos.ts'
 import type { WakeChip, WakeQuota } from '../types'
 
@@ -63,19 +63,17 @@ const toRoot = (job: WakeChip, now: number): RootLink | undefined => {
   if (peer) return { dir: peer.outgoing ? 'out' : 'in', family: job.backend, at: peer.lastAt, count: peer.count, observedAt: peer.observedAt, fresh: peer.fresh, description: [] }
   return { dir: 'tether', family: job.backend, at: now, count: 1, activeAt: job.lastEventAt, description: [] }
 }
-// the same geometry as the band's rows: the graph's column leans right, and the rows end at it
+// the same geometry as the band's rows: the graph's column hugs the longest row, and stands a little further out while a message crosses
 const rowWidth = TEXT_COLUMNS - 2
-const rowBoxOf = (jobs: WakeChip[], now: number) => {
-  const natural = Math.max(
-    ...crewRows(jobs, now, rowWidth - 7).map(row => 9 + cells(row.title) + cells(row.detail) + 8),
-    5 + cells('Explore') + 24,
-  )
-  return rowWidth >= 80 ? Math.min(rowWidth, Math.max(Math.round(rowWidth * 0.58), natural + 3) + 4) : rowWidth
+const boxAt = (i: number) => {
+  const now = NOW0 + msAt(i), jobs = crewAt(msAt(i))
+  const crossing = jobs.some(job => (job.peers ?? []).some(peer => peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1)))
+  return crewBox(crewRows(jobs, now, rowWidth - 7), ['Explore'], rowWidth, crossing)
 }
-const rowBox = rowBoxOf(crewAt(0), NOW0)
 const rowsAt = (i: number) => {
   const ms = msAt(i), now = NOW0 + ms
   const jobs = crewAt(ms)
+  const rowBox = boxAt(i)
   const links: (RootLink | undefined)[] = [
     { dir: 'tether', family: 'claude', at: now, count: 1, description: [] }, // the native subagent
     ...jobs.map(job => toRoot(job, now)),
@@ -170,6 +168,6 @@ for (let i = 0; i < FRAMES; i++) {
 }
 await Bun.write(out, pixels)
 await Bun.write(out.replace(/\.bin$/, '.json'), JSON.stringify({
-  w: W, h: H, frames: FRAMES, anchors, rows, rowBox, textColumns: TEXT_COLUMNS, quota: quotaLine, logos: LOGOS,
+  w: W, h: H, frames: FRAMES, anchors, rows, rowBoxes: Array.from({ length: FRAMES }, (_, i) => boxAt(i)), textColumns: TEXT_COLUMNS, quota: quotaLine, logos: LOGOS,
 }))
 console.log(out, FRAMES, 'frames', W, 'x', H)
