@@ -64,6 +64,18 @@ quoting from `awk 'NR>=80'`, leaving a `>=80` redirect and a stray `=80` file.
 Prefer a read tool for line ranges; recover omitted output with `rtk recall` or
 a focused read. Shell quoting alone is not a reason to bypass filtering.
 
+### Known `rtk summary` limits (RTK 1.1.0)
+
+`summary` is a heuristic display filter, and these are upstream behaviours to design around, not to bypass RTK for:
+
+- **It does not pass stdin to the command it wraps.** `printf x | rtk summary python3 -c 'import sys; print(len(sys.stdin.read()))'`
+  prints 0, with exit status 0 (reproduced). Wrapping the whole pipeline (`rtk summary bash -o pipefail -c '… | …'`) prints 1.
+  So the final-consumer rule above applies to the hook's rewrite of supported stages, not to a hand-written `summary` tail.
+- **Its test-result block is a guess.** A report had a plain `wc -l` over files named `test_*.py` and a passing `npm test` come
+  back with an invented "Test Results" count and negative-case test titles under "Failures" (not reproduced on small inputs here).
+  Take counts from the native tool (`wc`, a read of the file) and test outcomes from the runner's own exit status and
+  summary line (`rtk test`, or the project's runner), never from `summary`'s headings.
+
 ## Learning and filter patterns
 
 `rtk --help` owns current dispatch. RTK 1.1's `rtk uv run ...` preserves the UV
