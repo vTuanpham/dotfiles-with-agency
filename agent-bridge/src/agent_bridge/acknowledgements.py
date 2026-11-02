@@ -15,7 +15,7 @@ def urgent(event, include_info=False):
                 | INFORMATIONAL_ONLY_KINDS):
         return False
     if kind in {"turn_completed", "turn_failed", "question", "question_timeout", "error",
-                "approval_declined", "permission_denied", "peer_unknown"}:
+                "approval_declined", "permission_denied", "peer_unknown", "model_fallback"}:
         return True
     if kind == "message":
         if event.get("peerDirected") is True:

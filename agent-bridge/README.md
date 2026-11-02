@@ -91,6 +91,14 @@ events arriving after display stay pending. Use a unique owner per root; its
 versioned `jobs/<owner>/ack.json` stores per-job byte cursors, with locked atomic
 updates. Missing cursors replay old urgent history; old jobs need no migration.
 See `agent-bridge guide workflow` for the cursor format and watch lifecycle.
+A Claude worker that the runtime quietly served with a different model than the one it
+resolved to (a fallback; the stream still reports the requested model) raises one urgent
+`model_fallback` event per job and served model, naming both and saying the worker was not
+told. Bridge reads it from each turn's per-model usage: the model that wrote most of the
+output must differ from the resolved one, so a small helper model never counts.
+A sandboxed worker's `agent-bridge waiting` cannot take the job's state lock; it leaves
+its declaration in `out/.waiting.json` instead, which status reads (the newer of the two
+wins, and the next activity clears it), without widening what the worker may write.
 Wake shows names first with compact event ages, marks classifier-assessed silence as
 `stalled`, and keeps unacknowledged completions visible as `done`. Known turn
 times appear only when useful and space allows.

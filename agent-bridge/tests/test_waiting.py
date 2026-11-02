@@ -1,3 +1,4 @@
+import errno
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -86,6 +87,42 @@ def test_worker_command_round_trip_clear_and_allowlist(world, monkeypatch, capsy
     cli.main()
     assert "waiting" not in core.load_state(world / "owner/a")
     assert "waiting: cleared" in capsys.readouterr().out
+
+
+def test_sandboxed_worker_declares_through_out_and_the_owner_side_reads_it(world, monkeypatch):
+    job = world / "owner/a"
+    (job / "out").mkdir()
+    value = DeclaredWait("command", "full suite", stamp(NOW), 3000)
+
+    def read_only(_job):  # what a worker in the command sandbox sees for state.lock: errno 30
+        raise OSError(errno.EROFS, "Read-only file system")
+
+    with monkeypatch.context() as sandbox:
+        sandbox.setattr(core, "state_lock", read_only)
+        waiting.write(job, value)
+    assert "waiting" not in core.load_state(job)  # state itself was never written
+    one = status.Collector(world).collect(include_quotas=False).jobs[0]
+    assert one.waiting == value  # ...but status reads the drop
+    # a different error is not swallowed
+    with monkeypatch.context() as broken:
+        broken.setattr(core, "state_lock", lambda _job: (_ for _ in ()).throw(OSError(errno.ENOSPC, "full")))
+        with pytest.raises(OSError):
+            waiting.write(job, value)
+    # the next activity clears the declaration wherever it was left
+    core.log(job, "message", text="done")
+    assert waiting.declared(job, core.load_state(job)) is None
+    assert not (job / waiting.DROP).exists()
+
+
+@pytest.mark.parametrize("junk", ["not json", '{"at": "x", "waiting": null}', '{"waiting": {}}', "x" * 5000])
+def test_hostile_drop_is_ignored(world, junk):
+    job = world / "owner/a"
+    (job / "out").mkdir()
+    (job / waiting.DROP).write_text(junk)
+    assert waiting.declared(job, core.load_state(job)) is None
+    (job / waiting.DROP).unlink()
+    (job / waiting.DROP).symlink_to("/etc/hostname")  # a link is never followed
+    assert waiting.declared(job, core.load_state(job)) is None
 
 
 @pytest.mark.parametrize("kind", ["command_start", "message", "question", "error", "turn_failed",

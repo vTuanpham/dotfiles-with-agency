@@ -22,6 +22,7 @@ URGENT_KINDS = {
     "permission_denied",
     "peer_unknown",
     "steer_queued",
+    "model_fallback",
 }
 HOME = Path(os.environ.get("AGENT_BRIDGE_HOME", "~/.local/state/agent-bridge")).expanduser()
 JOBS = HOME / "jobs"

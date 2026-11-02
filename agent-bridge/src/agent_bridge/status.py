@@ -405,9 +405,10 @@ class Collector:
                         scope_jobs.setdefault(scope, set()).add(identifier)
                 working = now - self.busy_at.get(identifier, -math.inf) <= 2 * BUSY_WINDOW
                 declaration = None
-                if "waiting" in state:
+                raw_declaration = waiting.declared(job, state)
+                if raw_declaration is not None:
                     try:
-                        declaration = waiting.decode(state["waiting"], job.parent.name, now)
+                        declaration = waiting.decode(raw_declaration, job.parent.name, now)
                     except (ValueError, TypeError):
                         errors.append(f"{identifier}: invalid waiting declaration")
                 flight = in_flight(cached.rows, now) if alive else None

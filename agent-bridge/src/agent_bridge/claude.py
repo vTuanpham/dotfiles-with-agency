@@ -62,10 +62,28 @@ def command(state, job, resume=False):
     return cmd
 
 
+def fallback_served(resolved, usage):
+    """(model, output tokens) when most of a turn's output came from a model other than the one the session resolved to: the
+    runtime fell back (overload, access) without telling the stream. Small helper models (a Haiku for titles) write too little
+    to count."""
+    if not resolved or not isinstance(usage, dict):
+        return None
+    tokens = {m: u["outputTokens"] for m, u in usage.items()
+              if isinstance(u, dict) and type(u.get("outputTokens")) is int and u["outputTokens"] > 0}
+    if not tokens:
+        return None
+    served = max(tokens, key=tokens.get)
+    if served == resolved or tokens[served] * 2 < sum(tokens.values()) or tokens[served] <= tokens.get(resolved, 0):
+        return None
+    return served, tokens[served]
+
+
 def process(event, state, job):
     typ = event.get("type")
     if typ == "system" and event.get("subtype") == "init":
         state["sessionId"] = event.get("session_id", state.get("sessionId", ""))
+        if isinstance(event.get("model"), str):
+            state["resolvedModel"] = event["model"]  # what the session asked the runtime for; a fallback shows only in usage
         save(Path(job) / "state.json", state)
         log(job, "thread_started", sessionId=state["sessionId"], model=event.get("model"))
         return False
@@ -131,6 +149,13 @@ def process(event, state, job):
         )
         for denial in event.get("permission_denials", []):
             log(job, "permission_denied", level="urgent", denial=denial)
+        served = fallback_served(state.get("resolvedModel"), event.get("modelUsage"))
+        if served and served[0] not in state.get("fallbackSeen", []):
+            state["fallbackSeen"] = [*state.get("fallbackSeen", []), served[0]][-8:]
+            save(Path(job) / "state.json", state)
+            log(job, "model_fallback", level="urgent", requested=state["resolvedModel"], served=served[0], outputTokens=served[1],
+                message=f"Requested {state['resolvedModel']} but {served[0]} wrote this turn's output; the runtime fell back "
+                        "and the worker was not told. Judge its results as that model's.")
         return idle
     elif typ == "system" and event.get("subtype") in {"task_started", "task_notification", "task_updated"}:
         log(job, event["subtype"], **{k: v for k, v in event.items() if k not in ("type", "subtype")})
