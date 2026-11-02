@@ -15,7 +15,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 SCRIPT = Path(__file__).resolve().parents[2] / "claude/.claude/statusline.py"
-BASE = (30, 30, 46)  # the terminal background the pills sit on
+BASE = (40, 44, 52)  # the terminal background the pills sit on: One Half Dark, the scheme of the terminal these are drawn for
 HOME = Path(os.environ.get("README_HOME", "/tmp/readme-home"))
 
 # Runs the real script with its clock and its git call faked, so every number below is demo data.

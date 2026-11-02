@@ -4,7 +4,7 @@
 // workers message each other and the root.
 import { arcCells, sceneFrame, scenePixels, type SceneInput } from '../hooks/scene.ts'
 import { SCENE_H } from '../hooks/landscapes/kit.ts'
-import { CLASS_GLYPH, crewBox, crewRows, harnessSpin, packetWindow, quotaRows, rootSpine, type RootLink } from '../hooks/crew-row.ts'
+import { CLASS_GLYPH, crewLayout, harnessSpin, packetWindow, quotaRows, rootSpine, type RootLink } from '../hooks/crew-row.ts'
 import { LOGOS } from '../hooks/logos.ts'
 import type { WakeChip, WakeQuota } from '../types'
 
@@ -68,18 +68,17 @@ const rowWidth = TEXT_COLUMNS - 2
 const boxAt = (i: number) => {
   const now = NOW0 + msAt(i), jobs = crewAt(msAt(i))
   const crossing = jobs.some(job => (job.peers ?? []).some(peer => peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1)))
-  return crewBox(crewRows(jobs, now, rowWidth - 7), ['Explore'], rowWidth, crossing)
+  return crewLayout(jobs, ['Explore'], now, rowWidth, crossing)
 }
 const rowsAt = (i: number) => {
   const ms = msAt(i), now = NOW0 + ms
   const jobs = crewAt(ms)
-  const rowBox = boxAt(i)
+  const { rows } = boxAt(i)
   const links: (RootLink | undefined)[] = [
     { dir: 'tether', family: 'claude', at: now, count: 1, description: [] }, // the native subagent
     ...jobs.map(job => toRoot(job, now)),
   ]
   const spine = rootSpine(links, now)
-  const rows = crewRows(jobs, now, rowBox - 7)
   return [
     { kind: 'native', backend: 'claude', title: 'Explore', mark: CLASS_GLYPH[1], glyph: '', spin: harnessSpin('claude', i), beat: 0, effort: { lit: 2, total: 3 }, after: ' 1m', gutter: [], cell: spine[0]! },
     ...rows.map((row, k) => ({
@@ -89,13 +88,18 @@ const rowsAt = (i: number) => {
     })),
   ]
 }
-const quota = (cli: WakeQuota['cli'], account: string, active: boolean, h: number, w: number): WakeQuota =>
-  ({ cli, account, plan: '', active, freshness: 'fresh', parts: [{ label: 'h', pct: h, resets: null }, { label: 'w', pct: w, resets: null }] })
+// the account mix of a heavy user, in the order `agent-accounts snapshot` lists it (Codex, Claude, agy), with the window labels the
+// readers give each plan: a Codex Pro account reports its weekly window only; a Claude account its 5-hour and weekly windows, and a
+// Max or Ultra one also a weekly window per model
+const quota = (cli: WakeQuota['cli'], account: string, plan: string, active: boolean, windows: Record<string, number>): WakeQuota =>
+  ({ cli, account, plan, active, freshness: 'fresh', parts: Object.entries(windows).map(([label, pct]) => ({ label, pct, resets: null })) })
 const accounts = [
-  quota('codex', '01', true, 71, 90), quota('codex', '02', false, 34, 77), quota('codex', '03', false, 62, 88),
-  quota('agy', 'a1', true, 99, 98), quota('agy', 'a2', false, 100, 100), quota('claude', 'c1', true, 88, 64),
+  quota('codex', '01', 'Pro', true, { w: 71 }), quota('codex', '02', 'Pro', false, { w: 34 }), quota('codex', '03', 'Pro', false, { w: 88 }),
+  quota('claude', 'c1', 'Max', true, { h: 88, w: 64, Opusw: 71 }), quota('claude', 'c2', 'Pro', false, { h: 45, w: 30 }),
+  quota('claude', 'c3', 'Ultra', false, { h: 96, w: 90, Opusw: 83, Sonnetw: 95 }),
+  quota('agy', 'a1', '', true, { Gw: 98, Cw: 96 }), quota('agy', 'a2', '', false, { Gw: 100, Cw: 100 }),
 ]
-const quotaLine = quotaRows(accounts, TEXT_COLUMNS - 6).flat().map(chunk => ({ text: chunk.text, cli: chunk.quotas[0]!.cli, percents: chunk.quotas[0]!.parts.map(p => p.pct) }))
+const quotaLines = quotaRows(accounts, TEXT_COLUMNS - 6).map(line => line.map(chunk => ({ text: chunk.text, cli: chunk.quotas[0]!.cli, percents: chunk.quotas[0]!.parts.map(p => p.pct) })))
 
 // ── where each thing the legend names is: its hover owner's cells, a box per group of cells within 2 columns of each other ──────
 type Box = { x: number; y: number; w: number; h: number }
@@ -168,6 +172,6 @@ for (let i = 0; i < FRAMES; i++) {
 }
 await Bun.write(out, pixels)
 await Bun.write(out.replace(/\.bin$/, '.json'), JSON.stringify({
-  w: W, h: H, frames: FRAMES, anchors, rows, rowBoxes: Array.from({ length: FRAMES }, (_, i) => boxAt(i)), textColumns: TEXT_COLUMNS, quota: quotaLine, logos: LOGOS,
+  w: W, h: H, frames: FRAMES, anchors, rows, rowBoxes: Array.from({ length: FRAMES }, (_, i) => boxAt(i).box), textColumns: TEXT_COLUMNS, quota: quotaLines, logos: LOGOS,
 }))
 console.log(out, FRAMES, 'frames', W, 'x', H)

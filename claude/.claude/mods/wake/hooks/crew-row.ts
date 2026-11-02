@@ -155,6 +155,16 @@ export function crewBox(rows: CrewRow[], agentNames: string[], rowWidth: number,
   return rowWidth >= 80 ? Math.min(rowWidth, natural + (crossing ? ROOT_GAP_CROSSING : ROOT_GAP)) : rowWidth
 }
 
+/**
+ * The crew rows and the box they stand in. The rows are laid out once at the band's full width and the box hugs what they
+ * need; they are never laid out again at the hugged width, because a narrow width switches the peer lanes off (under 60
+ * cells) and a pair of workers messaging each other would lose its lane for a text mark. A paged subset passes its own jobs.
+ */
+export function crewLayout(jobs: WakeChip[], agentNames: string[], now: number, rowWidth: number, crossing: boolean): { box: number; rows: CrewRow[] } {
+  const rows = crewRows(jobs, now, rowWidth - 7) // less the spinner (3) and the root graph's cell (4)
+  return { box: crewBox(rows, agentNames, rowWidth, crossing), rows }
+}
+
 export function crewPage(total: number, room: number, requested: number): { page: number; pages: number; start: number; end: number } | null {
   if (total <= room || room < 2) return null
   const pageSize = room - 1

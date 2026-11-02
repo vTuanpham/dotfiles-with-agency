@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { PACKET_RUN_MS, cells, crewPage, crewRows, messageFade, quotaLines, quotaRows, quotaText, STATE_GLYPHS, stateOf } from '../hooks/crew-row'
+import { PACKET_RUN_MS, cells, crewLayout, crewPage, crewRows, messageFade, quotaLines, quotaRows, quotaText, STATE_GLYPHS, stateOf } from '../hooks/crew-row'
 import type { WakeChip } from '../types'
 
 const base: WakeChip = { name: 'worker', title: 'Inspect 長い👩‍💻 worker title', backend: 'codex', account: '01', model: 'gpt-6.1-terra', effort: 'high', running: true, isStale: false, since: 0, lastEventAt: 10_000, memoryBytes: 512 * 1024 ** 2, memoryCap: '1G' }
@@ -265,4 +265,15 @@ test('a message melts away over its fifteen minutes instead of stopping at a flo
   expect(strengths.every((s, i) => i === 0 || s < strengths[i - 1]!)).toBe(true)
   expect(strengths[0]).toBeGreaterThan(0.6)
   expect(strengths.at(-1)).toBeLessThan(0.1)
+})
+
+test('two short rows keep their peer lane: the box hugs the rows, the rows are not laid out again at its width', () => {
+  const jobs: WakeChip[] = [
+    { ...base, id: 'a', name: 'Parser', title: 'Parser fix', peers: [{ target: 'b', count: 1, lastAt: 10_000, observedAt: 10_000, outgoing: true, preview: 'x' }] },
+    { ...base, id: 'b', name: 'Review', title: 'Visual review', peers: [{ target: 'a', count: 1, lastAt: 10_000, outgoing: false, preview: 'x' }] },
+  ]
+  const { box, rows } = crewLayout(jobs, ['Explore'], 10_500, 148, false)
+  expect(box).toBeLessThan(67) // hugged: narrower than the 60 cells a layout needs to draw lanes
+  expect(rows[0]!.gutter.slice(0, rows[0]!.rootAt)[0]!.text.trim()).not.toBe('')
+  expect(rows.every(row => !row.columns.includes('peers'))).toBe(true) // no ↗name text standing in for the lane
 })

@@ -14,7 +14,7 @@ import { CHARACTERS, CHARACTER_IDS, type CharacterId, asCharacter, isCharacter }
 import { summaryOf } from './summary'
 import { EXIT_MS } from './exits'
 import { COLOR, readable, clock, commandHead, hash, isAnswerText, isTestCommand, lines, patchCounts, shortPath, span } from './util'
-import { CLASS_GLYPH, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, crewBox, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
+import { CLASS_GLYPH, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, crewLayout, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
 import { type EffortLevels, effortDots, levelsFor, scanEfforts } from './sources/efforts'
 import { PeerMessageTracker } from './peer-messages'
 import { LOGOS, modelLogo } from './logos'
@@ -945,7 +945,7 @@ export const register: Register = on => {
     // have room and nothing is squeezed. A narrow band keeps it at the right edge.
     const crossing = jobs.some(job => job.running && ((job.peers ?? []).some(peer => peer.observedAt !== undefined
       && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1))))
-    const rowBox = crewBox(crewRows(running, now, rowWidth - 7), crewAgents.map(agent => agent.name ?? agent.description), rowWidth, crossing)
+    const { box: rowBox, rows: bridgeRows } = crewLayout(running, crewAgents.map(agent => agent.name ?? agent.description), now, rowWidth, crossing)
     // a logo always keeps one cell of air before the text beside it
     const logo = (backend: string, alt = ({ codex: 'Codex', agy: 'Antigravity', claude: 'Claude', opencode: 'OpenCode' } as Record<string, string>)[backend] ?? backend) => Image && LOGOS[backend]
       ? <Box flexDirection="row" flexShrink={0}><Image source={{ png: LOGOS[backend] }} columns={2} rows={1} alt={alt} /><Text> </Text></Box>
@@ -1106,7 +1106,6 @@ export const register: Register = on => {
         {rootCell(cell, `root-bridge-${index}`)}
       </Box>
     }
-    const bridgeRows = crewRows(running, now, rowBox - 7) // less the spinner (3) and the root graph's cell (4)
     for (const [index, job] of running.entries()) rows.push(renderBridgeRow(job, index, bridgeRows[index]!, rootCells[crewAgents.length + index]))
     if (running.some(job => job.running) && accounts.length > 0) {
       const inUse = new Set(running.map(job => job.backend))
@@ -1244,7 +1243,7 @@ export const register: Register = on => {
       const startBridge = Math.max(0, start - crewAgents.length)
       const endBridge = Math.max(0, end - crewAgents.length)
       const pageJobs = running.slice(startBridge, endBridge)
-      const pageRows = crewRows(pageJobs, now, rowBox - 7)
+      const pageRows = crewRows(pageJobs, now, rowWidth - 7)
       const agentsOnPage = crewAgents.slice(start, Math.min(end, crewAgents.length))
       const pageCells = spineOf(agentsOnPage, pageJobs) // the graph is drawn for the rows on this page
       rows.push(...agentsOnPage.map((agent, i) => renderNative(agent, start + i, pageCells[i])), ...pageJobs.map((job, i) => renderBridgeRow(job, startBridge + i, pageRows[i]!, pageCells[agentsOnPage.length + i])))

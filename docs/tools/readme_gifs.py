@@ -32,6 +32,7 @@ DELAY_MS = 120
 SCENE_H = int(re.search(r"SCENE_H = (\d+)", (WAKE / "hooks/landscapes/kit.ts").read_text()).group(1))
 
 BASE = statusline.BASE
+TERMINAL_PX = 16  # the terminal's default 12 pt at 96 dpi: SauceCode Pro Nerd Font cells of 10 x 21 px
 TEXT, SUBTLE, SURFACE2 = (205, 214, 244), (108, 112, 134), (88, 91, 112)
 PEACH, BLUE, MAUVE, TEAL, YELLOW, PINK = (
     (250, 179, 135), (137, 180, 250), (203, 166, 247), (148, 226, 213), (249, 226, 175), (245, 194, 231),
@@ -136,7 +137,7 @@ LEGEND = {  # name: (title, what it is, colour); the call-outs sit in the order 
 }
 GREEN, RED = (166, 227, 161), (243, 139, 168)
 FAMILY = {"codex": TEAL, "agy": BLUE, "claude": PINK, "opencode": GREEN}  # a harness's colour, as Wake's rows use it
-GROUP = (30, 30, 46)
+GROUP = BASE  # what a faint tint is blended over
 LANES = [TEAL, MAUVE, YELLOW, BLUE, PINK, GREEN]  # the colours of the peer lanes, in Wake's order
 STATE = TEAL  # a running worker's state mark
 
@@ -271,18 +272,18 @@ def crew_row(frame, draw, face, images, y, row, box, text_columns):
 def dock():
     meta = json.loads((WORK / "dock.json").read_text())
     data, size = cells(WORK / "dock.bin", meta["w"], meta["h"])
-    face = statusline.Typeface(15)
+    face = statusline.Typeface(TERMINAL_PX)
     S, SY = face.cw, face.ch // 2  # one scene pixel per terminal column, two per row (a half block): 9 x 10 px here
     width = meta["w"] * S
     images = logos(meta, face)
-    quota_line = quota_segments(meta["quota"])
+    quota_lines = [quota_segments(line) for line in meta["quota"]]  # one run of segments per quota row, each opening with its logo
     band, rows_h, gap, note_h = 132, face.ch, 12, 100  # rows stand one cell high, as in the terminal
     scene_y = band
     text_y = scene_y + meta["h"] * SY  # the turn's line sits right under the scene
     crew_y = text_y + rows_h  # the turn's status line, then the crew
     notes_y = crew_y + len(meta["rows"][0]) * rows_h + 2
     quota_y = notes_y + note_h
-    prompt_y = quota_y + rows_h  # the prompt is three rows: border, text, border
+    prompt_y = quota_y + len(quota_lines) * rows_h  # the prompt is three rows: border, text, border
     status_y = prompt_y + 3 * face.ch
     height = status_y + 2 * face.ch + 8
 
@@ -291,12 +292,13 @@ def dock():
     put_segments(chrome, draw, face, images, 6, text_y, [("◑ ", TEAL), ("Testing · pytest", TEXT)])
     right = [("turn 7 · 1:02", SUBTLE), (" │ ", SURFACE2), ("☼ 24° Demo coast mainly clear", YELLOW), (" │ ", SURFACE2), ("7 turns ", SUBTLE), ("+82", GREEN), ("-19", RED)]
     put_segments(chrome, draw, face, images, width - 6 - sum(len(t) for t, _ in right) * face.cw, text_y, right)
-    quota_x = {}  # where each harness's run of accounts begins, for the note that points at it
-    x = 6
-    for segment in quota_line:
-        if isinstance(segment[0], Logo):
-            quota_x.setdefault(segment[0].backend, x)
-        x = put_segments(chrome, draw, face, images, x, quota_y, [segment])
+    quota_x = {}  # where each harness's run of accounts begins on the first row, for the note that points at it
+    for r, line in enumerate(quota_lines):
+        x = 6
+        for segment in line:
+            if isinstance(segment[0], Logo) and r == 0:
+                quota_x.setdefault(segment[0].backend, x)
+            x = put_segments(chrome, draw, face, images, x, quota_y + r * rows_h, [segment])
     draw.rounded_rectangle([face.cw // 2, prompt_y + face.ch // 2, width - 1 - face.cw // 2, prompt_y + 5 * face.ch // 2], 8, outline=SURFACE2, width=1)
     typed, pitch = "❯ Fix the failing parser test", face.cw
     for k, char in enumerate(typed):
@@ -352,14 +354,14 @@ def dock():
             ty = notes_y + 12 + tier * 20
             d.line([(x_target, notes_y + 2), (x_target, ty - 2)], fill=color, width=2)
             d.text((left, ty), label, font=small, fill=color)
-        label, x_target = "Quota per harness: green, yellow, red = what is left", quota_x["agy"] + 3 * face.cw
+        label, x_target = "Quota per harness: green, yellow, red = what is left", quota_x["claude"] + 3 * face.cw
         span = small.getlength(label)
         left = min(max(6, x_target - span / 2), width - span - 6)
         d.text((left, quota_y - 22), label, font=small, fill=(166, 173, 200))
         d.line([(x_target, quota_y - 6), (x_target, quota_y - 1)], fill=(166, 173, 200), width=2)
         if i % 8 < 5:  # the prompt's cursor blinks
             d.rectangle([cursor_x, prompt_y + face.ch, cursor_x + face.cw - 1, prompt_y + 2 * face.ch - 2], fill=TEXT)
-        status = statusline.render(statusline.ansi_lines(1_790_000_000.0 + 3.2 * i / FRAMES, i), 15)
+        status = statusline.render(statusline.ansi_lines(1_790_000_000.0 + 3.2 * i / FRAMES, i), TERMINAL_PX)
         frame.paste(status.crop((0, 0, min(status.width, width), status.height)), (0, status_y))
         frames.append(frame)
     save_gif(frames, IMAGES / "wake-dock.gif")
