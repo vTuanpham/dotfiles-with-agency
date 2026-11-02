@@ -89,12 +89,15 @@ const rowsAt = (i: number) => {
   ]
 }
 // the account mix of a heavy user, in the order `agent-accounts snapshot` lists it (Codex, Claude, agy), with the window labels the
-// readers give each plan: a Codex Pro account reports its weekly window only; a Claude account its 5-hour and weekly windows, and a
-// Max or Ultra one also Fable's own weekly window
+// readers give each plan: a Codex Pro account reports its weekly window only, a Plus one its 5-hour (h) and weekly (w), a Free one
+// its monthly (m); a Claude account its 5-hour and weekly windows shared by every model, and a
+// Max or Ultra one also Fable's own weekly window (Fable is capped at half of the shared weekly limit; Pro has no Fable)
 const quota = (cli: WakeQuota['cli'], account: string, plan: string, active: boolean, windows: Record<string, number>): WakeQuota =>
   ({ cli, account, plan, active, freshness: 'fresh', parts: Object.entries(windows).map(([label, pct]) => ({ label, pct, resets: null })) })
 const accounts = [
-  quota('codex', '01', 'Pro', true, { w: 71 }), quota('codex', '02', 'Pro', false, { w: 34 }), quota('codex', '03', 'Pro', false, { w: 88 }),
+  quota('codex', '01', 'Pro', true, { w: 71 }), quota('codex', '02', 'Pro', false, { w: 34 }),
+  quota('codex', '03', 'Plus', false, { h: 62, w: 88 }), quota('codex', '04', 'Plus', false, { h: 15, w: 41 }),
+  quota('codex', '05', 'Free', false, { m: 57 }), quota('codex', '06', 'Free', false, { m: 8 }),
   quota('claude', 'c1', 'Max', true, { h: 88, w: 64, Fablew: 71 }), quota('claude', 'c2', 'Pro', false, { h: 45, w: 30 }),
   quota('claude', 'c3', 'Ultra', false, { h: 96, w: 90, Fablew: 83 }),
   quota('agy', 'a1', '', true, { Gw: 98, Cw: 96 }), quota('agy', 'a2', '', false, { Gw: 100, Cw: 100 }),
