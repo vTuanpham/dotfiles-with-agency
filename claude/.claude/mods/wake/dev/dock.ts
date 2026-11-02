@@ -13,15 +13,15 @@ const FRAMES = Number(process.argv[3] ?? 48)
 const STEP = 3
 const MS_PER_TICK = 50 // the scene redraws at 20 frames a second
 const LOOP_MS = FRAMES * STEP * MS_PER_TICK
-const W = Number(process.argv[4] ?? 117) // x12 = 1404 px, the width of the 156-column status line at 9 px a cell
-const TEXT_COLUMNS = Math.round(W * 12 / 9)
+const W = Number(process.argv[4] ?? 156) // the real band draws one scene pixel per terminal column: 156 columns, 9 px a cell = 1404 px
+const TEXT_COLUMNS = W
 const H = SCENE_H
 const K = ['read', 'read', 'read', 'search', 'edit', 'run', 'test', 'read', 'edit', 'agent', 'web', 'edit'] as const
 const turns = Array.from({ length: 16 }, (_, i) => ({ turn: i + 1, kinds: K.slice(0, 2 + ((i * 7) % 11)).concat(i % 5 === 2 ? ['fail'] : []) as any }))
 const state: SceneInput = {
   width: W, frame: 0, hour: 17.0, sun: { rise: 5.9, set: 17.5 }, moonPhase: 0.3, season: 'summer', snowy: false,
   weather: { cloud: 0.2, rain: 0, snow: 0, fog: false, thunder: false, wind: 8 },
-  preset: 'beach', seed: 12345, turns, live: { turn: 17, kinds: ['read', 'read', 'edit', 'test', 'edit'] }, mood: 'work',
+  preset: 'harbor', seed: 12345, turns, live: { turn: 17, kinds: ['read', 'read', 'edit', 'test', 'edit'] }, mood: 'work',
   jobs: [
     { isStale: false, seed: 3, tier: 2, kind: 'codex', lift: 0, hit: { id: 'parser', title: 'parser', details: [] } },
     { isStale: false, seed: 8, tier: 3, kind: 'agy', lift: 0, hit: { id: 'review', title: 'review', details: [] } },

@@ -525,3 +525,13 @@ test('scene hit identity follows jobs through reorder and overflow', () => {
   expect(visible.size).toBeLessThan(crowded.length)
   for (const owner of overflow.owners) if (owner > 0) expect(overflow.targets[owner - 1]).toBeDefined()
 })
+
+test('a Codex worker is a full boat on the water of a harbor and a beach, never only the three-cell distant sail', () => {
+  const codex = { isStale: false, seed: 3, tier: 2 as const, kind: 'codex' as const, hit: { id: 'parser', title: 'parser', details: [] } }
+  for (const preset of ['harbor', 'beach'] as const) {
+    const input: SceneInput = { ...base, preset, width: 156, turns: base.turns.slice(0, 4), live: null, plan: null, agents: [], jobs: [codex], effect: null }
+    const { hits } = sceneFrame(input)
+    const owner = hits.targets.findIndex(target => target.id === 'parser') + 1
+    expect(hits.owners.filter(o => o === owner).length, preset).toBeGreaterThan(12) // the 3 x 3 mark is at most 9 cells, 4 of them hit
+  }
+})

@@ -49,11 +49,11 @@ def cells(path, width, height=SCENE_H):
     return data, width * height
 
 
-def scene(data, size, index, scale, height=SCENE_H):
-    """Frame `index` of a rendered scene, each cell a scale x scale block."""
+def scene(data, size, index, scale, height=SCENE_H, scale_y=None):
+    """Frame `index` of a rendered scene, each cell a scale x scale_y block (square unless a terminal's half blocks say otherwise)."""
     image = Image.new("RGB", (size // height, height))
     image.putdata([((v >> 16) & 255, (v >> 8) & 255, v & 255) for v in data[index * size : (index + 1) * size]])
-    return image.resize((image.width * scale, height * scale), Image.NEAREST)
+    return image.resize((image.width * scale, height * (scale_y or scale)), Image.NEAREST)
 
 
 def save_gif(frames, path, delay=DELAY_MS):
@@ -271,18 +271,19 @@ def crew_row(frame, draw, face, images, y, row, box, text_columns):
 def dock():
     meta = json.loads((WORK / "dock.json").read_text())
     data, size = cells(WORK / "dock.bin", meta["w"], meta["h"])
-    S, face = 12, statusline.Typeface(15)
+    face = statusline.Typeface(15)
+    S, SY = face.cw, face.ch // 2  # one scene pixel per terminal column, two per row (a half block): 9 x 10 px here
     width = meta["w"] * S
     images = logos(meta, face)
     quota_line = quota_segments(meta["quota"])
-    band, rows_h, gap, note_h = 132, face.ch + 3, 12, 100
+    band, rows_h, gap, note_h = 132, face.ch, 12, 100  # rows stand one cell high, as in the terminal
     scene_y = band
-    text_y = scene_y + meta["h"] * S + gap
+    text_y = scene_y + meta["h"] * SY  # the turn's line sits right under the scene
     crew_y = text_y + rows_h  # the turn's status line, then the crew
     notes_y = crew_y + len(meta["rows"][0]) * rows_h + 2
     quota_y = notes_y + note_h
-    prompt_y = quota_y + rows_h + gap
-    status_y = prompt_y + 46 + gap
+    prompt_y = quota_y + rows_h  # the prompt is three rows: border, text, border
+    status_y = prompt_y + 3 * face.ch
     height = status_y + 2 * face.ch + 8
 
     chrome = Image.new("RGB", (width, height), BASE)  # everything that does not move
@@ -296,11 +297,11 @@ def dock():
         if isinstance(segment[0], Logo):
             quota_x.setdefault(segment[0].backend, x)
         x = put_segments(chrome, draw, face, images, x, quota_y, [segment])
-    draw.rounded_rectangle([4, prompt_y, width - 5, prompt_y + 40], 10, outline=SURFACE2, width=2)
-    typed, pitch = "❯ Fix the failing parser test", face.cw * 5 // 4
+    draw.rounded_rectangle([face.cw // 2, prompt_y + face.ch // 2, width - 1 - face.cw // 2, prompt_y + 5 * face.ch // 2], 8, outline=SURFACE2, width=1)
+    typed, pitch = "❯ Fix the failing parser test", face.cw
     for k, char in enumerate(typed):
-        face.put(draw, 20 + k * pitch, prompt_y + 10, char, PEACH if k == 0 else TEXT)
-    cursor_x = 20 + len(typed) * pitch
+        face.put(draw, 2 * face.cw + k * pitch, prompt_y + face.ch, char, PEACH if k == 0 else TEXT)
+    cursor_x = 2 * face.cw + len(typed) * pitch
     title_font, small = label_font(True, 15), label_font(False, 12)
 
     def center(boxes):
@@ -314,7 +315,7 @@ def dock():
     for i in range(meta["frames"]):
         frame = chrome.copy()
         d = ImageDraw.Draw(frame)
-        frame.paste(scene(data, size, i, S, meta["h"]), (0, scene_y))
+        frame.paste(scene(data, size, i, S, meta["h"], SY), (0, scene_y))
         for k, name in enumerate(order):
             title, what, color = LEGEND[name]
             found = meta["anchors"][i][name] or held.get(name, [])
@@ -324,12 +325,12 @@ def dock():
             if found:
                 if name != "trail":  # the comet is wherever it is lit just now: marked with a dot, not boxed
                     for box in found:
-                        d.rounded_rectangle([box["x"] * S - 1, scene_y + box["y"] * S - 2, (box["x"] + box["w"]) * S, scene_y + (box["y"] + box["h"]) * S + 1], 5, outline=color, width=2)
+                        d.rounded_rectangle([box["x"] * S - 1, scene_y + box["y"] * SY - 2, (box["x"] + box["w"]) * S, scene_y + (box["y"] + box["h"]) * SY + 1], 5, outline=color, width=2)
                 near = min(found, key=lambda b: abs((b["x"] + b["w"] / 2) * S - cx))
-                ax, top = (near["x"] + near["w"] / 2) * S, scene_y + near["y"] * S
+                ax, top = (near["x"] + near["w"] / 2) * S, scene_y + near["y"] * SY
                 d.line([(cx, ly1), (cx, ly1 + 10), (ax, top - 16), (ax, top - 5)], fill=color, width=2)
                 if name == "trail":
-                    d.ellipse([ax - 5, scene_y + (near["y"] + near["h"] / 2) * S - 5, ax + 5, scene_y + (near["y"] + near["h"] / 2) * S + 5], outline=color, width=2)
+                    d.ellipse([ax - 5, scene_y + (near["y"] + near["h"] / 2) * SY - 5, ax + 5, scene_y + (near["y"] + near["h"] / 2) * SY + 5], outline=color, width=2)
             d.rounded_rectangle([lx0, ly0, lx1, ly1], 10, fill=(38, 38, 56), outline=color, width=2)
             d.text((cx, ly0 + 15), title, font=title_font, fill=color, anchor="mm")
             d.text((cx, ly0 + 35), what, font=small, fill=(166, 173, 200), anchor="mm")
@@ -357,7 +358,7 @@ def dock():
         d.text((left, quota_y - 22), label, font=small, fill=(166, 173, 200))
         d.line([(x_target, quota_y - 6), (x_target, quota_y - 1)], fill=(166, 173, 200), width=2)
         if i % 8 < 5:  # the prompt's cursor blinks
-            d.rectangle([cursor_x, prompt_y + 10, cursor_x + 8, prompt_y + 28], fill=TEXT)
+            d.rectangle([cursor_x, prompt_y + face.ch, cursor_x + face.cw - 1, prompt_y + 2 * face.ch - 2], fill=TEXT)
         status = statusline.render(statusline.ansi_lines(1_790_000_000.0 + 3.2 * i / FRAMES, i), 15)
         frame.paste(status.crop((0, 0, min(status.width, width), status.height)), (0, status_y))
         frames.append(frame)
@@ -415,7 +416,7 @@ if __name__ == "__main__":
         for w in (180, 200):
             run("bun", "dev/showcase.ts", str(WORK / f"showcase{w}.bin"), str(FRAMES), str(w), cwd=WAKE)
     if "dock" in want:
-        run("bun", "dev/dock.ts", str(WORK / "dock.bin"), str(FRAMES), "117", cwd=WAKE)
+        run("bun", "dev/dock.ts", str(WORK / "dock.bin"), str(FRAMES), cwd=WAKE)
     if "crew" in want:
         run("bun", "dev/crew-life.ts", str(WORK / "crew"), str(FRAMES), cwd=WAKE)
     for name in want:

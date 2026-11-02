@@ -377,7 +377,7 @@ export const harbor: Landscape = {
     const overflow = crowded ? boats.splice(3).map(({ job }) => job) : []
     const packed = crowded ? packBoats(c, look, boats) : undefined
     for (const [i, { job, x, y, bob }] of boats.entries()) {
-      const placed = packed ? packed[i] : placeBoat(c, look, x, y, job, crowded)
+      const placed = packed ? packed[i] : placeBoat(c, look, x, y, job, crowded, z => z.w === 3 && z.h === 4 && z.y === GROUND - 2) // the quay's lamp posts
       if (placed && !bob) for (let k = 1; k < placed.w; k++) {
         const x = placed.x + k, y = SCENE_H - 1
         if (!(look.crewZones ?? []).some(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h)) c.glow(x, y, jobAccent(job, P.teal), 0.2)

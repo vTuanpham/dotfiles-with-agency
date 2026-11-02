@@ -446,8 +446,11 @@ export function boat(c: Canvas, look: Look, x: number, y: number, job: Job): num
   return art[0]!.length
 }
 
-/** Find a clear berth in the water before drawing the boat. */
-export function placeBoat(c: Canvas, look: Look, wanted: number, y: number, job: Job, compactOnly = false) {
+type Zone = { x: number; y: number; w: number; h: number }
+
+/** Find a clear berth in the water before drawing the boat. `through` names reserved zones a boat may sail across (a
+ * place's pier lamps: thin posts a hull passes in front of, which otherwise leave no room wide enough for any boat). */
+export function placeBoat(c: Canvas, look: Look, wanted: number, y: number, job: Job, compactOnly = false, through: (zone: Zone) => boolean = () => false) {
   const zones = look.crewZones ??= []
   const sprites = look.crewSpriteZones ??= []
   const anchors = look.crewAnchors ??= []
@@ -462,7 +465,7 @@ export function placeBoat(c: Canvas, look: Look, wanted: number, y: number, job:
     for (const top of tops) for (const x of xs) {
       if (top < 0 || top + h > c.H) continue
       const zone = { x, y: top, w, h }
-      if (zones.some(z => zone.x < z.x + z.w && zone.x + zone.w > z.x && zone.y < z.y + z.h && zone.y + zone.h > z.y)) continue
+      if (zones.some(z => !through(z) && zone.x < z.x + z.w && zone.x + zone.w > z.x && zone.y < z.y + z.h && zone.y + zone.h > z.y)) continue
       drawWithHit(c, job, () => h === 3 ? draw(c, look, x, top, art, paint(job, look), false) : boat(c, look, x, top, job))
       anchors.push((top + h - 1) * c.W + x + (w >> 1))
       zones.push(zone)
