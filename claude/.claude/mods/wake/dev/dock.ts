@@ -90,13 +90,13 @@ const rowsAt = (i: number) => {
 }
 // the account mix of a heavy user, in the order `agent-accounts snapshot` lists it (Codex, Claude, agy), with the window labels the
 // readers give each plan: a Codex Pro account reports its weekly window only; a Claude account its 5-hour and weekly windows, and a
-// Max or Ultra one also a weekly window per model
+// Max or Ultra one also Fable's own weekly window
 const quota = (cli: WakeQuota['cli'], account: string, plan: string, active: boolean, windows: Record<string, number>): WakeQuota =>
   ({ cli, account, plan, active, freshness: 'fresh', parts: Object.entries(windows).map(([label, pct]) => ({ label, pct, resets: null })) })
 const accounts = [
   quota('codex', '01', 'Pro', true, { w: 71 }), quota('codex', '02', 'Pro', false, { w: 34 }), quota('codex', '03', 'Pro', false, { w: 88 }),
-  quota('claude', 'c1', 'Max', true, { h: 88, w: 64, Opusw: 71 }), quota('claude', 'c2', 'Pro', false, { h: 45, w: 30 }),
-  quota('claude', 'c3', 'Ultra', false, { h: 96, w: 90, Opusw: 83, Sonnetw: 95 }),
+  quota('claude', 'c1', 'Max', true, { h: 88, w: 64, Fablew: 71 }), quota('claude', 'c2', 'Pro', false, { h: 45, w: 30 }),
+  quota('claude', 'c3', 'Ultra', false, { h: 96, w: 90, Fablew: 83 }),
   quota('agy', 'a1', '', true, { Gw: 98, Cw: 96 }), quota('agy', 'a2', '', false, { Gw: 100, Cw: 100 }),
 ]
 const quotaLines = quotaRows(accounts, TEXT_COLUMNS - 6).map(line => line.map(chunk => ({ text: chunk.text, cli: chunk.quotas[0]!.cli, percents: chunk.quotas[0]!.parts.map(p => p.pct) })))
