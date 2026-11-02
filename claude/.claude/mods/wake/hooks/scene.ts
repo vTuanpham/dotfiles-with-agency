@@ -6,6 +6,7 @@ import { type Canvas, canvas, hash, mix, sprite } from './pixels'
 import { MAX_PACKETS, PACKET_RUN_MS, PACKET_STAGGER_MS, cells, packetWindow, truncate } from './crew-row'
 import { type Reaction, type ReactionKind, react } from './reactions'
 import { drawMeteor } from './meteor'
+import { passages } from './exits'
 import { CAT_COLUMNS, CHARACTERS, type CharacterId, MOCHI_ROWS, asCharacter } from './mochi'
 import { drawLanterns, drawRainbow } from './flourishes'
 
@@ -17,7 +18,7 @@ import { drawLanterns, drawRainbow } from './flourishes'
 //   crew           bridge jobs and subagents, one family per harness, bigger with the model's class (amber: stale):
 //                  Codex drones, airship, boats; agy sparks, comets, constellations; Claude sparrows, gulls, eagles;
 //                  OpenCode hot-air balloons, small to striped to banded
-//   birds          running subagents (Claude's family)
+//   creatures      running subagents (Claude's family): the winged thing of the place (landscapes/creatures.ts)
 //   Mochi          the mood: laptop while working, ! when something needs you,
 //                  a cloud when a command failed, asleep while you're away
 //   the sky        the real sun and moon (phase too) where you are
@@ -35,8 +36,8 @@ export const EFFECT_FRAMES: Record<SceneEffect['kind'], number> = { fireworks: 4
 
 export type SceneWeather = { cloud: number; rain: 0 | 1 | 2 | 3; snow: 0 | 1 | 2 | 3; fog: boolean; thunder: boolean; wind: number }
 
-/** A running subagent as a bird: its id's seed (who it is: its lane and pace come from it) and its model's class. */
-export type SceneAgent = { id?: string; seed: number; tier: 1 | 2 | 3 | 4; hit?: WakeSceneHit }
+/** A running subagent as its place's creature: its id's seed (who it is: its lane and pace come from it) and its model's class. */
+export type SceneAgent = { id?: string; seed: number; tier: 1 | 2 | 3 | 4; hit?: WakeSceneHit; leaving?: number; arriving?: number }
 
 export type SceneHitMap = { columns: number; rows: number; owners: number[]; targets: WakeSceneHit[] }
 export type SceneSelection = { target: WakeSceneHit; x: number; y: number }
@@ -596,7 +597,8 @@ type TrailPlan = { collect?: Map<string, Anchor>; want?: Set<string>; ends?: Map
 function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap | undefined, plan: TrailPlan = {}): Uint32Array {
   // (a scene with a message landing needs the hit owners even when nobody asked for the map: the reactions find sprites by them)
   const reacting = plan.ends !== undefined && (input.peerEdges ?? []).some(edge => edge.arriving !== undefined)
-  const localHits = hitMap ?? (plan.collect || reacting ? { columns: input.width, rows: SCENE_ROWS, owners: [], targets: [] } : undefined)
+  const exiting = !plan.collect && [...input.jobs, ...input.agents].some(job => job.leaving !== undefined || job.arriving !== undefined) // (the anchor-finding pass has none)
+  const localHits = hitMap ?? (plan.collect || reacting || exiting ? { columns: input.width, rows: SCENE_ROWS, owners: [], targets: [] } : undefined)
   const reactions: Reaction[] = []
   const c = canvas(input.width, H, localHits !== undefined)
   const look = lookOf(input)
@@ -805,6 +807,11 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   // the root's gadget stands on her body, wherever the marks above her happen to be
   const rootBox = { x0: catX, x1: catX + 8, y0: ground - MOCHI_ROWS, y1: ground - 1 }
   if (localHits) react(c, localHits.targets, reactions, kindOf, { mochi: rootBox })
+  // a worker that has just started arrives, and one that has just finished leaves, each in its craft's own way (exits.ts)
+  const coming = [...input.jobs.map(job => ({ ...job, kind: job.kind ?? 'codex' as const })), ...input.agents.map(agent => ({ ...agent, kind: 'claude' as const }))]
+    .flatMap(job => job.hit && (job.arriving ?? job.leaving) !== undefined
+      ? [{ id: job.hit.id, kind: job.kind, place: input.preset, seed: job.seed, age: job.arriving ?? job.leaving!, arriving: job.arriving !== undefined }] : [])
+  if (localHits && coming.length && !plan.collect) passages(c, localHits.targets, coming)
   return finish()
 }
 

@@ -2,6 +2,7 @@ import type { WakeChip, WakeMood, WakePulse, WakeStep, WakeSurroundings, WakeTal
 import { PACKET_RUN_MS, activityFlash, messageFade, packetWindow } from './crew-row'
 import type { Season } from './landscapes/kit'
 import { seedOf } from './pixels'
+import { ARRIVE_MS, EXIT_MS } from './exits'
 import type { CharacterId } from './mochi'
 import type { SceneEffect, SceneInput, SceneTurn, SceneWeather } from './scene'
 import { modelTier } from './sources/accounts'
@@ -20,7 +21,7 @@ export type BandState = {
   /** Which character stands in Mochi's place (`/wake mochi`). */
   character?: CharacterId
   chips: WakeChip[]
-  subagents: { id: string; name?: string; description: string; type: string; model?: string; tier: 1 | 2 | 3 | 4 }[]
+  subagents: { id: string; name?: string; description: string; type: string; model?: string; tier: 1 | 2 | 3 | 4; since: number; leftAt?: number }[]
 }
 
 const SYNODIC_DAYS = 29.530588853
@@ -79,7 +80,7 @@ function mailAt(chips: WakeChip[], now: number): 'in' | 'out' | undefined {
 function tethers(state: BandState, now: number): NonNullable<SceneInput['peerEdges']> {
   const talking = new Set(state.chips.filter(job => (job.peers ?? []).some(peer => peer.target === 'root')).map(job => job.id))
   const edges: NonNullable<SceneInput['peerEdges']> = [
-    ...state.subagents.map(agent => ({ id: agent.id, family: 'claude' as const, name: agent.name ?? agent.description, what: `Claude subagent · ${agent.type}`, activeAt: undefined as number | undefined })),
+    ...state.subagents.filter(agent => agent.leftAt === undefined).map(agent => ({ id: agent.id, family: 'claude' as const, name: agent.name ?? agent.description, what: `Claude subagent · ${agent.type}`, activeAt: undefined as number | undefined })),
     ...state.chips.filter(job => job.running && job.id && !talking.has(job.id)).map(job => ({
       id: job.id!, family: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const), name: job.title ?? job.name, what: `Bridge job · ${job.backend}`, activeAt: job.lastEventAt,
     })),
@@ -115,6 +116,12 @@ export function crewLifts(chips: WakeChip[], now: number): Map<string, number> {
   }
   return lifts
 }
+
+/** How long ago a worker that is no longer running finished, while it is still playing its exit (see exits.ts). */
+const leavingFor = (job: WakeChip, now: number) => !job.running && now >= job.since && now - job.since < EXIT_MS ? now - job.since : undefined
+
+/** How long ago a running worker started, while it is still arriving (exits.ts); a worker already running when Wake looked never replays it. */
+const arrivingFor = (job: WakeChip, now: number) => job.running && job.startedAt !== undefined && now >= job.startedAt && now - job.startedAt < ARRIVE_MS ? now - job.startedAt : undefined
 
 export function sceneInput(state: BandState, width: number, frame: number, effect: SceneEffect | null, now: number): SceneInput {
   const lifts = crewLifts(state.chips, now)
@@ -162,9 +169,11 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
           family: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const),
         }
       })), ...tethers(state, now)],
-    jobs: state.chips.filter(job => job.running).map(job => {
+    jobs: state.chips.filter(job => job.running || leavingFor(job, now) !== undefined).map(job => {
       const peer = [...(job.peers ?? [])].filter(p => now - p.lastAt <= 900_000 && now >= p.lastAt).sort((a, b) => b.lastAt - a.lastAt)[0]
       return {
+      leaving: leavingFor(job, now),
+      arriving: arrivingFor(job, now),
       lift: job.id ? lifts.get(job.id) : undefined,
       isStale: job.isStale, seed: seedOf(job.name), tier: modelTier(job.backend ?? 'codex', job.model),
       kind: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const), maker: job.maker,
@@ -181,8 +190,10 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
         ],
       } : undefined,
     }}),
-    agents: state.subagents.map(agent => ({
+    agents: state.subagents.filter(agent => agent.leftAt === undefined || now - agent.leftAt < EXIT_MS).map(agent => ({
       id: agent.id, seed: seedOf(agent.id), tier: agent.tier,
+      leaving: agent.leftAt !== undefined && now >= agent.leftAt ? now - agent.leftAt : undefined,
+      arriving: agent.leftAt === undefined && now >= agent.since && now - agent.since < ARRIVE_MS ? now - agent.since : undefined,
       hit: {
         id: agent.id, title: agent.name ?? agent.description,
         details: [`Claude subagent · ${agent.type}`, agent.model ? `Model ID: ${agent.model}` : 'Model ID unavailable'],

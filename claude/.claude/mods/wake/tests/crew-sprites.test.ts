@@ -1,6 +1,23 @@
 import { expect, test } from 'claude-code/testing'
 
+import { ALL_CREATURES, CREATURE_SIZE } from '../hooks/landscapes/creatures'
 import { CAT_COLUMNS, CHARACTERS, MOCHI_ROWS } from '../hooks/mochi'
+
+test('every place-bound Claude creature keeps the birds\' class footprint, moves between two frames and differs per place', () => {
+  const tiers = [1, 2, 3, 4] as const
+  for (const [place, species] of Object.entries(ALL_CREATURES)) for (const tier of tiers) {
+    const frames = species[tier]
+    const { w, h } = CREATURE_SIZE[tier]
+    expect(frames.length, place).toBe(2)
+    for (const art of frames) {
+      expect(art.length, `${place} class ${tier} rows`).toBe(h)
+      for (const rowText of art) expect(rowText.length, `${place} class ${tier}: ${rowText}`).toBe(w)
+    }
+    expect(frames[0]).not.toEqual(frames[1]) // it flaps
+  }
+  const larger = Object.values(ALL_CREATURES).map(species => JSON.stringify(species[3]))
+  expect(new Set(larger).size).toBe(larger.length) // eight places, eight different creatures
+})
 
 test('every character is drawn on the same grid, with a colour for each letter it uses', () => {
   for (const character of Object.values(CHARACTERS)) {

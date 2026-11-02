@@ -80,7 +80,7 @@ def landscapes():
     titles = [
         "City · working · turns become buildings",
         "Harbor · needs input · Codex boats and agy crew",
-        "Beach · working · bridge jobs and Claude subagent birds",
+        "Beach · working · bridge jobs and Claude subagent kites",
         "Mountains · tests passed · fireworks",
         "Countryside · tests pass after a failure · rainbow",
         "Forest · rain · command failed",
@@ -128,7 +128,7 @@ SKY = (137, 220, 235)
 LEGEND = {  # name: (title, what it is, colour); the call-outs sit in the order their things stand, left to right
     "lamps": ("Plan lamps", "lit = steps done", YELLOW),
     "codex": ("Codex worker", "a boat, sized by model", BLUE),
-    "claude": ("Claude subagent", "a bird: sparrow to eagle", PEACH),
+    "claude": ("Claude subagent", "a kite here; a creature per place", PEACH),
     "agy": ("agy worker", "sparks, comets, stars", MAUVE),
     "trail": ("A message", "a comet, sender to receiver", SKY),
     "live": ("This turn", "a building going up", TEAL),
@@ -364,13 +364,59 @@ def dock():
     save_gif(frames, IMAGES / "wake-dock.gif")
 
 
+# ── crew: the four characters catching a message, and every family arriving and leaving in every place ──
+
+CHARACTERS = (("Mochi", "satellite dish"), ("Tabby", "radar whiskers"), ("Tuxedo", "ear trumpet"), ("Bun", "rabbit-ear antennae"))
+PLACES = ("City", "Harbor", "Beach", "Mountains", "Countryside", "Forest", "Desert", "Tundra")
+FAMILIES = ("Codex", "Claude", "agy", "OpenCode")
+
+
+def crew():
+    small, bold = label_font(False, 15), label_font(True, 17)
+    # the characters: one scene each, scaled x8, the gadget popping out each time the worker's message lands
+    data, size = cells(WORK / "crew-characters.bin", 34)
+    scale, pad = 8, 12
+    width = len(CHARACTERS) * (34 * scale + pad) + pad
+    frames = []
+    for i in range(FRAMES):
+        sheet = Image.new("RGB", (width, SCENE_H * scale + 62), BASE)
+        draw = ImageDraw.Draw(sheet)
+        for n, (name, gadget) in enumerate(CHARACTERS):
+            x = pad + n * (34 * scale + pad)
+            sheet.paste(scene(data, size, n * FRAMES + i, scale), (x, 10))
+            draw.text((x, SCENE_H * scale + 18), name, font=bold, fill=TEXT)
+            draw.text((x, SCENE_H * scale + 40), gadget, font=small, fill=(166, 173, 200))
+        frames.append(sheet)
+    save_gif(frames, IMAGES / "wake-characters.gif")
+    # the passages: a grid of places x families, each arriving, working, then leaving in its own way
+    data, size = cells(WORK / "crew-passages.bin", 64)
+    scale, left, top, gap = 3, 118, 34, 6
+    cell_w, cell_h = 64 * scale, SCENE_H * scale
+    width = left + len(FAMILIES) * (cell_w + gap)
+    frames = []
+    for i in range(FRAMES):
+        sheet = Image.new("RGB", (width, top + len(PLACES) * (cell_h + gap)), BASE)
+        draw = ImageDraw.Draw(sheet)
+        for f, family in enumerate(FAMILIES):
+            draw.text((left + f * (cell_w + gap) + 4, 8), family, font=bold, fill=TEXT)
+        for p, place in enumerate(PLACES):
+            y = top + p * (cell_h + gap)
+            draw.text((10, y + cell_h // 2 - 9), place, font=small, fill=(166, 173, 200))
+            for f in range(len(FAMILIES)):
+                sheet.paste(scene(data, size, (p * len(FAMILIES) + f) * FRAMES + i, scale), (left + f * (cell_w + gap), y))
+        frames.append(sheet)
+    save_gif(frames, IMAGES / "wake-passages.gif")
+
+
 if __name__ == "__main__":
     WORK.mkdir(parents=True, exist_ok=True)
-    want = sys.argv[1:] or ["dock", "landscapes", "hero"]
+    want = sys.argv[1:] or ["dock", "landscapes", "hero", "crew"]
     if "landscapes" in want or "hero" in want:
         for w in (180, 200):
             run("bun", "dev/showcase.ts", str(WORK / f"showcase{w}.bin"), str(FRAMES), str(w), cwd=WAKE)
     if "dock" in want:
         run("bun", "dev/dock.ts", str(WORK / "dock.bin"), str(FRAMES), "117", cwd=WAKE)
+    if "crew" in want:
+        run("bun", "dev/crew-life.ts", str(WORK / "crew"), str(FRAMES), cwd=WAKE)
     for name in want:
-        {"dock": dock, "landscapes": landscapes, "hero": hero}[name]()
+        {"dock": dock, "landscapes": landscapes, "hero": hero, "crew": crew}[name]()

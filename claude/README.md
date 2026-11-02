@@ -130,6 +130,42 @@ It is Claude-only; [Agent Bridge](../agent-bridge/README.md) and
 | A message reaches Mochi (or she sends one) | A gadget pops out of her head, one per character: a satellite dish with signal arcs (Mochi), whiskers turned radar with rings sliding in (Tabby), an ear trumpet with notes drifting into it (Tuxedo), rabbit-ear antennae with TV static between them (Bun) |
 | Place, time and weather | Landscape, sun, moon phase and local weather |
 
+### Characters, arrivals and exits
+
+<img src="../docs/images/wake-characters.gif" alt="Four characters stand where Mochi does, each catching a message from a worker in its own way: Mochi raises a satellite dish between her ears, Tabby's whiskers turn to radar, Tuxedo unfolds an ear trumpet and Bun's ears stretch into antennae with TV static between them." width="860">
+
+*Mochi, Tabby, Tuxedo and Bun (`/wake mochi <name>`), each catching a message with its own gadget. Actual renderer output.*
+
+A worker is a visitor with a life of its own. When a Bridge job starts it **arrives**, and when it finishes it
+stays a few seconds and **leaves**; each craft does both in its own way, and each landscape changes how:
+
+<img src="../docs/images/wake-passages.gif" alt="A grid of eight landscapes by four worker families. Each cell loops a worker arriving, working and leaving: the city saucer warps in and hyperdrives away, harbor boats sail off to the horizon, mountain paragliders spiral up a thermal, countryside biplanes roar off, forest autogyros come apart into leaves, desert skiffs kick up dust and tundra ski planes lift off into aurora glitter. Claude's creature, agy's sparks and OpenCode's balloon end differently in each place too." width="860">
+
+*Every family in every place: arriving (2.4 s), working, then leaving (3.2 s). Actual renderer output.*
+
+| Family | How it leaves, by place (an arrival is the same thing played backwards) |
+| --- | --- |
+| Codex | City: the saucer rises, charges and hyperdrives off in a streak of light. Harbor and beach: the boat sails for the horizon, its wake behind it (rougher on the beach). Mountains: the paraglider spirals up a thermal. Countryside: the biplane climbs and roars off, smoking. Forest: the autogyro lifts and comes apart into leaves. Desert: the skiff speeds off in a plume of dust. Tundra: the ski plane runs, lifts off and turns to aurora glitter |
+| Claude | A different flight in each place: soars (city), skims the water (harbor), loops (beach), spirals up (mountains), swoops then climbs (countryside), flits into the canopy (forest), circles in the heat (desert), fades silent like an owl (tundra) |
+| agy | The sparks gather into one star, then end as a ring (city), ripples on the water (harbor), sun glints (beach), snow (mountains), wandering fireflies (countryside), fireflies going out one by one (forest), a dust devil (desert) or an aurora ribbon (tundra) |
+| OpenCode | The balloon rises, then pops into confetti (city), bubbles (beach), petals (countryside), leaves and spores (forest) or a flurry (tundra); in the harbor it drifts out to sea, in the mountains it is lost in cloud, in the desert it evaporates |
+
+Claude's workers, subagents included, are a creature that belongs to the place (`hooks/landscapes/creatures.ts`),
+the same four sizes everywhere:
+
+| Place | Creature | Place | Creature |
+| --- | --- | --- | --- |
+| City | pigeon | Forest | owl |
+| Harbor | gull | Desert | dragonfly |
+| Beach | kite on its string | Tundra | snowy owl |
+| Mountains | eagle | Countryside | butterfly |
+
+A subagent arrives when Claude spawns it and leaves when it finishes, like a Bridge job; it is kept in the
+scene only while it leaves, and nothing else (the crew rows, the counts, `/wake`) counts it. A worker already
+running when Wake starts does not replay its arrival. Each style is one small function in
+`hooks/exit-styles.ts`; `hooks/exits.ts` runs them (lifting a sprite's pixels off the finished scene, repainting
+the background and drawing it again moved, stretched or dissolving), so a new style or place is a single entry.
+
 ### Crew and quota rows
 
 Bridge crew has one line per job: title, harness and model class, state, effort,
@@ -151,8 +187,9 @@ describes its subagent workflow and status access.
 
 Classes are 1 Haiku/Luna, 2 Sonnet/Terra, 3 Opus/Sol and 4 Fable/Astra;
 unrecognized models fall back to class 2. Each harness has four scene sprites that grow with
-the class and keep their colour and character everywhere (agy light, Claude a living thing,
-OpenCode a festival balloon), while Codex, the mechanical crew, builds what each place would
+the class and keep their colour and character everywhere (agy light, OpenCode a festival
+balloon); Claude's workers (its subagents and Claude Bridge jobs) are the winged creature of each
+place, in the family's pink (a table below lists them), while Codex, the mechanical crew, builds what each place would
 build: a steamship on the harbor and the beach (further out on the horizon when the skyline
 hides the shore), drones and blimps over the city, a paraglider in the mountains, a
 crop-duster over the countryside, an autogyro with a lantern in the forest, a sail-skiff in
@@ -182,6 +219,8 @@ it was admitted with, and a stall reason is shown in full. In the scene a trail 
 joins each worker (native or Bridge) to Mochi: working for the root is a relationship, not a message.
 If the crew will not fit alongside the scene, Wake temporarily gives the rows
 the available space instead; an overflow count indicates any remaining rows.
+When a job finishes, its "needs you" row shows the first line of prose of its report: a markdown
+table, heading marks, bullets and code fences are skipped, and a report that is only a table says so.
 A stall mark comes from Bridge's shared
 [stall classifier](../agent-bridge/src/agent_bridge/guide/status.md#bounded-waits-and-one-stall-classifier-v12);
 known waits have their own reasons. Finished jobs stay as `done` until Bridge's
@@ -250,7 +289,7 @@ interactive session reloads it when its files change, so edits here apply live.
   If every test file reports "did not load" with child exit code 0, check sandbox
   restrictions on the child harness; rerun the same command outside the sandbox
   when authorized. Type checking does not replace the runtime suite.
-- `bun dev/showcase.ts` and `bun dev/dock.ts` render the animation frames behind the README GIFs
+- `bun dev/showcase.ts`, `bun dev/dock.ts` and `bun dev/crew-life.ts` render the animation frames behind the README GIFs
   ([docs/tools](../docs/tools/README.md) turns them into images).
 - `bun dev/crew.ts <codex|agy|claude|opencode>` renders the four sprite classes over every landscape;
   `bun dev/crew-review.ts` renders synthetic before/after rows at three widths.

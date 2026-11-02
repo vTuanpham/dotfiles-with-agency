@@ -1,5 +1,6 @@
 import { type Canvas, hash, mix } from '../pixels'
 import { craftFrames } from './craft'
+import { creatureFrames } from './creatures'
 import { type Job, jobAccent, type Look, P } from './kit'
 
 // The crew's look: one family per harness, four classes that grow in size and detail.
@@ -209,8 +210,10 @@ function dress(canvas: Canvas, look: Look, x0: number, y0: number, w: number, h:
 }
 
 /** A flyer's frames: a Codex machine is the craft its place builds (a glider over the mountains, a biplane over the fields),
- * and the generic drone and airship only where the place has none; the other families look the same everywhere. */
-const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames => (kind === 'codex' && craftFrames(look.place, tier)) || AIR[kind][tier]
+ * and the generic drone and airship only where the place has none; a Claude worker is the winged creature of its place (a
+ * kite on the beach, a butterfly in the fields); agy and OpenCode look the same everywhere. */
+const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames =>
+  (kind === 'codex' && craftFrames(look.place, tier)) || (kind === 'claude' && creatureFrames(look.place, tier)) || AIR[kind][tier]
 
 /** A flyer centred on (cx, cy): its family and class decide the sprite and which frame this beat shows. */
 export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kind: Kind = job.kind ?? 'codex', compact = false) {

@@ -166,6 +166,45 @@ test('the trail to the root stays put while Mochi\'s "!" blinks, her envelope ho
   expect([...shown].filter(cell => !withEnvelope.has(cell)).length).toBeLessThanOrEqual(12)
 })
 
+test('every family arrives and leaves in every place: it draws cleanly, changes the scene, and is gone at the end', () => {
+  const kinds = ['codex', 'claude', 'agy', 'opencode'] as const
+  for (const preset of Object.keys(LANDSCAPES) as SceneInput['preset'][]) for (const kind of kinds) {
+    const job = (phase: { leaving?: number; arriving?: number }) => ({ isStale: false, seed: 6, kind, tier: 2 as const, hit: { id: 'j', title: 'j', details: [] }, ...phase })
+    const scene = (phase: { leaving?: number; arriving?: number }) => scenePixels({ ...base, preset, width: 80, turns: [], live: null, plan: null, agents: [], jobs: [job(phase)] })
+    const resting = scene({})
+    const differs = (px: Uint32Array) => px.reduce((n, v, i) => n + (v !== resting[i] ? 1 : 0), 0)
+    for (const age of [1, 700, 1400, 2100, 3100]) {
+      const leaving = scene({ leaving: age })
+      expect(leaving.indexOf(0)).toBe(-1) // never an undefined colour
+      if (age >= 700 && age <= 2100) expect(differs(leaving)).toBeGreaterThan(0)
+    }
+    for (const age of [1, 600, 1200, 1800, 2300]) {
+      const arriving = scene({ arriving: age })
+      expect(arriving.indexOf(0)).toBe(-1)
+      if (age <= 1200) expect(differs(arriving)).toBeGreaterThan(0) // on its way in, it is not yet where it will stand
+    }
+  }
+})
+
+test('a Claude subagent arrives and leaves like any worker, in every place', () => {
+  for (const preset of Object.keys(LANDSCAPES) as SceneInput['preset'][]) {
+    const agent = (phase: { leaving?: number; arriving?: number }) => ({ seed: 11, tier: 2 as const, hit: { id: 'sub', title: 'sub', details: [] }, ...phase })
+    const scene = (phase: { leaving?: number; arriving?: number }) => scenePixels({ ...base, preset, width: 80, turns: [], live: null, plan: null, jobs: [], agents: [agent(phase)] })
+    const resting = scene({})
+    const differs = (px: Uint32Array) => px.reduce((n, v, i) => n + (v !== resting[i] ? 1 : 0), 0)
+    for (const age of [1, 800, 1600, 2400, 3100]) {
+      const leaving = scene({ leaving: age })
+      expect(leaving.indexOf(0)).toBe(-1)
+      if (age >= 800 && age <= 2400) expect(differs(leaving)).toBeGreaterThan(0)
+    }
+    for (const age of [1, 600, 1200]) {
+      const arriving = scene({ arriving: age })
+      expect(arriving.indexOf(0)).toBe(-1)
+      expect(differs(arriving)).toBeGreaterThan(0)
+    }
+  }
+})
+
 test('crowded workers preserve the pre-existing scene hit pixels', () => {
   const jobs = Array.from({ length: 30 }, (_, i) => ({ isStale: false, seed: hash(i + 100), kind: 'codex' as const }))
   for (const preset of Object.keys(LANDSCAPES) as SceneInput['preset'][]) for (const width of [24, 80]) {

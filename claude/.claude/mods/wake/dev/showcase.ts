@@ -25,13 +25,13 @@ const base: SceneInput = {
   jobs: [crew('a', 3, 'codex', 2), crew('b', 8, 'agy', 3), crew('c', 13, 'opencode', 1)], agents: [{ seed: 1, tier: 1 }, { seed: 2, tier: 2 }], plan: { done: 2, total: 5 }, effect: null,
 }
 const calm = { live: null, agents: [], mood: 'idle' as const }
-const fx = (kind: 'fireworks' | 'storm' | 'shoot') => ({ kind, age: 0 })
+const fx = (kind: NonNullable<SceneInput['effect']>['kind']) => ({ kind, age: 0 })
 
 // [label, state]; an effect's age follows the frame so it plays through
 export const SCENES: [string, Partial<SceneInput>][] = [
   ['City · working · turns become buildings', {}],
   ['Harbor · needs input · Codex boats and agy crew', { preset: 'harbor', hour: 19.8, mood: 'alert', agents: [], live: null }],
-  ['Beach · working · bridge jobs and Claude subagent birds', { preset: 'beach', hour: 13 }],
+  ['Beach · working · bridge jobs and Claude subagent kites', { preset: 'beach', hour: 13 }],
   ['Mountains · tests passed · fireworks', { ...calm, preset: 'mountains', hour: 20.2, mood: 'happy', effect: fx('fireworks') }],
   ['Countryside · tests pass after a failure · rainbow', { ...calm, preset: 'countryside', hour: 14, mood: 'happy', plan: { done: 3, total: 5 }, effect: fx('rainbow') }],
   ['Forest · rain · command failed', { ...calm, preset: 'forest', hour: 15, mood: 'sad', weather: { ...clear, cloud: 0.9, rain: 2, wind: 18 }, effect: fx('storm') }],

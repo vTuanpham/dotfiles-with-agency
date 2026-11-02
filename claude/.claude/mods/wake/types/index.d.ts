@@ -58,7 +58,11 @@ export type WakePulseKind = 'read' | 'search' | 'edit' | 'run' | 'test' | 'fail'
 export type WakePulse = { kind: WakePulseKind; turn: number }
 
 /** A running Claude Code subagent, from $.agent.list(); `since` is when Wake first saw it; `model` is what its spawn resolved to. */
-export type WakeAgent = { id: string; type: string; name?: string; description: string; since: number; model?: string; effort?: string }
+export type WakeAgent = {
+  id: string; type: string; name?: string; description: string; since: number; model?: string; effort?: string
+  /** When Wake saw it finish; it stays in the list only while its exit plays (hooks/exits.ts), and nothing else counts it. */
+  leftAt?: number
+}
 
 /** The landscape the band draws. */
 export type WakePreset = 'city' | 'harbor' | 'beach' | 'mountains' | 'countryside' | 'forest' | 'desert' | 'tundra'

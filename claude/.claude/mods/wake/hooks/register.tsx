@@ -11,6 +11,8 @@ import { EFFECT_FRAMES, SCENE_ROWS, type SceneEffect, type SceneHitMap, type Sce
 import { PRESETS, nextRain, skyOf } from './sources/weather'
 import { lookAround, namePlace, pinPreset } from './surroundings'
 import { CHARACTERS, CHARACTER_IDS, type CharacterId, asCharacter, isCharacter } from './mochi'
+import { summaryOf } from './summary'
+import { EXIT_MS } from './exits'
 import { COLOR, readable, clock, commandHead, hash, isAnswerText, isTestCommand, lines, patchCounts, shortPath, span } from './util'
 import { CLASS_GLYPH, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, crewBox, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
 import { type EffortLevels, effortDots, levelsFor, scanEfforts } from './sources/efforts'
@@ -267,7 +269,7 @@ async function bandState($: EngineInterface): Promise<BandState> {
     mood: await read($, mood),
     chips: await read($, chips),
     character: await read($, characterAtom),
-    subagents: crew.map(a => ({ id: a.id, name: a.name, description: a.description, type: a.type, model: a.model, tier: modelTier('claude', a.model || parent) })),
+    subagents: crew.map(a => ({ id: a.id, name: a.name, description: a.description, type: a.type, model: a.model, tier: modelTier('claude', a.model || parent), since: a.since, leftAt: a.leftAt })),
   }
 }
 
@@ -287,7 +289,10 @@ async function pollAgents($: EngineInterface) {
   const models = await read($, agentModels)
   const efforts = await read($, agentEfforts)
   const inherited = await read($, parentEffort)
-  const next = live.map(agent => ({ id: agent.id, type: agent.type, description: agent.description, name: agent.name, since: prior.find(p => p.id === agent.id)?.since ?? now, model: models[agent.id], effort: efforts[agent.id] ?? (inherited || undefined) }))
+  const running: WakeAgent[] = live.map(agent => ({ id: agent.id, type: agent.type, description: agent.description, name: agent.name, since: prior.find(p => p.id === agent.id)?.since ?? now, model: models[agent.id], effort: efforts[agent.id] ?? (inherited || undefined) }))
+  // one that has just finished stays, marked, while its exit plays; the scene draws it and nothing else counts it
+  const leaving = prior.filter(agent => !live.some(l => l.id === agent.id)).map(agent => ({ ...agent, leftAt: agent.leftAt ?? now })).filter(agent => now - agent.leftAt < EXIT_MS)
+  const next = [...running, ...leaving]
   if (JSON.stringify(next) !== JSON.stringify(prior)) await update($, subagents, () => next)
 }
 
@@ -464,7 +469,7 @@ export async function codexTick($: EngineInterface) {
       if (away) await $.ui.notify(`${job.backend} ${titleOf(job)}: ${text.slice(0, 120)}`, { title: 'Wake · needs you' })
     }
     if (job.completedNow) {
-      const summary = (job.lastMessage ?? '').split('\n')[0]!.slice(0, 160)
+      const summary = summaryOf(job.lastMessage ?? '')
       // one done row per job: a later turn replaces it
       await update($, needs, list => [...list.filter(one => one.kind !== 'codex-done' || one.owner !== job.owner || one.job !== job.name), { id: hash(job.dir + job.finishedAt), kind: 'codex-done' as const, owner: job.owner, job: job.name, title: titleOf(job), text: summary, at: now }].slice(-6))
       play('shoot')
@@ -815,7 +820,7 @@ export const register: Register = on => {
     const idleSince = await read($, lastActivity)
     const failures = (await read($, digest)).failures
     const here = await read($, surroundings)
-    const crewAgents = await read($, subagents)
+    const crewAgents = (await read($, subagents)).filter(agent => agent.leftAt === undefined) // (one still leaving is only in the scene)
     const parentModelId = await read($, parentModel)
     const parentTier = modelTier('claude', parentModelId)
 
@@ -1371,7 +1376,7 @@ async function summary($: EngineInterface): Promise<string> {
   const open = await read($, needs)
   const allCalls = await read($, calls)
   const jobs = await read($, chips)
-  const agents = await read($, subagents)
+  const agents = (await read($, subagents)).filter(agent => agent.leftAt === undefined)
   const accounts = await read($, quotas)
   const waiting = await read($, recap)
   const out: string[] = []
