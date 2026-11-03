@@ -10,7 +10,7 @@ One folder per package; paths mirror `$HOME`. Each README states its install flo
 | --- | --- | --- |
 | [claude](../claude/README.md) | Snapshot + live | Wake mod, hooks, native account CLI (`cswap`), skills |
 | [codex](../codex/README.md), [codex-wake](../codex-wake/README.md) | Snapshot + live, uv tool | Codex preferences, hooks, skills, native task notifications and the bounded condition monitor |
-| [agent-bridge](../agent-bridge/README.md) | uv tool | Cross-harness jobs: start, watch, steer, hand off, retire |
+| [agent-bridge](../agent-bridge/README.md) | uv tool | Cross-harness jobs and direct native session messages |
 | [agent-baton](../agent-baton/README.md) | uv tool | Human handoff: questions, secrets and approved commands |
 | [agent-inbox](../agent-inbox/README.md) | uv tool + user service | Phone chat for existing root conversations |
 | [agent-models](../agent-models/README.md) | uv tool + timer | Model references, benchmark evidence and task shortlists |

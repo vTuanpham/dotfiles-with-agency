@@ -80,16 +80,22 @@ def test_model_fallback_is_reported_once_from_usage_and_helpers_do_not_count(tmp
     job = tmp_path
     state = {"cwd": str(tmp_path), "sandbox": "workspace-write", "writableRoots": []}
     (job / "state.json").write_text("{}")
-    claude.process({"type": "system", "subtype": "init", "session_id": "s", "model": "claude-opus-5-5"}, state, job)
+    claude.process({"type": "system", "subtype": "init", "session_id": "s",
+                    "model": "claude-opus-5-5"}, state, job)
 
     def turn(usage):
-        claude.process({"type": "result", "subtype": "success", "modelUsage": usage, "queued_turn_count": 0}, state, job)
-        return [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines() if "model_fallback" in line]
+        claude.process({"type": "result", "subtype": "success", "modelUsage": usage,
+                        "queued_turn_count": 0}, state, job)
+        return [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()
+                if "model_fallback" in line]
 
-    assert turn(used(**{"claude-opus-5-5": 5000, "claude-haiku-5-5": 30})) == []  # the model asked for, plus a small helper
+    # The requested model plus a small helper does not count as a fallback.
+    assert turn(used(**{"claude-opus-5-5": 5000, "claude-haiku-5-5": 30})) == []
     # the shape of a real fallback turn: the asked-for model wrote nothing, another wrote it all
     events = turn({"claude-opus-5-5": {"outputTokens": 0}, "claude-opus-4-8": {"outputTokens": 21258}})
-    assert [(e["requested"], e["served"], e["level"]) for e in events] == [("claude-opus-5-5", "claude-opus-4-8", "urgent")]
+    assert [(e["requested"], e["served"], e["level"]) for e in events] == [
+        ("claude-opus-5-5", "claude-opus-4-8", "urgent"),
+    ]
     assert len(turn(used(**{"claude-opus-4-8": 900}))) == 1  # the same fallback is not announced every turn
     assert core_urgent({"kind": "model_fallback"})
 

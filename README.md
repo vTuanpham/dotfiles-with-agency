@@ -23,7 +23,7 @@ git clone https://github.com/vTuanpham/dotfiles-with-agency ~/dotfiles-with-agen
 | --- | --- |
 | **[codex-wake](codex-wake/README.md)** | Codex finishes a background task or a subagent and **wakes the idle conversation by itself**: end your turn and the result arrives. `codex-wake monitor` watches a condition for a while and wakes it on each hit, with a cooldown so it never spams and a hard time limit so it never lingers. |
 | **[Wake](claude/README.md#wake-mod-live)**, a Claude Code mod | A pixel town above the prompt that is the session's live state: eight places, weather and time, a building that rises with each turn, and a crew of real workers that arrive, message each other, react and leave, each in its own way. Plus per-harness quota, effort inferred from what each model supports, and hover cards on everything. |
-| **[Agent Bridge](agent-bridge/README.md)** | A Codex root can hand a job to Claude, Antigravity or OpenCode (and the reverse). Jobs persist, can be watched and steered live, message each other (`TO <peer>:`), survive a root change (`handoff`), and archive when finished. It notices when a runtime silently swaps a worker's model. |
+| **[Agent Bridge](agent-bridge/README.md)** | Delegate persistent jobs across harnesses, or send native peer messages directly to existing Codex, Claude, agy and OpenCode sessions. Jobs can be watched and steered, survive a root change (`handoff`), and archive when finished. It notices when a runtime silently swaps a worker's model. |
 | **[Agent Baton](agent-baton/README.md)** | The agent asks; you answer from a Windows toast or your phone. For passwords, 2FA and API keys the value goes straight into the field or env file and **never reaches the agent or its transcript**. |
 | **[Agent Inbox](agent-inbox/README.md)** | Your existing Codex, Claude Code and OpenCode conversations on your phone: chat, images, tool steps, pending questions and native `/` commands, over Tailscale. |
 | **[Model Guide](agent-models/README.md)** | Picks nothing for you, and says why. It reads the live native model lists, then compares eleven public leaderboards (Arena, LiveBench, Vals, SWE-bench, OSWorld, BFCL, LiveCodeBench, KernelBench, Bug Hunt and more) **per effort level and per harness**, in plain code. |
@@ -93,18 +93,22 @@ at most `--max-events` times, never past the time limit (24 h at most), and with
 
 ## Agent tools
 
-<img src="docs/images/agent-tools.gif" alt="Inbox carries chat and controls; Baton carries questions and secrets; native delegation and Bridge connect workers. Shared model, account, resource and lab tools support the session." width="100%">
+<img src="docs/images/agent-tools.gif" alt="Inbox carries chat and controls; Baton carries questions and secrets; native delegation and Bridge connect workers. Bridge also sends native messages directly to existing sessions. Shared model, account, resource and lab tools support the session." width="100%">
 
-### Delegate across harnesses
+### Delegate work and message other sessions
 
-<img src="docs/images/agent-bridge-flow.gif" alt="The root briefs workers across four harnesses, then reads their persistent job state to handle blockers and verify results." width="100%">
+<img src="docs/images/agent-bridge-flow.gif" alt="The root delegates work to other harnesses and verifies persistent job results. A separate native messaging path connects existing Codex, Claude Code, agy and OpenCode sessions by exact address, steering where supported without creating jobs or granting approval." width="100%">
 
 Hand a job to the model that is best for it, watch it, steer it, and let workers message each other.
 [Agent Bridge](agent-bridge/README.md) · [Model selection](agent-models/README.md).
 
+Already running in another session? `agent-bridge message` sends a peer message through its native
+agent API. Ask for a review, share a finding or coordinate a shared resource without starting another
+worker. [Direct messages, discovery and setup](agent-bridge/README.md#direct-session-messages).
+
 ### Model selection that shows its work
 
-<img src="docs/images/model-selection.gif" alt="Model Guide combines current native controls, domain evidence and account observations before delegation." width="100%">
+<img src="docs/images/model-selection.gif" alt="Model Guide combines native catalogs, domain evidence and account observations. Preserve the requested harness, provider, model, variant and effort; free variants and plan allowances differ. Verify chat in the matching native session, and leave unknown billing unverified." width="100%">
 
 ```sh
 model-guide suggest --backend claude --task "fix a flaky failing test"
@@ -115,6 +119,8 @@ model-guide benchmarks --domain performance --query sol --brief
 the score at 14% of the cost"), labels evidence from another harness, and never averages conflicting
 boards. Debugging (Bug Hunt) and GPU kernel (KernelBench) domains are included.
 [Native controls, domain evidence and account context](agent-models/README.md).
+An explicit model choice stays intact, including its provider, variant and effort.
+A service API error describes that context; verify a chat request in the matching native session.
 
 ### Questions on your PC or phone
 
@@ -135,11 +141,12 @@ Phone pushes and session-isolated replies. [Setup](agent-baton/README.md#phone-a
 
 [Portlink](portlink/README.md): private, expiring links to an app, build folder or file.
 
-### Heavy commands, one at a time
+### Make room for heavy commands
 
-<img src="docs/images/agent-resources.gif" alt="Heavy commands declare their needs to a shared queue, wait for headroom and run in the foreground; process exit releases the reservation." width="100%">
+<img src="docs/images/agent-resources.gif" alt="Heavy commands declare their needs to a shared queue. Inspect queue position, admission reason and reserved, budget and free memory before coordinating with the owning session. Admitted commands run in the foreground; exit releases the reservation." width="100%">
 
-Five agents, one test suite at a time. [agent-resources](agent-resources/README.md).
+`agent-resources list` shows why a request is waiting and which request is ahead.
+Commands run together when capacity permits. [agent-resources](agent-resources/README.md).
 
 Behind the scenes: [account observations](agent-accounts/README.md), [persistent labs](agent-lab/README.md)
 and [session identity](agent-session/README.md).

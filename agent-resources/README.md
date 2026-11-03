@@ -2,7 +2,7 @@
 
 [← Packages](../README.md#packages) · **uv tool** · host resource admission
 
-![Heavy commands declare their needs to a shared queue, wait for headroom and run in the foreground; process exit releases the reservation.](../docs/images/agent-resources.gif)
+![Heavy commands declare their needs to a shared queue. Inspect queue position, admission reason and reserved, budget and free memory before coordinating with the owning session. Admitted commands run in the foreground; exit releases the reservation.](../docs/images/agent-resources.gif)
 
 Cooperative admission for memory-heavy or sustained multi-core commands. Kernel
 locks hold reservations across exec and release them on process exit. This is
@@ -23,6 +23,11 @@ fit. Reserve exclusivity for measurements, not test suites. Never detach the
 command; detached descendants are outside the lease's guarantee. Agents start
 long or queued runs as a native harness background job so steers still arrive
 ([guide](src/agent_resources/guide.md)).
+
+`list` explains queued requests with their admission reason, memory need versus
+free/budget, queue position and number of requests behind them. It reuses the
+admission policy against current readings; redirected command output is not
+needed to diagnose a wait.
 
 The private queue is `/tmp/agent-resources-<uid>` or `$AGENT_RESOURCES_HOME`,
 independent of HOME/TMPDIR. All participants on a host use the same queue path.

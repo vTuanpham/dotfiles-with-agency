@@ -9,6 +9,7 @@ def test_each_harness_reports_its_own_session():
     assert native({"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": ID}) == ("claude", ID)
     assert native({"ANTIGRAVITY_CONVERSATION_ID": ID}) == ("agy", ID)
     assert native({"CODEX_THREAD_ID": ID}) == ("codex", ID)
+    assert native({"OPENCODE": "1", "OPENCODE_SESSION_ID": "ses_1"}) == ("opencode", "ses_1")
     assert native({"AGENT_BRIDGE_ROOT_HARNESS": "opencode", "AGENT_BRIDGE_ROOT_SESSION": "ses_1"}) == (
         "opencode", "ses_1")
     assert native({}) is None
@@ -22,12 +23,18 @@ def test_an_inherited_session_never_outranks_the_running_harness():
     assert native({"CODEX_THREAD_ID": "enclosing-codex", "CLAUDECODE": "1"}) == ("claude", None)
     # A plain process that merely inherited a Claude id is not a Claude session.
     assert native({"CLAUDE_CODE_SESSION_ID": ID}) is None
+    assert native({**codex_terminal, "OPENCODE": "1", "OPENCODE_SESSION_ID": "ses_1"}) == (
+        "opencode", "ses_1")
+    assert native({**codex_terminal, "OPENCODE": "1"}) == ("opencode", None)
+    assert native({"OPENCODE_SESSION_ID": "ses_enclosing"}) is None
 
 
 @pytest.mark.parametrize("bad", [" x", "a b", "a\nb", "x" * 201, "a​b"])
 def test_malformed_ids_are_rejected_not_reinterpreted(bad):
     with pytest.raises(ValueError):
         native({"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": bad, "CODEX_THREAD_ID": "enclosing"})
+    with pytest.raises(ValueError):
+        native({"OPENCODE": "1", "OPENCODE_SESSION_ID": bad, "CODEX_THREAD_ID": "enclosing"})
 
 
 @pytest.mark.parametrize("harness", ["claude", "agy", "codex", "opencode"])

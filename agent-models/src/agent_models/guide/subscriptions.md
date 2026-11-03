@@ -1,5 +1,5 @@
 ## Subscriptions (vendor catalog, no account state)
-Checked 2026-10-27. Read this only when the choice depends on a plan, allowance or retention policy. For strengths and effort advice, use [models](models.md) (`model-guide read models`). Prices are published USD prices; region, billing terms and rollout can differ. **Unverified** means the cited sources do not establish the detail; do not infer entitlement from a model listing.
+Checked 2026-11-03 for provider/variant terminology; vendor/plan facts retain their 2026-10-27 review unless separately dated. Read this only when the choice depends on a plan, allowance or retention policy. For strengths and effort advice, use [models](models.md) (`model-guide read models`). Prices are published USD prices; region, billing terms and rollout can differ. **Unverified** means the cited sources do not establish the detail; do not infer entitlement from a model listing.
 
 ### Find live account state
 - `codex-auth list`: selected account and API-refreshed allowance by default; `--skip-api` reads local data with unknown freshness. Mask emails when reporting. Live output may label the $100 tier differently from the pricing page. Codex `/status` and the vendor usage dashboard show limits and reset times.
@@ -43,6 +43,13 @@ Privacy/retention: individual access uses terms derived from Google Terms of Ser
 
 ### OpenCode
 OpenCode can also use external providers; their billing and data terms are separate.
+
+**Preserve the full requested provider/model/variant.** Free variants and included
+subscription allowances are different billing routes for every model family.
+For example, `opencode/deepseek-v4.1-flash-free` is a free variant;
+`opencode-go/deepseek-v4.1-flash` uses Go's separate allowance. The same distinction
+applies to GLM, MiniMax and other model variants. A configured credential or a
+failed service/API probe is not a reason to substitute a provider, model or billing route.
 
 - **OpenCode free**: the bridge permits only `opencode/glm-5.3-flash-free`, `opencode/deepseek-v4.1-flash-free`, `opencode/minimax-m3.1-flash-free` (the code's fixed ZDR allowlist). [Zen/model docs](https://opencode.ai/docs/zen) confirm zero retention and no training for GLM and DeepSeek; **Unverified**: MiniMax's free endpoint is absent from that page's free list. Do not expand the code allowlist from this document. Other free models can train on data or log it; Beam retains 30 days without training. No numeric free allowance is published there; availability is temporary. **Unverified**: IP-based limits/no-login access.
 - **Zen / Console pay-as-you-go**: buy credits, pay per request; no subscription allowance. Models include OpenAI, Claude, Gemini and open families. [Model/privacy docs](https://opencode.ai/docs/zen) list retention exceptions; zero retention is not universal. Check the endpoint's privacy row before use.

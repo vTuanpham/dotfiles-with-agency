@@ -41,6 +41,13 @@ still run commands through `agent-resources run --mem SIZE -- ...`. `list` shows
 request's id, owning job, executable basename (never arguments), declared need,
 exclusivity, running/queued/cancelling state, wait/elapsed time and kernel-lock
 liveness. Dead unlocked records and their control metadata are removed on scan.
+Queued rows also show position, the current admission reason, reserved/budget/free
+memory and `waiting_behind` (later queued requests, including ones that may backfill).
+Reasons identify an earlier selected or blocking request by ID. These are fresh
+snapshots using the caller's limits/environment; inspect from the owning session
+when its policy differs. A finite CPU quota needs a one-second usage sample,
+outside the queue lock. Unavailable host readings leave requests visible with an
+explicit diagnostic, rather than reporting readiness.
 An id identifies one request, not the worker job. `cancel` also accepts an exact
 `owner/job`, but refuses if that job has multiple requests; use a listed id.
 

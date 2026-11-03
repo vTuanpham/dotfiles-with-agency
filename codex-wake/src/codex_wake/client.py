@@ -135,9 +135,10 @@ class Wake:
                 cursor = next_cursor
         raise RuntimeError("Codex native wake delivery requires codex_tui.send_message_to_thread")
 
-    def send(self, prompt):
+    def send(self, prompt, *, recipient=None):
         """Send once; an uncertain response must not cause an automatic duplicate."""
         validate_message(prompt)
+        target = self.thread if recipient is None else Wake(recipient, self.home).thread
         with connection(self.home) as call:
             result = call(
                 "mcpServer/tool/call",
@@ -145,7 +146,7 @@ class Wake:
                     "threadId": self.thread,
                     "server": "codex_tui",
                     "tool": "send_message_to_thread",
-                    "arguments": {"threadId": self.thread, "prompt": prompt},
+                    "arguments": {"threadId": target, "prompt": prompt},
                 },
             )
         error, content = result.get("isError"), result.get("content")
@@ -164,5 +165,5 @@ class Wake:
             receipt = json.loads(content[0]["text"])
         except ValueError:
             raise RuntimeError("Invalid Codex native task notification receipt") from None
-        if not isinstance(receipt, dict) or receipt.get("threadId") != self.thread:
+        if not isinstance(receipt, dict) or receipt.get("threadId") != target:
             raise RuntimeError("Codex native task notification targeted a different thread")

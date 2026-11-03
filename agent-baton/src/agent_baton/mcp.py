@@ -16,6 +16,7 @@ server = MCPServer(
     instructions=(
         "Pass your conversation's session on every call: codex:<CODEX_THREAD_ID>, "
         "claude:<CLAUDE_CODE_SESSION_ID>, agy:<ANTIGRAVITY_CONVERSATION_ID>, "
+        "opencode:<OPENCODE_SESSION_ID>, "
         "or explicit:<unique conversation id>. "
         "Never use another conversation's id. Use native questions first; only the root sends reminders. "
         "Ask collects secrets from the human; tools never accept or return secret values. "

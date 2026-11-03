@@ -13,7 +13,7 @@ def main():
     run.add_argument("--exclusive", action="store_true", help="isolate timing measurements")
     run.add_argument("--memory-max-mib", help="require a systemd memory cap")
     run.add_argument("argv", nargs=argparse.REMAINDER)
-    commands.add_parser("list", help="inspect live requests")
+    commands.add_parser("list", help="inspect live requests and queued admission reasons")
     commands.add_parser("guide", help="read admission, ownership and cancellation details")
     commands.add_parser("cancel", help="cancel a request owned by this root").add_argument("target")
     commands.add_parser("pause", help="pause admissions").add_argument("--reason", default="maintenance")

@@ -53,7 +53,7 @@ def test_models_marks_and_sorts_free_first(monkeypatch, capsys):
         "opencode/example-free\t-\tfree-logged",
         "opencode/glm-5.3-flash-free\t-\tfree",
         "opencode/big-pickle\t-\tfree-logged",
-        "paid/model\t-\tpaid",
+        "paid/model\t-\tunverified",
     ]
 
 
@@ -67,3 +67,15 @@ def test_models_failure_reports_stderr(monkeypatch):
     )
     with pytest.raises(RuntimeError, match="inventory failed"):
         inventory.show("opencode")
+
+
+@pytest.mark.parametrize("provider,model", [
+    ("opencode-go", "deepseek-v4.1-flash"), ("opencode-go", "gpt-6-luna"),
+    ("local", "model"), ("free-proxy", "model"),
+])
+def test_model_name_does_not_establish_billing_or_included_quota(provider, model):
+    rows = inventory.parse_opencode(json.dumps({"data": [{
+        "providerID": provider, "id": model, "enabled": True, "variants": [],
+    }]}))
+    assert rows[0]["id"] == provider + "/" + model
+    assert rows[0]["listing_tier"] == "unverified"

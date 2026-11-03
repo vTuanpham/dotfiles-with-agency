@@ -1,5 +1,6 @@
 """Root-only inspection, pause and cancellation of cooperative heavy requests."""
 
+import json
 import os
 import signal
 import sys
@@ -23,20 +24,63 @@ def require_root():
 def listing():
     require_root()
     folder = heavy.prepare()
+    unavailable = None
+    try:
+        host = heavy.pressure()
+        if any(group.cpus is not None for group in host.shared_groups):
+            time.sleep(1)  # Sample quota use outside the queue lock, as admission does.
+            host = heavy.pressure(host)
+        policy = heavy.limits(host)
+    except (OSError, ValueError) as error:
+        unavailable = f"admission diagnostics unavailable: {error}"
     with heavy.gate(folder):
         paused = heavy.pause_state(folder)
         if paused["reason"] is not None:
             print(f"paused by root: {paused['reason']}")
         now = time.monotonic_ns()
-        for path, row in heavy.entries(folder):
+        rows = heavy.entries(folder)
+        active = [(path, row) for path, row in rows if row["running"] or not row["control"]["cancelled"]]
+        waiting = [path for path, row in active if not row["running"]]
+        if waiting and unavailable is None:
+            budget = max(0, host.shared_capacity - policy.available)
+            free = max(0, host.shared_headroom - policy.available)
+            selected, reserved, _, queue_reason = heavy.choose(active, budget, policy.slots, now, free)
+            pressure_reason = heavy.wait_reason(host, policy, shared=True)
+            if paused["reason"] is not None:
+                selected, queue_reason = None, f"paused by root: {paused['reason']}"
+        for path, row in rows:
             state = "running" if row["running"] else "queued"
             if row["control"]["cancelled"]:
                 state = "cancelling"
             elapsed = (now - row["started_ns"] if row["running"] else heavy.waited_ns(row, paused, now))
             label = "elapsed" if row["running"] else "wait"
+            detail = ""
+            if state == "queued":
+                position = waiting.index(path)
+                if unavailable is not None:
+                    reason = unavailable
+                    memory = "budget=unavailable free=unavailable"
+                else:
+                    reason = queue_reason
+                    if selected == path and not pressure_reason:
+                        reason = "eligible under current snapshot"
+                    elif selected is not None and selected != path:
+                        reason = f"waiting for {request_id(selected)}; {queue_reason}"
+                    elif position:
+                        reason = f"behind {request_id(waiting[0])}; {queue_reason}"
+                    if pressure_reason:
+                        reason += f"; {pressure_reason}"
+                    if row["need"] > free:
+                        reason += "; need exceeds live free memory"
+                    if reserved + row["need"] > budget:
+                        reason += "; declared needs exceed shared budget"
+                    memory = (f"reserved={reserved / heavy.MIB:g}MiB budget={budget / heavy.MIB:g}MiB "
+                              f"free={free / heavy.MIB:g}MiB")
+                detail = (f" position={position + 1}/{len(waiting)} reason={json.dumps(reason)} "
+                          f"{memory} waiting_behind={len(waiting) - position - 1}")
             print(f"{request_id(path)} {row['job'] or '-'} {row['command']} "
                   f"{row['need'] / heavy.MIB:g}MiB {'yes' if row['exclusive'] else 'no'} "
-                  f"{state} {label}={max(0, elapsed) // 10**9}s yes(kernel-lock)")
+                  f"{state} {label}={max(0, elapsed) // 10**9}s yes(kernel-lock){detail}")
 
 
 def pause(reason):

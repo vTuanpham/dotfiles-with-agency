@@ -49,6 +49,32 @@ def test_result_acknowledges_only_snapshot_completions(monkeypatch, tmp_path, ca
     assert [event["kind"] for _, event in pending(job)] == ["question", "turn_completed"]
 
 
+@pytest.mark.parametrize("archived", [False, True])
+def test_worker_result_is_read_only_and_never_acknowledges(monkeypatch, tmp_path, capsys, archived):
+    job = tmp_path / "owner" / "peer"
+    job.mkdir(parents=True)
+    if not archived:
+        (job / "state.json").write_text("{}")
+        emit(job, "message", text="peer report")
+        emit(job, "turn_completed")
+    else:
+        monkeypatch.setattr(cli.retirement, "archived_result", lambda *_: "peer report")
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+    monkeypatch.setenv("AGENT_BRIDGE_WORKER", "1")
+    monkeypatch.setattr(cli, "resolve_job", lambda _: job)
+    monkeypatch.setattr(sys, "argv", ["agent-bridge", "result", "owner/peer"])
+
+    def forbid_lock(*_):
+        pytest.fail("a worker's result read must not open root.lock or mutate owner state")
+
+    monkeypatch.setattr(cli.owner_binding, "access", forbid_lock)
+    cli.main()
+    assert capsys.readouterr().out == "peer report\n"
+    assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()} == before
+    if not archived:
+        assert [event["kind"] for _, event in pending(job)] == ["turn_completed"]
+
+
 def test_owner_ack_cli_is_scoped_and_cannot_ack_undisplayed_events(monkeypatch, tmp_path):
     from agent_bridge import watch
 

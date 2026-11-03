@@ -3,7 +3,7 @@ import json
 import os
 import sys
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from pathlib import Path
 
 from agent_models import reference
@@ -265,7 +265,17 @@ def main():
     sub = p.add_subparsers(dest="command", required=True, metavar="COMMAND")
     g = sub.add_parser("guide", help="read workflow, model, subscription, source or status guidance")
     g.add_argument("topic", nargs="?",
-                   choices=("workflow", "status"), help="omit to read workflow")
+                   choices=("workflow", "status", "messages"), help="omit to read workflow")
+    msg = sub.add_parser("message", help="native messages between existing sessions (no job takeover)")
+    actions = msg.add_subparsers(dest="message_action", required=True)
+    actions.add_parser("whoami", help="print this agent's native reply address")
+    actions.add_parser("list", help="list native tasks, active sessions and registered relays as JSON")
+    actions.add_parser("register", help="register this agy session's private native API connection")
+    send = actions.add_parser("send", help="send once through the recipient's native agent-message API")
+    send.add_argument("target", help="HARNESS:SESSION_ID; exact native ID, never a title")
+    body = send.add_mutually_exclusive_group(required=True)
+    body.add_argument("--text", help="message text")
+    body.add_argument("--text-file", help="UTF-8 text path, or '-' for explicit stdin")
     sub.add_parser(
         "sessions", help="export native job identities as JSON (no transcripts)",
         description="Export native job identities across owners as JSON (no transcript data).",
@@ -464,6 +474,23 @@ def main():
     runner_fd = None
     root_guard = ExitStack()
     try:
+        if a.command == "message":
+            from . import messages
+
+            if a.message_action == "whoami":
+                print(messages.identity())
+                return
+            if a.message_action == "list":
+                data = messages.sessions()
+            elif a.message_action == "register":
+                from .agy_messages import register
+
+                data = register()
+            elif a.message_action == "send":
+                text = read_prompt(a.text_file) if a.text_file else a.text
+                data = messages.send(a.target, text)
+            print(json.dumps(data, allow_nan=False))
+            return
         if a.command == "waiting":
             from .status_model import DeclaredWait
 
@@ -521,7 +548,7 @@ def main():
                         print(f"{a.owner}/{label} " + json.dumps(raw, sort_keys=True))
             return
         if a.command == "guide":
-            print(guide("status" if a.topic == "status" else "overview"))
+            print(guide(a.topic if a.topic in {"status", "messages"} else "overview"))
             return
         if a.command == "status":
             snapshot = status.Collector(JOBS).collect(a.owner, storage=a.storage,
@@ -609,14 +636,15 @@ def main():
             return
         if a.command == "result":
             job = resolve_job(a.job)
-            with owner_binding.access(job.parent, root_identity()):
+            worker = bool(os.environ.get(WORKER_FLAG))
+            with nullcontext() if worker else owner_binding.access(job.parent, root_identity()):
                 # Snapshot completions before reading; a concurrently arriving turn stays pending.
                 completion = max((end for end, event in event_lines(job)
                                   if event.get("kind") == "turn_completed"), default=0)
                 print(result_text(job, a.all) if (job / "state.json").exists() else
                       retirement.archived_result(ARCHIVE, f"{job.parent.name}/{job.name}"))
                 sys.stdout.flush()
-                if completion and not os.environ.get(WORKER_FLAG):
+                if completion and not worker:
                     acknowledge(job, completion)
             return
         job = resolve_job(a.job)

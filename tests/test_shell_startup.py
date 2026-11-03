@@ -1,12 +1,18 @@
 """Check Bash/Zsh startup without launching apps or printing credentials."""
 
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 shell_root = root / "shell"
 checks = r'''
+if [ -n "${BASH_VERSION-}" ] && [ -s "$NVM_DIR/nvm.sh" ]; then
+    shell_node_before=$(command -v node)
+    nvm --version >/dev/null || exit 37
+    [ "$(command -v node)" = "$shell_node_before" ] || exit 38
+    declare -F nvm_version >/dev/null || exit 39
+fi
 if [ -n "${ZSH_VERSION-}" ]; then
     for shell_prompt_hook in "${precmd_functions[@]}"; do "$shell_prompt_hook"; done
     command -v _zsh_highlight >/dev/null || exit 33
@@ -52,6 +58,8 @@ for shell in ("bash", "zsh"):
     assert "shell startup checks passed" in result.stdout
     assert "Hello" not in result.stdout and "Reloading" not in result.stdout
     assert "unhandled ZLE widget" not in result.stderr, "Zsh plugin widget initialization failed"
-    quiet = subprocess.run([shell, "-c", '. "$DOTFILES_TEST_RC"'], env=environment, capture_output=True, text=True, timeout=10)
-    assert quiet.returncode == 0 and quiet.stdout == "" and quiet.stderr == "", shell + " non-interactive startup was not quiet"
+    quiet = subprocess.run([shell, "-c", '. "$DOTFILES_TEST_RC"'], env=environment,
+                           capture_output=True, text=True, timeout=10)
+    assert quiet.returncode == 0 and quiet.stdout == "" and quiet.stderr == "", (
+        shell + " non-interactive startup was not quiet")
     print(shell + ": reload preserves cwd/PATH, required tools resolve, non-interactive startup is quiet")

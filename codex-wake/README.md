@@ -76,6 +76,9 @@ open and fetches only watched IDs through the 0.166.0 experimental
 [`thread/items/read` contract](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L1875).
 Each read requests one item because its captured output can expand near the
 client's 8 MiB response limit. Completed output is cached while waiting for idle.
+The API reads persisted history: live Codex 0.166.0 can return an empty result
+for a running terminal. The observer keeps waiting for its completion to be
+persisted, rather than treating an empty result as a missing command or success.
 Quiet polls back off from 2 to 4, 8, 16 and then 30 seconds, resetting on progress.
 The [documented event stream](https://learn.chatgpt.com/docs/app-server#events)
 requires starting/resuming a thread; 0.166.0 has no passive subscribe request.
@@ -106,16 +109,17 @@ not the same answer again). A notice states how many hits are new and how many t
 the probe's own output is never pasted into it. The closing notice is the ordinary one for a finished command.
 
 Delivery waits for the session to be idle, like every other notice here. Live delivery needs the installed hooks and reads
-the command's output while it runs. If a Codex build does not return that output until the command ends, the monitor
+the command's output while it runs. Codex 0.166.0 can omit running items from
+persisted history, providing only the closing notification on that path.
+If a Codex build does not return that output until the command ends, the monitor
 still stops at its limits and the one closing notice carries every hit in its log. Check with a short run (`--ttl 1m
 --cooldown 30s` and a probe that is true) and see whether the first notice arrives before the command ends.
 
 ## Why this mechanism
 
-Checked against installed **codex-cli 0.166.0**, its `--help`, app-server help and
-feature list, current official docs, and versioned upstream source. A live TUI
-payload could not be captured from this worker; tests use documented/source-derived
-shapes. Installation remains a user step pending the live checks below.
+The contracts below target **codex-cli 0.166.0**. On upgrades, check the
+installed CLI's generated app-server schemas, help and official documentation
+before relying on these integration details.
 
 | Candidate | Finding | Decision |
 | --- | --- | --- |
@@ -193,9 +197,8 @@ Receipt acceptance proves submission, not completion of the next turn or task.
 From this directory: `uv run --locked pytest` and
 `uv run --locked ruff check src tests`.
 
-This worker cannot access an interactive Codex TUI or its user systemd bus;
-`codex-wake check` returned an unavailable-control-socket `OSError`. After the
-user installs/trusts the snapshot, perform these checks in that TUI:
+Verify automatic delivery in the target TUI after installing and trusting the
+snapshot. Use these integration checks in addition to unit tests:
 
 1. Have Codex launch `sh -c 'sleep 10; echo wake-parity-check; exit 7'` normally
    with `exec_command` and `yield_time_ms=1000`, then end its model turn. Confirm

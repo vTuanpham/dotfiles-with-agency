@@ -96,9 +96,14 @@ without placeholder widgets or changes to either installed plugin. See the
 [highlighting instructions](https://github.com/zsh-users/zsh-syntax-highlighting/blob/master/INSTALL.md)
 and [Zsh's public hook API](https://zsh.sourceforge.io/Doc/Release/User-Contributions.html#Manipulating-Hook-Functions).
 
+Zsh pre-resolves `getent` for `compaudit` and uses `command -v` for prompt
+discovery. Uncached lookups through Zsh's `commands` table can otherwise scan
+every inherited Windows PATH directory during startup. Completion security
+audits and normal command completion remain enabled; PATH entries are retained.
+
 ## Node and NVM
 
-Bash exposes NVM with its documented `--no-use` option, preserving the inherited
+Bash loads NVM on the first `nvm` command with its documented `--no-use` option, preserving the inherited
 Node executable: `~/.local/bin/{node,npm,npx}` link to the newest NVM install
 (`./install.sh --apply npm` creates or re-points them), so tool installers can't
 silently replace the Node on PATH. Node uses Ubuntu's updated CA store through `--use-openssl-ca`

@@ -166,3 +166,17 @@ def test_message_limit_is_utf8_bytes_and_checked_before_connecting(transport):
 def test_explicit_home_wins_over_environment(monkeypatch):
     monkeypatch.setenv("CODEX_HOME", "/another-home")
     assert client.Wake("target-thread", "/explicit-home").home == Path("/explicit-home")
+
+
+def test_peer_message_preserves_sender_context_and_validates_recipient_receipt(transport):
+    client.Wake("sender-thread").send("peer message", recipient="target-thread")
+    args = transport[1][0].requests[-1]["params"]
+    assert args["threadId"] == "sender-thread"
+    assert args["arguments"]["threadId"] == "target-thread"
+    assert "model" not in args["arguments"]
+
+
+def test_misdirected_peer_receipt_never_retries(transport):
+    with pytest.raises(RuntimeError, match="different thread"):
+        client.Wake("sender-thread").send("peer message", recipient="another-target")
+    assert len(transport[1]) == 1

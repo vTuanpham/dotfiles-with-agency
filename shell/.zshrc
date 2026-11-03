@@ -16,6 +16,8 @@ zstyle ':completion:*' file-sort name
 zstyle ':completion:*' list-dirs local
 
 # Autocomplete owns compinit and its widgets; use native completion if absent.
+# Pre-resolve compaudit's lookup instead of hashing every Windows PATH directory.
+hash getent 2>/dev/null || :
 if [[ -r "$HOME/.local/share/zsh/plugins/zsh-autocomplete/zsh-autocomplete.plugin.zsh" ]]; then
     source "$HOME/.local/share/zsh/plugins/zsh-autocomplete/zsh-autocomplete.plugin.zsh"
 else
@@ -31,7 +33,7 @@ if [[ -r "$HOME/lib/oracle-cli/lib/python3.12/site-packages/oci_cli/bin/oci_auto
 fi
 [[ ! -s "$HOME/.bun/_bun" ]] || source "$HOME/.bun/_bun"
 
-if (( $+commands[starship] )); then
+if command -v starship >/dev/null 2>&1; then
     eval "$(starship init zsh)"
 fi
 if [[ "$TERM" == xterm-ghostty && -n "$WSL_DISTRO_NAME" && -r "$HOME/.local/share/ghostty/shell-integration/zsh/ghostty-integration" ]]; then

@@ -107,6 +107,8 @@ def managed(command):
 def command_item(call, target, turn, item_id):
     # One captured output can expand to 6 MiB in JSON; keep reads below MAX_RESPONSE (8 MiB).
     rows = call("thread/items/read", {"threadId": target, "turnId": turn, "itemIds": [item_id]}).get("data")
+    if rows == []:
+        return None  # Running terminals are not necessarily persisted yet (Codex 0.166.0).
     if not isinstance(rows, list) or len(rows) != 1:
         raise RuntimeError("An observed Codex command item disappeared")
     row = rows[0]
@@ -173,6 +175,8 @@ def observe(job, folder):
                 return
             for item_id in pending - completed.keys():
                 item = command_item(call, target.thread, turn, item_id)
+                if item is None:
+                    continue
                 if item["status"] != "inProgress":
                     completed[item_id] = item
                     progress = True

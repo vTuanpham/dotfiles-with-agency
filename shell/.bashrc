@@ -39,9 +39,13 @@ if ! shopt -oq posix; then
     fi
 fi
 
-# Expose nvm without silently switching the inherited Node executable.
+# Load nvm on first use; Node/npm already resolve through their stable links.
 if [ -s "$NVM_DIR/nvm.sh" ] && ! command -v nvm >/dev/null 2>&1; then
-    . "$NVM_DIR/nvm.sh" --no-use
+    nvm() {
+        unset -f nvm
+        . "$NVM_DIR/nvm.sh" --no-use || return
+        nvm "$@"
+    }
 fi
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ] && [ -z "${HOMEBREW_PREFIX-}" ]; then
     eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"

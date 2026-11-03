@@ -18,7 +18,8 @@ Pick the command
          Browser and screen tools are blocked until they hand it back.
 
 Session isolation
-  Codex (CODEX_THREAD_ID) and Claude Code (CLAUDE_CODE_SESSION_ID) are identified automatically. Other
+  Codex (CODEX_THREAD_ID), Claude Code (CLAUDE_CODE_SESSION_ID), Antigravity
+  (ANTIGRAVITY_CONVERSATION_ID) and OpenCode 2.2.2 (OPENCODE_SESSION_ID) are identified automatically. Other
   harnesses must supply AGENT_BATON_SESSION with a unique, nonsecret conversation id on every call
   (create one once, then reuse it in this conversation); an explicit value overrides the automatic one.
   Example: AGENT_BATON_SESSION=conversation-UUID agent-baton question "Which scope?"

@@ -1,7 +1,16 @@
 ## Model strength (dated reference)
-Checked 2026-10-30 for qualitative selection advice. Benchmark retrieval dates belong to the generated sections below. Read with `model-guide read models`. User/project instructions outrank this advice. A listing does not prove included usage.
+Checked 2026-11-03 for selection/context guidance; unchanged model-positioning advice retains its 2026-10-30 review. Benchmark retrieval dates belong to the generated sections below. Read with `model-guide read models`. User/project instructions outrank this advice. A listing does not prove included usage.
 
 Read [the subscription guide](subscriptions.md) (`model-guide read subscriptions`) only when the choice depends on a plan, allowance or retention policy. Use live commands for account state; this document records no account balances or subscriptions.
+
+Preserve explicit choices of harness, provider, model and variant, including free/paid variants
+and effort. Similar names across providers are different selections; free variants, included
+subscription allowances and separately billed usage are different cases. The
+[subscription guide](subscriptions.md) owns those distinctions.
+For a native chat/availability check, test the matching CLI/session with the requested selection.
+A catalog or service/API result establishes only its own context. For example, OpenCode's
+`api GET /api/model` describes that service; an API error does not prove a fresh standalone CLI
+session will fail or justify changing the requested provider/model/variant.
 
 ### Four separate things: do not infer one from another
 1. **Class** is where a model sits in its vendor's lineup. It is a naming and positioning rank, not a score. This guide always says "class" for it; "tier" means a subscription level only.

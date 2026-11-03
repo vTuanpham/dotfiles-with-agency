@@ -128,6 +128,15 @@ def test_native_antigravity_conversation_does_not_use_inherited_codex_identity(m
     assert infer() == Context("agy")
 
 
+def test_native_opencode_session_does_not_use_inherited_codex_identity(monkeypatch):
+    monkeypatch.setenv("OPENCODE", "1")
+    monkeypatch.setenv("OPENCODE_SESSION_ID", "ses_exact")
+    monkeypatch.setenv("CODEX_THREAD_ID", "coordinator")
+    assert infer() == Context("opencode", "ses_exact")
+    monkeypatch.delenv("OPENCODE_SESSION_ID")
+    assert infer() == Context("opencode")
+
+
 def test_explicit_identity_override_does_not_reuse_detected_models(monkeypatch):
     monkeypatch.setenv("CODEX_THREAD_ID", SESSION)
     codex_db(Path(os.environ["CODEX_HOME"]) / "state_5.sqlite")

@@ -78,6 +78,13 @@ def test_native_boundary_rejects_coercion_and_secret_payloads(state):
     assert not core.BATONS.exists()
 
 
+def test_opencode_call_replaces_inherited_native_identity(state):
+    env = mcp.environment("opencode:ses_exact")
+    assert core.session(env) == "opencode:ses_exact"
+    assert "CODEX_THREAD_ID" not in env
+    assert env["OPENCODE"] == "1" and env["OPENCODE_SESSION_ID"] == "ses_exact"
+
+
 def test_question_arguments_stay_data_and_preserve_multiple_selection(monkeypatch):
     captured = []
 

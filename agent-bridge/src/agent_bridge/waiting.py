@@ -57,18 +57,21 @@ def write(job, value):
                 state["waiting"] = asdict(value)
                 core.atomic_save(job / "state.json", state)
     except OSError as error:
-        if error.errno not in (errno.EACCES, errno.EPERM, errno.EROFS):  # a sandbox says one of these (errno 30 is EROFS)
+        if error.errno not in (errno.EACCES, errno.EPERM, errno.EROFS):
             raise
-        # A worker in the command sandbox may write only its out directory, not state.lock: leave the declaration there for
-        # the host side to read (`declared`), never widening what the worker may write.
-        core.atomic_save(job / DROP, {"at": core.stamp(), "waiting": None if value is None else asdict(value)})
+        # The sandbox permits only out/: leave a declaration for the host without widening permissions.
+        core.atomic_save(job / DROP, {
+            "at": core.stamp(), "waiting": None if value is None else asdict(value),
+        })
         return
     (job / DROP).unlink(missing_ok=True)  # an owner-side write supersedes any older drop
 
 
 def declared(job, state):
-    """The worker's current declaration: the state's, or a newer one the sandboxed worker left in `out/`. Strictly decoded by
-    the caller; a missing, oversized, non-regular or unreadable drop is ignored."""
+    """The state's declaration, or a newer one the sandboxed worker left in `out/`.
+
+    Strictly decoded by the caller; a missing, oversized, non-regular or unreadable drop is ignored.
+    """
     current = state.get("waiting")
     try:
         fd = os.open(job / DROP, os.O_RDONLY | os.O_NOFOLLOW)

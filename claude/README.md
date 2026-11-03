@@ -274,6 +274,10 @@ ln -s ~/dotfiles-with-agency/claude/.claude/mods ~/.claude/mods
 `"env": { "CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/wake" }`, and an
 interactive session reloads it when its files change, so edits here apply live.
 
+`agent-bridge message` uses Claude's existing native peer messaging socket,
+independently of Wake. Setup, delivery receipts and limits belong to
+`agent-bridge guide messages`; no extra mod or UI input is involved.
+
 - `/wake` summarises; `/wake legend` explains the crew; `/wake tour` plays every landscape for 12 s, a whole day in each; `/wake scene <city|harbor|beach|mountains|countryside|forest|desert|tundra|auto>`
   pins a landscape to the current place; `/wake place <city|auto>` overrides the
   IP-based location (GeoJS, then ipwho.is; weather from Open-Meteo; all keyless).
@@ -289,6 +293,15 @@ interactive session reloads it when its files change, so edits here apply live.
   If every test file reports "did not load" with child exit code 0, check sandbox
   restrictions on the child harness; rerun the same command outside the sandbox
   when authorized. Type checking does not replace the runtime suite.
+- For a focused runtime check: `python3 test.py tests/logos.test.ts` (multiple files
+  are accepted; no files runs the full suite). It stages a private disposable
+  copy containing only those test files, keeps shared helpers, and uses the same
+  native `claude plugin test` kit and exit status. The live mod is untouched.
+  On hook failures, read the runner's **the engine reported:** block for the
+  inner missing implementation; stub every mods API call the hook uses.
+  [The test-kit guide](https://code.claude.com/docs/en/plugins/mods/test) documents
+  these stubs. Keep wall-clock limits so hung I/O still fails; use focused runs
+  and host admission for full suites rather than raising limits with host load.
 - `bun dev/showcase.ts`, `bun dev/dock.ts` and `bun dev/crew-life.ts` render the animation frames behind the README GIFs
   ([docs/tools](../docs/tools/README.md) turns them into images).
 - `bun dev/crew.ts <codex|agy|claude|opencode>` renders the four sprite classes over every landscape;

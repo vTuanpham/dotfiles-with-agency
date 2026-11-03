@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="410" viewBox="0 0 1040 410" role="img" aria-labelledby="title desc">
   <title id="title">Tools around an agent session</title>
-  <desc id="desc">Inbox carries chat, commands and images between the human and existing sessions. Baton carries questions and secret handoffs. Native delegation stays within a harness; Bridge runs workers in other harnesses. Model Guide, account observations, resource admission and persistent labs support the work.</desc>
+  <desc id="desc">Inbox carries chat, commands and images between the human and existing sessions. Baton carries questions and secret handoffs. Native delegation stays within a harness; Bridge runs workers in other harnesses. Bridge also sends native peer messages to existing sessions independently of jobs. Model Guide, account observations, resource admission and persistent labs support the work.</desc>
   <defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto-start-reverse"><path d="M0 0L7 3.5L0 7" fill="none" stroke="#737f7c" stroke-width="1.2"/></marker></defs>
   <rect width="1040" height="410" fill="#faf9f6"/>
   <g font-family="Arial, Helvetica, sans-serif" fill="#263733">
@@ -10,8 +10,8 @@
     <text x="36" y="203" font-size="14" fill="#68766f">PC or phone</text>
     <text x="436" y="177" font-size="23" font-weight="700">Root session</text>
     <text x="436" y="203" font-size="14" fill="#68766f">Any supported harness</text>
-    <text x="859" y="177" font-size="23" font-weight="700">Workers</text>
-    <text x="859" y="203" font-size="14" fill="#68766f">Native or cross-harness</text>
+    <text x="845" y="177" font-size="23" font-weight="700">Agents</text>
+    <text x="845" y="203" font-size="12.5" fill="#68766f">Workers · existing sessions</text>
     <path d="M151 148H397" fill="none" stroke="#737f7c" stroke-width="1.4" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
     <text x="274" y="131" text-anchor="middle" font-size="18" fill="#23786f">Inbox</text>
     <text x="274" y="172" text-anchor="middle" font-size="12" fill="#68766f">chat · commands · images</text>
@@ -21,6 +21,9 @@
     <path d="M615 167H819" fill="none" stroke="#737f7c" stroke-width="1.4" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
     <text x="717" y="145" text-anchor="middle" font-size="18" fill="#506b90">Native / Bridge</text>
     <text x="717" y="194" text-anchor="middle" font-size="12" fill="#68766f">same / other harness</text>
+    <path d="M615 238H819" fill="none" stroke="#737f7c" stroke-width="1.4" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <text x="717" y="222" text-anchor="middle" font-size="16" fill="#65598a">Bridge messages</text>
+    <text x="717" y="261" text-anchor="middle" font-size="12" fill="#68766f">native APIs · exact recipient</text>
     <path d="M36 282H1004" stroke="#d3d8d1"/>
     <circle cx="41" cy="317" r="4" fill="#23786f"/>
     <text x="55" y="323" font-size="18" font-weight="700">Model Guide</text>

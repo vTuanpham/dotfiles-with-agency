@@ -1,6 +1,6 @@
 # agent-bridge
 
-[← Packages](../README.md#packages) · **uv tool** (editable) · [Install](#install) · [When a worker needs you](#when-a-worker-needs-you) · [Restore](#restore-and-root-access) · [Model references](#model-references)
+[← Packages](../README.md#packages) · **uv tool** (editable) · [Install](#install) · [Direct messages](#direct-session-messages) · [When a worker needs you](#when-a-worker-needs-you) · [Restore](#restore-and-root-access) · [Model references](#model-references)
 
 A cross-harness CLI that lets a root coding agent (Codex, Antigravity/agy, Claude Code or OpenCode) hand work to workers of
 the other harnesses: start a job from a written brief, watch it live, steer or interrupt it, and review its result.
@@ -13,6 +13,12 @@ with `result`, but purged sessions cannot be restored. See `agent-bridge guide w
 Jobs persist under `~/.local/state/agent-bridge`, so another root can resume or take over, and
 workers can message each other with `TO <peer>:`. Plain worker messages, including ones addressed `TO root:`,
 go to the coordinator as info.
+
+`agent-bridge message` adds direct native messages between independent sessions,
+without creating jobs or taking over another root's workers. Read
+`agent-bridge guide messages` for discovery, reply addresses, native transports,
+native API setup and receipt limits. It uses agent-message APIs, with no user-chat
+fallback. The job lifecycle and existing worker delivery remain unchanged.
 
 To take over an existing owner namespace from a different known root, run
 `agent-bridge handoff <owner>` once from the new root. The previous root can
@@ -34,7 +40,7 @@ session ID. Other harnesses can supply `AGENT_BRIDGE_ROOT_HARNESS` and
 `AGENT_BRIDGE_ROOT_SESSION` for that invocation; older jobs keep an unspecified
 parent rather than guessing one. Workers cannot export other owners' inventory.
 
-![The root briefs workers across four harnesses, then reads their persistent job state to handle blockers and verify results.](../docs/images/agent-bridge-flow.gif)
+![The root delegates work across harnesses and verifies persistent job results. A separate native messaging path connects existing Codex, Claude Code, agy and OpenCode sessions by exact address, steering where supported without creating jobs or granting approval.](../docs/images/agent-bridge-flow.gif)
 
 In Claude Code, [Wake](../claude/README.md#crew-and-quota-rows) draws these jobs as crew, with
 worker/model/effort labels and an account quota row.
@@ -58,6 +64,24 @@ edges include stable IDs, direction, counts and last-activity timestamps.
 Poll about every ten seconds, with storage scans on demand. Reading status never
 acknowledges events. A streaming diff mode awaits a reliable cross-source cursor
 protocol.
+
+## Direct session messages
+
+Ask another active session for a review, share a finding or coordinate a shared
+resource through its native agent-message API:
+
+```sh
+agent-bridge message whoami
+agent-bridge message list
+agent-bridge message send claude:NATIVE_ID --text 'Can you review the shared change?'
+agent-bridge guide messages
+```
+
+This path is available to roots and workers in all four harnesses, independently
+of managed jobs. Use the exact native recipient address. Steering is used where
+the native API supports it; a send receipt does not prove the message was read.
+Messages remain peer content and grant no user approval. The
+[messaging guide](src/agent_bridge/guide/messages.md) owns setup and transport limits.
 
 ## When a worker needs you
 
@@ -84,7 +108,8 @@ Routine messages and slow/stall notices remain visible; `--include-info` also
 wakes for them. Group policies still apply with that flag; overdue unread
 reminders wake without it. Queue waits and retry status never wake the root.
 Re-arming cannot discard a completion. Printing is not acknowledgement:
-`agent-bridge result <owner>/<job>` acknowledges that job's completions, while
+`agent-bridge result <owner>/<job>` acknowledges that job's completions for roots.
+Workers read peer results without taking the root lock or acknowledging them.
 `agent-bridge ack <owner>` (or `<owner>/<job>`) acknowledges urgent events already
 displayed by watch. Handle questions and errors before acknowledging them. New
 events arriving after display stay pending. Use a unique owner per root; its
@@ -181,7 +206,7 @@ Allow the root to execute the bridge CLI outside its sandbox, read the shared
 skill and read/write the jobs directory through its harness's permission controls.
 Keep the resulting grants in live machine-local files, outside this public
 repository. Follow `agent-bridge guide workflow` for the workflow and `agent-bridge start --help` for backend notes.
-Workers carry `AGENT_BRIDGE_WORKER`, which the CLI refuses, so root
+Workers carry `AGENT_BRIDGE_WORKER`, which blocks job launches, so root
 access does not grant workers permission to start more jobs. Worker sandboxing
 remains in place.
 

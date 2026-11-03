@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="510" viewBox="0 0 1040 510" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="550" viewBox="0 0 1040 550" role="img" aria-labelledby="title desc">
   <title id="title">Model selection from native controls and domain evidence</title>
-  <desc id="desc">Native model identities and effort ranges, benchmark domain scores with cost and time, and local account observations inform a task shortlist. The agent chooses a supported model and effort, using native delegation or Bridge for another harness. Account observations do not establish the selected session's access.</desc>
+  <desc id="desc">Native model identities and effort ranges, benchmark domain scores with cost and time, and local account observations inform a task shortlist. Preserve the requested harness, provider, model, variant and effort. Free variants and plan allowances differ. Check chat availability in the matching native session; a service API result describes only that context. Unknown billing stays unverified.</desc>
   <defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="none" stroke="#737f7c" stroke-width="1.2"/></marker></defs>
-  <rect width="1040" height="510" fill="#faf9f6"/>
+  <rect width="1040" height="550" fill="#faf9f6"/>
   <g font-family="Arial, Helvetica, sans-serif" fill="#263733">
     <text x="36" y="38" font-size="11" letter-spacing="2.4" fill="#68766f">MODEL GUIDE</text>
     <text x="36" y="79" font-family="Georgia, serif" font-size="32">Choose for the work.</text>
@@ -12,7 +12,7 @@
     <text x="60" y="172" font-size="20" font-weight="700">Native catalogs</text>
     <text x="36" y="205" font-size="14">Codex · Claude · agy · OpenCode</text>
     <text x="36" y="232" font-size="14" fill="#68766f">Exact IDs, resolved aliases, efforts</text>
-    <text x="36" y="254" font-size="12" fill="#68766f">No prompt or inference call</text>
+    <text x="36" y="254" font-size="12" fill="#68766f">A listing does not prove access or billing</text>
     <circle cx="377" cy="166" r="5" fill="#506b90"/>
     <text x="394" y="172" font-size="20" font-weight="700">Domain evidence</text>
     <text x="370" y="205" font-size="14">Arena · LiveBench · AA · Vals</text>
@@ -36,6 +36,8 @@
     <text x="807" y="370" font-size="18" font-weight="700">Agent Bridge</text>
     <text x="807" y="396" font-size="14" fill="#68766f">To another harness</text>
     <path d="M36 449H1004" stroke="#d3d8d1"/>
-    <text x="36" y="480" font-size="13" fill="#68766f">Generated coverage keeps unmatched models visible. Missing measurements and effort ranges stay unknown.</text>
+    <text x="36" y="479" font-size="13" fill="#68766f">Preserve the requested harness, provider, model, variant + effort. Free variants and plan allowances differ.</text>
+    <text x="36" y="504" font-size="13" fill="#68766f">Verify chat in the matching native session. A service/API error describes that context; unknown billing stays unverified.</text>
+    <text x="36" y="529" font-size="12" fill="#68766f">Missing measurements and effort ranges stay unknown. Generated coverage keeps unmatched models visible.</text>
   </g>
 </svg>

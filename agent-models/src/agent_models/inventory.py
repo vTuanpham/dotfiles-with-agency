@@ -112,7 +112,7 @@ def parse_opencode(raw):
         variants = model.get("variants")
         if type(variants) is not list or any(type(v) is not dict for v in variants):
             raise ValueError("invalid OpenCode model variants")
-        tier = "free-logged" if logged_free(identifier) else "free" if "free" in identifier else "paid"
+        tier = "free-logged" if logged_free(identifier) else "free" if "free" in model["id"] else "unverified"
         models.append({"id": identifier, "model": model["id"],
                        "efforts": efforts([v.get("id") for v in variants]),
                        "effort_control": "variant", "listing_tier": tier,
@@ -184,7 +184,10 @@ def catalog(backend, account=None):
     if len({m["id"] for m in models}) != len(models):
         raise ValueError("duplicate native model identity")
     return {"backend": backend, "account": account, "observed": datetime.now(UTC).isoformat(),
-            "models": models, "scope": "native CLI profile inventory; not session entitlement",
+            "models": models,
+            "scope": ("native OpenCode service catalog for the current directory; "
+                      "not a standalone CLI session probe or entitlement check") if backend == "opencode"
+                     else "native CLI profile inventory; not session entitlement",
             "source": {"codex": "codex debug models", "claude": "Claude stream initialization",
                        "agy": "agy models", "opencode": "opencode api GET /api/model"}[backend],
             "effort_scope": "null means the listing does not publish selectable efforts; "

@@ -8,6 +8,8 @@ def isolated_native_profiles(monkeypatch, tmp_path):
         "CLAUDECODE",
         "CLAUDE_CODE_SESSION_ID",
         "ANTIGRAVITY_CONVERSATION_ID",
+        "OPENCODE",
+        "OPENCODE_SESSION_ID",
         "AGENT_BRIDGE_WORKER",
         "AGENT_BRIDGE_JOB",
         "AGENT_BRIDGE_ROOT_HARNESS",

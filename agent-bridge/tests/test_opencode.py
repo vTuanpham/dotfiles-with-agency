@@ -117,6 +117,18 @@ def test_opencode_steer_survives_spawn_failure_and_is_redelivered(monkeypatch, t
     assert json.loads(state_path.read_text())["inflight"] is None
 
 
+@pytest.mark.parametrize("model", [
+    "opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free",
+    "opencode/minimax-m3.1-flash-free", "opencode-go/gpt-6-luna",
+])
+def test_requested_model_variant_uses_the_standalone_native_cli(monkeypatch, tmp_path, model):
+    monkeypatch.setattr(opencode.Path, "home", lambda: tmp_path / "home")
+    st = {**state(tmp_path), "model": model, "effort": None}
+    command, _ = opencode.command(st, tmp_path / "job", "Reply only OK")
+    assert "--standalone" in command
+    assert command[command.index("-m") + 1] == model
+
+
 def test_fixture_events_map_messages_tool_commands_and_usage(tmp_path):
     st = state(tmp_path)
     fixture = Path(__file__).parent / "fixtures" / "opencode.ndjson"

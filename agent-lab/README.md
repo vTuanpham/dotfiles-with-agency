@@ -49,7 +49,7 @@ Files are ordinary local files, not a sandbox, secret store or backup.
 Provenance includes the originating directory and available Git root/branch/commit,
 harness, session, model and effort. Creator and latest runner remain separate.
 Detection uses the calling Codex thread's native state, Claude's exact session
-and latest assistant model, Antigravity's exported conversation ID, or Bridge's
+and latest assistant model, OpenCode's native shell session ID, Antigravity's exported conversation ID, or Bridge's
 own worker record across all four harnesses.
 It never picks a nearby session or a global default. Explicit `--harness`,
 `--session`, `--model`, `--effort` or corresponding `AGENT_LAB_*` variables are

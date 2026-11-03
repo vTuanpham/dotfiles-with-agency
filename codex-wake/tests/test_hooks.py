@@ -45,7 +45,7 @@ def host(monkeypatch, tmp_path):
                     "nextCursor": None}
         assert method == "thread/items/read"
         return {"data": [{"turnId": "turn", "item": value} for value in data["items"]
-                         if value["id"] in params["itemIds"]]}
+                         if value["id"] in params["itemIds"] and not value.get("unpersisted")]}
 
     @contextmanager
     def connect(home):
@@ -261,6 +261,25 @@ def test_observer_reuses_connection_reads_only_watched_items_and_backs_off(host,
     assert all(method != "thread/items/list" for method, _ in data["calls"])
     assert all(params["itemIds"] == ["command"] for method, params in data["calls"]
                if method == "thread/items/read")
+
+
+def test_running_terminal_can_be_absent_from_persisted_history_until_completion(host, monkeypatch):
+    target, data, messages, _ = host
+    folder = hooks.directory(target)
+    data["items"] = [item(unpersisted=True)]
+    waits = []
+
+    def finish(seconds):
+        waits.append(seconds)
+        if len(waits) == 3:
+            data["items"] = [item(status="failed", exitCode=7, aggregatedOutput="native completion")]
+
+    monkeypatch.setattr(hooks.time, "sleep", finish)
+    hooks.observe({"thread": "root", "home": "/codex-home", "generation": hooks.epoch(folder),
+                   "turn": "turn", "items": ["command"]}, folder)
+    assert waits == [2, 4, 8]
+    assert len(messages) == 1 and "exit status 7" in messages[0]
+    assert next(folder.glob("*.log")).read_text() == "native completion"
 
 
 def test_stop_page_budget_is_bounded():

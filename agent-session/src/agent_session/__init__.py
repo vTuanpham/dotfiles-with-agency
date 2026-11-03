@@ -10,6 +10,7 @@ from collections.abc import Mapping
 
 HARNESSES = ("claude", "agy", "codex", "opencode")
 VARIABLES = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "ANTIGRAVITY_CONVERSATION_ID", "CODEX_THREAD_ID",
+             "OPENCODE", "OPENCODE_SESSION_ID",
              "AGENT_BRIDGE_ROOT_HARNESS", "AGENT_BRIDGE_ROOT_SESSION")
 
 
@@ -21,6 +22,7 @@ def environment(harness: str, session: str) -> dict[str, str]:
         "claude": {"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": session},
         "agy": {"ANTIGRAVITY_CONVERSATION_ID": session},
         "codex": {"CODEX_THREAD_ID": session},
+        "opencode": {"OPENCODE": "1", "OPENCODE_SESSION_ID": session},
     }.get(harness) or {"AGENT_BRIDGE_ROOT_HARNESS": harness, "AGENT_BRIDGE_ROOT_SESSION": session}
 
 
@@ -34,6 +36,8 @@ def native(environ: Mapping[str, str] | None = None) -> tuple[str, str | None] |
         harness, session = "claude", env.get("CLAUDE_CODE_SESSION_ID")
     elif env.get("ANTIGRAVITY_CONVERSATION_ID"):
         harness, session = "agy", env["ANTIGRAVITY_CONVERSATION_ID"]
+    elif env.get("OPENCODE") == "1":
+        harness, session = "opencode", env.get("OPENCODE_SESSION_ID")
     elif env.get("CODEX_THREAD_ID"):
         harness, session = "codex", env["CODEX_THREAD_ID"]
     elif env.get("AGENT_BRIDGE_ROOT_HARNESS") in HARNESSES:  # harnesses without a native variable declare it

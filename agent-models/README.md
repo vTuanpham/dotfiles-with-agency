@@ -2,7 +2,7 @@
 
 [← Packages](../README.md#packages) · **uv tool** · shared model references
 
-![Native catalogs, domain benchmarks and account observations feed a task shortlist, then native delegation or Agent Bridge.](../docs/images/model-selection.gif)
+![Native catalogs, domain benchmarks and account observations inform a task shortlist. Preserve the requested provider, model, variant and effort; free variants and plan allowances differ. Verify chat in the matching native session, and leave unknown billing unverified.](../docs/images/model-selection.gif)
 
 Model strengths, effort and published allowances have one owner, independent of
 worker orchestration. The model-selection skill reads this reference on demand.
@@ -88,6 +88,12 @@ Listings describe native CLI inventory, not entitlement or the models selectable
 by a particular native subagent tool. Account caches are separate observations;
 the current session's native controls remain authoritative. The reviewed OpenCode
 privacy allowlist lives in inventory.py and is also consumed by Bridge.
+
+OpenCode's listing marks named free variants; `unverified` means the catalog does
+not establish billing for other IDs. It does not mean paid, unavailable or out
+of included quota. Preserve the requested provider/model/variant, and verify a
+chat request in the matching native CLI/session. A service catalog or API error
+does not establish the result for a standalone CLI session.
 
 This separation follows the useful distinction in
 [T3 Code's provider constraints](https://github.com/pingdotgg/t3code/blob/main/docs/internals/providers.md):
