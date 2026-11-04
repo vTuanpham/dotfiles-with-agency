@@ -1,12 +1,134 @@
 #!/usr/bin/env python3
 """Baton-guarded Windows agent-desktop entry point for WSL."""
 
+import argparse
 import json
 import os
 import shlex
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+
+GEOMETRY = {"move-window", "resize-window"}
+
+
+def parser():
+    """Only decode the pinned CLI's routing options; native code still validates commands."""
+    result = argparse.ArgumentParser(add_help=False, allow_abbrev=False, exit_on_error=False)
+    for option in ("screenshot", "session", "agent-id", "trace", "wait-for-gone", "wait-timeout"):
+        result.add_argument("--" + option)
+    result.add_argument("-w", "--wait-for")
+    for option in ("verbose", "debug", "trace-strict", "headed"):
+        result.add_argument("--" + option, action="store_true")
+    result.add_argument("-v", action="store_true")
+    result.add_argument("-h", "--help", action="store_true")
+    result.add_argument("-V", "--version", action="store_true")
+    return result
+
+
+def geometry_guard(executable, argv):
+    routing = parser()
+    routing.add_argument("command", nargs="?")
+    routing.add_argument("arguments", nargs=argparse.REMAINDER)
+    try:
+        request, unknown = routing.parse_known_args(argv)
+        if unknown or request.help or request.version:
+            return None  # Native help/invalid-argument handling cannot dispatch a geometry action.
+        if request.command not in GEOMETRY | {"batch"}:
+            return None
+        options = parser()
+        if request.command == "batch":
+            options.add_argument("json", nargs="?")
+            options.add_argument("--stop-on-error", action="store_true")
+            options.add_argument("--timeout-ms")
+        else:
+            for option in ("app", "window-id", "x", "y", "width", "height"):
+                options.add_argument("--" + option)
+        action, unknown = options.parse_known_args(request.arguments)
+        if unknown or action.help or action.version:
+            return None
+    except argparse.ArgumentError:
+        return None
+
+    if request.command == "batch":
+        if action.json is None:
+            return None
+        try:
+            entries = json.loads(action.json)
+        except ValueError:
+            return None  # The native batch decoder rejects malformed JSON before execution.
+        if isinstance(entries, list) and any(
+            isinstance(entry, dict) and isinstance(entry.get("command"), str) and entry["command"] in GEOMETRY
+            for entry in entries
+        ):
+            return request.command, (
+                "Run move-window/resize-window separately so each target is checked immediately before use."
+            )
+        return None
+
+    if action.app is None and action.window_id is None:
+        return request.command, "Name an explicit --app or --window-id for a geometry safety check."
+    observe = [str(executable), "list-windows"]
+    for option in ("session", "agent_id"):
+        value = getattr(action, option)
+        if value is None:
+            value = getattr(request, option)
+        if value is not None:
+            observe.extend(["--" + option.replace("_", "-"), value])
+    if action.app is not None:
+        observe.extend(["--app", action.app])
+    # shortcut: preflight can race replacement; move the check in-driver if concurrent window churn is needed.
+    try:
+        inventory = subprocess.run(
+            observe, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15, check=False
+        )
+        payload = json.loads(inventory.stdout)
+        if (
+            inventory.returncode
+            or payload.get("version") != "2.5"
+            or payload.get("ok") is not True
+            or payload.get("command") != "list-windows"
+        ):
+            raise ValueError("inventory unavailable")
+        windows = payload["data"]
+        if not isinstance(windows, list) or not all(
+            isinstance(window, dict)
+            and isinstance(window.get("id"), str)
+            and bool(window["id"])
+            and isinstance(window.get("app_name"), str)
+            and bool(window["app_name"])
+            for window in windows
+        ):
+            raise ValueError("incomplete window identity")
+        if action.window_id is not None:
+            windows = [window for window in windows if window["id"] == action.window_id]
+        if not windows:
+            raise ValueError("target not found")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.TimeoutExpired):
+        return request.command, "Cannot verify the target's Windows process; geometry action was not sent."
+    if any(PureWindowsPath(window["app_name"]).name.casefold() == "msrdc.exe" for window in windows):
+        return request.command, (
+            "Windows-side movement/resizing of WSLg or other msrdc.exe remote windows "
+            "can misalign Linux click targets."
+        )
+    return None
+
+
+def refuse(command, message):
+    print(json.dumps({
+        "version": "2.5", "ok": False, "command": command,
+        "error": {
+            "code": "ACTION_NOT_SUPPORTED", "message": message,
+            "details": {"kind": "wslg_geometry_guard"},
+            "suggestion": (
+                "Use a fresh native Windows target in a standalone command. "
+                "WSLg needs a separately validated Linux-owned movement path; "
+                "physical input is not an automatic fallback."
+            ),
+            "disposition": {"delivery": "not_delivered", "retry": "safe"},
+        },
+    }))
+    return 1
 
 
 def main():
@@ -34,6 +156,9 @@ def main():
         )
         if guarded.returncode:
             return guarded.returncode if guarded.returncode > 0 else 1
+        refusal = geometry_guard(executable, sys.argv[1:])
+        if refusal:
+            return refuse(*refusal)
         os.execv(executable, [str(executable), *sys.argv[1:]])
     except OSError as error:
         print(f"agent-desktop: {error}", file=sys.stderr)

@@ -21,7 +21,8 @@ and installs under `${XDG_DATA_HOME:-$HOME/.local/share}/agent-desktop/windows/`
 It needs `curl`, `gh`, `tar` and `sha256sum`; authenticate `gh` if it requests it.
 It publishes the verified executable with an atomic rename and leaves an existing
 binary alone. For a deliberate upgrade, review the new
-release and pin, remove the installed directory, then rerun this step. Do not
+release, pin, launcher parser and inventory schema, remove the installed directory,
+then rerun this step. Do not
 install the Linux npm package in WSL to control Windows applications.
 
 `~/.local/bin/agent-desktop` links to this package's launcher. It checks
@@ -31,6 +32,25 @@ layer. No service, MCP registration, global approval or Windows PATH change is
 needed. The shared `agent-desktop` skill is linked into Codex/OpenCode, Claude
 and Antigravity discovery paths by the `links` step. It loads the binary's own
 version-matched guides instead of maintaining a copied upstream manual.
+
+The launcher refuses `move-window` and `resize-window` for `msrdc.exe` windows
+(including WSLg). Windows-only geometry changes can leave the Linux app's click
+coordinates behind even when the driver's `window_position` readback succeeds.
+Other remote windows hosted by the same executable are conservatively refused
+too. Native Windows geometry commands require an explicit `--app` or
+`--window-id` and a successful live process-name check; unavailable or unknown
+inventory fails before dispatch. This checks the current target, not an atomic
+lock across desktop changes.
+
+Run move/resize commands separately: batches containing either are refused
+before any entry runs, since earlier entries could replace the checked target.
+Other commands and batches retain their native transport. Guard refusals use
+the native JSON error envelope with `ACTION_NOT_SUPPORTED`,
+`details.kind: wslg_geometry_guard` and `not_delivered` / `safe`. WSLg movement
+needs a separately validated Linux/compositor-owned path. Switching Windows
+drivers or using physical input does not supply that validation. This boundary
+is stricter than the pinned [upstream geometry verification contract](https://github.com/vercel-labs/agent-desktop/blob/v1.0.2/docs/json-output.md);
+it prevents the reproduced [WSLg coordinate-sync failure](https://github.com/microsoft/wslg/issues/1116).
 
 Windows interoperability can fail inside a restricted WSL sandbox before the
 driver runs (`UtilBindVsockAnyPort ... socket failed`). Retry only the authorized

@@ -17,6 +17,11 @@ Refresh refs after UI changes. Read delivery/retry dispositions before retrying;
 an uncertain action may already have landed. Do not switch drivers and repeat it
 without readback. Use Cua's installed `describe` schemas when choosing that driver.
 
+For WSLg windows hosted by `msrdc.exe`, avoid Windows-side move/resize through
+either driver: Windows geometry verification does not prove Linux click alignment.
+The launcher refuses these actions; read the [host boundary](../../../../computer-use/README.md)
+when refused. A Linux-owned movement path needs separate validation.
+
 Stay in semantic mode. Physical input, focus changes and `--headed` require the
 user's explicit permission; a semantic failure does not supply it. Windows apps
 can still raise themselves after semantic input: this was reproduced locally.

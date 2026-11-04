@@ -3,12 +3,14 @@
 import hashlib
 import json
 import os
+import runpy
 import subprocess
 import sys
 import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "computer-use/.local/bin/agent-desktop"
@@ -34,6 +36,14 @@ class DesktopTests(unittest.TestCase):
             "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
             "GUARD_EVENT": str(self.home / "event.json"),
             "GUARD_EXIT": "0",
+            "NATIVE_CALLS": str(self.home / "native.jsonl"),
+            "WINDOW_INVENTORY": json.dumps({
+                "version": "2.5", "ok": True, "command": "list-windows",
+                "data": [
+                    {"id": "w-1", "app_name": "msrdc.exe"},
+                    {"id": "w-2", "app_name": "notepad.exe"},
+                ],
+            }),
         }
         script(
             self.bin / "agent-baton",
@@ -48,7 +58,12 @@ sys.exit(int(os.environ['GUARD_EXIT']))
         script(
             self.exe,
             """
-import json, sys
+import json, os, sys
+with open(os.environ['NATIVE_CALLS'], 'a') as log:
+    log.write(json.dumps(sys.argv[1:]) + '\\n')
+if sys.argv[1:2] == ['list-windows']:
+    print(os.environ['WINDOW_INVENTORY'])
+    sys.exit(int(os.environ.get('INVENTORY_EXIT', '0')))
 print(json.dumps({'args': sys.argv[1:], 'stdin': sys.stdin.read()}, ensure_ascii=False))
 print('native stderr', file=sys.stderr)
 sys.exit(17)
@@ -58,11 +73,118 @@ sys.exit(17)
     def launch(self, *args):
         return subprocess.run(
             [sys.executable, str(LAUNCHER), *args],
+            check=False,
             input="native stdin",
             text=True,
             capture_output=True,
             env=self.env,
+            timeout=10,
         )
+
+    def calls(self):
+        log = self.home / "native.jsonl"
+        return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+    def assert_refused(self, result, command):
+        self.assertEqual(result.returncode, 1, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["command"], command)
+        self.assertEqual(payload["error"]["details"]["kind"], "wslg_geometry_guard")
+        self.assertEqual(payload["error"]["disposition"], {"delivery": "not_delivered", "retry": "safe"})
+
+    def test_remote_move_and_resize_are_refused_before_dispatch(self):
+        for command, dimensions in (("move-window", ["--x", "100", "--y", "100"]),
+                                    ("resize-window", ["--width", "800", "--height", "600"])):
+            with self.subTest(command=command):
+                result = self.launch("--session", "test", command, "--window-id=w-1", *dimensions)
+                self.assert_refused(result, command)
+                self.assertIn("msrdc.exe", result.stdout)
+        self.assertEqual(self.calls(), [["list-windows", "--session", "test"]] * 2)
+
+    def test_native_window_with_remote_neighbor_preserves_transport(self):
+        args = ["move-window", "--window-id", "w-2", "--x=-100", "--y", "0", "--session=test"]
+        result = self.launch(*args)
+        self.assertEqual(result.returncode, 17)
+        self.assertEqual(json.loads(result.stdout), {"args": args, "stdin": "native stdin"})
+        self.assertEqual(result.stderr, "native stderr\n")
+        self.assertEqual(self.calls(), [["list-windows", "--session", "test"], args])
+
+    def test_app_filter_is_delegated_to_native_inventory(self):
+        self.env["WINDOW_INVENTORY"] = json.dumps({
+            "version": "2.5", "ok": True, "command": "list-windows",
+            "data": [{"id": "w-1", "app_name": "C:\\Windows\\MSRDC.EXE"}],
+        })
+        result = self.launch("resize-window", "--app=MSRDC.EXE", "--width", "800", "--height", "600")
+        self.assert_refused(result, "resize-window")
+        self.assertEqual(self.calls(), [["list-windows", "--app", "MSRDC.EXE"]])
+
+    def test_native_app_selector_with_global_options_preserves_transport(self):
+        self.env["WINDOW_INVENTORY"] = json.dumps({
+            "version": "2.5", "ok": True, "command": "list-windows",
+            "data": [{"id": "w-2", "app_name": "notepad.exe"}],
+        })
+        args = ["--session=root", "--agent-id", "worker", "--headed", "resize-window",
+                "--app", "notepad.exe", "--width=800", "--height=600"]
+        result = self.launch(*args)
+        self.assertEqual(result.returncode, 17)
+        self.assertEqual(json.loads(result.stdout), {"args": args, "stdin": "native stdin"})
+        self.assertEqual(self.calls(), [
+            ["list-windows", "--session", "root", "--agent-id", "worker", "--app", "notepad.exe"], args,
+        ])
+
+    def test_inventory_timeout_and_unavailable_executable_refuse_without_retry(self):
+        guard = runpy.run_path(str(LAUNCHER))["geometry_guard"]
+        for failure in (subprocess.TimeoutExpired("list-windows", 15), FileNotFoundError("missing")):
+            with self.subTest(failure=failure), patch("subprocess.run", side_effect=failure) as native:
+                refusal = guard(self.exe, ["move-window", "--window-id=w-1", "--x=0", "--y=0"])
+                self.assertEqual(refusal[0], "move-window")
+                self.assertIn("not sent", refusal[1])
+                self.assertEqual(native.call_count, 1)
+
+    def test_unverified_geometry_targets_fail_closed(self):
+        payloads = [
+            "not JSON", "[]", '{}',
+            '{"version":"2.5","ok":true,"command":"list-windows","data":null}',
+            '{"version":"2.5","ok":true,"command":"list-windows","data":[{"id":"w-2"}]}',
+            '{"version":"2.5","ok":true,"command":"list-windows","data":{"windows":[]}}',
+            '{"version":"future","ok":true,"command":"list-windows","data":[]}',
+        ]
+        for raw in payloads:
+            with self.subTest(raw=raw):
+                self.env["WINDOW_INVENTORY"] = raw
+                self.assert_refused(
+                    self.launch("move-window", "--window-id", "w-2", "--x=0", "--y=0"), "move-window"
+                )
+        self.assertTrue(all(call == ["list-windows"] for call in self.calls()))
+
+    def test_missing_target_and_inventory_failure_do_not_dispatch(self):
+        self.assert_refused(self.launch("move-window", "--x=0", "--y=0"), "move-window")
+        self.assertEqual(self.calls(), [])
+        self.assert_refused(
+            self.launch("move-window", "--window-id=w-missing", "--x=0", "--y=0"), "move-window"
+        )
+        self.env["INVENTORY_EXIT"] = "1"
+        self.assert_refused(self.launch("move-window", "--window-id=w-2", "--x=0", "--y=0"), "move-window")
+        self.assertEqual(self.calls(), [["list-windows"], ["list-windows"]])
+
+    def test_geometry_batch_is_refused_before_any_entry_runs(self):
+        for command in ("move-window", "resize-window"):
+            entries = [{"command": "launch", "args": {"app": "notepad.exe"}},
+                       {"command": command, "args": {"app": "msrdc.exe", "x": 0, "y": 0}}]
+            self.assert_refused(self.launch("batch", "--stop-on-error", json.dumps(entries)), "batch")
+        self.assertEqual(self.calls(), [])
+
+    def test_non_geometry_batch_and_command_like_text_are_unchanged(self):
+        batch = json.dumps([{"command": "set-value", "args": {"text": "move-window"}}])
+        for args in (["batch", batch], ["--session", "move-window", "status"],
+                     ["set-value", "@ref:e1", "resize-window"], ["batch", '[{"command": []}]'],
+                     ["move-window", "--help"], ["batch", "--help"]):
+            with self.subTest(args=args):
+                result = self.launch(*args)
+                self.assertEqual(result.returncode, 17, result.stderr)
+                self.assertEqual(json.loads(result.stdout), {"args": args, "stdin": "native stdin"})
+        self.assertNotIn(["list-windows"], self.calls())
 
     def test_transport_preserves_unicode_argv_streams_and_native_failure(self):
         args = ["set-value", "@snapshot:e1", 'tiếng Việt / 日本語 / 🚀\n" $(exit 9)']
@@ -79,6 +201,10 @@ sys.exit(17)
         result = self.launch("screenshot")
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
+        self.assertEqual(self.calls(), [])
+        result = self.launch("move-window", "--window-id=w-1", "--x=0", "--y=0")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(self.calls(), [])
         self.env["PATH"] = str(self.bin)
         (self.bin / "agent-baton").unlink()
         result = self.launch("screenshot")
@@ -136,6 +262,7 @@ sys.exit(int(os.environ.get('ATTEST_EXIT', '0')))
         def install(*args):
             return subprocess.run(
                 [str(ROOT / "install.sh"), *args, "desktop-tools"],
+                check=False,
                 env=self.env,
                 text=True,
                 capture_output=True,
