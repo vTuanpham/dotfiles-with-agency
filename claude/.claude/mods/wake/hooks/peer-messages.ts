@@ -1,6 +1,14 @@
 type PeerMessage = { messageId?: string }
 type PeerJob = { id: string; owner: string; peers: PeerMessage[] }
 
+/** Null is an intentionally omitted source preview; absent means no matching message metadata. */
+export const messagePreview = (preview: string | null | undefined): string =>
+  preview === null ? 'Preview withheld by Bridge' : preview || 'Message preview unavailable'
+
+/** Describe the observed stage; Bridge does not issue reader acknowledgements. */
+export const messageStatus = (state: 'observed' | 'sent' | undefined): string =>
+  state === 'observed' ? 'Worker report published' : state === 'sent' ? 'Message sent by Bridge' : 'Message recorded by Bridge'
+
 /** Tracks observed message IDs per owned job so first-scan history never pulses. */
 export class PeerMessageTracker {
   private scope = ''

@@ -2,7 +2,9 @@
 
 import json
 import xml.etree.ElementTree as ElementTree
+from dataclasses import replace
 
+from . import claude_notices
 from .media import ImageBudget, native_image
 from .models import Activity, Message, decode_json, fields, text
 
@@ -70,6 +72,10 @@ def decode(rows, session_id, outgoing=(), append_outgoing=True):
             content = [{"type": "text", "text": content}]
         if type(content) is not list:
             raise ValueError("Invalid SDK content")
+        native_body = "\n\n".join(block["text"] for block in content
+                                  if type(block) is dict and block.get("type") == "text"
+                                  and type(block.get("text")) is str)
+        notice = claude_notices.notice(row, native_body)
         body, images, tool_result = [], [], False
 
         def image(part):
@@ -117,9 +123,10 @@ def decode(rows, session_id, outgoing=(), append_outgoing=True):
                 activity_id = "activity:claude:" + text(block["id"], "tool call id", 200)
                 activity.append(Activity(activity_id, text(block["name"], "tool name", 200), "observed"))
                 timeline.append(activity_id)
-        if body or images:
-            messages.append(Message(identifier, "assistant" if tool_result else row["type"],
-                                    "\n\n".join(body), images=images or None))
+        if body or images or notice is not None:
+            messages.append(replace(notice, images=images or None) if notice is not None else Message(
+                identifier, "assistant" if tool_result else row["type"],
+                "\n\n".join(body), images=images or None))
             timeline.append(identifier)
     for identifier, message in (sent.items() if append_outgoing else ()):
         if identifier in seen or message.get("status") != "forwarded":

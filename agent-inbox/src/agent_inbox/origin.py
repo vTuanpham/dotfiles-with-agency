@@ -35,15 +35,19 @@ def decode(value):
     return {key: rows[0] for key, rows in result.items() if len(rows) == 1}
 
 
-def read():
+def command():
     command = shutil.which("agent-bridge")
     if command is None:
         candidate = Path.home() / ".local/bin/agent-bridge"
         if not candidate.is_file():
-            return {}
+            raise FileNotFoundError("Agent Bridge is not installed")
         command = str(candidate)
+    return command
+
+
+def read():
     try:
-        result = subprocess.run([command, "sessions"], capture_output=True, timeout=3)
+        result = subprocess.run([command(), "sessions"], capture_output=True, timeout=3)
         if result.returncode or len(result.stdout) > 2 * 1024 * 1024:
             return {}
         return decode(decode_json(result.stdout))

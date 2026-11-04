@@ -24,10 +24,12 @@ def read(request):
         return {"info": asdict(info)}
     if request["operation"] == "children":
         return {"info": asdict(info), "children": list_subagents(identifier, directory=directory)}
-    if request["operation"] != "history":
+    if request["operation"] not in ("history", "overview"):
         raise ValueError("Unknown SDK read operation")
     # The native SDK's filesystem helper parses the whole file even with limit/offset.
     page = claude_transcript.page(identifier, directory, request.get("cursor"), request.get("since"))
+    if request["operation"] == "overview":
+        return {"info": asdict(info), "turn_ended": page["turn_ended"]}
     return {"info": asdict(info), **page}
 
 

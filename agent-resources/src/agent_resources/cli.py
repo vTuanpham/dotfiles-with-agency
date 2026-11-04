@@ -12,8 +12,11 @@ def main():
     run.add_argument("--mem", help="expected peak memory, such as 1G or 2500M")
     run.add_argument("--exclusive", action="store_true", help="isolate timing measurements")
     run.add_argument("--memory-max-mib", help="require a systemd memory cap")
+    run.add_argument("--agent-id", help="native agent loop to attribute this command to")
     run.add_argument("argv", nargs=argparse.REMAINDER)
-    commands.add_parser("list", help="inspect live requests and queued admission reasons")
+    listing = commands.add_parser("list", help="inspect live requests and queued admission reasons")
+    listing.add_argument("--json", action="store_true", help="emit a versioned request snapshot")
+    listing.add_argument("--owner", help="filter by exact controller identity")
     commands.add_parser("guide", help="read admission, ownership and cancellation details")
     commands.add_parser("cancel", help="cancel a request owned by this root").add_argument("target")
     commands.add_parser("pause", help="pause admissions").add_argument("--reason", default="maintenance")
@@ -22,19 +25,21 @@ def main():
     try:
         if args.action == "run":
             argv = args.argv[1:] if args.argv[:1] == ["--"] else args.argv
-            heavy.run(argv, args.memory_max_mib, mem=args.mem, exclusive=args.exclusive)
+            heavy.run(argv, args.memory_max_mib, mem=args.mem, exclusive=args.exclusive,
+                      agent_id=args.agent_id)
         elif args.action == "guide":
             print(Path(__file__).with_name("guide.md").read_text().strip())
         else:
-            control.require_root()
             if args.action == "list":
-                control.listing()
-            elif args.action == "cancel":
-                control.cancel(args.target)
-            elif args.action == "pause":
-                control.pause(args.reason)
+                control.listing(json_output=args.json, owner=args.owner)
             else:
-                control.resume()
+                control.require_root()
+                if args.action == "cancel":
+                    control.cancel(args.target)
+                elif args.action == "pause":
+                    control.pause(args.reason)
+                else:
+                    control.resume()
     except (OSError, ValueError, RuntimeError) as error:
         print(f"agent-resources: {error}", file=sys.stderr)
         return 1

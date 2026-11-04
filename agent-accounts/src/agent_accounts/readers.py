@@ -60,10 +60,11 @@ def claude_quotas(data, now):
                         or (type(used) is float and not math.isfinite(used))):
                     raise ValueError("invalid Claude usage percentage")
                 resets = window.get("resetsAt")
-                if resets is not None and timestamp(resets) <= now:
+                elapsed = resets is not None and timestamp(resets) <= now
+                if elapsed:
                     freshness = "stale"
-                    continue
-                windows.append(QuotaWindow(label, math.floor(max(0, 100 - used)), group, limit, resets))
+                remaining = None if elapsed else math.floor(max(0, 100 - used))
+                windows.append(QuotaWindow(label, remaining, group, limit, resets))
         elif usage is not None:
             raise ValueError("unavailable Claude account carries actionable usage")
         state = ("disabled" if row.get("disabled", False) else

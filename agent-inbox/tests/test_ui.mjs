@@ -550,6 +550,23 @@ const textOf = node => typeof node === 'string' ? node : [node.text ?? '', ...(n
 const stream = ui => ui.messages().map(node => node.dataset.messageId || node.dataset.blockId || (hasClass(node,'live') ? 'live' : '?'));
 const activity = (id, label, status, duration_ms=null) => ({id:'activity:'+id,label,status,duration_ms,started_at_ms:null});
 
+test('native notices have their own label and never become user messages or question actions', async () => {
+  const literal='<task-notification>literal user example</task-notification>';
+  const ui=await boot({view:()=>({status:'idle',can_send:true,messages:[
+    {id:'notice',role:'system',label:'Background task · completed',text:'Validation passed.'},
+    {id:'reply',role:'assistant',text:'I read the result.'},
+    {id:'human',role:'user',text:literal},
+  ],timeline:['notice','reply','human']})});
+  const rows=ui.element('messages').children;
+  assert.equal(hasClass(rows[0],'system'),true);
+  assert.equal(find(rows[0],node=>hasClass(node,'native-notice-label')).textContent,'Background task · completed');
+  assert.equal(find(rows[0],node=>hasClass(node,'body')).textContent,'Validation passed.');
+  assert.equal(rows[1].children[0].children.length,1,'an assistant run starts again after a native event');
+  assert.equal(find(rows[2],node=>hasClass(node,'body')).textContent,literal);
+  assert.equal(ui.answerRequests.length,0);
+  assert.equal(ui.commandRequests.length,0);
+});
+
 test('activity sits inline in the native timeline, folds finished steps and keeps live ones visible', async () => {
   let view={status:'active',can_send:true,older_cursor:null,
     messages:[{id:'m1',role:'user',text:'run it'},{id:'m2',role:'assistant',text:'Running now'}],
@@ -988,6 +1005,24 @@ test('cancelling sends an empty answer with cancel, and a form without fields of
   ui.answerRequests[0].finish('failed'); await cancelling; await tick();
   assert.match(textOf(cards[0]),/Not accepted/);
   assert.equal(find(cards[0],n=>n.text==='Send answer').disabled,false);
+});
+
+test('native blocking-request explanation remains visible without fabricated form fields', async () => {
+  let pending=true;
+  const ui=await boot({forms:()=>({forms:[],unavailable:pending ? 'Answer this blocking request in the native client.' : ''})});
+  assert.match(textOf(ui.element('forms')),/blocking request in the native client/);
+  assert.equal(findAll(ui.element('forms'),n=>n.text==='Send answer').length,0);
+  pending=false; await ui.poll();
+  assert.equal(ui.element('forms').children.length,0);
+});
+
+test('async message questions use the shared form API and label local dismissal accurately', async () => {
+  const ui=await boot({forms:()=>({forms:[{...pickForm,response_mode:'message'}],unavailable:''})});
+  const card=ui.element('forms').children[0];
+  assert.equal(findAll(card,n=>n.text==='Cancel question').length,0);
+  const dismiss=find(card,n=>n.text==='Dismiss question').listeners.click(); await tick();
+  assert.deepEqual(json(ui.answerRequests[0].data),{id:ui.answerRequests[0].data.id,target:'a',form:'f1',answer:{},cancel:true});
+  ui.answerRequests[0].finish('applied'); await dismiss; await tick();
 });
 
 test('hostile native field keys are ordinary data: nothing is inherited, polluted or confused with an answer', async () => {

@@ -1,5 +1,17 @@
 import { expect, test } from 'claude-code/testing'
-import { PeerMessageTracker } from '../hooks/peer-messages'
+import { messagePreview, messageStatus, PeerMessageTracker } from '../hooks/peer-messages'
+
+test('omitted source previews stay distinct from missing message metadata', () => {
+  expect(messagePreview(null)).toBe('Preview withheld by Bridge')
+  expect(messagePreview(undefined)).toBe('Message preview unavailable')
+  expect(messagePreview('Review complete')).toBe('Review complete')
+})
+
+test('message descriptions name the observed stage without inventing a read receipt', () => {
+  expect(messageStatus('observed')).toBe('Worker report published')
+  expect(messageStatus('sent')).toBe('Message sent by Bridge')
+  expect(messageStatus(undefined)).toBe('Message recorded by Bridge')
+})
 
 test('message pulse baselines are scoped to owner and job, and reset with the session scope', () => {
   const tracker = new PeerMessageTracker()

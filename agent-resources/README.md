@@ -13,6 +13,7 @@ uv tool install --editable ./agent-resources
 agent-resources run --mem 2G -- uv run pytest
 agent-resources run --mem 3G --exclusive -- ./benchmark
 agent-resources list
+agent-resources list --json --owner claude:SESSION_ID
 agent-resources guide
 ```
 
@@ -29,11 +30,19 @@ free/budget, queue position and number of requests behind them. It reuses the
 admission policy against current readings; redirected command output is not
 needed to diagnose a wait.
 
+Use `list --json --owner <controller>` for a versioned snapshot with
+`agent_id`, declared need and queue state. For native agent attribution, pass
+`--agent-id ID` to `run` or set `AGENT_RESOURCES_AGENT_ID` on that wrapped local
+command. This labels the command reservation; it is not an agent memory reading
+or cap.
+
 The private queue is `/tmp/agent-resources-<uid>` or `$AGENT_RESOURCES_HOME`,
 independent of HOME/TMPDIR. All participants on a host use the same queue path.
 `AGENT_RESOURCES_SLICE` names an optional shared systemd budget (default agent.slice);
 Bridge supplies its existing codex.slice integration explicitly. Worker environments
-carry a controller identity and cannot mutate the queue. Cancellation of a known
+carry a controller identity and cannot mutate the queue or list other owners' requests;
+they can read JSON rows filtered to that exact controller. The snapshot's admission
+totals remain shared across the host. Cancellation of a known
 controller's request requires that exact root identity. This protects against
 accidental session crossover, not an untrusted process with the same OS account.
 

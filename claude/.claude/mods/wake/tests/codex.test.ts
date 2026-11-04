@@ -5,6 +5,38 @@ import { codexTick } from '../hooks/register'
 import { ownedBy, ownersIn, scanCodex, withoutDetachedOwners } from '../hooks/sources/codex'
 import { readSnapshot } from '../hooks/sources/bridge'
 import { engine, event, job, NOW, snapshot } from './status-world'
+import { hash } from '../hooks/util'
+
+test('a retained event cursor prevents replay after dismissal and repairs duplicate notices', async () => {
+  const s = snapshot()
+  s.jobs = [job({ log_identity: 'reload-fixture' })]
+  s.events = [event(10, { wakes: true, text: 'URGENT: Review the result' })]
+  s.wake_events = [...s.events]
+  const need = { id: hash(s.jobs[0]!.directory + Date.parse(NOW)), kind: 'codex-ask', owner: 'owner', job: 'a', text: 'Review the result', at: Date.parse(NOW) }
+  const values = new Map<string, unknown>([['owners', ['owner']], ['needs', [need, need, need]],
+    ['lastActivity', Date.parse(NOW)], ['bridgeCursor', { 'owner/a:reload-fixture': 10 }]])
+  let version = 1
+  const host = () => ({
+    state: {
+      get: async (ref: { key: string }) => ({ value: values.get(ref.key), version }),
+      set: async (ref: { key: string }, value: unknown) => { values.set(ref.key, value); return { isSet: true, version: ++version } },
+    },
+    session: { id: async () => 'reload-root', append: async () => ({ uuid: 'fixture' }) },
+    clock: { now: async () => Date.parse(NOW) },
+    process: { run: async () => ({ stdout: JSON.stringify(s), exitCode: 0, isStdoutTruncated: false }) },
+  } as unknown as EngineInterface)
+  await codexTick(host())
+  expect(values.get('needs')).toEqual([need])
+  values.set('needs', []) // the dismiss action removes the notice; Bridge still has its unanswered event
+  await codexTick(host())
+  expect(values.get('needs')).toEqual([])
+  s.events.push(event(20, { at: '2026-10-27T00:01:00Z', wakes: true, text: 'URGENT: New question' }),
+    event(30, { at: '2026-10-27T00:01:00Z', wakes: true, text: 'URGENT: Another question at the same time' }))
+  await codexTick(host())
+  expect((values.get('needs') as { text: string }[]).map(need => need.text)).toEqual(['New question', 'Another question at the same time'])
+  expect(new Set((values.get('needs') as { id: string }[]).map(need => need.id)).size).toBe(2)
+  expect(values.get('bridgeCursor')).toEqual({ 'owner/a:reload-fixture': 30 })
+})
 
 test('Bridge state is mapped without filesystem access or reclassifying waits', async () => {
   const s = snapshot()
@@ -27,7 +59,7 @@ test('first sight is not news; later urgent and completion events are new-only',
   expect(first.jobs[0]).toMatchObject({ completedNow: false, urgent: [], lastMessage: 'ready' })
   s.events.push(event(20, { wakes: true, text: 'URGENT: review' }), event(30, { kind: 'turn_completed', wakes: true }))
   const next = await scanCodex(w.$, first.cursor)
-  expect(next.jobs[0]).toMatchObject({ completedNow: true, urgent: [{ at: Date.parse(NOW), text: 'URGENT: review' }] })
+  expect(next.jobs[0]).toMatchObject({ completedNow: true, urgent: [{ id: event(20).id, at: Date.parse(NOW), text: 'URGENT: review' }] })
   expect((await scanCodex(w.$, next.cursor)).jobs[0]).toMatchObject({ completedNow: false, urgent: [] })
 })
 
@@ -51,7 +83,7 @@ test('a first scoped scan surfaces only Bridge-unacknowledged wake events', asyn
   s.events = [event(10, { wakes: true, text: 'question: old but unanswered' }), event(20, { text: 'ordinary history' })]
   s.wake_events = [event(10, { wakes: true, text: 'question: old but unanswered' })]
   const result = await scanCodex(engine(s).$, {}, { owners: ['owner'] })
-  expect(result.jobs[0]?.urgent).toEqual([{ at: Date.parse(NOW), text: 'question: old but unanswered' }])
+  expect(result.jobs[0]?.urgent).toEqual([{ id: event(10).id, at: Date.parse(NOW), text: 'question: old but unanswered' }])
 })
 
 test('retirement, pending completion, age and stall are supplied by Bridge', async () => {
@@ -216,6 +248,9 @@ test('snapshot memory, reason and peer edges reach each job', async () => {
   s.peers.recent_messages = [{ id: 'message', source: 'owner/a', target: 'owner/b', at: NOW, kind: 'steer', size: 12, preview: 'Review tests' }]
   expect((await scanCodex(engine(s).$, {})).jobs[0]!.peers[0]!.preview).toBe('Review tests')
   s.peers.recent_messages[0]!.at = '2026-10-25T00:00:00Z'
+  expect((await scanCodex(engine(s).$, {})).jobs[0]!.peers[0]!.preview).toBeUndefined()
+  s.peers.recent_messages[0]!.at = NOW
+  s.peers.recent_messages[0]!.preview = null
   expect((await scanCodex(engine(s).$, {})).jobs[0]!.peers[0]!.preview).toBeNull()
   expect(readSnapshot(JSON.stringify({ ...s, jobs: [{ ...s.jobs[0], memory_bytes: -1 }] }))).toBeUndefined()
   expect(readSnapshot(JSON.stringify({ ...s, jobs: [{ ...s.jobs[0], waiting: { kind: 'peer', peer: 'owner/b', declared_at: 'bad' } }] }))).toBeUndefined()

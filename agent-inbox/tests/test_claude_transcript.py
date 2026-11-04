@@ -59,7 +59,9 @@ def test_large_archived_tool_output_does_not_hide_current_chat_and_matches_sdk(t
     assert path.stat().st_size > 16 * 1024 * 1024
     expected = [asdict(message) for message in get_session_messages(identifier, directory=directory)]
     actual = claude_transcript.page(identifier, directory)
-    assert actual["messages"] == expected
+    assert actual["messages"][0]["isCompactSummary"] is True
+    assert [{key: value for key, value in message.items() if key != "isCompactSummary"}
+            for message in actual["messages"]] == expected
     assert [message["uuid"] for message in actual["messages"]] == ["summary", "current"]
     assert len(json.dumps(actual)) < 2000
 
@@ -136,6 +138,20 @@ def test_pages_catch_up_partial_append_and_rewritten_anchor(transcript):
         claude_transcript.page(identifier, directory, since=first["newer"])
 
 
+def test_turn_status_uses_latest_sdk_selected_root_even_on_older_pages(transcript):
+    identifier, directory, path = transcript
+    rows = [entry(identifier, str(index), str(index - 1) if index else None) for index in range(120)]
+    rows[-1]["message"]["stop_reason"] = "end_turn"
+    rows.append(entry(identifier, "side", "0", isSidechain=True))
+    write(path, rows)
+    latest = claude_transcript.page(identifier, directory)
+    assert latest["turn_ended"]
+    assert claude_transcript.page(identifier, directory, older=latest["older"])["turn_ended"]
+    rows.append(entry(identifier, "next-prompt", "119", "user"))
+    write(path, rows)
+    assert not claude_transcript.page(identifier, directory)["turn_ended"]
+
+
 def test_profile_path_ambiguity_and_record_budget_fail_closed(transcript, monkeypatch):
     identifier, directory, path = transcript
     write(path, [entry(identifier, "m", None)])
@@ -145,3 +161,30 @@ def test_profile_path_ambiguity_and_record_budget_fail_closed(transcript, monkey
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(path.parents[2] / "other-profile"))
     with pytest.raises(ValueError, match="missing or ambiguous"):
         claude_transcript.page(identifier, directory)
+
+
+def test_native_provenance_survives_sdk_chain_selection_and_only_native_commands_unwrap(transcript):
+    identifier, directory, path = transcript
+    command = ("<command-name>/model</command-name>"
+               "<command-message>model</command-message>"
+               "<command-args>native</command-args>")
+    output = "<local-command-stdout>Model selected.</local-command-stdout>"
+    task = ("<task-notification><status>completed</status>"
+            "<summary>Check finished.</summary></task-notification>")
+    write(path, [
+        entry(identifier, "u", None, "user", "Hello"),
+        entry(identifier, "caveat", "u", "user",
+              "<local-command-caveat>Native command context.</local-command-caveat>", isMeta=True),
+        entry(identifier, "command", "caveat", "user", command),
+        entry(identifier, "output", "command", "user", output),
+        entry(identifier, "literal", "output", "user", output),
+        entry(identifier, "task", "literal", "user", task,
+              origin={"kind": "task-notification", "producer": "internal"}),
+    ])
+    page = claude_transcript.page(identifier, directory)
+    messages, _, _ = claude_history.decode(page["messages"], identifier)
+    assert [message.role for message in messages] == ["user", "system", "system", "user", "system"]
+    assert messages[1].text == "/model native" and messages[1].label == "Local command"
+    assert messages[2].text == "Model selected." and messages[2].label == "Command output"
+    assert messages[3].text == output
+    assert "producer" not in json.dumps(page) and "Native command context" not in json.dumps(page)

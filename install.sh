@@ -60,7 +60,7 @@ step_uvtools() {
     dependencies=()
     case $tool in
       agent-models) dependencies=(--with-editable "$REPO/agent-accounts") ;;
-      agent-resources | agent-baton | agent-lab) dependencies=(--with-editable "$REPO/agent-session") ;;
+      agent-resources | agent-baton | agent-lab | agent-inbox) dependencies=(--with-editable "$REPO/agent-session") ;;
       agent-bridge) dependencies=(--with-editable "$REPO/codex-wake" --with-editable "$REPO/agent-models"
         --with-editable "$REPO/agent-resources" --with-editable "$REPO/agent-accounts"
         --with-editable "$REPO/agent-session") ;;

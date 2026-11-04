@@ -98,12 +98,22 @@ def test_expired_and_missing_windows_do_not_turn_into_full_quota():
     data = document()
     data["accounts"][0]["usage"] = {"fiveHour": {"pct": 0, "resetsAt": AT}}
     quota = claude_quotas(data, NOW)[0]
-    assert quota.windows == () and quota.freshness == "stale" and quota.status == "usage unknown"
+    assert [(w.label, w.remaining_percent, w.resets) for w in quota.windows] == [("h", None, AT)]
+    assert quota.freshness == "stale" and quota.status is None
     data["accounts"][0]["usage"] = {}
     assert claude_quotas(data, NOW)[0].windows == ()
     data["accounts"][0]["usage"] = {"fiveHour": {"pct": 50}}
     data["accounts"][0].pop("usageFetchedAt")
     assert claude_quotas(data, NOW)[0].freshness == "unknown"
+
+
+def test_reset_keeps_unknown_hourly_window_beside_valid_weekly_allowance():
+    data = document()
+    data["accounts"][0]["usage"]["fiveHour"]["resetsAt"] = AT
+    data["accounts"][0]["usage"]["scoped"][0]["resetsAt"] = AT
+    row = claude_quotas(data, NOW)[0]
+    assert [(w.label, w.remaining_percent) for w in row.windows] == [("h", None), ("w", 0), ("Opusw", None)]
+    assert row.freshness == "stale" and row.status is None
 
 
 def test_disabled_and_stale_accounts_keep_their_state():

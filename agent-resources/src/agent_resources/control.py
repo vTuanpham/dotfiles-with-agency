@@ -16,13 +16,20 @@ def request_id(path):
     return path.stem.rsplit("-", 1)[-1][:12]
 
 
-def require_root():
+def require_root(json_owner=None):
     if os.environ.get("AGENT_RESOURCES_WORKER"):
-        raise RuntimeError("delegated workers cannot control the heavy queue; ask the root")
+        if json_owner is not None and json_owner == identity():
+            return
+        raise RuntimeError(
+            "delegated workers cannot control the heavy queue or inspect other owners; "
+            "ask the root"
+        )
 
 
-def listing():
-    require_root()
+def listing(json_output=False, owner=None):
+    require_root(owner if json_output else None)
+    if owner is not None and (not owner or len(owner) > 400 or any(ord(c) < 33 for c in owner)):
+        raise ValueError("invalid controller identity filter")
     folder = heavy.prepare()
     unavailable = None
     try:
@@ -35,19 +42,24 @@ def listing():
         unavailable = f"admission diagnostics unavailable: {error}"
     with heavy.gate(folder):
         paused = heavy.pause_state(folder)
-        if paused["reason"] is not None:
+        if paused["reason"] is not None and not json_output:
             print(f"paused by root: {paused['reason']}")
         now = time.monotonic_ns()
         rows = heavy.entries(folder)
         active = [(path, row) for path, row in rows if row["running"] or not row["control"]["cancelled"]]
         waiting = [path for path, row in active if not row["running"]]
-        if waiting and unavailable is None:
+        reserved = sum(row["need"] for _, row in active if row["running"])
+        budget = free = None
+        selected = pressure_reason = None
+        queue_reason = unavailable
+        if unavailable is None:
             budget = max(0, host.shared_capacity - policy.available)
             free = max(0, host.shared_headroom - policy.available)
             selected, reserved, _, queue_reason = heavy.choose(active, budget, policy.slots, now, free)
             pressure_reason = heavy.wait_reason(host, policy, shared=True)
-            if paused["reason"] is not None:
-                selected, queue_reason = None, f"paused by root: {paused['reason']}"
+        if paused["reason"] is not None:
+            selected, queue_reason = None, f"paused by root: {paused['reason']}"
+        snapshot_rows = []
         for path, row in rows:
             state = "running" if row["running"] else "queued"
             if row["control"]["cancelled"]:
@@ -55,11 +67,11 @@ def listing():
             elapsed = (now - row["started_ns"] if row["running"] else heavy.waited_ns(row, paused, now))
             label = "elapsed" if row["running"] else "wait"
             detail = ""
+            position = waiting_behind = reason = None
             if state == "queued":
                 position = waiting.index(path)
                 if unavailable is not None:
                     reason = unavailable
-                    memory = "budget=unavailable free=unavailable"
                 else:
                     reason = queue_reason
                     if selected == path and not pressure_reason:
@@ -74,13 +86,51 @@ def listing():
                         reason += "; need exceeds live free memory"
                     if reserved + row["need"] > budget:
                         reason += "; declared needs exceed shared budget"
-                    memory = (f"reserved={reserved / heavy.MIB:g}MiB budget={budget / heavy.MIB:g}MiB "
+                waiting_behind = len(waiting) - position - 1
+                if not json_output:
+                    memory = ("budget=unavailable free=unavailable" if unavailable is not None else
+                              f"reserved={reserved / heavy.MIB:g}MiB budget={budget / heavy.MIB:g}MiB "
                               f"free={free / heavy.MIB:g}MiB")
-                detail = (f" position={position + 1}/{len(waiting)} reason={json.dumps(reason)} "
-                          f"{memory} waiting_behind={len(waiting) - position - 1}")
-            print(f"{request_id(path)} {row['job'] or '-'} {row['command']} "
-                  f"{row['need'] / heavy.MIB:g}MiB {'yes' if row['exclusive'] else 'no'} "
-                  f"{state} {label}={max(0, elapsed) // 10**9}s yes(kernel-lock){detail}")
+                    detail = (f" position={position + 1}/{len(waiting)} reason={json.dumps(reason)} "
+                              f"{memory} waiting_behind={waiting_behind}")
+            if json_output:
+                if owner is None or row.get("owner") == owner:
+                    snapshot_rows.append({
+                        "id": request_id(path),
+                        "owner": row.get("owner"),
+                        "agent_id": row.get("agent_id"),
+                        "job": row["job"] or None,
+                        "command": row["command"],
+                        "state": state,
+                        "running": row["running"],
+                        "need_bytes": row["need"],
+                        "exclusive": row["exclusive"],
+                        "wait_seconds": max(0, elapsed) // 10**9 if state == "queued" else None,
+                        "elapsed_seconds": max(0, elapsed) // 10**9 if state == "running" else None,
+                        "queue_position": position + 1 if state == "queued" else None,
+                        "queue_length": len(waiting),
+                        "reason": reason,
+                        "reserved_bytes": reserved,
+                        "budget_bytes": budget,
+                        "free_bytes": free,
+                        "waiting_behind": waiting_behind,
+                    })
+            else:
+                print(f"{request_id(path)} {row['job'] or '-'} {row['command']} "
+                      f"{row['need'] / heavy.MIB:g}MiB {'yes' if row['exclusive'] else 'no'} "
+                      f"{state} {label}={max(0, elapsed) // 10**9}s yes(kernel-lock){detail}")
+        if json_output:
+            print(json.dumps({
+                "schema_version": 1,
+                "paused": paused["reason"],
+                "admission": {
+                    "reserved_bytes": reserved,
+                    "budget_bytes": budget,
+                    "free_bytes": free,
+                    "unavailable": unavailable,
+                },
+                "requests": snapshot_rows,
+            }, separators=(",", ":")))
 
 
 def pause(reason):

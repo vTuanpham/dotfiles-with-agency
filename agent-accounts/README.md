@@ -24,6 +24,10 @@ so background snapshots never invoke it. The cache keeps only numbered allowance
 fields, excludes addresses and aliases, and expires freshness after ten minutes.
 Claude's percentages are used allowance; this boundary converts them to remaining,
 rounds down and never treats unavailable, elapsed or missing windows as free quota.
+At a cached window's reset, its label and reset time remain but
+`remaining_percent` becomes `null`: Wake displays `h?` beside any still-valid
+weekly reading. The account becomes stale; old percentages never describe the
+new window. Run the explicit Claude refresh above to obtain current windows.
 The active mark records the account at the last refresh; it is not session identity.
 Native account selection stays in [cswap](../claude/README.md#accounts).
 

@@ -21,7 +21,7 @@ git clone https://github.com/vTuanpham/dotfiles-with-agency ~/dotfiles-with-agen
 
 | You get | What it does that is hard to get elsewhere |
 | --- | --- |
-| **[codex-wake](codex-wake/README.md)** | Codex finishes a background task or a subagent and **wakes the idle conversation by itself**: end your turn and the result arrives. `codex-wake monitor` watches a condition for a while and wakes it on each hit, with a cooldown so it never spams and a hard time limit so it never lingers. |
+| **[codex-wake](codex-wake/README.md)** | Background task and subagent results resume the idle Codex conversation. `codex-wake monitor` watches a condition and reports matching events. |
 | **[Wake](claude/README.md#wake-mod-live)**, a Claude Code mod | A pixel town above the prompt that is the session's live state: eight places, weather and time, a building that rises with each turn, and a crew of real workers that arrive, message each other, react and leave, each in its own way. Plus per-harness quota, effort inferred from what each model supports, and hover cards on everything. |
 | **[Agent Bridge](agent-bridge/README.md)** | Delegate persistent jobs across harnesses, or send native peer messages directly to existing Codex, Claude, agy and OpenCode sessions. Jobs can be watched and steered, survive a root change (`handoff`), and archive when finished. It notices when a runtime silently swaps a worker's model. |
 | **[Agent Baton](agent-baton/README.md)** | The agent asks; you answer from a Windows toast or your phone. For passwords, 2FA and API keys the value goes straight into the field or env file and **never reaches the agent or its transcript**. |
@@ -72,13 +72,11 @@ Claude Code prompt. The landscape is not decoration: every sprite is a fact abou
 
 ## Codex tasks that wake you
 
-<img src="docs/images/codex-notifications.gif" alt="A background command or native subagent runs in Codex's sandbox. When the turn ends a host-side hook hands it to an observer, which waits for the conversation to be idle and wakes it once with the result. codex-wake monitor feeds the same observer a bounded stream of hit lines, limited by a time window, a cooldown and an event cap." width="100%">
+<img src="docs/images/codex-notifications.gif" alt="Background tasks and condition monitors report through a host observer, which resumes the idle Codex conversation with their results." width="100%">
 
-Codex does not wake a conversation when a background command or a subagent finishes. **[codex-wake](codex-wake/README.md)**
-does: host lifecycle hooks, outside the command sandbox, watch what you left running and deliver one native
-message to the same conversation when it ends, with the exit status and a private log path. Nothing is
-escalated out of the sandbox, a notice never answers a question or grants an approval, and an uncertain
-delivery is never retried.
+**[codex-wake](codex-wake/README.md)** uses host lifecycle hooks to observe background commands and
+subagents. When work finishes and the conversation is idle, it delivers the result with the exit status
+and a private log path. Commands keep their original sandbox.
 
 ```sh
 # launch anything in a background terminal, end your turn, and the result arrives
@@ -86,10 +84,9 @@ delivery is never retried.
 codex-wake monitor --every 10s --ttl 30m --cooldown 5m --max-events 5 -- test -f build/ready
 ```
 
-The monitor is the spam-proof version of a poll loop: it runs a probe on an interval, and the host hook wakes
-the session on a hit at most once per cooldown (hits in between are counted and joined to the next notice),
-at most `--max-events` times, never past the time limit (24 h at most), and with a closing notice when it ends.
-`--distinct` announces only a changed answer. [How it works, limits and live checks](codex-wake/README.md#monitoring-a-condition-for-a-while).
+The monitor runs a probe on an interval and reports matching events through the same hook.
+`--distinct` reports changes to the probe's output.
+[Options, limits and live checks](codex-wake/README.md#monitoring-a-condition-for-a-while).
 
 ## Agent tools
 
@@ -97,7 +94,7 @@ at most `--max-events` times, never past the time limit (24 h at most), and with
 
 ### Delegate work and message other sessions
 
-<img src="docs/images/agent-bridge-flow.gif" alt="The root delegates work to other harnesses and verifies persistent job results. A separate native messaging path connects existing Codex, Claude Code, agy and OpenCode sessions by exact address, steering where supported without creating jobs or granting approval." width="100%">
+<img src="docs/images/agent-bridge-flow.gif" alt="The root delegates work across harnesses and reviews results. Direct messaging connects existing Codex, Claude, agy and OpenCode sessions through their native APIs." width="100%">
 
 Hand a job to the model that is best for it, watch it, steer it, and let workers message each other.
 [Agent Bridge](agent-bridge/README.md) · [Model selection](agent-models/README.md).

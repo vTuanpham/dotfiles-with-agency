@@ -5,6 +5,20 @@ import os
 import agent_session
 
 
+def validate_agent_id(value):
+    if type(value) is not str or not value or len(value) > 400 or any(ord(c) < 33 for c in value):
+        raise ValueError("invalid resource agent identity")
+    return value
+
+
+def agent_id(explicit=None):
+    inherited = os.environ.get("AGENT_RESOURCES_AGENT_ID")
+    if explicit is not None and inherited is not None and explicit != inherited:
+        raise ValueError("conflicting resource agent identities")
+    value = explicit if explicit is not None else inherited
+    return validate_agent_id(value) if value is not None else None
+
+
 def identity():
     explicit = os.environ.get("AGENT_RESOURCES_OWNER")
     if explicit is not None:

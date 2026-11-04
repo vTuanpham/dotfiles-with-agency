@@ -262,6 +262,10 @@ class Handler(BaseHTTPRequestHandler):
             read = {"/api/commands": catalog, "/api/context": context, "/api/forms": forms}[parsed.path]
             result = read(adapter(target), target)
             value = render_forms(result) if parsed.path == "/api/forms" else asdict(result)
+            if parsed.path == "/api/forms":
+                answered = self.server.app.store.answered_questions(target.id)
+                value["forms"] = [form for form in value["forms"]
+                                  if form["response_mode"] != "message" or form["id"] not in answered]
             if parsed.path == "/api/context":
                 origin = next((row.get("origin") for row in self.server.app.catalog.listing()["roots"]
                                if row["id"] == target.id), None)

@@ -41,7 +41,7 @@ test('unchanged owned crew is quiet while a new observed message still updates t
     process: { run: async () => ({ stdout: JSON.stringify(s), exitCode: 0, isStdoutTruncated: false }) },
   } as unknown as EngineInterface
   await codexTick($)
-  expect(writes.filter(key => key !== 'tick')).toEqual(['chips'])
+  expect(writes.filter(key => key !== 'tick')).toEqual(['bridgeCursor', 'chips'])
   writes.length = 0
   await codexTick($)
   expect(writes).toEqual([])

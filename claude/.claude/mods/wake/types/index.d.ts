@@ -29,7 +29,7 @@ export type WakeChip = {
 }
 
 /** Remaining quota of one signed-in account: Codex/Claude windows or agy model buckets. */
-export type WakeQuota = { cli: 'codex' | 'agy' | 'claude'; account: string; plan: string; active: boolean; parts: { label: string; pct: number; resets: string | null }[]; status?: string; freshness?: 'fresh' | 'stale' | 'unknown' }
+export type WakeQuota = { cli: 'codex' | 'agy' | 'claude'; account: string; plan: string; active: boolean; parts: { label: string; pct: number | null; resets: string | null }[]; status?: string; freshness?: 'fresh' | 'stale' | 'unknown' }
 
 export type WakeSceneHit = { id: string; title: string; details: string[] }
 
@@ -62,6 +62,11 @@ export type WakeAgent = {
   id: string; type: string; name?: string; description: string; since: number; model?: string; effort?: string
   /** When Wake saw it finish; it stays in the list only while its exit plays (hooks/exits.ts), and nothing else counts it. */
   leftAt?: number
+}
+
+export type WakeResource = {
+  id: string; agentId: string; command: string; state: 'running' | 'queued' | 'cancelling'; running: boolean; needBytes: number
+  position: number | null; queueLength: number; reason: string | null
 }
 
 /** The landscape the band draws. */
@@ -116,6 +121,7 @@ declare module 'claude-code' {
       mood: WakeMood
       plan: WakeStep[]
       needs: WakeNeed[]
+      bridgeCursor: Record<string, number>
       calls: WakeCall[]
       chips: WakeChip[]
       owners: string[] // Codex job owners this session's commands named; only their jobs are shown
@@ -126,6 +132,7 @@ declare module 'claude-code' {
       lastActivity: number
       tick: number
       subagents: WakeAgent[]
+      nativeResources: WakeResource[] | null
       agentModels: Record<string, string> // subagent id -> the model its spawn resolved to
       parentModel: string
       parentEffort: string // the session's effort level, what a subagent inherits

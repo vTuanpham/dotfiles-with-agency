@@ -1,11 +1,12 @@
 import json
+import subprocess
 import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, replace
 from threading import Lock
 
-from .adapters import adapter
+from .adapters import ADAPTERS, adapter
 from .origin import annotate, read
 from .store import binding
 
@@ -82,7 +83,15 @@ class Catalog:
                     live[target.id] = target
                     rows.append({**target.public(), "status": info.status, "saved": info.saved,
                                  "capabilities": capabilities})
-            annotate(live, rows, read())
+            bindings = read()
+            try:
+                workers = ADAPTERS["bridge"].targets(live, bindings)
+                for target, row in workers:
+                    live[target.id] = target
+                    rows.append(row)
+            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+                warnings.append("Agent Bridge workers unavailable")
+            annotate(live, rows, bindings)
             registered_ids = {t.id for t in registered.values()}
             rows.sort(key=lambda row: (row["id"] not in registered_ids,
                                        row["label"].casefold(), row["id"]))

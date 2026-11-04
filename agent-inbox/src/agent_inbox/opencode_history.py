@@ -2,6 +2,7 @@
 
 import json
 import math
+import re
 
 from .media import ImageBudget, native_image
 from .models import Activity, Message, decode_json, fields, text
@@ -36,6 +37,28 @@ def messages(rows, budget=None):
     budget, result = budget if budget is not None else ImageBudget(), []
     for row in rows:
         kind = row["type"]
+        if kind in ("synthetic", "system", "compaction"):
+            key = "summary" if kind == "compaction" else "text"
+            body = row.get(key, "")
+            if type(body) is not str:
+                raise ValueError("Invalid native notice text")
+            if kind == "system":
+                body = row.get("description", "Session context updated.")
+                if type(body) is not str:
+                    raise ValueError("Invalid native context description")
+            label = {"synthetic": "Session event", "system": "Session context",
+                     "compaction": "Context compaction"}[kind]
+            if kind == "synthetic":
+                metadata = row.get("metadata", {})
+                if type(metadata) is not dict:
+                    raise ValueError("Invalid native notice metadata")
+                if metadata.get("source") == "subagent":
+                    label = "Subagent report"
+                    match = re.fullmatch(r"\s*<subagent\b[^>]*>([\s\S]*?)</subagent>\s*", body)
+                    if match:
+                        body = match[1].strip()
+            result.append(Message(row["id"], "system", body, label=label))
+            continue
         if kind not in ("user", "assistant"):
             continue
         images, notices = [], []

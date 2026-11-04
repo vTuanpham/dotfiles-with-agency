@@ -1,4 +1,5 @@
 from .acp import ACP
+from .bridge import Bridge
 from .capabilities import AdapterCapabilities
 from .claude import Claude
 from .codex import Codex
@@ -25,7 +26,7 @@ class NativeLink:
 
 
 ADAPTERS = {"codex": Codex(), "claude": Claude(), "opencode": OpenCode(),
-            "acp": ACP(), "native": NativeLink()}
+            "acp": ACP(), "native": NativeLink(), "bridge": Bridge()}
 
 
 def adapter(target):

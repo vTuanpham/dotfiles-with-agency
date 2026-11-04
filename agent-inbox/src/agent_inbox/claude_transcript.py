@@ -7,6 +7,7 @@ from pathlib import Path
 
 from claude_agent_sdk import get_session_messages_from_store, project_key_for_directory
 
+from . import claude_notices
 from .claude_history import cursor, display_content, encode_cursor
 from .models import decode_json
 
@@ -81,7 +82,7 @@ class ChainView:
 def page(identifier, directory, older=None, since=None):
     if older is not None and since is not None:
         raise ValueError("Choose earlier history or catch-up")
-    entries, offsets, retained = [], {}, 0
+    entries, offsets, commands, retained = [], {}, {}, 0
     with transcript_path(identifier, directory).open("rb") as stream:
         end = os.fstat(stream.fileno()).st_size
         while stream.tell() < end:
@@ -107,6 +108,12 @@ def page(identifier, directory, older=None, since=None):
                 raise ValueError("Native conversation index exceeds the read limit")
             entries.append(metadata)
             offsets[entry["uuid"]] = offset, len(line)
+            command = claude_notices.command_kind(entry)
+            parent_command = commands.get(entry.get("parentUuid"))
+            if (command == "caveat" or command == "input" and parent_command == "caveat"
+                    or command in ("local-command-stdout", "local-command-stderr")
+                    and parent_command == "input"):
+                commands[entry["uuid"]] = command
         rows = asyncio.run(
             get_session_messages_from_store(
                 ChainView(identifier, directory, entries), identifier, directory=directory
@@ -140,6 +147,9 @@ def page(identifier, directory, older=None, since=None):
             entry = decode_json(stream.read(length))
             if entry["uuid"] != row.uuid or entry.get("sessionId") != identifier:
                 raise ValueError("Native history changed while reading")
+            origin = entry.get("origin")
+            if origin is not None and (type(origin) is not dict or type(origin.get("kind")) is not str):
+                raise ValueError("Invalid native message origin")
             messages.append(
                 {
                     "type": row.type,
@@ -151,11 +161,27 @@ def page(identifier, directory, older=None, since=None):
                     },
                     "parent_tool_use_id": row.parent_tool_use_id,
                     "parent_agent_id": row.parent_agent_id,
+                    **({"origin": {key: entry["origin"][key]
+                                  for key in ("kind", "name", "body", "server", "subkind")
+                                  if key in entry["origin"]}} if type(entry.get("origin")) is dict else {}),
+                    **({"local_command": True} if row.uuid in commands else {}),
+                    **({"isCompactSummary": True} if entry.get("isCompactSummary") is True else {}),
+                    **({"isSynthetic": True} if entry.get("isSynthetic") is True else {}),
                 }
             )
+        turn_ended = False
+        if rows:
+            offset, length = offsets[rows[-1].uuid]
+            stream.seek(offset)
+            latest = decode_json(stream.read(length))
+            if latest["uuid"] != rows[-1].uuid or latest.get("sessionId") != identifier:
+                raise ValueError("Native turn changed while reading")
+            turn_ended = (latest["type"] == "assistant"
+                          and latest["message"].get("stop_reason") == "end_turn")
     return {
         "messages": messages,
         "older": encode_cursor(start, rows[start - 1].uuid) if start else None,
         "newer": encode_cursor(stop, rows[stop - 1].uuid) if stop else None,
         "catching_up": since is not None and stop < len(rows),
+        "turn_ended": turn_ended,
     }

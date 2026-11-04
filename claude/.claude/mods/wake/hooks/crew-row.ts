@@ -1,6 +1,7 @@
 import type { WakeChip, WakeQuota } from '../types'
 import { modelTier } from './sources/accounts'
 import { span } from './util'
+import { messagePreview, messageStatus } from './peer-messages'
 
 const clean = (s: string) => s.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ').replace(/\s+/g, ' ').trim()
 const segments = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
@@ -165,6 +166,20 @@ export function crewLayout(jobs: WakeChip[], agentNames: string[], now: number, 
   return { box: crewBox(rows, agentNames, rowWidth, crossing), rows }
 }
 
+/** Keep both known endpoints of a recent exchange, even after one worker finishes. */
+export function crewJobs(jobs: WakeChip[], now: number): WakeChip[] {
+  const known = new Set(jobs.flatMap(job => job.id ? [job.id] : []))
+  const linked = new Set<string>()
+  for (const job of jobs) for (const peer of job.peers ?? []) {
+    if (job.id && peer.target !== 'root' && known.has(peer.target)
+      && now >= peer.lastAt && now - peer.lastAt <= RECENT_PEER_MS) {
+      linked.add(job.id)
+      linked.add(peer.target)
+    }
+  }
+  return jobs.filter(job => job.running || job.awaitingRoot || job.id !== undefined && linked.has(job.id))
+}
+
 export function crewPage(total: number, room: number, requested: number): { page: number; pages: number; start: number; end: number } | null {
   if (total <= room || room < 2) return null
   const pageSize = room - 1
@@ -268,7 +283,7 @@ export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[
       const strength = link.wait ? 1 : pulseAge < 2_000 ? 0.65 + 0.35 * (Math.floor(pulseAge / 400) % 2) : messageFade(age)
       const description = [
         `${jobs[link.source]!.name} → ${jobs[link.target]!.name}`,
-        link.wait ? 'Waiting for peer' : link.preview ? link.preview : 'Message preview unavailable',
+        link.wait ? 'Waiting for peer' : messagePreview(link.preview),
       ]
       return { text, color, dim: !link.wait && age > 300_000, strength, flow: text.trim() ? packetFlow(link, index, now) : 0, description }
     })
@@ -295,12 +310,8 @@ export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[
         flow: pulseAge <= packetWindow(message.fresh ?? 1) ? 1 - pulseAge / packetWindow(message.fresh ?? 1) : 0,
         description: [
           outgoing ? 'Worker → root' : 'Root → worker',
-          message.messageState === 'observed'
-            ? 'Observed by Bridge; root read state unknown'
-            : message.messageState === 'sent'
-              ? 'Bridge sent; worker read state unknown'
-              : 'Bridge message state unavailable',
-          message.preview ?? 'Message preview unavailable',
+          messageStatus(message.messageState),
+          messagePreview(message.preview),
         ],
       }
     })
@@ -355,7 +366,7 @@ export const quotaMark = (quota: WakeQuota) => MARK[quota.cli]!
 export function quotaText(quota: WakeQuota, name = quota.account): string {
   // The stale-cache '~' only means something beside numbers; a dead account has none to be stale.
   const stale = !quota.status && quota.freshness && quota.freshness !== 'fresh' ? '~' : ''
-  return `${quotaMark(quota)}${name}${quota.active ? '*' : ''}${stale} ${quota.status ?? (quota.parts.length ? quota.parts.map(p => `${p.label}${Math.round(p.pct)}%${bar(p.pct / 100)}`).join(' ') : '?')}`
+  return `${quotaMark(quota)}${name}${quota.active ? '*' : ''}${stale} ${quota.status ?? (quota.parts.length ? quota.parts.map(p => p.pct === null ? `${p.label}?` : `${p.label}${Math.round(p.pct)}%${bar(p.pct / 100)}`).join(' ') : '?')}`
 }
 
 /** Neighbouring accounts of one CLI in the same dead state read once: '◈03–06 ✕ expired', not four times. */
@@ -369,7 +380,7 @@ function foldDead(quotas: WakeQuota[]): QuotaChunk[] {
     // neighbours that read the same fold into one: a dead state, or the same numbers on idle accounts (never the active one)
     const same = (other: WakeQuota | undefined) => other?.cli === quota.cli && other.status === quota.status
       && (quota.status !== undefined || (!quota.active && !other.active && other.freshness === quota.freshness
-        && JSON.stringify(other.parts.map(p => [p.label, Math.round(p.pct)])) === JSON.stringify(quota.parts.map(p => [p.label, Math.round(p.pct)]))))
+        && JSON.stringify(other.parts.map(p => [p.label, p.pct === null ? null : Math.round(p.pct)])) === JSON.stringify(quota.parts.map(p => [p.label, p.pct === null ? null : Math.round(p.pct)]))))
     while (same(quotas[j + 1])) j++
     if (j === i) { parts.push({ text: quotaText(quota), quotas: [quota] }); continue }
     const group = quotas.slice(i, j + 1)

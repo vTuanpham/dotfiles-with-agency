@@ -22,7 +22,7 @@ export type CodexJob = {
   waitingForRoot: boolean // runner is alive but the completed turn is idle
   lastMessage?: string // <= 400 chars
   finishedAt?: number
-  urgent: { at: number; text: string }[] // urgent events new since the cursor (turn_completed excluded), text <= 300
+  urgent: { id: string; at: number; text: string }[] // urgent events new since the cursor (turn_completed excluded), text <= 300
   completedNow: boolean // a turn_completed arrived since the cursor
   state: string
   reason: string
@@ -148,7 +148,7 @@ export async function scanCodex(
       lastMessage: job.last_message?.slice(0, 400),
       finishedAt: job.finished_at ? Date.parse(job.finished_at) : undefined,
       urgent: fresh.filter(e => e.wakes && e.kind !== 'turn_completed')
-        .map(e => ({ at: e.at ? Date.parse(e.at) : now, text: (e.text || e.kind).slice(0, 300) })),
+        .map(e => ({ id: e.id, at: e.at ? Date.parse(e.at) : now, text: (e.text || e.kind).slice(0, 300) })),
       completedNow: fresh.some(e => e.kind === 'turn_completed'),
       state: job.state, reason: job.stall.state === 'stalled' ? job.stall.reason : job.reason,
       eventKnown: job.last_event_at !== null, memoryBytes: job.memory_bytes, memoryCap: job.memory_cap,
@@ -158,7 +158,7 @@ export async function scanCodex(
           && e.source.startsWith(`${job.owner}/`) && e.target.startsWith(`${job.owner}/`)).map(e => {
           const message = snapshot.peers.recent_messages.filter(m => m.source === e.source && m.target === e.target && Date.parse(m.at) === Date.parse(e.last_at) && m.kind === e.last_kind).at(-1)
           return { target: e.source === job.id ? e.target : e.source, count: e.count, lastAt: Date.parse(e.last_at), outgoing: e.source === job.id,
-            preview: message?.preview ?? null, kind: message?.kind, messageId: message?.id }
+            preview: message?.preview, kind: message?.kind, messageId: message?.id }
         }),
         ...directRootPeers(job, snapshot.direct_messages ?? []),
       ],

@@ -9,6 +9,7 @@ import { drawMeteor } from './meteor'
 import { passages } from './exits'
 import { CAT_COLUMNS, CHARACTERS, type CharacterId, MOCHI_ROWS, asCharacter } from './mochi'
 import { drawLanterns, drawRainbow } from './flourishes'
+import { messagePreview, messageStatus } from './peer-messages'
 
 // The band's diorama. Every thing in it stands for something real:
 //   buildings      turns of this session (taller: more tool calls; wider: more edits)
@@ -29,6 +30,7 @@ import { drawLanterns, drawRainbow } from './flourishes'
 
 const H = SCENE_H
 export const SCENE_ROWS = H / 2
+export const MIN_SCENE_ROWS = 6 // Compact bands trim upper sky while retaining the ground and character.
 
 export type SceneTurn = { turn?: number; kinds: WakePulseKind[] }
 export type SceneEffect = { kind: 'fireworks' | 'storm' | 'shoot' | 'lanterns' | 'rainbow'; age: number }
@@ -99,7 +101,7 @@ export type SceneInput = {
   jobs: Job[]
   /** A message in flight: who to whom, how fresh (strength), how many (count, as the crew rows' ─ ━ ═ weights) and whose colour it carries. */
   /** arriving: ms since the edge's newest message reached this view, only while its packets run; fresh: one packet each */
-  peerEdges?: { source: string; target: string; strength: number; preview: string | null; messageState?: 'observed' | 'sent'; count?: number; family?: NonNullable<Job['kind']>; arriving?: number; fresh?: number }[]
+  peerEdges?: { source: string; target: string; strength: number; preview?: string | null; messageState?: 'observed' | 'sent'; relationship?: boolean; count?: number; family?: NonNullable<Job['kind']>; arriving?: number; fresh?: number }[]
   /** A message to (in) or from (out) the root is passing: Mochi shows an envelope. */
   mail?: 'in' | 'out'
   /** Who stands in Mochi's place (see mochi.ts); the default is Mochi herself. */
@@ -837,11 +839,10 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
     const worker = titleOf(edge.source === 'mochi' ? edge.target : edge.source)
     const owner = registerHit({
       id: `peer:${edge.source}:${edge.target}`,
-      title: rootMessage ? edge.source === 'mochi' ? `Root → ${worker}` : `${worker} → root` : `${titleOf(edge.source)} → ${titleOf(edge.target)}`,
+      title: edge.relationship ? `${worker} · root connection` : rootMessage ? edge.source === 'mochi' ? `Root → ${worker}` : `${worker} → root` : `${titleOf(edge.source)} → ${titleOf(edge.target)}`,
       details: [
-        ...(edge.messageState === 'observed' ? ['Worker output observed by Bridge; root read status unknown'] : []),
-        ...(edge.messageState === 'sent' ? ['Bridge sent; worker read status unknown'] : []),
-        edge.preview || 'Message preview unavailable',
+        ...(edge.messageState ? [messageStatus(edge.messageState)] : []),
+        messagePreview(edge.preview),
       ],
     })
     // A message is a comet in its sender's colour: a bright head running source to target, with a tail that fades slowly
@@ -919,17 +920,21 @@ export function eventName(input: SceneInput): string | undefined {
 
 /** The scene as a Raster's cells (one half block per cell, top pixel fg, bottom bg) and its
  * floor: the bottom row's most common colour, so a passing car doesn't change it. */
-export function sceneFrame(input: SceneInput, selected: SceneSelection | null = null): { cells: string; floor: number; hits: SceneHitMap } {
+export function sceneFrame(input: SceneInput, selected: SceneSelection | null = null, rows = SCENE_ROWS): { cells: string; floor: number; hits: SceneHitMap } {
+  if (!Number.isSafeInteger(rows) || rows < 1 || rows > SCENE_ROWS) throw new Error('Invalid scene row count')
   const hits: SceneHitMap = { columns: input.width, rows: SCENE_ROWS, owners: [], targets: [] }
   const px = scenePixels(input, [], hits)
   const W = input.width
-  const words = new Uint32Array(W * SCENE_ROWS * 3)
-  for (let r = 0; r < SCENE_ROWS; r++) {
+  const skip = SCENE_ROWS - rows
+  hits.rows = rows
+  hits.owners = hits.owners.slice(skip * W)
+  const words = new Uint32Array(W * rows * 3)
+  for (let r = 0; r < rows; r++) {
     for (let x = 0; x < W; x++) {
       const at = (r * W + x) * 3
       words[at] = 0x2580 // ▀
-      words[at + 1] = px[2 * r * W + x]!
-      words[at + 2] = px[(2 * r + 1) * W + x]!
+      words[at + 1] = px[2 * (r + skip) * W + x]!
+      words[at + 2] = px[(2 * (r + skip) + 1) * W + x]!
     }
   }
   const counts = new Map<number, number>()
@@ -941,7 +946,7 @@ export function sceneFrame(input: SceneInput, selected: SceneSelection | null = 
     if (n > (counts.get(floor) ?? 0)) floor = color
   }
   if (selected) {
-    const bounds = sceneCardBounds(W, SCENE_ROWS, { ...selected, details: selected.target.details })
+    const bounds = sceneCardBounds(W, rows, { ...selected, details: selected.target.details })
     if (bounds) {
       const inner = Math.max(0, bounds.width - 2)
       const hint = '/wake detail'

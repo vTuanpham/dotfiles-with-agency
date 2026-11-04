@@ -41,11 +41,15 @@ reading, searching and running commands.
   invariants in project instructions, reusable workflows in scoped skills, and
   detailed procedures in maintained docs or CLI help. Keep discovery cues and
   essential constraints; prefer clear skill descriptions and native enforcement
-  over repeated prose. Do not turn a one-off correction into a universal rule.
+  over repeated prose.
 - Before changing instructions, read applicable files in full and check affected
   project guidance for duplication/conflicts. Keep rules concise, durable and
   task-routed; omit status history and command catalogs. Preserve invariants when
   pruning. Agent-facing shorthand is fine when unambiguous.
+- Infer the intended outcome from examples and feedback, rather than copying
+  incidental details. Use judgment to achieve that outcome in the current context
+  while honoring explicit constraints. Document the resulting behavior without
+  repeated claims of compliance.
 - When a finding deserves keeping, update the owning maintained project docs
   rather than leaving a temporary note. Preserve durable insights, core ideas,
   decisions and non-obvious pitfalls; skip routine steps, raw logs and obvious

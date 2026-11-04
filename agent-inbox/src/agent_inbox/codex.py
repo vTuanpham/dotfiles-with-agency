@@ -6,11 +6,11 @@ from pathlib import Path
 
 from websockets.sync.client import unix_connect
 
-from . import codex_commands, codex_context
+from . import codex_commands, codex_context, codex_questions
 from .capabilities import AdapterCapabilities
 from .codex_history import history, turns
 from .codex_rpc import Rpc, RpcRejected, validate_root
-from .models import DeliveryRejected, RootInfo, Snapshot, fields, text
+from .models import DeliveryRejected, Outgoing, RootInfo, Snapshot, fields, text
 
 
 def settings(target):
@@ -73,9 +73,29 @@ def active_turn(page):
 class Codex:
     capabilities = AdapterCapabilities(
         queued_messages=True, mid_turn_steering=True, approvals_survive_restart=False,
-        history_while_unloaded=True, images=True, interrupt=True, commands=True, questions=False,
+        history_while_unloaded=True, images=True, interrupt=True, commands=True, questions=True,
         reply_mode="direct",
     )
+
+    def __init__(self):
+        self.questions = codex_questions.Questions()
+
+    def forms(self, target):
+        with connection(target) as rpc:
+            return self.questions.read(rpc, target, root(rpc, target))
+
+    def answer(self, target, identifier, answer, cancel=False, decline=False):
+        if decline:
+            raise DeliveryRejected("This asynchronous question has no decline action")
+        form = self.forms(target).selected(identifier)
+        if not cancel:
+            message_id, body = codex_questions.reply(form, answer)
+            with connection(target) as rpc:
+                info = root(rpc, target)
+            delivery = "steer" if info["status"]["type"] == "active" else "queue"
+            self.send(target, Outgoing(message_id, body, [], delivery))
+        self.questions.dismiss(target, identifier)
+        return "applied"
 
     def context(self, target):
         with connection(target) as rpc:

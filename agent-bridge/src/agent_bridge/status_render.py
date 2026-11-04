@@ -94,9 +94,10 @@ def quota(snapshot, backend=None, account=None):
         if backend and q.backend != backend or account and q.account != account:
             continue
         for window in q.windows:
+            remaining = "unknown" if window.remaining_percent is None else f"{window.remaining_percent}%"
             yield (
                 f"{q.account}\t{window.group}\t{window.limit}\t"
-                f"{window.remaining_percent}%\t{window.resets or ''}"
+                f"{remaining}\t{window.resets or ''}"
             )
 
 

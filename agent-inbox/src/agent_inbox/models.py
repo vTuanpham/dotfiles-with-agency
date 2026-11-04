@@ -94,11 +94,12 @@ class Answer:
 @dataclass(frozen=True)
 class Message:
     id: str
-    role: Literal["user", "assistant"]
+    role: Literal["user", "assistant", "system"]
     text: str
     phase: Literal["commentary", "partial_answer", "final_answer"] | None = None
     answers: list[Answer] | None = None
     images: list[str] | None = None
+    label: str | None = None
 
 
 @dataclass(frozen=True)

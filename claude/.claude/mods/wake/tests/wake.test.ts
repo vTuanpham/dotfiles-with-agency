@@ -2,14 +2,16 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { crewRows } from '../hooks/crew-row'
 import { LANDSCAPES } from '../hooks/landscapes'
-import { CAT_COLUMNS, SCENE_ROWS, sceneCardBounds, sceneFrame, type SceneInput } from '../hooks/scene'
+import { CAT_COLUMNS, MIN_SCENE_ROWS, SCENE_ROWS, sceneCardBounds, sceneFrame, type SceneInput } from '../hooks/scene'
 import { crewTiming, isTestCommand } from '../hooks/util'
 import ScenePointer from '../hooks/scene-hover'
-import type { WakeAgent, WakeChip } from '../types'
+import type { WakeAgent, WakeChip, WakeRecap } from '../types'
 
-type Node = string | { type: string; props?: Record<string, unknown>; children?: Node[] }
+type Node = string | { type: string; props?: Record<string, unknown>; hover?: { scope?: string }; children?: Node[] }
 
 const boxes = (node: Node): Exclude<Node, string>[] => typeof node === 'string' ? [] : [node, ...(node.children ?? []).flatMap(boxes)]
+
+let observedBashCalls: { command: string; agentId?: string }[] = []
 
 /** Every Text's words and Button's label, in order, one Box row per line. */
 function flat(node: Node, includeHidden = false): string {
@@ -27,6 +29,7 @@ function flat(node: Node, includeHidden = false): string {
 }
 
 function engine(on: On, appended?: (message: unknown) => void) {
+  observedBashCalls = []
   const clock = mock.clock(on, { now: 1_000_000 })
   mock.env(on, { HOME: '/home/u' })
   on('session.cwd', () => ({ value: '/proj' }))
@@ -40,7 +43,10 @@ function engine(on: On, appended?: (message: unknown) => void) {
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   on('tool.call', async (_$, e) => {
-    if (e.tool === 'Bash' && e.command.includes('fail')) return { isError: true as const, result: 'Exit code 1' as never, text: 'Exit code 1' }
+    if (e.tool === 'Bash') {
+      observedBashCalls.push({ command: e.command, agentId: e.agentId })
+      if (e.command.includes('fail')) return { isError: true as const, result: 'Exit code 1' as never, text: 'Exit code 1' }
+    }
     return { result: {} as never, text: 'ok' }
   })
   return clock
@@ -70,6 +76,28 @@ test('idle scene advances over time without input', async ($, on) => {
   await clock.advance(1_000)
   expect(frames.length).toBeGreaterThan(1)
   expect(new Set(frames).size).toBeGreaterThan(1)
+  await bar.unmount()
+})
+
+test('native subagent resource commands keep native execution and show their own admission state', async ($, on) => {
+  engine(on)
+  on('session.id', () => ({ value: 'root-a' }))
+  const agent: WakeAgent = { id: 'worker-a', name: 'Builder', type: 'worker', description: 'Build', since: 1 }
+  on('state.get', { plugin: 'wake', key: 'subagents' }, () => ({ value: { value: [agent], version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'nativeResources' }, () => ({ value: { value: [{
+    id: 'request-a', agentId: 'worker-a', command: 'task', state: 'queued', running: false,
+    needBytes: 3 * 1024 ** 3,
+    position: 2, queueLength: 3, reason: 'waiting for admission',
+  }], version: 1 } }))
+  await $.tool.call({ tool: 'Bash', command: 'agent-resources run --mem 3G -- task', agentId: 'worker-a' } as never)
+  expect(observedBashCalls).toHaveLength(1)
+  expect(observedBashCalls[0]?.agentId).toBe('worker-a')
+  expect(observedBashCalls[0]?.command).toContain("AGENT_RESOURCES_AGENT_ID='worker-a'")
+  const bar = await mount($, 'AbovePrompt', false, 100, 24)
+  const tree = (await bar.drawn()) as Node
+  expect(flat(tree)).toContain('⌁3G')
+  expect(flat(tree, true)).toContain('queue 2/3')
+  expect(flat(tree, true)).toContain('not total agent RAM or a memory cap')
   await bar.unmount()
 })
 
@@ -271,17 +299,46 @@ test('urgent actions remain visible in two rows with a large crew', async ($, on
   await bar.unmount()
 })
 
-test('quota details remain reachable through wake when crew is paged', async ($, on) => {
+test('quota rows stay inline when crew is paged', async ($, on) => {
   engine(on)
   const jobs: WakeChip[] = Array.from({ length: 8 }, (_, i) => ({ id: `owner/${i}`, name: `worker-${i}`, backend: 'codex', account: '01', model: 'gpt-6-sol', effort: 'high', running: true, isStale: false, since: 1 }))
   on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: jobs, version: 1 } }))
   on('state.get', { plugin: 'wake', key: 'quotas' }, () => ({ value: { value: [{ cli: 'codex', account: '01', plan: 'Pro', active: true, parts: [{ label: '5h', pct: 42, resets: 'tomorrow' }] }], version: 1 } }))
   const bar = await mount($, 'AbovePrompt', false, 80, 7)
-  expect(flat((await bar.drawn()) as Node)).toContain('quotas: /wake')
+  expect(flat((await bar.drawn()) as Node)).toContain('42%')
+  expect(flat((await bar.drawn()) as Node)).not.toContain('quotas: /wake')
   const result = await $.command.run({ command: 'wake', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as never)
   expect(result.text).toContain('5h42%')
   expect(result.text).toContain('tomorrow')
   await bar.unmount()
+})
+
+test('scene and optional recap never hide live crew or quota rows behind more', async ($, on) => {
+  engine(on)
+  const jobs: WakeChip[] = [
+    { name: 'builder', title: 'Builder', backend: 'claude', model: 'claude-sonnet-5-5', account: '01', effort: 'high', running: true, isStale: false, since: 1 },
+    { name: 'reviewer', title: 'Reviewer', backend: 'codex', model: 'gpt-6-sol', account: '01', effort: 'high', running: true, isStale: false, since: 1 },
+  ]
+  const quotas = ['claude', 'codex'].map((cli, index) => ({
+    cli, account: '01', plan: 'Pro', active: true,
+    parts: [{ label: 'weekly', pct: 42 + index, resets: null }],
+  }))
+  on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: jobs, version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'quotas' }, () => ({ value: { value: quotas, version: 1 } }))
+  let waiting: WakeRecap | null = null
+  on('state.get', { plugin: 'wake', key: 'recap' }, () => ({ value: { value: waiting, version: 1 } }))
+  for (const recap of [false, true]) {
+    waiting = recap ? { awaySince: 1, source: 'digest', lines: Array.from({ length: 5 }, () => ({ mark: 'done', text: 'Earlier recap detail' })) } : null
+    const bar = await mount($, 'AbovePrompt', false, 40, SCENE_ROWS + (recap ? 7 : 5))
+    const drawn = flat((await bar.drawn()) as Node)
+    expect(drawn).toContain('Builder')
+    expect(drawn).toContain('Reviewer')
+    expect(drawn).toContain('42%')
+    expect(drawn).toContain('43%')
+    expect(drawn).not.toContain('more · /wake')
+    expect(drawn).toContain('<mochi>')
+    await bar.unmount()
+  }
 })
 
 test('one crew job at 180 columns keeps its status and model next to the title', async ($, on) => {
@@ -329,7 +386,7 @@ test('with the model inventory loaded, effort is a meter on the model scale and 
   await bar.unmount()
 })
 
-test('every hover card sits inside a keyed Box, whatever columns the crew rows show', async ($, on) => {
+test('every hover card has a keyed Box or a native hover scope', async ($, on) => {
   // The engine refuses the whole band for one unkeyed hover card (the peers column did once), so check them all at once.
   engine(on)
   const peers = [{ target: 'root', count: 2, lastAt: 995_000, observedAt: 995_000, outgoing: true, preview: 'Done' }]
@@ -343,13 +400,45 @@ test('every hover card sits inside a keyed Box, whatever columns the crew rows s
   on('state.get', { plugin: 'wake', key: 'effortLevels' }, () => ({ value: { value: { at: 1, levels: { agy: { 'gemini-3.8-flash-high': ['low', 'medium', 'high'] } } }, version: 1 } }))
   const bar = await mount($, 'AbovePrompt', false, 140, 40)
   const unkeyed = (node: Node, keyed: boolean): number => typeof node === 'string' ? 0
-    : (node.type === 'Box' && node.props?.display === 'none' && !keyed ? 1 : 0)
+    : (node.type === 'Box' && node.props?.display === 'none' && !keyed && !node.hover?.scope ? 1 : 0)
       + (node.children ?? []).reduce((sum, child) => sum + unkeyed(child, keyed || (node.type === 'Box' && node.props?.key !== undefined)), 0)
   const tree = (await bar.drawn()) as Node
   expect(flat(tree)).toContain('Face validation')
   expect(boxes(tree).filter(node => node.props?.display === 'none').length).toBeGreaterThan(4)
   expect(unkeyed(tree, false)).toBe(0)
   await bar.unmount()
+})
+
+test('metric and quota hover cards stay inside their full row at small and large widths', async ($, on) => {
+  engine(on)
+  const job: WakeChip = { id: 'owner/review', name: 'review', title: 'Review', backend: 'codex', account: '01', model: 'gpt-6.1-sol', effort: 'high', running: true, isStale: false, since: 1, lastEventAt: 995_000, memoryBytes: 1.4 * 1024 ** 3, memoryCap: '3G',
+    peers: [{ target: 'owner/build', outgoing: true, count: 1, lastAt: 995_000, preview: null }] }
+  const quotas = [{ cli: 'claude', account: '01', plan: '', active: true, parts: [{ label: 'w', pct: 21, resets: null }] }]
+  on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: [job], version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'quotas' }, () => ({ value: { value: quotas, version: 1 } }))
+  for (const columns of [28, 60, 100, 190]) {
+    const bar = await mount($, 'AbovePrompt', false, columns, 24)
+    const tree = (await bar.drawn()) as Node
+    const nodes = boxes(tree)
+    const cards = nodes.filter(node => node.props?.display === 'none')
+    expect(cards.length).toBeGreaterThan(2)
+    for (const card of cards) {
+      const parent = nodes.find(node => node.children?.includes(card))!
+      const scope = card.hover?.scope
+      expect(typeof scope).toBe('string')
+      expect(nodes.some(node => node !== card && node.hover?.scope === scope)).toBe(true)
+      expect(parent.props?.position).toBe('relative')
+      expect(Number(parent.props?.width)).toBeLessThanOrEqual(columns)
+      expect(Number(card.props?.width)).toBeLessThanOrEqual(Number(parent.props?.width))
+      expect(card.props?.left === 0 || card.props?.right === 0).toBe(true)
+      expect(card.props?.bottom).toBe(1)
+    }
+    if (columns >= 60) {
+      expect(flat(tree, true)).toContain('Preview withheld by Bridge')
+    }
+    if (columns >= 100) expect(flat(tree, true)).toContain('1.4 GiB of the 3G cap')
+    await bar.unmount()
+  }
 })
 
 test('the quota line leads with the CLI at work and shows unknown accounts', async ($, on) => {
@@ -383,7 +472,8 @@ test('crew, model and quota marks carry per-item details and keep the text legen
   const text = flat(tree, true)
   for (const key of ['wake-agent-harness-0', 'wake-agent-model-0', 'wake-crew-harness-0', 'wake-crew-model-0', 'wake-quota-0-0']) expect(keys).toContain(key)
   const modelMark = nodes.find(node => node.type === 'Box' && node.props?.key === 'wake-crew-model-0')
-  expect(modelMark?.children?.some(node => typeof node !== 'string' && node.type === 'Box' && node.props?.display === 'none')).toBe(true)
+  const modelScope = modelMark?.hover?.scope
+  expect(nodes.some(node => node.props?.display === 'none' && node.hover?.scope === modelScope)).toBe(true)
   expect(text).toContain('Model ID: gpt-6.1-terra')
   expect(text).toContain('Model ID: claude-sonnet-5-5')
   expect(text).toContain('reset: in 2 hours')
@@ -403,7 +493,9 @@ test('harness images and model maker images remain separate', async ($, on) => {
   const harness = nodes.find(node => node.props?.key === 'wake-crew-harness-0')!
   const model = nodes.find(node => node.props?.key === 'wake-crew-model-0')!
   expect(boxes(harness).find(node => node.type === 'Image')?.props?.alt).toBe('Antigravity')
-  expect(boxes(model).find(node => node.type === 'Image')?.props?.alt).toBe('Anthropic')
+  const cardFor = (nodes: Exclude<Node, string>[], trigger: Exclude<Node, string>) => nodes.find(node => node.props?.display === 'none'
+    && node.hover?.scope === trigger.hover?.scope)!
+  expect(boxes(cardFor(nodes, model)).find(node => node.type === 'Image')?.props?.alt).toBe('Anthropic')
   const picture = boxes(harness).find(node => node.type === 'Image')!
   expect(picture.props?.columns).toBe(2)
   expect(picture.props?.rows).toBe(1)
@@ -412,7 +504,7 @@ test('harness images and model maker images remain separate', async ($, on) => {
   jobs = [{ ...job, model: 'unknown-model' }]
   const second = await mount($, 'AbovePrompt', false, 80)
   nodes = boxes((await second.drawn()) as Node)
-  expect(boxes(nodes.find(node => node.props?.key === 'wake-crew-model-0')!).some(node => node.type === 'Image')).toBe(false)
+  expect(boxes(cardFor(nodes, nodes.find(node => node.props?.key === 'wake-crew-model-0')!)).some(node => node.type === 'Image')).toBe(false)
   await second.unmount()
 })
 
@@ -492,7 +584,7 @@ test('Raster cards stay inside the scene and leave status and crew unchanged at 
   on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: jobs, version: 1 } }))
   on('state.get', { plugin: 'wake', key: 'surroundings' }, () => ({ value: { value: { place: { key: 'fixture', name: 'Fixture', country: '', lat: 0, lon: 0, source: 'named' }, preset: 'city', presetSource: 'pinned', weather: { fetchedAt: 1_000_000, utcOffsetSeconds: 0, temp: 24, code: 3, isDay: true, cloud: 0.8, precipitation: 0, snowfall: 0, wind: 4, sunrise: 6, sunset: 18, hours: [] } }, version: 1 } }))
   // the scene is SCENE_ROWS tall plus its headline: the smallest band fits just that, the larger ones a crew too
-  for (const width of [40, 100, 180]) for (const maxRows of [SCENE_ROWS + 2, SCENE_ROWS + 4, SCENE_ROWS + 8]) {
+  for (const width of [40, 100, 180]) for (const maxRows of [SCENE_ROWS + 2, SCENE_ROWS + 5, SCENE_ROWS + 8]) {
     jobs = maxRows === SCENE_ROWS + 2 ? [] : [job, { ...job, id: 'owner/b', name: 'second' }, { ...job, id: 'owner/c', name: 'third' }]
     const bar = await mount($, 'AbovePrompt', false, width, maxRows)
     const before = (await bar.drawn()) as Node
@@ -651,7 +743,8 @@ test('the crew legend is available on demand', async ($, on) => {
   engine(on)
   const result = await $.command.run({ command: 'wake', args: 'legend', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as never)
   expect(result.text).toContain('⌁ heavy queue')
-  expect(result.text).toContain('▣▰▱ is memory against the job cap')
+  expect(result.text).toContain('▣▰▱ is Bridge scope use against the job cap')
+  expect(result.text).toContain('native Claude rN is admitted local-command need')
   expect(result.text).toContain('↗/↙')
 })
 
@@ -667,18 +760,14 @@ test('/wake mochi lists the characters, picks one and remembers it', async ($, o
   expect(await run('mochi')).toContain('Now: Tabby')
 })
 
-test('a larger crew is reachable by pages while the scene remains visible', async ($, on) => {
+test('a larger crew keeps a compact scene while every worker fits inline', async ($, on) => {
   engine(on)
   const jobs: WakeChip[] = Array.from({ length: 8 }, (_, i) => ({ name: `job${i}`, title: `Worker ${i}`, backend: 'codex', account: '01', model: 'sol', effort: 'high', running: true, isStale: false, since: 1, lastEventAt: 995_000 }))
   on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: jobs, version: 1 } }))
   const bar = await mount($, 'AbovePrompt', false, 80)
   const first = flat((await bar.drawn()) as Node)
   expect(first).toContain('<mochi>')
-  await bar.press({ key: 'crew-next' })
-  const second = flat((await bar.drawn()) as Node)
-  await bar.press({ key: 'crew-next' })
-  const third = flat((await bar.drawn()) as Node)
-  for (const job of jobs) expect(first + second + third).toContain(job.title!)
+  for (const job of jobs) expect(first).toContain(job.title!)
   await bar.unmount()
 })
 
@@ -727,7 +816,7 @@ test('after ten idle minutes a recap waits above the prompt, from the log when n
   expect(drawn).toContain('<mochi>') // the recap shares the band with the scene when there is room for both
   await bar.unmount()
 
-  const tight = await mount($, 'AbovePrompt', false, 100, SCENE_ROWS + 2) // no room for both: the recap wins, as the thing to read
+  const tight = await mount($, 'AbovePrompt', false, 100, MIN_SCENE_ROWS + 2) // not even a compact scene fits beside the recap
   const tightDrawn = flat((await tight.drawn()) as Node)
   expect(tightDrawn).toContain('since last activity')
   expect(tightDrawn).not.toContain('<mochi>')

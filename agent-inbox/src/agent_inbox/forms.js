@@ -23,6 +23,7 @@ function decodeForms(raw) {
   const ok=raw && typeof raw==='object' && isText(raw.unavailable) &&
     list(raw.forms,form=>isText(form.id) && isText(form.title) && hasHtml(form,'title') && isText(form.unavailable) && Array.isArray(form.fields) && form.fields.every(decodeField));
   if(ok && raw.forms.some(form=>form.can_decline!==undefined && typeof form.can_decline!=='boolean')) throw new Error('Invalid native question actions.');
+  if(ok && raw.forms.some(form=>form.response_mode!==undefined && !['native','message'].includes(form.response_mode))) throw new Error('Invalid native question response mode.');
   if(!ok) throw new Error('Questions were not in a recognized format.');
   return raw;
 }
@@ -85,7 +86,7 @@ class FormsPanel {
     this.roots=new Map(); this.request=0; this.loading=false;
   }
   rootData(id) {
-    if(!this.roots.has(id)) this.roots.set(id,{forms:[],states:new Map(),ready:false,warning:''});
+    if(!this.roots.has(id)) this.roots.set(id,{forms:[],states:new Map(),ready:false,warning:'',unavailable:''});
     return this.roots.get(id);
   }
   /* A card is answerable only when it has fields; one with an `unavailable` reason is explanation only. */
@@ -93,7 +94,10 @@ class FormsPanel {
     const root=this.current(), data=root && this.rootData(root.id);
     return !!data && data.ready && !document.hidden && data.forms.some(form=>form.fields.length>0);
   }
-  hasAny() { const root=this.current(); return !!root && this.rootData(root.id).forms.length>0; }
+  hasAny() {
+    const root=this.current(), data=root && this.rootData(root.id);
+    return !!data && (data.forms.length>0 || !!data.unavailable);
+  }
   reset() {
     this.request++; this.loading=false;
     if(this.current()) this.rootData(this.current().id).ready=false;
@@ -107,6 +111,7 @@ class FormsPanel {
       const result=decodeForms(await this.api('/api/forms?id='+encodeURIComponent(root.id)));
       if(version!==this.request) return;
       this.accept(root.id,result.forms);
+      this.rootData(root.id).unavailable=result.unavailable;
     } catch(error) {
       if(version!==this.request) return;
       const data=this.rootData(root.id);
@@ -116,7 +121,7 @@ class FormsPanel {
   accept(rootId, forms) {
     if(!forms) return;
     const data=this.rootData(rootId), listed=new Set(forms.map(form=>form.id));
-    data.ready=true; data.warning='';
+    data.ready=true; data.warning=''; data.unavailable='';
     data.forms=forms.slice();
     for(const [id,state] of data.states) {
       state.gone=!listed.has(id);
@@ -143,6 +148,12 @@ class FormsPanel {
       state.sync();
       return state.node;
     }) : [];
+    const data=root && this.rootData(root.id);
+    if(data?.unavailable) {
+      data.notice ??= el('p',{class:'q-note',role:'status'});
+      data.notice.textContent=data.unavailable;
+      nodes.push(data.notice);
+    }
     const same=box.children.length===nodes.length && nodes.every((node,index)=>box.children[index]===node);
     if(!same) { box.textContent=''; box.append(...nodes); }
     this.onChange();
@@ -160,7 +171,7 @@ class FormsPanel {
     const note=form.fields.length ? null : el('p',{class:'q-note',text:(form.unavailable || 'This question cannot be answered here.')+' Answer it in the native session.'});
     const status=el('p',{class:'q-status',role:'status'});
     const send=el('button',{type:'submit',class:'primary',text:'Send answer'});
-    const cancel=el('button',{type:'button',class:'quiet',text:'Cancel question',onclick:()=>this.submit(rootId,state,true)});
+    const cancel=el('button',{type:'button',class:'quiet',text:form.response_mode==='message' ? 'Dismiss question' : 'Cancel question',onclick:()=>this.submit(rootId,state,true)});
     const decline=el('button',{type:'button',class:'quiet',text:'Decline question',hidden:!form.can_decline,
       onclick:()=>this.submit(rootId,state,false,true)});
     const check=el('button',{type:'button',class:'quiet',text:'Check delivery',onclick:()=>this.deliver(rootId,state)});

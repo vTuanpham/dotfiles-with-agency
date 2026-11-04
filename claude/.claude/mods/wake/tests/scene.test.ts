@@ -1,10 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
 import { PACKET_RUN_MS } from '../hooks/crew-row'
+import { sceneInput, type BandState } from '../hooks/band'
 import { LANDSCAPES } from '../hooks/landscapes'
 import { P, SCENE_H } from '../hooks/landscapes/kit'
 import { canvas, hash, seedOf } from '../hooks/pixels'
-import { CAT_COLUMNS, type SceneInput, arcCells, lookOf, readScenePointer, sceneFrame, sceneHitAt, scenePixels } from '../hooks/scene'
+import { CAT_COLUMNS, MIN_SCENE_ROWS, SCENE_ROWS, type SceneInput, arcCells, lookOf, readScenePointer, sceneFrame, sceneHitAt, scenePixels } from '../hooks/scene'
 import { readable } from '../hooks/util'
 
 const base: SceneInput = {
@@ -26,6 +27,24 @@ const base: SceneInput = {
   plan: { done: 1, total: 4 },
   effect: null,
 }
+
+test('compact scenes retain their bottom pixels and remap every hover cell', () => {
+  for (const preset of Object.keys(LANDSCAPES) as SceneInput['preset'][]) {
+    const input = { ...base, preset }
+    const full = sceneFrame(input)
+    for (const rows of [MIN_SCENE_ROWS, SCENE_ROWS - 1]) {
+      const compact = sceneFrame(input, null, rows)
+      const offset = (SCENE_ROWS - rows) * input.width
+      expect(compact.cells).toBe(full.cells.slice(offset * 16)) // 12 bytes/cell encodes to 16 base64 chars.
+      expect(compact.floor).toBe(full.floor)
+      expect(compact.hits.rows).toBe(rows)
+      expect(compact.hits.owners).toEqual(full.hits.owners.slice(offset))
+      for (let y = 0; y < rows; y++) for (let x = 0; x < input.width; x++) {
+        expect(sceneHitAt(compact.hits, x, y)).toEqual(sceneHitAt(full.hits, x, y + SCENE_ROWS - rows))
+      }
+    }
+  }
+})
 
 const weathers: SceneInput['weather'][] = [
   null,
@@ -125,12 +144,18 @@ test('Bridge root messages connect to Mochi in the recorded direction without co
   const outgoingTarget = outgoing.hits.targets.find(item => item.id === 'peer:owner/job:mochi')
   expect(incomingTarget).toMatchObject({
     title: 'Root → Worker',
-    details: ['Bridge sent; worker read status unknown', 'Inspect this result'],
+    details: ['Message sent by Bridge', 'Inspect this result'],
   })
   expect(outgoingTarget).toMatchObject({
     title: 'Worker → root',
-    details: ['Worker output observed by Bridge; root read status unknown', 'Result is ready'],
+    details: ['Worker report published', 'Result is ready'],
   })
+  const relation = sceneFrame({ ...rootToWorker, peerEdges: [
+    { source: 'mochi', target: 'owner/job', strength: 1, relationship: true,
+      preview: 'Bridge job · working for the root' },
+  ] }).hits.targets.find(item => item.id === 'peer:mochi:owner/job')
+  expect(relation).toMatchObject({ title: 'Worker · root connection',
+    details: ['Bridge job · working for the root'] })
   expect(incoming.hits.owners).toContain(incoming.hits.targets.indexOf(incomingTarget!) + 1)
   expect(outgoing.hits.owners).toContain(outgoing.hits.targets.indexOf(outgoingTarget!) + 1)
   expect(incoming.cells).not.toBe(outgoing.cells) // the bright terminal mark follows the recorded destination
@@ -147,6 +172,21 @@ test('Bridge root messages connect to Mochi in the recorded direction without co
     expect(linked[y * rootToWorker.width + x]).toBe(background[y * rootToWorker.width + x])
     expect(linked[(y + 1) * rootToWorker.width + x]).toBe(background[(y + 1) * rootToWorker.width + x])
   }
+})
+
+test('a root relationship remains after the last recorded message expires', () => {
+  const now = 1_000_000
+  const state: BandState = {
+    here: null, tally: { turns: 0, added: 0, removed: 0, files: [], lastTurnMs: 0 },
+    turnStartedAt: null, pulse: [], plan: [], mood: 'idle', subagents: [],
+    chips: [{ id: 'owner/job', name: 'Worker', backend: 'codex', account: '01', model: '', effort: '',
+      running: true, isStale: false, since: 0, peers: [
+        { target: 'root', count: 1, lastAt: now - 900_001, outgoing: true, messageState: 'observed' },
+      ] }],
+  }
+  const [edge] = sceneInput(state, 120, 0, null, now).peerEdges!
+  expect(edge).toMatchObject({ source: 'mochi', target: 'owner/job', relationship: true })
+  expect(edge!.arriving).toBeUndefined()
 })
 
 test('the trail to the root stays put while Mochi\'s "!" blinks, her envelope hops and the other trails come and go', () => {

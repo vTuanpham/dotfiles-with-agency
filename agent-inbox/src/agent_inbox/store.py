@@ -152,6 +152,12 @@ class Store:
         with self.connection() as db:
             db.execute("UPDATE receipts SET status='unknown' WHERE status='sending'")
 
+    def answered_questions(self, target_id):
+        with self.connection() as db:
+            return {row[0] for row in db.execute(
+                "SELECT subject FROM receipts WHERE target=? AND operation='answer' "
+                "AND status='applied' AND subject IS NOT NULL", (target_id,))}
+
     def reserve(self, message_id, target_id, message, operation="send", subject=None, legacy_message=None):
         if operation not in ("send", "command", "answer"):
             raise ValueError("Unknown receipt operation")

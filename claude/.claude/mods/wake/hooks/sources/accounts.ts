@@ -44,12 +44,12 @@ export function quotaGroups(quotas: WakeQuota[]): { cli: WakeQuota['cli']; accou
   for (const q of quotas) {
     // agy parts are bucket+window ('Gh', 'Gw'): print each bucket once, then its windows, like codex's 'h39 w39'
     const text = q.status ?? (q.cli === 'agy'
-      ? [...new Set(q.parts.map(p => p.label[0]))].map(b => `${b} ${q.parts.filter(p => p.label[0] === b).map(p => `${p.label.slice(1)}${p.pct}`).join(' ')}`).join(' · ')
-      : q.parts.map(p => `${p.label}${p.pct}`).join(' '))
+      ? [...new Set(q.parts.map(p => p.label[0]))].map(b => `${b} ${q.parts.filter(p => p.label[0] === b).map(p => `${p.label.slice(1)}${p.pct ?? '?'}`).join(' ')}`).join(' · ')
+      : q.parts.map(p => `${p.label}${p.pct ?? '?'}`).join(' '))
     const name = q.account + (q.active ? '*' : '')
     const last = out.at(-1)
     if (last && last.cli === q.cli && last.text === text) last.accounts.push(name)
-    else out.push({ cli: q.cli, accounts: [name], text, low: q.parts.some(p => p.pct < 20), bad: q.status !== undefined })
+    else out.push({ cli: q.cli, accounts: [name], text, low: q.parts.some(p => p.pct !== null && p.pct < 20), bad: q.status !== undefined })
   }
   return out
 }

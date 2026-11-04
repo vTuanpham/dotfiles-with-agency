@@ -25,6 +25,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "agent-client-protocol" },
+    { name = "agent-session" },
     { name = "claude-agent-sdk" },
     { name = "linkify-it-py" },
     { name = "markdown-it-py" },
@@ -42,6 +43,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agent-client-protocol", specifier = "==0.12.1" },
+    { name = "agent-session", editable = "../agent-session" },
     { name = "claude-agent-sdk", specifier = "==0.2.173" },
     { name = "linkify-it-py", specifier = "==2.2.0" },
     { name = "markdown-it-py", specifier = "==4.0.0" },
@@ -54,6 +56,20 @@ requires-dist = [
 dev = [
     { name = "pytest" },
     { name = "ruff" },
+]
+
+[[package]]
+name = "agent-session"
+version = "0.1.0"
+source = { editable = "../agent-session" }
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = "==9.2.0" },
+    { name = "ruff", specifier = "==0.17.3" },
+    { name = "ty", specifier = "==0.0.94" },
 ]
 
 [[package]]

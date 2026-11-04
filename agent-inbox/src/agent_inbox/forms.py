@@ -80,6 +80,7 @@ class QuestionForm:
     fields: list[FormField]
     unavailable: str = ""
     can_decline: bool = False
+    response_mode: str = "native"
 
     def validate(self, answer):
         if self.unavailable or type(answer) is not dict or answer.keys() - {f.key for f in self.fields}:

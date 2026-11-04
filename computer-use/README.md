@@ -65,6 +65,27 @@ for desktop workflows, but there is no cross-driver workflow lock. Use a VM or
 another machine for reliably independent computer use. Physical input remains
 an explicitly authorized step. Secret entry stays with [Agent Baton](../agent-baton/README.md).
 
+For inspection, select the smallest supported capture target without bringing it
+forward. The installed Windows interfaces provide:
+
+| Operation | agent-desktop 1.0.2 | Cua 0.38.0 |
+| --- | --- | --- |
+| Window capture | `screenshot --window-id ID` | `get_window_state` with exact `pid` and `window_id`; screenshot-only reads support `display_only: true` |
+| Region capture | No screenshot crop flag | `zoom` uses a region of the window snapshot |
+| Background actions | Semantic refs; Windows `type` and cursor-moving input require `--headed` | Window targets default to `delivery_mode: "background"`; unsupported delivery returns a structured refusal |
+
+A window capture reads its current content, including whichever terminal or
+browser tab the user selected. If the user changes that window's tab, dialog,
+layout or input focus between observation and action, re-observe the target and
+check whether the action is still needed. Background delivery avoids a foreground
+swap; it does not reserve the app's state. For layout checks that do not need the
+live desktop, use an isolated renderer or headless fixture.
+
+These flags and delivery limits come from the installed help and `describe`
+schemas. The upstream [observation reference](https://github.com/vercel-labs/agent-desktop/blob/v1.0.2/skills/agent-desktop/references/commands-observation.md)
+and [Cua action model](https://cua.ai/docs/cua-driver/concepts/how-cua-driver-works)
+explain capture and verification; reread local schemas after upgrades.
+
 Cua remains independently installed and updated through its
 [official updater](https://cua.ai/docs/cua-driver/guides/operate). Read its installed
 `describe` schemas after an upgrade: 0.35 changed the default window-state tree.

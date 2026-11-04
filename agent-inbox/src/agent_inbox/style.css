@@ -128,6 +128,10 @@ h1{margin:0;font-size:16px;line-height:1.3;font-weight:650;overflow:hidden;text-
 .thumb-remove .icon svg{width:14px;height:14px}
 
 /* Activity lives in the chat stream, in the order the native timeline reports it. */
+.msg.system .native-notice{min-width:0;flex:1;border-left:2px solid var(--line2);padding:4px 12px;color:var(--muted)}
+.native-notice-label{margin:0 0 6px;font-size:12px;font-weight:600;color:var(--muted)}
+.msg.system .body{font-size:14px;overflow-wrap:anywhere}
+.msg.system .body>:last-child{margin-bottom:0}
 .msg.activity{margin:2px 0}
 .msg.activity .slot{flex:0 0 28px}
 .steps{display:flex;flex-direction:column;flex:1;min-width:0;gap:1px}

@@ -294,6 +294,26 @@ def test_http_error_does_not_disclose_diagnostics(http_server, store, provider, 
     assert "private" not in json.dumps(data)
 
 
+@pytest.mark.parametrize("cancel", [False, True])
+def test_message_question_resolution_persists_without_hiding_native_forms(
+        http_server, store, provider, monkeypatch, cancel):
+    _, token = store.pair(store.pair_code(), "Phone")
+    cookie = "inbox=" + token
+    forms = [QuestionForm("async", "Choose", [FormField("pick", "Continue", "boolean", True)],
+                          response_mode="message"),
+             QuestionForm("native", "Other", [FormField("pick", "Continue", "boolean", True)])]
+    monkeypatch.setattr(provider, "forms", lambda selected: Forms(forms), raising=False)
+    monkeypatch.setattr(provider, "answer", lambda *args: "applied", raising=False)
+    assert len(request(http_server, "GET", "/api/forms?id=first", cookie=cookie)[2]["forms"]) == 2
+    payload = {"id": str(uuid.uuid4()), "target": "first", "form": "async",
+               "answer": {} if cancel else {"pick": True}, "cancel": cancel}
+    assert request(http_server, "POST", "/api/answer", payload, cookie)[2]["status"] == "applied"
+    assert "async" in Store(store.home).answered_questions("first")
+    rows = request(http_server, "GET", "/api/forms?id=first", cookie=cookie)[2]["forms"]
+    assert [row["id"] for row in rows] == ["native"]
+    assert len(request(http_server, "GET", "/api/forms?id=second", cookie=cookie)[2]["forms"]) == 2
+
+
 def test_http_native_controls_and_answers_are_authenticated_and_root_scoped(
         http_server, store, provider, monkeypatch):
     _, token = store.pair(store.pair_code(), "Phone")

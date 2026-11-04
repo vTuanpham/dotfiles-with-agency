@@ -13,7 +13,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .identity import identity
+from .identity import agent_id as resource_agent_id
+from .identity import identity, validate_agent_id
 from .resources import MIB, limits, memory_size, pressure, wait_reason
 
 PROC = Path("/proc")
@@ -55,6 +56,27 @@ def reservation_path(path):
 
 def control_path(path):
     return path.with_suffix(".request.control")
+
+
+def agent_path(path):
+    # Other versions may read the same live queue and reject unknown request fields.
+    return path.with_suffix(".request.agent")
+
+
+def read_agent_id(path):
+    try:
+        fd = os.open(agent_path(path), os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return None
+    try:
+        if os.fstat(fd).st_size > 4096:
+            raise ValueError("oversized resource agent metadata")
+        data = json.loads(os.read(fd, 4096))
+    finally:
+        os.close(fd)
+    if type(data) is not dict or set(data) != {"agent_id"}:
+        raise ValueError("invalid resource agent metadata")
+    return validate_agent_id(data["agent_id"])
 
 
 def read_state(path):
@@ -212,7 +234,7 @@ def entries(folder, own=None, dead=None):
     result = []
     for temporary in folder.glob(".state-*"):
         temporary.unlink()
-    for suffix in ("need", "control"):
+    for suffix in ("need", "control", "agent"):
         for metadata in folder.glob(f"*.request.{suffix}"):
             if not metadata.with_suffix("").exists():
                 metadata.unlink()
@@ -235,6 +257,7 @@ def entries(folder, own=None, dead=None):
                     path.unlink()
                     reservation_path(path).unlink(missing_ok=True)
                     control_path(path).unlink(missing_ok=True)
+                    agent_path(path).unlink(missing_ok=True)
                     continue
             if os.fstat(fd).st_size > 4096:
                 raise ValueError("oversized heavy queue entry")
@@ -246,22 +269,24 @@ def entries(folder, own=None, dead=None):
                     or type(row["running"]) is not bool or type(row["slots"]) is not int
                     or row["slots"] < 1):
                 raise ValueError("invalid heavy queue entry")
+            row["agent_id"] = read_agent_id(path)
             if row["owner"] is not None and (type(row["owner"]) is not str or len(row["owner"]) > 400):
                 raise ValueError("invalid heavy owner")
-            if set(row) == required | metadata:
-                if (any(type(row[key]) is not str for key in ("job", "command", "namespace"))
-                        or type(row["pid"]) is not int or row["pid"] < 1
-                        or row["host_namespace"] is not None and type(row["host_namespace"]) is not str
-                        or row["host_pid"] is not None
-                        and (type(row["host_pid"]) is not int or row["host_pid"] < 1)
-                        or row["running"] and (type(row["started_at"]) is not str
-                                               or type(row["started_ns"]) is not int
-                                               or row["started_ns"] < 0)):
-                    raise ValueError("invalid heavy holder metadata")
-                if row["host_pid"] is None:
-                    row["host_pid"] = resolve_host_pid(row)
-                    if row["host_pid"] is not None:
-                        write_request(fd, row)
+            if (any(type(row[key]) is not str for key in ("job", "command", "namespace"))
+                    or type(row["pid"]) is not int or row["pid"] < 1
+                    or row["host_namespace"] is not None and type(row["host_namespace"]) is not str
+                    or row["host_pid"] is not None
+                    and (type(row["host_pid"]) is not int or row["host_pid"] < 1)
+                    or row["running"] and (type(row["started_at"]) is not str
+                                            or type(row["started_ns"]) is not int
+                                            or row["started_ns"] < 0)):
+                raise ValueError("invalid heavy holder metadata")
+            if row["host_pid"] is None:
+                row["host_pid"] = resolve_host_pid(row)
+                if row["host_pid"] is not None:
+                    stored = dict(row)
+                    stored.pop("agent_id", None)
+                    write_request(fd, stored)
             row.update(reservation(path, row))
             row["control"] = control(path)
             result.append((path, row))
@@ -295,11 +320,12 @@ def scope_prefix(memory_max):
     raise RuntimeError("systemd user scope unavailable; requested memory cap cannot be applied")
 
 
-def run(command, memory_max=None, mem=None, exclusive=False):
+def run(command, memory_max=None, mem=None, exclusive=False, agent_id=None):
     if not command:
         raise ValueError("heavy needs a command after --")
     if os.environ.get("AGENT_RESOURCES_ACTIVE"):
         raise RuntimeError("nested heavy commands would deadlock; wrap the outer command only")
+    agent_id = resource_agent_id(agent_id)
     need = memory_size(mem) if mem is not None else DEFAULT_NEED
     host = pressure()
     # Moving a worker into a sibling scope would discard its inherited per-job caps.
@@ -319,6 +345,8 @@ def run(command, memory_max=None, mem=None, exclusive=False):
             inner += ["--mem", str(need)]
         if exclusive:
             inner += ["--exclusive"]
+        if agent_id is not None:
+            inner += ["--agent-id", agent_id]
         inner += ["--", *command]
         os.execvpe(prefix[0], [*prefix, "--", *inner], dict(os.environ))
     policy = limits(host)
@@ -343,6 +371,13 @@ def run(command, memory_max=None, mem=None, exclusive=False):
                        "host_pid": os.getpid() if namespace == host_namespace else None,
                        "started_at": None, "started_ns": None}
             write_request(fd, request)
+            if agent_id is not None:
+                attribution_fd = os.open(agent_path(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                                         | os.O_NOFOLLOW, 0o600)
+                try:
+                    os.write(attribution_fd, json.dumps({"agent_id": agent_id}).encode())
+                finally:
+                    os.close(attribution_fd)
             metadata_fd = os.open(reservation_path(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL
                                   | os.O_NOFOLLOW, 0o600)
             try:
@@ -432,3 +467,4 @@ def run(command, memory_max=None, mem=None, exclusive=False):
             path.unlink(missing_ok=True)
             reservation_path(path).unlink(missing_ok=True)
             control_path(path).unlink(missing_ok=True)
+            agent_path(path).unlink(missing_ok=True)

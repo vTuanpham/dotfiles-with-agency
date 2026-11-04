@@ -130,6 +130,12 @@ function messageNode(item, first, animate) {
   for(const [index,url] of (item.images || []).entries()) {
     body.append(el('img',{class:'chat-image',src:url,alt:'Conversation image '+(index+1),loading:'lazy'}));
   }
+  if(item.role==='system') {
+    node.append(el('span',{class:'slot'}));
+    const card=el('div',{class:'native-notice'},el('p',{class:'native-notice-label',text:item.label || 'Session event'}),body);
+    node.append(card);
+    return node;
+  }
   if(item.role==='user') node.append(body);
   else node.append(el('span',{class:'slot'},first ? brandMark(selected.harness,{title:true}) : null),body);
   return node;
@@ -215,18 +221,18 @@ function renderMessages() {
   for(let index=0; index<items.length;) {
     const entry=items[index];
     if(entry.kind==='message') {
-      const item=entry.item, first=!before || before.role==='user', existing=previous.get(item.id);
+      const item=entry.item, first=!before || before.role!=='assistant', existing=previous.get(item.id);
       const version=JSON.stringify([item,first,selected.harness]);
       box.append(existing && existing.dataset.version===version ? existing : messageNode(item,first,animate && !existing));
       before=item; index++; continue;
     }
     let end=index; while(end<items.length && items[end].kind==='activity') end++;
-    box.append(activityBlock(items.slice(index,end).map(row=>row.item),!before || before.role==='user'));
+    box.append(activityBlock(items.slice(index,end).map(row=>row.item),!before || before.role!=='assistant'));
     before={role:'assistant'}; index=end;
   }
   if(status==='active' || status==='input-needed') {
     const last=items.at(-1);
-    if(status==='input-needed' || !(last?.kind==='activity' && isLive(last.item))) box.append(liveRow(status==='input-needed',!before || before.role==='user'));
+    if(status==='input-needed' || !(last?.kind==='activity' && isLive(last.item))) box.append(liveRow(status==='input-needed',!before || before.role!=='assistant'));
   }
   if(!items.length && status!=='active') {
     box.append(el('p',{class:'empty'},$('native').hidden ? 'No chat messages on this page yet.' : 'This conversation continues in its native remote interface.',

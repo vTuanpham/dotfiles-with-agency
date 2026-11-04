@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="430" viewBox="0 0 1040 430" role="img" aria-labelledby="title desc">
   <title id="title">A finished background task wakes the idle Codex conversation</title>
-  <desc id="desc">A background command or native subagent runs inside Codex's command sandbox. When the turn ends, a host-side hook outside the sandbox hands it to a small observer, which waits for the conversation to be idle and wakes it once with the exit status and a log path. codex-wake monitor probes a condition on an interval inside the sandbox and prints event lines; the same observer reads them and wakes the conversation at most once per cooldown, within a time limit and an event cap. Nothing is escalated out of the sandbox, and a notification grants no approval.</desc>
+  <desc id="desc">A background command or native subagent runs inside Codex's command sandbox. A host hook registers its work with an observer, which delivers the result when the conversation is idle. codex-wake monitor runs a condition probe and sends matching events through the same observer.</desc>
   <defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="none" stroke="#737f7c" stroke-width="1.2"/></marker></defs>
   <rect width="1040" height="430" fill="#faf9f6"/>
   <g font-family="Arial, Helvetica, sans-serif" fill="#263733">
@@ -30,9 +30,9 @@
     <text x="400" y="284" text-anchor="middle" font-size="17" font-weight="700" font-family="monospace">wake-event:</text>
     <text x="400" y="306" text-anchor="middle" font-size="12" fill="#68766f">one line per hit it announces</text>
     <path d="M500 290H664V192" stroke="#a4ada7" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
-    <text x="700" y="268" font-size="15" font-weight="700">A window, not a flood</text>
-    <text x="700" y="292" font-size="12.5" fill="#68766f">time limit (max 24 h) · cooldown between notices</text>
-    <text x="700" y="312" font-size="12.5" fill="#68766f">event cap · hits in between are counted, not lost</text>
-    <text x="36" y="397" font-size="12" fill="#68766f">Nothing is escalated out of the sandbox. Bridge workers keep Bridge's own delivery. A notification grants no approval.</text>
+    <text x="700" y="268" font-size="15" font-weight="700">Condition events</text>
+    <text x="700" y="292" font-size="12.5" fill="#68766f">A file appears, a service starts, a check passes</text>
+    <text x="700" y="312" font-size="12.5" fill="#68766f">The observer delivers each report when Codex is idle</text>
+    <text x="36" y="397" font-size="12" fill="#68766f">Bridge workers use Agent Bridge's own event delivery.</text>
   </g>
 </svg>

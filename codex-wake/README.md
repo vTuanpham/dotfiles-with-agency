@@ -33,8 +33,7 @@ uv tool install --editable ~/dotfiles-with-agency/codex-wake
 ```
 
 Review and trust the merged hooks in Codex's `/hooks` UI, then restart Codex.
-The snapshot is [hooks.json](../codex/.codex/hooks.json); nothing in this change
-installs hooks or edits live `~/.codex` settings. A running user systemd manager
+The snapshot is [hooks.json](../codex/.codex/hooks.json). A running user systemd manager
 is required. The observer is a transient `codex-wake-*.service`, launched with
 `systemd-run --user --collect --service-type=exec`. Its command is the fixed Python
 observer module and a private job file, **never the user's shell command**.
@@ -225,5 +224,5 @@ snapshot. Use these integration checks in addition to unit tests:
    a Bash payload with `tool_input.command` and text `tool_response`. Verify the
    Stop/SubagentStop IDs, child ancestry and item output against that live payload.
 
-These are integration acceptance checks, not claims already established by the
-schema-derived unit fixtures. No live hooks, trust state, settings or rules were installed.
+Run these integration checks after installing and trusting the hooks; the
+schema-derived unit fixtures cover the protocol and lifecycle logic separately.

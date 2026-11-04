@@ -61,7 +61,7 @@ def command_label(command):
         return "Terminal command"
 
 
-def question_reply(body):
+def question_reply_records(body):
     value = body.strip()
     if not value.startswith(REPLY_OPEN):
         return None
@@ -74,8 +74,15 @@ def question_reply(body):
     for row in rows:
         fields(row, ("answer", "question", "questionItemId"))
         text(row["questionItemId"], "question reference", 4096)
-        replies.append(Answer(text(row["question"], "question"), text(row["answer"], "answer")))
+        text(row["question"], "question")
+        text(row["answer"], "answer")
+        replies.append(row)
     return replies
+
+
+def question_reply(body):
+    records = question_reply_records(body)
+    return [Answer(row["question"], row["answer"]) for row in records] if records else None
 
 
 def cursor(value):
@@ -130,6 +137,20 @@ def decode_page(page, descending=True, budget=None):
         kind = item.get("type")
         timeline_group = []
         timeline_groups.append(timeline_group)
+        if kind in ("contextCompaction", "hookPrompt", "subAgentActivity"):
+            label, status = {"contextCompaction": "Context compaction", "hookPrompt": "Hook context",
+                             "subAgentActivity": "Subagent activity"}[kind], "observed"
+            if kind == "subAgentActivity":
+                states = {"started": "observed", "interacted": "observed",
+                          "interrupted": "cancelled", "completed": "completed"}
+                if item.get("kind") not in states:
+                    raise ValueError("Unknown native subagent activity")
+                status = states[item["kind"]]
+                label += " · " + item["kind"]
+            activity_id = "activity:" + identifier
+            activity.append(Activity(activity_id, label, status))
+            timeline_group.append(activity_id)
+            continue
         if kind in ("commandExecution", "mcpToolCall", "dynamicToolCall") and "status" in item:
             states = {"inProgress": "running", "completed": "completed", "failed": "failed",
                       "declined": "declined"}

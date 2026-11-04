@@ -429,7 +429,7 @@ def fallback(job, state, state_path):
                 except ValueError:
                     continue
             row = next((row for row in rows if bucket in row.group.casefold()), None)
-            if row and row.remaining_percent > 0:
+            if row and row.remaining_percent is not None and row.remaining_percent > 0:
                 switch_account(job, state, account)
                 state["agyFallbackCooldowns"] = cooldowns
                 save(state_path, state)

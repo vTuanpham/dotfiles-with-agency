@@ -632,7 +632,7 @@
           "type": "string"
         },
         "remaining_percent": {
-          "type": "integer",
+          "type": ["integer", "null"],
           "minimum": 0,
           "maximum": 100
         },

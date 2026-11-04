@@ -30,6 +30,12 @@ for windows; this build also uses that setting when creating tabs. Explicit
 launch directory overrides still take precedence. Shell startup preserves the
 directory supplied by its caller.
 
+On GhostInTheWSL 0.1.5, `+new-window` opens a window in the running instance,
+but did not apply a supplied command or launch directory in a local check.
+Launching a second instance with `-e` failed with `AlreadyRunning`. Use a fresh
+window's shell to start a command when the existing instance is running; do not
+assume upstream Ghostty's launch flags work in this Windows fork.
+
 Ranger previews images inline only in Ghost/WSL outside tmux. Enter on
 image/audio/video files opens the Windows default application in WSL. Windows
 Photos may prompt before opening a file through the WSL network path.

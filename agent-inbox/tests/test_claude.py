@@ -172,9 +172,30 @@ def test_discovery_uses_native_session_identity_and_skips_sidechains(tmp_path, m
 
     assert claude.Claude().discover(target) == [RootInfo(root_id, "Existing task", "input-needed")]
     assert reads == [
-        (target.settings["config_dir"], root_id, "info"),
-        (target.settings["config_dir"], sidechain_id, "info"),
+        (target.settings["config_dir"], root_id, "overview"),
+        (target.settings["config_dir"], sidechain_id, "overview"),
     ]
+
+
+def test_completed_main_turn_is_idle_while_process_has_background_work(tmp_path, monkeypatch):
+    selected = profile_target(tmp_path, session_id=str(uuid.uuid4()))
+    live = live_session(selected.session_id, tmp_path, status="busy", name="Root")
+    monkeypatch.setattr(claude, "sessions", lambda _: [live])
+    value = {"info": {}, "messages": [], "turn_ended": True, "older": None,
+             "newer": None, "catching_up": False}
+    monkeypatch.setattr(claude, "read", lambda *_args: value)
+    monkeypatch.setattr(claude, "channel_call", lambda *_args: {"ready": False, "messages": []})
+    provider = claude.Claude()
+    assert provider.discover(selected)[0].status == "idle"
+    assert provider.snapshot(selected).status == "idle"
+    value["turn_ended"] = False
+    assert provider.discover(selected)[0].status == "active"
+    live["status"] = "waiting"
+    value["turn_ended"] = True
+    assert provider.snapshot(selected).status == "input-needed"
+    assert "native session" in provider.forms(selected).unavailable
+    monkeypatch.setattr(claude.claude_questions, "forms", lambda _: (_ for _ in ()).throw(ConnectionError()))
+    assert provider.snapshot(selected).status == "input-needed"
 
 
 @dataclass
@@ -434,6 +455,20 @@ def test_history_projection_correlates_channel_images_and_filters_subagent_conte
     assert "secret" not in encoded
     assert timeline == ["claude:user-1", "activity:claude:tool-1", "claude:assistant-1",
                        "channel:" + message_id, "claude:tool-result"]
+
+
+def test_native_peer_notice_preserves_images_and_uses_decoded_body():
+    session_id = str(uuid.uuid4())
+    url = image_url()
+    messages, _, _ = claude_history.decode([
+        sdk_row(session_id, "peer-image", "user", [
+            {"type": "text", "text": "Native peer envelope"},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                          "data": url.partition(",")[2]}},
+        ], origin={"kind": "peer", "name": "Reviewer", "body": "Review this image."}),
+    ], session_id)
+    assert messages[0].role == "system" and messages[0].label == "Peer message · Reviewer"
+    assert messages[0].text == "Review this image." and messages[0].images == [url]
 
 
 def test_history_projection_strips_native_wrapper_without_exposing_foreign_sessions():

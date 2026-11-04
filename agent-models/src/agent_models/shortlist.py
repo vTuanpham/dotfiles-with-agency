@@ -157,7 +157,8 @@ def brief(data):
         for backend, profile in accounts["profiles"].items():
             lines.append(f"  {backend}: " + ", ".join(f"{k}={v}" for k, v in profile.items()))
         for account in accounts["quotas"]:
-            windows = ", ".join(f"{w['group']} {w['label']}={w['remaining_percent']}%".lstrip()
+            windows = ", ".join(f"{w['group']} {w['label']}=".lstrip()
+                                + ("?" if w["remaining_percent"] is None else f"{w['remaining_percent']}%")
                                 + (f" reset {w['resets']}" if w["resets"] else "")
                                 for w in account["windows"])
             flags = " · ".join(str(v) for v in (account["plan"], account["freshness"], account["status"],

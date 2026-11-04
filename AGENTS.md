@@ -56,8 +56,15 @@ Edit maintained sources, not generated plugin caches. Do not add global catalogs
 Where guidance or configuration needs both shared and scoped content, keep one
 shared base with scoped additions; prefer native includes/merging over copied text.
 
+Think first: identify the user's intended outcome and choose the cleanest
+supported path using the existing tools and environment. Verify assumptions before
+adding steps or switching environments, then proceed.
+
 When designing host tools, compare relevant maintained implementations and official
 contracts. Reuse useful boundaries or workflows without importing an unrelated framework.
+Keep shared tools and workflows neutral across supported harnesses, including root
+and worker roles. Do not favor one harness or omit another unless its native contract
+truly lacks the capability; verify and document that limit rather than assuming it.
 
 ## Local feedback
 

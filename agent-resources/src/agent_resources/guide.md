@@ -24,6 +24,7 @@ excluding time paused by root. A root pause is normal; wait for resume.
 agent-resources run --mem 1G -- uv run pytest
 agent-resources run --mem 2500M --exclusive -- ./benchmark
 agent-resources list
+agent-resources list --json --owner claude:SESSION_ID
 ```
 
 ## Root queue controls
@@ -36,11 +37,20 @@ agent-resources pause --reason "reviewing host load"
 agent-resources resume
 ```
 
-These controls are refused inside a worker (`AGENT_RESOURCES_WORKER`); workers may
-still run commands through `agent-resources run --mem SIZE -- ...`. `list` shows each live
-request's id, owning job, executable basename (never arguments), declared need,
+Workers (`AGENT_RESOURCES_WORKER`) cannot list globally or change the queue; they
+may read `list --json --owner <exact-controller-identity>` for that controller's
+request rows. Workers may still run commands through `agent-resources run --mem SIZE -- ...`.
+`list` shows each live request's id, owning job, executable basename (never arguments), declared need,
 exclusivity, running/queued/cancelling state, wait/elapsed time and kernel-lock
 liveness. Dead unlocked records and their control metadata are removed on scan.
+`list --json` emits schema version 1; `--owner` filters its request rows by exact
+controller identity while admission totals remain host-wide. `run --agent-id ID`
+or `AGENT_RESOURCES_AGENT_ID=ID agent-resources run ...` labels a wrapped local
+command with its native agent loop. The label does not measure or cap the model
+loop; `--mem` remains an admission estimate.
+Actual per-command memory use/cap is attributable only when the command has its
+own readable cgroup scope. Shared or inherited cgroup readings are not
+per-command measurements.
 Queued rows also show position, the current admission reason, reserved/budget/free
 memory and `waiting_behind` (later queued requests, including ones that may backfill).
 Reasons identify an earlier selected or blocking request by ID. These are fresh

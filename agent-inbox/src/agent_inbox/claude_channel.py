@@ -35,8 +35,10 @@ def channel_path(home, identifier):
     return Path(home) / (uuid.UUID(identifier).hex + ".sock")
 
 
-def channel_call(target, method, message=None):
+def channel_call(target, method, message=None, *, question=False):
     path = channel_path(target.settings["channels"], target.session_id)
+    if question:
+        path = path.with_suffix(".q")
     request = {"session_id": target.session_id, "profile": profile_id(target.settings["config_dir"]),
                "method": method}
     if message is not None:

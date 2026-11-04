@@ -1,8 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 import type { EngineInterface } from 'claude-code'
 import { jobLabel, makerOf, modelTier, quotaGroups, scanQuotas } from '../hooks/sources/accounts'
+import { readAccountSnapshot } from '../hooks/sources/account-observations'
 import { engine, job, snapshot } from './status-world'
-import { quotaText } from '../hooks/crew-row'
+import { quotaLines, quotaText } from '../hooks/crew-row'
 
 test('every job reads cli-agnostic: short model family + effort', () => {
   expect(jobLabel('agy', 'gemini-3.8-flash-high', '')).toEqual({ model: 'flash', effort: 'high' })
@@ -66,6 +67,32 @@ test('Claude allowance uses its own account, mark and windows without refreshing
   expect(quotaText(quotas[0]!)).toContain('◆01*~ h74%')
   expect(quotaText(quotas[0]!)).toContain('w0%')
   expect(quotaGroups(quotas)[0]!.cli).toBe('claude')
+})
+
+test('an elapsed Claude window stays visibly unknown beside its valid weekly reading', async () => {
+  const s = snapshot()
+  s.quotas = [{ backend: 'claude', account: '01', plan: null, active: true, status: null,
+    freshness: 'stale', windows: [{ label: 'h', remaining_percent: null, resets: '2026-10-26T00:00:00Z' },
+      { label: 'w', remaining_percent: 20, resets: null }] }]
+  const quotas = await scanQuotas(engine(s).$)
+  expect(quotas[0]?.parts[0]?.pct).toBeNull()
+  expect(quotaText(quotas[0]!)).toContain('◆01*~ h? w20%')
+  expect(quotaGroups(quotas)[0]).toMatchObject({ text: 'h? w20', low: false })
+  const zero = { ...quotas[0]!, account: '02', active: false,
+    parts: [{ label: 'h', pct: 0, resets: null }, { label: 'w', pct: 20, resets: null }] }
+  const text = quotaLines([{ ...quotas[0]!, active: false }, zero], 120).join(' ')
+  expect(text).toContain('◆01~ h?')
+  expect(text).toContain('◆02~ h0%')
+})
+
+test('nullable quota windows still reject out-of-range, coerced and non-finite values', () => {
+  const s = snapshot()
+  s.quotas = [{ backend: 'claude', account: '01', plan: null, active: false, status: null,
+    freshness: 'stale', windows: [{ label: 'h', remaining_percent: null, resets: null }] }]
+  const source = JSON.stringify({ ...s, errors: [] })
+  for (const remaining of ['-1', '101', 'true', '"20"', '0.5', 'Infinity', 'NaN']) {
+    expect(readAccountSnapshot(source.replace('"remaining_percent":null', `"remaining_percent":${remaining}`))).toBeUndefined()
+  }
 })
 
 test('modelTier reads the family, not the version or the effort', () => {

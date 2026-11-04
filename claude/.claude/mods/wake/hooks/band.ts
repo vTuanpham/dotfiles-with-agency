@@ -7,6 +7,7 @@ import type { CharacterId } from './mochi'
 import type { SceneEffect, SceneInput, SceneTurn, SceneWeather } from './scene'
 import { modelTier } from './sources/accounts'
 import { skyOf } from './sources/weather'
+import { messagePreview, messageStatus } from './peer-messages'
 
 // From the session's state and the surroundings to what the scene draws. Pure.
 
@@ -78,7 +79,8 @@ function mailAt(chips: WakeChip[], now: number): 'in' | 'out' | undefined {
  * so a big crew never turns the sky into wiring.
  */
 function tethers(state: BandState, now: number): NonNullable<SceneInput['peerEdges']> {
-  const talking = new Set(state.chips.filter(job => (job.peers ?? []).some(peer => peer.target === 'root')).map(job => job.id))
+  const talking = new Set(state.chips.filter(job => (job.peers ?? []).some(peer => peer.target === 'root'
+    && peer.messageState !== undefined && now >= peer.lastAt && now - peer.lastAt <= 900_000)).map(job => job.id))
   const edges: NonNullable<SceneInput['peerEdges']> = [
     ...state.subagents.filter(agent => agent.leftAt === undefined).map(agent => ({ id: agent.id, family: 'claude' as const, name: agent.name ?? agent.description, what: `Claude subagent · ${agent.type}`, activeAt: undefined as number | undefined })),
     ...state.chips.filter(job => job.running && job.id && !talking.has(job.id)).map(job => ({
@@ -88,7 +90,7 @@ function tethers(state: BandState, now: number): NonNullable<SceneInput['peerEdg
     source: 'mochi', target: worker.id,
     // as present as the worker is busy: bright just after its last real event, fading over minutes of silence (a subagent has no event feed: steady)
     strength: worker.activeAt === undefined ? 0.45 : 0.12 + 0.55 * Math.exp(-Math.max(0, now - worker.activeAt) / 180_000),
-    preview: `${worker.what} · working for the root`, count: 1, family: worker.family,
+    preview: `${worker.what} · working for the root`, count: 1, family: worker.family, relationship: true,
   }))
   return edges
 }
@@ -159,7 +161,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
           source: rootMessage && !peer.outgoing ? 'mochi' : job.id!,
           target: rootMessage ? peer.outgoing ? 'mochi' : job.id! : peer.target,
           strength: pulse ? 0.65 + 0.35 * (Math.floor((now - peer.observedAt!) / 400) % 2) : messageFade(age),
-          preview: peer.preview ?? null,
+          preview: peer.preview,
           messageState: rootMessage ? peer.messageState : undefined,
           count: peer.count,
           // packets run only for messages arriving in view right now, one per new message
@@ -181,11 +183,10 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
       hit: job.id || job.owner ? {
         id: job.id ?? `${job.owner}/${job.name}`, title: job.title ?? job.name,
         details: [
-          ...(peer ? [`${peer.outgoing ? 'To' : 'From'}: ${peer.target}`, peer.preview || 'Message preview unavailable'] : []),
-          ...(peer?.messageState === 'observed' ? ['Worker output observed; root read status unknown'] : []),
-          ...(peer?.messageState === 'sent' ? ['Bridge sent; worker read status unknown'] : []),
+          ...(peer ? [`${peer.outgoing ? 'To' : 'From'}: ${peer.target}`, messagePreview(peer.preview)] : []),
+          ...(peer ? [messageStatus(peer.messageState)] : []),
           `Harness: ${job.backend ?? 'codex'}`,
-          job.model ? `Model ID: ${job.model}` : 'Model ID unavailable',
+          job.model ? `Model ID: ${job.model}` : 'Model not reported',
           ...(job.effort ? [`Effort: ${job.effort}`] : []),
         ],
       } : undefined,
@@ -196,7 +197,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
       arriving: agent.leftAt === undefined && now >= agent.since && now - agent.since < ARRIVE_MS ? now - agent.since : undefined,
       hit: {
         id: agent.id, title: agent.name ?? agent.description,
-        details: [`Claude subagent · ${agent.type}`, agent.model ? `Model ID: ${agent.model}` : 'Model ID unavailable'],
+        details: [`Claude subagent · ${agent.type}`, agent.model ? `Model ID: ${agent.model}` : 'Model not reported'],
       },
     })),
     plan: state.plan.length > 0 ? { done, total: state.plan.length } : null,

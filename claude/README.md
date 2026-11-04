@@ -21,7 +21,6 @@ CLI release through uv; account stores and settings remain private on each host.
 ```text
 cswap ── explicit allowance refresh ── agent-accounts cache ─┬─ Wake
                                                            └─ Bridge
-Claude session ────────────────────────────────────────────── Inbox quota
 ```
 
 ```sh
@@ -34,6 +33,10 @@ agent-accounts refresh --backend claude # update the shared allowance view
 Adding another account: use Claude's normal login flow, then `cswap add` again.
 Do not log out first: logout can revoke the saved account's refresh token.
 Account numbers are local to cswap; shared observations omit addresses and aliases.
+Wake uses each numbered account's cached allowance. If its windows have expired,
+run `agent-accounts refresh --backend claude` to fetch that account's usage through
+cswap; the next local Wake poll picks it up. A session reading is not substituted
+for a numbered account without verified identity.
 
 Switch between sessions; verify Claude's `/status` and reconnect Remote Control
 if it drops. Automatic rotation is not enabled. Before considering parallel
@@ -96,6 +99,10 @@ Claude suppresses pushes while the connected terminal is focused or being used.
 `AskUserQuestion` and permission prompts stay pending until answered. The
 `dialogExpiry` setting applies to other forwarded dialogs, so changing it does
 not implement a question timeout. No automatic-dismissal hook is installed.
+Agent Inbox's `AskUserQuestion` PreToolUse callback can collect new answers from
+paired devices before the terminal prompt opens. It returns the documented native
+answer or a user-requested denial; timeout/failure leaves the native prompt intact.
+See [Inbox's callback lifecycle](../agent-inbox/README.md#connect-a-harness).
 [Documented limits](https://code.claude.com/docs/en/remote-control#limitations),
 [shared question policy](../agent-baton/README.md#native-questions-and-hooks).
 
@@ -176,6 +183,8 @@ rows use the same columns, so each worker keeps its own harness and class. Narro
 layouts shrink titles and omit the same lower-priority columns for every row;
 `/wake legend` explains the marks. A stalled or blocked job carries its reason
 when there is room. Finished jobs remain until Bridge's `result` or `ack`.
+A finished peer also stays visible while a recent exchange connects it to another
+shown worker, so both endpoints remain in the inline graph for those 15 minutes.
 
 The compact list follows Claude Code's subagent presentation: one recognizable
 marker and name, a brief state and small counters, with color providing emphasis
@@ -214,11 +223,23 @@ message arrives and a tie fades over 15 minutes. The graph's column hugs the lon
 words, metrics and peer lanes) with a small gap, and steps a few cells further out only while a
 message is crossing, so the packets have room; the row's leader stays empty except for a few beads
 while a message arrives. Every metric opens a card under the pointer: effort says which levels the
-model offers, the time says how long the worker has been silent, memory says what is used of the cap
-it was admitted with, and a stall reason is shown in full. In the scene a trail of faint embers
+model offers, the time says how long the worker has been silent, and Bridge memory shows scope use/cap.
+Native `r...` / `⌁...` marks show declared local-command reservations, never agent RAM or a cap; hover
+one for its command, queue state and reason. `r?` means the resource scan was unavailable. A stall reason
+is shown in full. Cards open upward inside
+their full row's bounds, including at narrow widths. Peer cards distinguish previews
+withheld by Bridge from missing message metadata; withheld text is never reconstructed
+from raw logs or replaced with an older message. In the scene a trail of faint embers
 joins each worker (native or Bridge) to Mochi: working for the root is a relationship, not a message.
-If the crew will not fit alongside the scene, Wake temporarily gives the rows
-the available space instead; an overflow count indicates any remaining rows.
+Worker, quota and actionable rows get room before decorative sky or optional
+recap details. The scene trims its upper sky from ten rows down to six when
+needed, preserving its ground, character, animation and matching hover targets.
+Only a band too small for that compact scene drops it. If the terminal still
+cannot fit every worker, crew paging keeps them reachable; recap details may
+fold into an overflow count. A count never takes the place of a quota row that
+would otherwise fit.
+Bridge event cursors survive mod reloads with the session's notification state,
+so an unanswered event does not create another dismiss row after each edit.
 When a job finishes, its "needs you" row shows the first line of prose of its report: a markdown
 table, heading marks, bullets and code fences are skipped, and a report that is only a table says so.
 A stall mark comes from Bridge's shared

@@ -32,7 +32,7 @@ def timestamp(value):
 @dataclass(frozen=True)
 class QuotaWindow:
     label: str
-    remaining_percent: int
+    remaining_percent: int | None
     group: str
     limit: str
     resets: str | None

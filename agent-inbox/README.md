@@ -12,10 +12,10 @@ conversations stay collapsed and searchable.
 
 ## Connect a harness
 
-<img src="docs/connections.svg" alt="A paired phone browser reaches Agent Inbox through Tailscale Serve inside the tailnet. Agent Inbox talks to the Codex app-server, the Claude Code CLI history with an opt-in channel, the OpenCode v2 service, and saved sessions of an ACP agent such as Antigravity." width="100%">
+<img src="docs/connections.svg" alt="A paired browser reaches Inbox through Tailscale. Native APIs provide history and questions for Codex, Claude, OpenCode and ACP. Bridge adds private workers and steering across all supported root harnesses." width="100%">
 
 ```sh
-uv tool install --editable ./agent-inbox
+uv tool install --with-editable ./agent-session --editable ./agent-inbox
 agent-inbox add-codex --session "$CODEX_THREAD_ID" --label 'Current task'
 agent-inbox add-opencode
 agent-inbox add-claude
@@ -30,8 +30,8 @@ New adapters must decide every capability explicitly, including unsupported ones
 
 | Connection | Read and reply | Composer controls | Session details |
 | --- | --- | --- | --- |
-| Codex | History, progress, queue / active-turn steering, images | Model, reasoning, rename, compact, stop | Connection account and allowance, descendants, MCP servers |
-| Claude Code | Official SDK history; replies through an explicitly enabled channel | Native terminal owns model and menus | Subagent IDs; account allowance unavailable |
+| Codex | History, progress, queue / active-turn steering, images, async questions | Model, reasoning, rename, compact, stop | Connection account and allowance, descendants, MCP servers |
+| Claude Code | Official SDK history, native hook questions; opt-in channel replies | Native terminal owns model and menus | Subagent IDs; account allowance unavailable |
 | OpenCode v2 | History, image input, prompt admission, forms and permission decisions | Native models, variants, agents, commands, stop | Session usage, descendants, project MCP servers |
 | Antigravity / ACP | Its own saved ACP sessions, replayed chat/images, prompt updates | Native config, modes, commands, cancel, form questions | Available native measurements only |
 
@@ -82,6 +82,21 @@ Control configuration stay unchanged. Channel messages wait for the next native
 turn; they do not steer mid-turn. Without opt-in, discovery and history are
 read-only. Each profile has separate private channels; requests verify both the
 profile and native session IDs.
+
+The repository's `AskUserQuestion` PreToolUse hook offers new questions to paired
+Inbox devices before the terminal prompt opens. Apply it with `./install.sh --apply hooks`
+and let Claude reload its hook configuration. It holds the actual native callback;
+an answer returns the original input plus `updatedInput.answers`, and Cancel denies
+that question. With no paired device or connected profile it leaves the native flow
+alone. After five minutes without an answer, or on hook failure, the native prompt
+takes over; expiry never answers or approves anything. An already-open terminal
+prompt cannot be transferred to Inbox. Question sockets are separate from channel
+consent, so answering questions does not enable ordinary chat replies.
+
+The Working label tracks the SDK-selected main conversation's latest native
+`end_turn` marker. A busy process with a completed main turn is Idle; background
+commands alone do not imply the model is generating. Native waiting prompts and
+held question callbacks still show Needs input.
 
 </details>
 
@@ -148,6 +163,8 @@ agent-inbox remove ENTRY_ID
 - Tool activity follows native chronology. Consecutive completed steps fold
   together; live steps stay visible. Arguments, ordinary tool output and private
   reasoning are omitted.
+- Native task, peer and context notices have labeled cards, separate from human
+  chat. Their IDs and output-file routing stay out of the displayed task summary.
 - Supported forms appear in chat: single/multiple choices, free text, booleans,
   numbers and conditional fields. Inputs stay scoped to their root and form.
 - Inline images include user attachments and accessible native image results.
@@ -157,10 +174,33 @@ agent-inbox remove ENTRY_ID
 <details>
 <summary>Exact limits for forms, previews and media</summary>
 
-- Codex prompts owned by another connected client are not fabricated from
-  transcript text or dismissed with ordinary chat.
+- Codex async question items use native question metadata and message responses.
+  Blocking prompts owned by another client must be answered in that client.
 - Local previews read only exact paths recorded as native images. Phone text
   cannot name a host file. Arbitrary remote URLs are never downloaded.
+
+</details>
+
+<details>
+<summary>Native message envelopes by harness</summary>
+
+| Connection | Display handling |
+| --- | --- |
+| Claude | Native `origin` distinguishes background tasks, peers, channels and continuations. Task notifications show summary/result and status; peer messages use the SDK's decoded body. Local command tags are unwrapped only along a native command-caveat chain. Compaction summaries are labeled; metadata-only reminders remain filtered by the SDK. |
+| Codex | Native question-reply envelopes retain their question/answer display. Typed hook-context, compaction and subagent events become activity rows; hook prompt text stays private. |
+| OpenCode v2 | Typed synthetic messages become notices; subagent envelopes unwrap only with native subagent metadata. Native system-context descriptions and compaction summaries remain separate from user chat. |
+| Antigravity / ACP | Core text blocks are Markdown, with no generic XML-envelope contract. Literal tag text is preserved; native tools and private thoughts retain their own typed handling. |
+
+This is a display projection: it never answers a question, grants approval or
+changes session status from message text. Unknown tags and human/assistant code
+examples remain literal. Claude history retains an allowlisted projection of
+native provenance alongside the SDK-selected message chain, rather than guessing
+origin from tag-shaped user text.
+
+Contracts: [Claude SDK provenance](https://github.com/anthropics/claude-agent-sdk-python/blob/v0.2.173/src/claude_agent_sdk/types.py),
+[Codex items](https://learn.chatgpt.com/docs/app-server),
+[OpenCode message schemas](https://dev.opencode.ai/v2/docs/api),
+[ACP content](https://agentclientprotocol.com/protocol/v1/content).
 
 </details>
 
@@ -172,6 +212,15 @@ Delegated roots carry launcher markers and a relationship graph from exact
 native IDs, across Bridge owners and harnesses. A recorded parent can be opened
 from the graph. Older jobs without parent metadata start at the launcher;
 names are never used to guess relationships.
+
+Bridge workers on private native connections also appear in the conversation list
+when their exact current root is connected. This works for Claude, Codex, OpenCode
+and Antigravity roots and workers. A worker already visible through its native
+connection stays a single conversation. Bridge supplies recent reports rather than
+a complete native transcript; replies use its maintained `steer` workflow and
+receive a Forwarded receipt. Native approvals remain in the owning client.
+Antigravity's worker API controls its own delivery boundary and exposes no
+mid-turn option; Inbox keeps replies available without advertising that control.
 
 Details use the selected connection's measurements. Codex account data is
 **connection-scoped**, not proof of the account used in earlier turns. An
@@ -280,17 +329,17 @@ OpenCode owns pending forms/permissions across Inbox restarts: Inbox re-reads it
 native pending list before answering and rechecks a raced withdrawal after a
 native conflict. There is no cached pending flag to hang after restart.
 The capability `approvals_survive_restart` refers to an **Inbox** restart; it does
-not promise a provider survives its own restart. Codex questions/approvals stay
+not promise a provider survives its own restart. Codex blocking questions/approvals stay
 with their owning client, ACP callbacks expire when their SDK connection closes,
 and Claude's native behavior is unchanged. In-flight receipts recover as Unknown,
 never as fresh work. Choices always carry native values; labels need not be unique.
 
-Question cards use the selected adapter's native pending-request API or its
+Question cards use the selected adapter's native question metadata, pending-request API or
 owned SDK callbacks. Fetch
 failure or page suspension preserves typed answers but disables new decisions
 until a fresh native list arrives. A withdrawn request or a lost acknowledgement
-does not authorize a second answer. Ordinary chat, transcript text, screen
-scraping and keyboard simulation are never question-response transports.
+does not authorize a second answer. Transcript text, screen scraping and keyboard
+simulation never create pending requests or resolve native callbacks.
 Question polling is independent of transcript reads, so a history failure cannot
 hide a newly pending native request.
 
@@ -303,10 +352,19 @@ Inbox owns its ACP connection and retains the genuine SDK callback until the
 user answers or the connection/turn is cancelled, following T3's ownership pattern.
 Native callback replay tests cover all three actions, turn cancellation, connection
 shutdown and durable answer receipts without a live model call.
-Codex and Claude terminal questions still belong to their native client. Their
-capability records keep question controls unavailable.
-Adding support requires the documented request/response API and its real
-cancellation/connection lifetime, not a transcript-derived approximation.
+Codex async `agentMessage` items expose `questions` and `delivery=async` through
+`thread/items/list`. Inbox projects those exact fields and follows
+[T3's message-response path](https://github.com/pingdotgg/t3code/blob/3368dd70f20cb192b68895494a4a73455524fb76/apps/server/src/orchestration-v2/Orchestrator.ts):
+the native send API carries the question and answer as plain text, steering an active turn.
+Dismiss resolves the Inbox card locally. Confirmed receipts persist across restarts;
+native answer envelopes also resolve individual answered fields. There is no invented XML
+reply or attempt to answer another client's blocking callback.
+Ordinary later chat or image input supersedes older message-mode cards. Replaying history
+after a restart applies the same rule; this retires a card without inventing an answer.
+Claude uses its documented [PreToolUse answer contract](https://code.claude.com/docs/en/hooks#tools-that-require-user-interaction)
+for new questions. The hook owns the pending call, verifies session/profile/question IDs,
+and returns native input only after the paired user answers. Its private socket disappears
+when the callback ends. Already-open prompts and general tool approvals remain native.
 
 State: `${XDG_STATE_HOME:-~/.local/state}/agent-inbox`, configurable with `--state`
 or `AGENT_INBOX_HOME`. Directory mode 0700, database mode 0600. Credentials are

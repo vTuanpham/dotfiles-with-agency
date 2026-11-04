@@ -73,6 +73,18 @@ def test_native_budget_represents_both_sources_and_efficiency(monkeypatch):
     assert [m["id"] for m in result["native_catalog"]["models"]] == ["expensive", "middle", "cheap"]
 
 
+def test_brief_keeps_an_unknown_allowance_window_distinct_from_zero(monkeypatch):
+    monkeypatch.setattr(benchmarks, "snapshot", data)
+    result = benchmarks.search("backend", limit=1)
+    result["account_observation"] = {"scope": "cached accounts", "profiles": {}, "errors": [], "quotas": [
+        {"backend": "claude", "account": "01", "plan": None, "freshness": "stale", "status": None,
+         "active": True, "windows": [
+             {"group": "", "label": "h", "remaining_percent": None, "resets": None},
+             {"group": "", "label": "w", "remaining_percent": 0, "resets": None}]}]}
+    output = shortlist.brief(result)
+    assert "h=?, w=0%" in output and "None%" not in output
+
+
 def test_compact_cli_is_opt_in_and_json_keeps_both_views(monkeypatch, capsys):
     monkeypatch.setattr(benchmarks, "snapshot", data)
     monkeypatch.setattr(benchmarks, "account_observation", lambda *args: {})

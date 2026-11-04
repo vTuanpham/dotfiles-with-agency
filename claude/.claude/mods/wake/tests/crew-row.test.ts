@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { PACKET_RUN_MS, cells, crewLayout, crewPage, crewRows, messageFade, quotaLines, quotaRows, quotaText, STATE_GLYPHS, stateOf } from '../hooks/crew-row'
+import { PACKET_RUN_MS, cells, crewLayout, crewJobs, crewPage, crewRows, messageFade, quotaLines, quotaRows, quotaText, STATE_GLYPHS, stateOf } from '../hooks/crew-row'
 import type { WakeChip } from '../types'
 
 const base: WakeChip = { name: 'worker', title: 'Inspect 長い👩‍💻 worker title', backend: 'codex', account: '01', model: 'gpt-6.1-terra', effort: 'high', running: true, isStale: false, since: 0, lastEventAt: 10_000, memoryBytes: 512 * 1024 ** 2, memoryCap: '1G' }
@@ -29,7 +29,27 @@ test('peer trace pulses briefly, then fades and reports only actual previews', (
   expect(crewRows(jobs, 9_999, 120)[0]!.gutter).toHaveLength(0)
   expect(crewRows(jobs, 910_001, 120)[0]!.gutter).toHaveLength(0)
   jobs[0]!.peers![0]!.preview = null
+  expect(trace(10_000).description).toContain('Preview withheld by Bridge')
+  jobs[0]!.peers![0]!.preview = undefined
   expect(trace(10_000).description).toContain('Message preview unavailable')
+})
+
+test('a completed peer remains an inline graph endpoint until its recorded exchange expires', () => {
+  const now = 100_000
+  const jobs: WakeChip[] = [
+    { ...base, id: 'owner/live', title: 'Live worker', peers: [
+      { target: 'owner/done', count: 16, lastAt: now, outgoing: true },
+    ] },
+    { ...base, id: 'owner/done', title: 'Completed worker', running: false, awaitingRoot: false },
+    { ...base, id: 'owner/unrelated', running: false, awaitingRoot: false },
+  ]
+  const visible = crewJobs(jobs, now)
+  expect(visible.map(job => job.id)).toEqual(['owner/live', 'owner/done'])
+  const rows = crewLayout(visible, [], now, 190, false).rows
+  expect(rows[0]!.gutter[0]!.text).toContain('═┐')
+  expect(rows[1]!.gutter[0]!.text).toContain('←┘')
+  expect(rows.every(row => !row.columns.includes('peers'))).toBe(true)
+  expect(crewJobs(jobs, now + 900_001).map(job => job.id)).toEqual(['owner/live'])
 })
 
 test('a packet crosses the lane once per arriving message, sender to recipient, then the lane rests', () => {
@@ -70,10 +90,10 @@ test('root markers appear only for recorded messages and distinguish Bridge obse
   expect(rows[0]!.gutter.map(mark => mark.text)).toEqual(['↗r ', '↙r '])
   expect(rows[0]!.columns).not.toContain('peers')
   expect(rows[0]!.gutter[0]!.description).toEqual([
-    'Worker → root', 'Observed by Bridge; root read state unknown', 'Message preview unavailable',
+    'Worker → root', 'Worker report published', 'Preview withheld by Bridge',
   ])
   expect(rows[0]!.gutter[1]!.description).toEqual([
-    'Root → worker', 'Bridge sent; worker read state unknown', 'Review this result',
+    'Root → worker', 'Message sent by Bridge', 'Review this result',
   ])
   expect(rows[0]!.gutter[0]!.strength).toBe(0.65)
   expect(crewRows([job], now + 400, 120)[0]!.gutter[0]!.strength).toBeGreaterThan(0.65)

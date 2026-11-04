@@ -6,6 +6,7 @@ from pathlib import Path
 
 import jsonschema
 import pytest
+from agent_accounts.models import Quota, QuotaWindow
 from agent_accounts.readers import agy_quota, codex_quotas
 from agent_resources import heavy
 
@@ -505,6 +506,17 @@ def test_quota_decoder_parity_freshness_and_hostile_input():
     assert agy_quota(data, now + 601).freshness == "stale"
     with pytest.raises(ValueError):
         agy_quota({**data, "rows": [{**data["rows"][0], "remaining": True}]}, now)
+
+
+def test_elapsed_quota_window_is_nullable_in_schema_and_unknown_in_text(world, monkeypatch):
+    q = Quota("claude", "01", None, True,
+              (QuotaWindow("h", None, "", "five hour", NOW), QuotaWindow("w", 0, "", "weekly", None)),
+              None, NOW, 0, "stale")
+    monkeypatch.setattr(status, "quotas", lambda *_: (q,))
+    snapshot = status.Collector().collect()
+    VALIDATE.validate(json.loads(json.dumps(snapshot.to_dict())))
+    lines = list(status_render.quota(snapshot))
+    assert "\tunknown\t" in lines[0] and "\t0%\t" in lines[1]
 
 
 def test_worker_snapshot_cannot_read_another_owner(world, monkeypatch):

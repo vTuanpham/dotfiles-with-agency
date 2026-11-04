@@ -13,9 +13,17 @@ If missing, follow the [host setup](../../../../computer-use/README.md).
 Use a fresh session for this task (`session start --help`), and pass its returned
 ID through `--session` on every observation and action. Observe the exact app and
 window, act on qualified refs from that session, then verify the resulting state.
-Refresh refs after UI changes. Read delivery/retry dispositions before retrying;
-an uncertain action may already have landed. Do not switch drivers and repeat it
-without readback. Use Cua's installed `describe` schemas when choosing that driver.
+Refresh refs after UI changes, including changes made by the user. Read
+delivery/retry dispositions before retrying; an uncertain action may already have
+landed. Do not switch drivers and repeat it without readback. Use Cua's installed
+`describe` schemas when choosing that driver.
+
+For screenshots, target the needed window or supported region without focusing
+it. A capture reflects the window's current tab and content. If the user changes
+the target before an action, observe it again and reassess the action. Use an
+isolated renderer or headless fixture for layout checks that do not need live
+desktop state; the [capture comparison](../../../../computer-use/README.md) lists
+the installed drivers' options.
 
 For WSLg windows hosted by `msrdc.exe`, avoid Windows-side move/resize through
 either driver: Windows geometry verification does not prove Linux click alignment.

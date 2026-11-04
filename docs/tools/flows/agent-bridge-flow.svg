@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="610" viewBox="0 0 1040 610" role="img" aria-labelledby="title desc">
   <title id="title">Agent Bridge jobs and direct native session messages</title>
-  <desc id="desc">The root delegates to workers in other harnesses. Persistent jobs retain logs, messages and results for verification; task roles are examples. A separate direct messaging path connects existing Codex, Claude Code, Antigravity and OpenCode sessions through native APIs, steering where supported. Messages create no jobs and grant no user approval.</desc>
+  <desc id="desc">The root delegates to workers in other harnesses. Persistent jobs retain logs, messages and results for review. Direct messaging connects existing Codex, Claude Code, Antigravity and OpenCode sessions through their native APIs.</desc>
   <defs>
     <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto-start-reverse"><path d="M0 0L7 3.5L0 7" fill="none" stroke="#737f7c" stroke-width="1.2"/></marker>
   </defs>
@@ -47,6 +47,6 @@
     <text x="814" y="470" font-size="21" font-weight="700">Existing session</text>
     <text x="814" y="496" font-size="13" fill="#68766f">Exact native recipient</text>
     <text x="520" y="550" text-anchor="middle" font-size="14" fill="#68766f">Codex · Claude Code · agy · OpenCode</text>
-    <text x="36" y="583" font-size="13" fill="#68766f">Peer content, never user approval · No new jobs · No user-chat fallback</text>
+    <text x="36" y="583" font-size="13" fill="#68766f">Direct messages use the recipient's native session API.</text>
   </g>
 </svg>

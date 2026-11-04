@@ -2,7 +2,7 @@
 import { rfc3339 } from './wire'
 export type Quota = {
   backend: string; account: string; plan: string | null; active: boolean; status: string | null
-  freshness: 'fresh' | 'stale' | 'unknown'; windows: { label: string; remaining_percent: number; resets: string | null }[]
+  freshness: 'fresh' | 'stale' | 'unknown'; windows: { label: string; remaining_percent: number | null; resets: string | null }[]
 }
 
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -13,8 +13,8 @@ export function validQuota(q: unknown): q is Quota {
   return object(q) && text(q.backend) && text(q.account) && nullable(q.plan) && nullable(q.status)
     && ['fresh', 'stale', 'unknown'].includes(q.freshness as string) && typeof q.active === 'boolean'
     && Array.isArray(q.windows) && q.windows.every(w => object(w) && text(w.label)
-      && Number.isSafeInteger(w.remaining_percent) && (w.remaining_percent as number) >= 0
-      && (w.remaining_percent as number) <= 100 && nullable(w.resets))
+      && (w.remaining_percent === null || Number.isSafeInteger(w.remaining_percent)
+        && (w.remaining_percent as number) >= 0 && (w.remaining_percent as number) <= 100) && nullable(w.resets))
 }
 
 export function readAccountSnapshot(source: string): Quota[] | undefined {
