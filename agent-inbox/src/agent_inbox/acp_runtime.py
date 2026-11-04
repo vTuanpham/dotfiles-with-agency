@@ -10,7 +10,7 @@ from pathlib import Path
 from queue import Empty, Queue
 from threading import Lock, Thread
 
-from . import acp_history, acp_process
+from . import acp_history, acp_process, acp_questions
 from .models import DeliveryRejected, fields, text
 
 IDLE_SECONDS = 300
@@ -108,9 +108,10 @@ class _Observer:
 
 
 class _Client:
-    def __init__(self, session_id, history=None):
+    def __init__(self, session_id, history=None, questions=None):
         self.session_id = session_id
         self.history = history
+        self.questions = questions or acp_questions.Questions()
 
     async def session_update(self, session_id, update, **kwargs):
         # The stream observer decodes the original wire event synchronously.
@@ -126,7 +127,20 @@ class _Client:
         return RequestPermissionResponse(outcome={"outcome": "cancelled"})
 
     async def create_elicitation(self, message, mode, **kwargs):
-        return {"action": "decline"}
+        from acp.exceptions import RequestError
+        from acp.schema import ElicitationFormSessionMode
+
+        if not isinstance(mode, ElicitationFormSessionMode):
+            raise RequestError.invalid_params({"reason": "Only session-scoped forms are supported"})
+        if self.session_id is None:
+            return {"action": "decline"}
+        if mode.session_id != self.session_id:
+            raise ValueError("ACP question belongs to another session")
+        try:
+            return await self.questions.ask(
+                message, mode.requested_schema.model_dump(by_alias=True, exclude_none=True))
+        except (ValueError, DeliveryRejected):
+            return {"action": "decline"}
 
 
 def runtime_key(target, role="root"):
@@ -167,6 +181,7 @@ class _SessionRuntime:
         self.observer = None
         self.capabilities = None
         self.history = acp_history.History(target.session_id) if role == "root" else None
+        self.questions = acp_questions.Questions()
         self.session = None
         self._state_lock = Lock()
         self._busy = False
@@ -304,12 +319,13 @@ class _SessionRuntime:
         command, cwd = settings(self.target)
         observer = _Observer(self.history)
         client_session = self.target.session_id if self.role == "root" else None
-        client = _Client(client_session, self.history)
+        client = _Client(client_session, self.history, self.questions)
         parameters = ClientCapabilities(
             fs={"readTextFile": False, "writeTextFile": False},
             terminal=False,
             session={"configOptions": {"boolean": {}}},
             auth={"terminal": False},
+            elicitation={"form": {}},
         )
         implementation = Implementation(name="agent-inbox", version="0.1.0")
         try:
@@ -326,9 +342,12 @@ class _SessionRuntime:
                         self._attach(connection, observer, parameters, implementation),
                         timeout=self.startup_timeout,
                     )
+                    self.questions.ready = True
                     self.ready.set_result(True)
                     await self._serve_requests(process)
                 finally:
+                    self.questions.ready = False
+                    self.questions.cancel_all()
                     with self._state_lock:
                         self._closing = True
                     tasks = set(self._dispatch_tasks)
@@ -418,7 +437,7 @@ class _SessionRuntime:
                         await asyncio.gather(*tasks, return_exceptions=True)
                 await self._wait_dispatch_tasks()
                 return
-            if request.operation in ("snapshot", "controls", "permission_status"):
+            if request.operation in ("snapshot", "controls", "permission_status", "forms", "answer"):
                 await self._dispatch(request)
                 continue
             task = asyncio.create_task(self._dispatch(request))
@@ -520,18 +539,20 @@ class _SessionRuntime:
             return await asyncio.wait_for(
                 _list_sessions(self.connection, self.observer), timeout=timeout,
             )
-        if operation in ("send", "slash", "cancel", "mode", "config") and self.session is None:
+        if (operation in ("send", "slash", "cancel", "mode", "config", "forms", "answer")
+                and self.session is None):
             raise ValueError("ACP source runtime cannot control a root session")
         if operation == "snapshot":
             if self.history is None:
                 raise ValueError("ACP source runtime has no root history")
             cursor, since = arguments
             messages, activity, timeline, older, newer, catching_up = self.history.page(cursor, since)
-            status = "active" if self._prompt_task is not None and not self._prompt_task.done() else "unknown"
+            active = self._prompt_task is not None and not self._prompt_task.done()
+            status = "input-needed" if self.questions.forms().forms else "active" if active else "unknown"
             self.touch()
             return {
                 "status": status,
-                "can_send": status != "active",
+                "can_send": not active and status != "input-needed",
                 "messages": messages,
                 "older_cursor": older,
                 "newer_cursor": newer,
@@ -539,6 +560,10 @@ class _SessionRuntime:
                 "activity": activity,
                 "timeline": timeline,
             }
+        if operation == "forms":
+            return self.questions.forms()
+        if operation == "answer":
+            return self.questions.answer(*arguments)
         if operation == "controls":
             if self.history is None:
                 raise ValueError("ACP source runtime has no root controls")
@@ -557,6 +582,8 @@ class _SessionRuntime:
             content = arguments[0]
             if self._prompt_task is not None and not self._prompt_task.done():
                 raise DeliveryRejected("This ACP root is already processing a turn")
+            if self.questions.forms().forms:
+                raise DeliveryRejected("Answer the pending native question first")
             if any(block.get("type") == "image" for block in content) and not self.capabilities.image:
                 raise DeliveryRejected("This ACP agent does not accept image prompts")
             self.observer.raise_if_error()
@@ -573,6 +600,7 @@ class _SessionRuntime:
             if self._prompt_task is None or self._prompt_task.done():
                 raise DeliveryRejected("This ACP root has no active inbox turn")
             task = self._prompt_task
+            self.questions.cancel_all()
             try:
                 async with asyncio.timeout(CANCEL_TIMEOUT):
                     await self.connection.cancel(session_id=self.session.id)
@@ -618,6 +646,8 @@ class _SessionRuntime:
             self.touch()
             return "applied"
         if operation == "shutdown":
+            self.questions.ready = False
+            self.questions.cancel_all()
             if self._prompt_task is not None and not self._prompt_task.done():
                 task = self._prompt_task
                 try:

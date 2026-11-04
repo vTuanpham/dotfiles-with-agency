@@ -32,7 +32,7 @@ class WakeReadmeMatchesTheCode(unittest.TestCase):
     def test_every_character_is_listed_with_its_gadget_command(self):
         mochi = (wake / "hooks/mochi.ts").read_text()
         body = mochi[mochi.index("export const CHARACTERS") : mochi.index("export type CharacterId")]
-        ids = re.findall(r"^  (\w+): \{", body, re.M)
+        ids = re.findall(r"^  (\w+): \{", body, re.MULTILINE)
         self.assertEqual(len(ids), 4, "the README says four characters; update it with the count")
         listed = re.search(r"/wake mochi <([^>]*\|[^>]*)>", wake_readme).group(1).split("|")
         self.assertEqual(sorted(listed), sorted(ids), "the /wake mochi list in the README is not the code's list")
@@ -47,7 +47,7 @@ class WakeReadmeMatchesTheCode(unittest.TestCase):
 
     def test_every_creature_is_named(self):
         text = (wake / "hooks/landscapes/creatures.ts").read_text()
-        for name in re.findall(r"^const (\w+): Species", text, re.M):
+        for name in re.findall(r"^const (\w+): Species", text, re.MULTILINE):
             self.assertTrue(name.replace("_", " ").lower() in wake_readme.lower(), f"creature {name} is not in the README")
 
     def test_every_exit_family_and_style_place_is_covered(self):
@@ -59,7 +59,12 @@ class WakeReadmeMatchesTheCode(unittest.TestCase):
 
 
 class LinksResolve(unittest.TestCase):
-    pages = ["README.md", "docs/setup.md", "docs/packages.md", "claude/README.md", "codex-wake/README.md", "docs/tools/README.md"]
+    pages = (
+        "README.md", "docs/setup.md", "docs/packages.md", "claude/README.md", "codex-wake/README.md",
+        "docs/tools/README.md", "agent-baton/README.md", "agent-bridge/README.md", "agent-inbox/README.md",
+        "computer-use/README.md", "shell/README.md", "tests/README.md",
+        "agent-bridge/tests/fixtures/README.md", "agent-inbox/tests/fixtures/README.md",
+    )
 
     def test_relative_links_anchors_and_images(self):
         problems = []

@@ -212,25 +212,29 @@ def test_sdk_reader_is_read_only_and_rejects_a_different_session(tmp_path, monke
         calls.append(("info", identifier, directory))
         return info
 
-    def get_messages(identifier, *, directory):
+    def get_page(identifier, directory, older, since):
         calls.append(("messages", identifier, directory))
-        return [message]
+        assert older is None and since is None
+        return {"messages": [message.__dict__], "older": None, "newer": "head", "catching_up": False}
 
     def list_subagents(identifier, *, directory):
         calls.append(("subagents", identifier, directory))
         return ["agent-child"]
 
     monkeypatch.setattr(claude_reader, "get_session_info", get_info)
-    monkeypatch.setattr(claude_reader, "get_session_messages", get_messages)
+    monkeypatch.setattr(claude_reader.claude_transcript, "page", get_page)
     monkeypatch.setattr(claude_reader, "list_subagents", list_subagents)
 
     result = claude_reader.read({"session": session_id, "directory": directory, "operation": "history"})
     assert result["info"]["session_id"] == session_id
     assert result["messages"] == [message.__dict__]
-    assert result["children"] == ["agent-child"]
+    assert result["newer"] == "head"
+    children = claude_reader.read({"session": session_id, "directory": directory, "operation": "children"})
+    assert children["children"] == ["agent-child"]
     assert calls == [
         ("info", session_id, directory),
         ("messages", session_id, directory),
+        ("info", session_id, directory),
         ("subagents", session_id, directory),
     ]
 
@@ -455,7 +459,8 @@ def test_older_history_page_still_correlates_relay_message(monkeypatch, tmp_path
         {"type": "text", "text": channel_event(message_id)},
     ])
     monkeypatch.setattr(claude, "sessions", lambda _target: [row])
-    monkeypatch.setattr(claude, "read", lambda *_args: {"info": {}, "messages": [event], "children": []})
+    monkeypatch.setattr(claude, "read", lambda *_args: {"info": {}, "messages": [event],
+                        "older": None, "newer": "head", "catching_up": False})
     monkeypatch.setattr(claude, "channel_call", lambda *_args: {
         "ready": True, "messages": [{"id": message_id, "text": "original text", "images": [url],
                                       "status": "forwarded"}],

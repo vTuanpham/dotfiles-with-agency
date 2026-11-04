@@ -54,9 +54,13 @@ def sessions(target):
     return live
 
 
-def read(target, live, operation):
+def read(target, live, operation, cursor=None, since=None):
     config = settings(target)
     request = {"session": live["sessionId"], "directory": live["cwd"], "operation": operation}
+    if cursor is not None:
+        request["cursor"] = cursor
+    if since is not None:
+        request["since"] = since
     result = subprocess.run([sys.executable, "-m", "agent_inbox.claude_reader"],
                             input=json.dumps(request).encode(), capture_output=True, timeout=10,
                             env={**os.environ, "CLAUDE_CONFIG_DIR": config["config_dir"]})
@@ -99,23 +103,10 @@ class Claude:
 
     def snapshot(self, target, cursor=None, since=None):
         live = root(target)
-        value = read(target, live, "history")
+        value = read(target, live, "history", cursor, since)
         rows = value["messages"]
         if type(rows) is not list:
             raise ValueError("Invalid SDK history")
-        if cursor and since:
-            raise ValueError("Choose earlier history or catch-up")
-        start, end = max(0, len(rows) - 100), len(rows)
-        if since:
-            offset, anchor = claude_history.cursor(since)
-            if offset > len(rows) or not offset or rows[offset - 1]["uuid"] != anchor:
-                raise ValueError("Native history changed; reload")
-            start, end = offset - 1, min(len(rows), offset - 1 + 100)
-        elif cursor:
-            offset, anchor = claude_history.cursor(cursor)
-            if offset > len(rows) or offset and rows[offset - 1]["uuid"] != anchor:
-                raise ValueError("Native history changed; reload")
-            start, end = max(0, offset - 100), offset
         connected, outgoing = False, []
         try:
             relay = channel_call(target, "history")
@@ -123,11 +114,9 @@ class Claude:
         except (OSError, ValueError, RuntimeError):
             pass
         messages, tools, timeline = claude_history.decode(
-            rows[start:end], target.session_id, outgoing, append_outgoing=not cursor)
-        older = claude_history.encode_cursor(start, rows[start - 1]["uuid"]) if start else None
-        newer = claude_history.encode_cursor(end, rows[end - 1]["uuid"]) if end else None
-        return Snapshot(activity(live), connected, messages, older,
-                        newer_cursor=newer, catching_up=bool(since and end < len(rows)),
+            rows, target.session_id, outgoing, append_outgoing=not cursor)
+        return Snapshot(activity(live), connected, messages, value["older"],
+                        newer_cursor=value["newer"], catching_up=value["catching_up"],
                         activity=tools, timeline=timeline)
 
     def send(self, target, message):
@@ -140,7 +129,7 @@ class Claude:
 
     def context(self, target):
         live = root(target)
-        value = read(target, live, "history")
+        value = read(target, live, "children")
         children = value["children"]
         if type(children) is not list:
             raise ValueError("Invalid native subagent list")

@@ -106,14 +106,18 @@ class Rpc:
         self.p.stdin.flush()
 
     def read(self, timeout=None):
+        deadline = None if timeout is None else time.monotonic() + timeout
         while b"\n" not in self.buf:
-            r, _, _ = select.select([self.p.stdout], [], [], timeout)
+            remaining = None if deadline is None else max(0, deadline - time.monotonic())
+            r, _, _ = select.select([self.p.stdout], [], [], remaining)
             if not r:
                 return None
             data = os.read(self.p.stdout.fileno(), 1 << 20)
             if not data:
                 return {"eof": True}
             self.buf += data
+            if deadline is not None and time.monotonic() >= deadline and b"\n" not in self.buf:
+                return None
         line, self.buf = self.buf.split(b"\n", 1)
         return json.loads(line)
 
@@ -123,9 +127,14 @@ class Rpc:
         self.send({"id": rid, "method": method, "params": params or {}})
         end = time.monotonic() + 300
         while True:
-            m = self.read(max(0, end - time.monotonic()))
+            remaining = end - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"timed out: {method}")
+            m = self.read(remaining)
             if m is None:
                 raise TimeoutError(f"timed out: {method}")
+            if m.get("eof"):
+                raise RuntimeError(f"Codex app-server disconnected: {method}")
             if m.get("id") == rid and "method" not in m:
                 if "error" in m:
                     raise RuntimeError(f"{method}: {m['error']}")

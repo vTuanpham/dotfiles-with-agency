@@ -215,6 +215,21 @@ def fake_turns(monkeypatch, outputs, codes):
 STOP = b'{"type":"step_finish","sessionID":"sid","part":{"reason":"stop"}}\n'
 
 
+def test_fragmented_fixture_replays_through_runner_before_one_terminal_receipt(monkeypatch, tmp_path):
+    payload = (Path(__file__).parent / "fixtures/opencode.ndjson").read_bytes()
+    chunks = [payload[index:index + 7] for index in range(0, len(payload), 7)]
+    fake_turns(monkeypatch, [*chunks, b""], [0])
+    opencode.run(tmp_path, state(tmp_path), tmp_path / "state.json", "Replay fixture")
+    events = [json.loads(line) for line in (tmp_path / "live.jsonl").read_text().splitlines()]
+    assert [event["kind"] for event in events].count("turn_completed") == 1
+    completed = next(event for event in events if event["kind"] == "turn_completed")
+    assert completed["status"] == "completed"
+    assert events.index(completed) > next(index for index, event in enumerate(events)
+                                         if event["kind"] == "step_finished")
+    assert next(event for event in events if event["kind"] == "message")["text"] == "A short reply"
+    assert next(event for event in events if event["kind"] == "step_finished")["usage"]["input"] == 12
+
+
 def test_steer_runs_as_next_session_turn(monkeypatch, tmp_path):
     state_path, job = tmp_path / "state.json", tmp_path
     st = state(tmp_path)

@@ -33,7 +33,7 @@ New adapters must decide every capability explicitly, including unsupported ones
 | Codex | History, progress, queue / active-turn steering, images | Model, reasoning, rename, compact, stop | Connection account and allowance, descendants, MCP servers |
 | Claude Code | Official SDK history; replies through an explicitly enabled channel | Native terminal owns model and menus | Subagent IDs; account allowance unavailable |
 | OpenCode v2 | History, image input, prompt admission, forms and permission decisions | Native models, variants, agents, commands, stop | Session usage, descendants, project MCP servers |
-| Antigravity / ACP | Its own saved ACP sessions, replayed chat/images, prompt updates | Native config, modes, commands, cancel | Available native measurements only |
+| Antigravity / ACP | Its own saved ACP sessions, replayed chat/images, prompt updates | Native config, modes, commands, cancel, form questions | Available native measurements only |
 
 No generic service-homepage links are added. Optional `add-native` entries open
 only the exact HTTPS session URL you supply.
@@ -63,7 +63,12 @@ and ordered item identities, so rewritten history requires a reload.
 
 Claude uses the official [read-only SDK history helpers](https://platform.claude.com/cookbook/claude-agent-sdk-05-building-a-session-browser)
 and [`claude agents --json`](https://code.claude.com/docs/en/agent-view#list-sessions-as-json)
-for liveness. Opt a native terminal session into Inbox replies explicitly:
+for liveness. Large transcript files remain readable: a bounded metadata scan
+feeds the public SDK's conversation-chain reader, then loads only the selected
+native message bodies. The SDK still chooses compaction boundaries, branches
+and parallel tool results. Tool output and private reasoning never expand the
+page sent to the browser. This derived read-only view is never used for resume,
+fork or model input. Opt a native terminal session into Inbox replies explicitly:
 
 ```sh
 agent-inbox claude
@@ -117,9 +122,13 @@ A selected root uses one persistent SDK connection for history updates, prompts
 and cancellation. Discovery also reuses a connection; the pool permits four
 runtimes total, with five-minute idle cleanup. Prompts
 return a **Completed** receipt at turn completion, not an invented admission acknowledgement.
-ACP has no Inbox queue or mid-turn steering; input waits until its current turn ends.
-The current client declines permission/elicitation requests; approvals need its
-native client. Live provider turns remain unverified here.
+ACP has no Inbox queue or mid-turn steering; new input is rejected until its
+current turn ends. Ordinary session-scoped form questions use the SDK's native
+[elicitation callback](https://agentclientprotocol.com/protocol/v1/elicitation),
+with accept, decline and cancel actions. Permissions are declined; URL and
+request-scoped elicitations return the native unsupported-parameters error.
+SDK 0.12.1 requires its protocol opt-in for this documented method. Unsupported
+form schemas are declined. Live provider turns remain unverified here.
 The reference service keeps the rest of the filesystem read-only. An ACP agent
 that needs cache or workspace writes requires explicit paths in a local service
 override, or a foreground run; no blanket home-directory write exception is added.
@@ -225,6 +234,9 @@ also lists unarchived saved roots. Idle is not treated as closed.
 For Codex, OpenCode and ACP, transient discovery timeouts retain previously seen
 roots with unknown status and a connection warning. An authoritative empty list
 still removes them. Reading failures retain the visible transcript and disable input.
+Suspending the page also disables input until a fresh read succeeds on return.
+Late reads from an earlier visit or before suspension cannot replace the current
+conversation or re-enable its composer. Drafts remain in tab memory throughout.
 
 | Receipt | Meaning |
 | --- | --- |
@@ -232,10 +244,18 @@ still removes them. Reading failures retain the visible transcript and disable i
 | Steered | Native API admitted input for steering; consumption is not confirmed |
 | Forwarded | Claude channel write completed; no consumption acknowledgement |
 | Completed | ACP returned a native prompt stop reason; its turn has ended |
-| Applied | Native command or question API accepted the operation |
+| Applied | Native API accepted the operation, or Inbox resolved its owned SDK question callback |
 | Already answered | A recorded answer already claimed this native request; no new delivery |
 | No longer pending | The native request was withdrawn or expired; no answer delivered |
 | Unknown | Dispatch may have happened; check the native chat before sending anew |
+
+These are separate milestones: recording intent, admitting a native operation,
+ending its turn, and finishing the user's task. A Codex stop acknowledgement
+means its interrupt request was accepted; the terminal `turn/completed` event
+establishes that the turn ended. A child result can arrive after its parent's
+current turn, and does not establish that the parent task is complete.
+For ACP answers, Applied records callback resolution; it does not acknowledge
+receipt or consumption by the agent.
 
 Delivery checks reuse the same request ID and payload. Unknown outcomes are never
 automatically resent, including after restart. Chat, commands and answers have
@@ -243,7 +263,11 @@ separate receipt identities. Drafts, images and retry IDs live in tab memory:
 they survive root switching, but reloading discards them.
 
 `/api/send`, `/api/command` and `/api/answer` require a client UUID (`id`). Forms
-and permissions both use the answer route with their native request ID (`form`).
+and permissions both use the answer route with their request handle (`form`).
+ACP handles bind to one exact SDK callback; OpenCode IDs come from its pending list.
+Optional `cancel: true` cancels a question; `decline: true` is available only when
+the native form advertises that action. These actions require an empty answer
+and cannot be combined.
 The receipt is persisted before dispatch: **Sending** means intent recorded,
 not native acceptance. Retries return its recorded outcome without redispatch.
 Answer receipts also claim the root/request pair transactionally, so another
@@ -257,9 +281,32 @@ native pending list before answering and rechecks a raced withdrawal after a
 native conflict. There is no cached pending flag to hang after restart.
 The capability `approvals_survive_restart` refers to an **Inbox** restart; it does
 not promise a provider survives its own restart. Codex questions/approvals stay
-with their owning client, ACP requests are declined immediately, and Claude's
-native behavior is unchanged. In-flight receipts recover as Unknown, never as
-fresh work. Choices always carry native values; labels need not be unique.
+with their owning client, ACP callbacks expire when their SDK connection closes,
+and Claude's native behavior is unchanged. In-flight receipts recover as Unknown,
+never as fresh work. Choices always carry native values; labels need not be unique.
+
+Question cards use the selected adapter's native pending-request API or its
+owned SDK callbacks. Fetch
+failure or page suspension preserves typed answers but disables new decisions
+until a fresh native list arrives. A withdrawn request or a lost acknowledgement
+does not authorize a second answer. Ordinary chat, transcript text, screen
+scraping and keyboard simulation are never question-response transports.
+Question polling is independent of transcript reads, so a history failure cannot
+hide a newly pending native request.
+
+[T3's Claude adapter](https://github.com/pingdotgg/t3code/blob/3368dd70f20cb192b68895494a4a73455524fb76/apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts)
+owns an SDK process and its `canUseTool` callbacks;
+it can retain the exact pending callback until the user answers. Inbox attaches
+to existing terminal sessions, so that ownership does not transfer automatically.
+OpenCode's existing-session form/permission API supports remote answers here.
+Inbox owns its ACP connection and retains the genuine SDK callback until the
+user answers or the connection/turn is cancelled, following T3's ownership pattern.
+Native callback replay tests cover all three actions, turn cancellation, connection
+shutdown and durable answer receipts without a live model call.
+Codex and Claude terminal questions still belong to their native client. Their
+capability records keep question controls unavailable.
+Adding support requires the documented request/response API and its real
+cancellation/connection lifetime, not a transcript-derived approximation.
 
 State: `${XDG_STATE_HOME:-~/.local/state}/agent-inbox`, configurable with `--state`
 or `AGENT_INBOX_HOME`. Directory mode 0700, database mode 0600. Credentials are
@@ -272,7 +319,10 @@ diagnostic contents are not logged. Approvals and secrets remain native or use
 
 Uploads create no directory. Preview bytes use a bounded, authenticated 32 MiB
 memory cache. Claude channels retain unseen attachments until read and reject
-new input when full. SDK history reads are bounded to 16 MiB of native transcript.
+new input when full. Claude reads are bounded per record (16 MiB), metadata index
+(32 MiB / 100,000 entries), page (100 rows, up to three pages for a tool-heavy
+initial view), and private helper response (24 MiB). The whole transcript has
+no 16 MiB cutoff.
 Unavailable or oversized content stays native.
 Channel buffers are in memory: restarting Claude loses attachments it has not
 read yet; images already returned by its image tool remain in native history.
@@ -309,3 +359,20 @@ native controls, conditional forms, image limits, catch-up and session-switch
 races. Visual changes also need rendered phone and desktop checks. Tests never
 start model turns in real conversations. Vendor marks keep their owners' terms
 ([notice](src/agent_inbox/assets/NOTICE.md)).
+
+`test_protocol_replay.py` drives actual connection/RPC/adapter code with
+[versioned native metadata and documented authored faults](tests/fixtures/README.md).
+It checks steering races and lost acknowledgements through durable receipts,
+including a restarted store. Its synthetic 100-item tool-heavy page checks the
+rendered transport payload under a 64 KiB workload budget while preserving all
+visible message text and omitting raw output/reasoning. This is a regression
+workload, not a global transcript cap or a measurement of every real session.
+The separate [opt-in agent decisions](../tests/README.md#opt-in-agent-decisions)
+evaluate how a model uses the maintained instructions; unit tests do not measure
+model quality.
+
+Connection diagnosis stays read-only: check the exact executable/protocol version,
+selected root and configured transport in their native context. Registration does
+not log in, update a provider or create a test conversation. An adapter mismatch
+should name that boundary before any authorized live-turn test. Harness updates
+belong to their native installers; Inbox does not silently download or replace them.

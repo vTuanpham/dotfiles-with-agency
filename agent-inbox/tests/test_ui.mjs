@@ -69,7 +69,7 @@ async function boot(options={}) {
       fetches.push({path,request});
       const response = (data, status=200) => ({status,ok:status===200,json:async () => data});
       const id = new URL(path, 'http://localhost').searchParams.get('id');
-      if(path === '/api/roots') return response({roots:liveRoots});
+      if(path === '/api/roots') return response(options.discovery ? await options.discovery() : {roots:liveRoots});
       if(path === '/api/pair') return response({device:'fixture'});
       if(path.startsWith('/api/view')) {
         if(view) return response(view(path));
@@ -150,6 +150,88 @@ test('capabilities hide unavailable controls without guessing from harness names
   assert.equal(ui.paths.some(path=>path.startsWith('/api/commands') || path.startsWith('/api/forms')),false);
   const missing={...capabilities}; delete missing.images;
   assert.throws(()=>ui.run('decodeRoots')({roots:[{...roots[0],capabilities:missing}]}),/recognized format/);
+});
+
+test('a late read from an earlier visit cannot replace a fresh A after A to B to A', async () => {
+  const late=deferred(); let aReads=0;
+  const page=(id,text)=>({status:'idle',can_send:true,messages:[{id,role:'assistant',text}]});
+  const ui=await boot({view:path=>{
+    const id=new URL(path,'http://localhost').searchParams.get('id');
+    if(id==='a' && ++aReads===2) return late.promise;
+    return page(id,id==='a' && aReads>2 ? 'Fresh A' : 'Initial '+id);
+  }});
+  await ui.poll();
+  await ui.choose(1); await ui.choose(0);
+  late.resolve({...page('a','Obsolete A'),can_send:false}); await tick();
+  assert.equal(ui.bodyOf(ui.messages()[0]).textContent,'Fresh A');
+  assert.equal(ui.element('send').disabled,false);
+  assert.equal(aReads,3,'returning to A starts a fresh read without waiting for its abandoned request');
+});
+
+test('sleep and resume retain drafts but old reads cannot re-enable input', async () => {
+  const late=deferred(), fresh=deferred(); let reads=0;
+  const page=text=>({status:'idle',can_send:true,messages:[{id:'a',role:'assistant',text}]});
+  const ui=await boot({view:()=>++reads===1 ? page('Saved reply') : reads===2 ? late.promise : fresh.promise});
+  ui.type('Unsent draft'); await ui.poll();
+  ui.document.hidden=true;
+  for(const handler of ui.document.handlers.visibilitychange) await handler();
+  assert.equal(ui.element('send').disabled,true);
+  assert.equal(ui.bodyOf(ui.messages()[0]).textContent,'Saved reply');
+  ui.document.hidden=false;
+  for(const handler of ui.document.handlers.visibilitychange) await handler();
+  late.resolve(page('Stale reply')); await tick();
+  assert.equal(ui.element('send').disabled,true,'a response from before suspension is no longer authoritative');
+  assert.equal(ui.element('message').value,'Unsent draft');
+  fresh.resolve(page('Current reply')); await tick();
+  assert.equal(ui.element('send').disabled,false);
+  assert.equal(ui.bodyOf(ui.messages()[0]).textContent,'Current reply');
+});
+
+test('discovery from before suspension cannot mark the resumed root offline', async () => {
+  const late=deferred(); let calls=0;
+  const ui=await boot({discovery:()=>++calls===2 ? late.promise : {roots:roots.map(withCapabilities)}});
+  await ui.refresh(roots);
+  ui.document.hidden=true;
+  for(const handler of ui.document.handlers.visibilitychange) await handler();
+  ui.document.hidden=false;
+  for(const handler of ui.document.handlers.visibilitychange) await handler();
+  late.resolve({roots:[]}); await tick();
+  assert.equal(ui.element('send').disabled,false);
+  assert.equal(ui.run('selected.id'),'a');
+  assert.equal(ui.run('roots.length'),2);
+});
+
+test('a stale authentication failure cannot hide a fresh conversation', async () => {
+  const late=deferred(); let reads=0;
+  const ui=await boot({view:()=>++reads===2 ? late.promise : {
+    status:'idle',can_send:true,messages:[{id:'m',role:'assistant',text:'Current conversation'}]}});
+  await ui.poll(); await ui.choose(1);
+  late.reject(Object.assign(new Error('Device was revoked'),{status:401})); await tick();
+  assert.equal(ui.element('pairing').hidden,true);
+  assert.equal(ui.element('inbox').hidden,false);
+  assert.equal(ui.element('send').disabled,false);
+  ui.run('viewVersion++');
+  ui.run('api=async()=>{throw Object.assign(new Error("Device was revoked"),{status:401});}');
+  await ui.poll();
+  assert.equal(ui.element('pairing').hidden,false,'a current authentication failure still requires pairing');
+  assert.equal(ui.element('inbox').hidden,true);
+});
+
+test('a failed read retains chat and draft, blocks submission, and recovers on a fresh read', async () => {
+  let broken=false;
+  const ui=await boot({view:()=>{
+    if(broken) throw new Error('Connection lost');
+    return {status:'idle',can_send:true,messages:[{id:'m',role:'assistant',text:'Saved conversation'}]};
+  }});
+  ui.type('Keep this draft'); broken=true; await ui.poll();
+  assert.equal(ui.element('send').disabled,true);
+  assert.equal(ui.bodyOf(ui.messages()[0]).textContent,'Saved conversation');
+  assert.equal(ui.element('message').value,'Keep this draft');
+  ui.submit(); await tick();
+  assert.equal(ui.requests.length,0,'keyboard or programmatic submission must obey freshness too');
+  broken=false; await ui.poll();
+  assert.equal(ui.element('send').disabled,false);
+  assert.equal(ui.element('message').value,'Keep this draft');
 });
 
 test('active turns steer by default and an explicit queue choice stays with that root', async () => {
@@ -370,10 +452,10 @@ test('polling catches up from its native cursor and older history cannot overwri
       messages:[message('initial','Original response')]};
   }});
   await ui.poll();
-  assert.match(ui.paths.at(-1), /since=start/);
+  assert.match(ui.paths.findLast(path=>path.startsWith('/api/view')), /since=start/);
   await ui.element('older').listeners.click();
   await ui.poll();
-  assert.match(ui.paths.at(-1), /since=tail/);
+  assert.match(ui.paths.findLast(path=>path.startsWith('/api/view')), /since=tail/);
   const bubbles=ui.messages();
   assert.deepEqual(bubbles.map(b=>ui.bodyOf(b).textContent),
     ['Earlier history','Original response','Work update','New response']);
@@ -734,6 +816,62 @@ const formUi = ui => {
     button:text => find(card(),node=>node.text===text),
     submit:() => card().listeners.submit({preventDefault() {}})};
 };
+
+test('unavailable question polling keeps typed answers but blocks new native decisions until refreshed', async () => {
+  let offline=false;
+  const ui=await boot({forms:()=>{
+    if(offline) throw new Error('Question source disconnected');
+    return {forms:[pickForm],unavailable:''};
+  }});
+  const form=formUi(ui);
+  form.radios()[0].checked=true; form.radios()[0].listeners.change();
+  offline=true; await ui.poll();
+  assert.equal(form.button('Send answer').disabled,true);
+  form.submit(); await tick();
+  assert.equal(ui.answerRequests.length,0);
+  offline=false; await ui.poll();
+  assert.equal(form.button('Send answer').disabled,false);
+  assert.equal(form.radios()[0].checked,true,'a temporary read failure must not erase the selected answer');
+});
+
+test('suspension invalidates question reads and needs a fresh list before answering', async () => {
+  const late=deferred(), fresh=deferred(); let reads=0;
+  const ui=await boot({forms:()=>++reads===1 ? {forms:[pickForm],unavailable:''} : reads===2 ? late.promise : fresh.promise});
+  const form=formUi(ui);
+  await ui.poll();
+  ui.document.hidden=true;
+  for(const handler of ui.document.handlers.visibilitychange) await handler();
+  assert.equal(form.button('Send answer').disabled,true);
+  ui.document.hidden=false;
+  for(const handler of ui.document.handlers.visibilitychange) await handler();
+  late.resolve({forms:[pickForm],unavailable:''}); await tick();
+  assert.equal(form.button('Send answer').disabled,true);
+  fresh.resolve({forms:[pickForm],unavailable:''}); await tick();
+  assert.equal(form.button('Send answer').disabled,false);
+});
+
+test('question polling continues when history cannot load', async () => {
+  let broken=false, pending=false;
+  const ui=await boot({view:()=>{
+    if(broken) throw new Error('History unavailable');
+    return {status:'active',can_send:true,messages:[]};
+  },forms:()=>({forms:pending ? [pickForm] : [],unavailable:''})});
+  broken=true; pending=true; await ui.poll();
+  assert.equal(ui.element('send').disabled,true);
+  assert.equal(ui.element('forms').children.length,1,'a native question must not wait on transcript recovery');
+  assert.equal(formUi(ui).button('Send answer').disabled,false);
+});
+
+test('a native decline is a separate API action and never a chat message', async () => {
+  const ui=await boot({forms:()=>({forms:[{...pickForm,can_decline:true}],unavailable:''})});
+  const decline=formUi(ui).button('Decline question').listeners.click(); await tick();
+  assert.deepEqual(ui.answerRequests[0].data.answer,{});
+  assert.equal(ui.answerRequests[0].data.decline,true);
+  assert.equal(ui.answerRequests[0].data.cancel,undefined);
+  assert.equal(ui.requests.length,0);
+  ui.answerRequests[0].finish('applied'); await decline;
+  assert.throws(()=>ui.run('decodeForms')({forms:[{...pickForm,can_decline:'yes'}],unavailable:''}),/Invalid native question actions/);
+});
 
 test('native hidden fields stay hidden across polling while their defaults round-trip', async () => {
   const question={id:'hidden',title:'Choose',unavailable:'',fields:[

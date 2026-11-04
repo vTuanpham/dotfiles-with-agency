@@ -41,7 +41,7 @@ def connection(home):
             response = json.loads(payload)
             if not isinstance(response, dict):
                 raise RuntimeError("Invalid Codex wake delivery response")
-            if response.get("id") != sequence or "method" in response:
+            if type(response.get("id")) is not int or response["id"] != sequence or "method" in response:
                 continue
             if "error" in response:
                 raise RuntimeError(f"Codex wake delivery rejected {method}")

@@ -5,13 +5,14 @@ import sys
 import uuid
 from dataclasses import asdict
 
-from claude_agent_sdk import get_session_info, get_session_messages, list_subagents
+from claude_agent_sdk import get_session_info, list_subagents
 
+from . import claude_transcript
 from .models import decode_json, fields, text
 
 
 def read(request):
-    fields(request, ("session", "directory", "operation"))
+    fields(request, ("session", "directory", "operation"), ("cursor", "since"))
     identifier = text(request["session"], "Claude session id", 200)
     if str(uuid.UUID(identifier)) != identifier:
         raise ValueError("Invalid native session id")
@@ -21,14 +22,13 @@ def read(request):
         raise ValueError("Only existing main sessions can be read")
     if request["operation"] == "info":
         return {"info": asdict(info)}
+    if request["operation"] == "children":
+        return {"info": asdict(info), "children": list_subagents(identifier, directory=directory)}
     if request["operation"] != "history":
         raise ValueError("Unknown SDK read operation")
-    if type(info.file_size) is not int or not 0 <= info.file_size <= 16 * 1024 * 1024:
-        raise ValueError("Native history is outside the inbox read limit")
-    # These documented helpers read files only; never query(), resume(), or launch a model.
-    messages = get_session_messages(identifier, directory=directory)
-    children = list_subagents(identifier, directory=directory)
-    return {"info": asdict(info), "messages": [asdict(message) for message in messages], "children": children}
+    # The native SDK's filesystem helper parses the whole file even with limit/offset.
+    page = claude_transcript.page(identifier, directory, request.get("cursor"), request.get("since"))
+    return {"info": asdict(info), **page}
 
 
 def main():

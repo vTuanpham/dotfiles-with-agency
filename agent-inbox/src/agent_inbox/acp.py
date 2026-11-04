@@ -4,7 +4,6 @@ from .acp_runtime import RuntimePool
 from .capabilities import AdapterCapabilities
 from .commands import Choice, Command, Commands
 from .context import Metric, SessionContext
-from .forms import Forms
 from .media import decode_images
 from .models import DeliveryRejected, Outgoing, RootInfo, Snapshot, Target, text
 
@@ -45,7 +44,7 @@ def _commands(state):
 class ACP:
     capabilities = AdapterCapabilities(
         queued_messages=False, mid_turn_steering=False, approvals_survive_restart=False,
-        history_while_unloaded=False, images=True, interrupt=True, commands=True, questions=False,
+        history_while_unloaded=False, images=True, interrupt=True, commands=True, questions=True,
         reply_mode="direct",
     )
 
@@ -105,12 +104,10 @@ class ACP:
         raise DeliveryRejected("ACP command is no longer available")
 
     def forms(self, target: Target):
-        self.runtimes.call(target, "controls")
-        return Forms(
-            [],
-            "ACP permission requests are declined by the inbox. Open this root in its native client "
-            "to approve them.",
-        )
+        return self.runtimes.call(target, "forms")
+
+    def answer(self, target: Target, identifier, answer, cancel=False, decline=False):
+        return self.runtimes.call(target, "answer", identifier, answer, cancel, decline)
 
     def context(self, target: Target):
         state = self.runtimes.call(target, "context")

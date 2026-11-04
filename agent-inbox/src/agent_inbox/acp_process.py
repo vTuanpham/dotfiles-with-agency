@@ -51,7 +51,10 @@ async def agent_process(client, command, *, cwd, env, observers):
     )
     connection = None
     try:
-        connection = connect_to_agent(client, process.stdin, process.stdout, observers=observers)
+        # SDK 0.12.1 gates the documented elicitation method behind this opt-in.
+        connection = connect_to_agent(
+            client, process.stdin, process.stdout, observers=observers, use_unstable_protocol=True
+        )
         yield connection, process
     finally:
         # Reap descendants even after a clean leader exit; they may ignore TERM or fork on TERM.

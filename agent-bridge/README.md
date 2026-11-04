@@ -215,3 +215,22 @@ remains in place.
 Shared model selection and reference maintenance belong to [agent-models](../agent-models/README.md).
 Use `model-guide read models` and `model-guide read maintenance`; Bridge consumes their reviewed
 reference without owning the refresh process. The delegation skill owns common worker coordination.
+
+## Protocol and workflow checks
+
+`uv run --locked pytest` covers native routing, lifecycle and recovery. The
+[stream replays](tests/fixtures/README.md) exercise raw Codex JSON-RPC and fragmented
+OpenCode output through production readers, alongside the existing adapter tests.
+Unrelated notifications and partial frames cannot restart the RPC deadline.
+An interrupt acknowledgement, a model step, a completed turn, a worker result and
+the root's finished task are separate milestones. Late child completion and
+failed parent notification must preserve the pending incident until its owning
+delivery path can report it; they never manufacture user approval.
+The [opt-in decision eval](../tests/README.md#opt-in-agent-decisions) separately
+checks a model's use of the maintained guides, without adding model calls to CI.
+
+Diagnose the exact native executable, version and execution context first.
+Inventory and transport checks do not authorize a new model turn, login or plan
+change. Bridge does not own harness updates: use the native installer after
+identifying a version mismatch, and verify the adapter again. The desktop tool's
+pinned installer remains with [computer-use](../computer-use/README.md).

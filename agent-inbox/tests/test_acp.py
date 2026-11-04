@@ -12,8 +12,9 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from agent_inbox import acp, acp_history, acp_runtime
+from agent_inbox import acp, acp_history, acp_questions, acp_runtime
 from agent_inbox.commands import Choice
+from agent_inbox.forms import Forms
 from agent_inbox.models import DeliveryRejected, Outgoing, Target
 
 
@@ -83,6 +84,8 @@ class FakePool:
     def call(self, selected, operation, *arguments):
         assert selected.adapter == "acp"
         self.calls.append((operation, *arguments))
+        if operation == "forms":
+            return Forms([])
         if operation == "snapshot":
             return {
                 "status": "active" if self.active else "unknown",
@@ -185,10 +188,10 @@ def test_cancel_is_only_exposed_for_this_actor_active_turn():
     assert provider.execute(selected, "interrupt", "") == "applied"
 
 
-def test_permission_forms_are_explicitly_declined_and_not_answerable():
+def test_form_capability_uses_the_owned_sdk_callback_list():
     forms = acp.ACP(FakePool()).forms(target("native-id-001"))
     assert forms.forms == []
-    assert "declined" in forms.unavailable
+    assert acp.ACP.capabilities.questions is True
 
 
 def test_context_projects_session_usage_without_inventing_account_quota():
@@ -722,6 +725,7 @@ def detached_runtime():
     runtime.history = acp_history.History(runtime.target.session_id)
     runtime.session = acp_history.Session(runtime.target.session_id, "/project", "Root", [])
     runtime.capabilities = capabilities()
+    runtime.questions = acp_questions.Questions()
     runtime.observer = PromptObserver()
     runtime.connection = PromptConnection(runtime.observer)
     runtime._state_lock = Lock()

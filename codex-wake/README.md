@@ -191,6 +191,12 @@ integration details**, not a promised public OpenAI wake API. The
 the surrounding initialization, discovery and read APIs. There is no route
 fallback, automatic send retry, second app server or silently selected session.
 Receipt acceptance proves submission, not completion of the next turn or task.
+Raw-response tests include unrelated notifications, server requests and mismatched
+JSON-RPC ID types: only the exact integer reply can acknowledge a request.
+The [Bridge pipe replay](../agent-bridge/tests/fixtures/README.md) also keeps
+interrupt acknowledgement separate from a terminal turn event. Existing hook
+tests cover child completion after a new parent prompt and completed command
+output waiting for an idle parent; neither permits answering a human question.
 
 ## Checks and remaining live verification
 

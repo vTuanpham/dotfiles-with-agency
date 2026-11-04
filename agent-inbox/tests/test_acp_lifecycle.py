@@ -15,7 +15,8 @@ from types import SimpleNamespace
 import pytest
 from test_acp import detached_runtime, target
 
-from agent_inbox import acp_process, acp_runtime
+from agent_inbox import acp, acp_process, acp_runtime
+from agent_inbox.models import NoLongerPending
 
 
 def fake_target(*arguments):
@@ -229,6 +230,37 @@ def test_sdk_permission_request_is_declined_without_blocking_the_turn():
     try:
         assert pool.call(selected, "send", [{"type": "text", "text": "request permission"}]) == "end_turn"
         assert pool.call(selected, "context")["denied_permissions"] == 1
+    finally:
+        pool.close()
+
+
+@pytest.mark.parametrize("action", ["accept", "decline", "cancel", "stop"])
+def test_real_sdk_owns_question_callback_until_exact_answer_or_cancellation(action):
+    selected = fake_target()
+    pool = acp_runtime.RuntimePool()
+    provider = acp.ACP(pool)
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            turn = executor.submit(pool.call, selected, "send", [{"type": "text", "text": "ask question"}])
+            try:
+                wait_until(lambda: provider.forms(selected).forms)
+                form = provider.forms(selected).forms[0]
+                view = pool.call(selected, "snapshot", None, None)
+                assert view["status"] == "input-needed" and not view["can_send"]
+                if action == "stop":
+                    assert pool.call(selected, "cancel") == "applied"
+                else:
+                    answer = {"choice": "focused", "confirm": False} if action == "accept" else {}
+                    assert provider.answer(
+                        selected, form.id, answer, cancel=action == "cancel", decline=action == "decline"
+                    ) == "applied"
+                assert turn.result(timeout=5) == ("cancelled" if action in ("cancel", "stop") else "end_turn")
+                assert provider.forms(selected).forms == []
+                with pytest.raises(NoLongerPending):
+                    provider.answer(selected, form.id, {"choice": "focused", "confirm": False})
+            finally:
+                if not turn.done():
+                    pool.close()
     finally:
         pool.close()
 

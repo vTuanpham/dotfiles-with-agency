@@ -49,6 +49,8 @@ def transport(monkeypatch):
             self.requests.append(json.loads(payload))
 
         def recv(self):
+            if responses.get("_frames"):
+                return json.dumps(responses["_frames"].pop(0))
             request = self.requests[-1]
             result = responses[request["method"]]
             if isinstance(result, list):
@@ -92,6 +94,21 @@ def test_preflight_uses_read_only_status_api_and_all_pages(transport):
         request["params"]["cursor"] for request in requests if request["method"] == "mcpServerStatus/list"
     ] == [None, "page2"]
     assert all(request["method"] != "mcpServer/tool/call" for request in requests)
+
+
+def test_raw_notifications_and_nonmatching_ids_cannot_answer_a_request(transport):
+    transport[2]["_frames"] = [
+        {"method": "turn/completed", "params": {"turn": {"status": "completed"}}},
+        {"id": 1, "method": "server/request", "params": {}},
+        {"id": True, "error": {"code": -1, "message": "not an integer request id"}},
+        {"id": "1", "error": {"code": -1, "message": "not the same request id"}},
+        {"id": 99, "result": {"unrelated": True}},
+    ]
+    client.Wake("target-thread").check()
+    assert not transport[2]["_frames"]
+    assert [request["method"] for request in transport[1][0].requests] == [
+        "initialize", "initialized", "mcpServerStatus/list",
+    ]
 
 
 @pytest.mark.parametrize(

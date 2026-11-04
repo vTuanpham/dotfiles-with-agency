@@ -98,12 +98,14 @@ class App:
         return self.dispatch(data, fingerprint, prepare, ("applied",), "command")
 
     def answer(self, data):
-        fields(data, ("id", "target", "form", "answer"), ("cancel",))
+        fields(data, ("id", "target", "form", "answer"), ("cancel", "decline"))
         identifier = text(data["form"], "question id", 200)
         cancel = data.get("cancel", False)
-        if type(cancel) is not bool or type(data["answer"]) is not dict or cancel and data["answer"]:
+        decline = data.get("decline", False)
+        if (type(cancel) is not bool or type(decline) is not bool or cancel and decline
+                or type(data["answer"]) is not dict or (cancel or decline) and data["answer"]):
             raise ValueError("Invalid question reply")
-        fingerprint = json.dumps(["answer", identifier, data["answer"], cancel],
+        fingerprint = json.dumps(["answer", identifier, data["answer"], cancel, *([True] if decline else [])],
                                  sort_keys=True, separators=(",", ":"))
 
         def prepare(target):
@@ -111,8 +113,12 @@ class App:
             if not provider.capabilities.questions:
                 raise DeliveryRejected("This connection cannot answer native requests")
             question = forms(provider, target).selected(identifier)
-            if not cancel:
+            if decline and not question.can_decline:
+                raise DeliveryRejected("This native request has no decline action")
+            if not cancel and not decline:
                 question.validate(data["answer"])
+            if decline:
+                return lambda: provider.answer(target, identifier, data["answer"], decline=True)
             return lambda: provider.answer(target, identifier, data["answer"], cancel)
 
         return self.dispatch(data, fingerprint, prepare, ("applied",), "answer", identifier)

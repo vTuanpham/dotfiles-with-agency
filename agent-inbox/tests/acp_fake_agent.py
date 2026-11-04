@@ -10,6 +10,8 @@ from pathlib import Path
 from acp import run_agent
 from acp.schema import (
     AgentCapabilities,
+    ElicitationFormSessionMode,
+    ElicitationSchema,
     InitializeResponse,
     ListSessionsResponse,
     LoadSessionResponse,
@@ -36,6 +38,9 @@ class FakeAgent:
             await asyncio.Event().wait()
         if protocol_version != 1:
             raise ValueError("Only ACP v1 is supported by this fixture")
+        capabilities = kwargs.get("client_capabilities")
+        self.form_supported = bool(capabilities and capabilities.elicitation
+                                   and capabilities.elicitation.form is not None)
         return InitializeResponse(
             protocol_version=1,
             agent_capabilities=AgentCapabilities(
@@ -101,6 +106,21 @@ class FakeAgent:
             if response.outcome.outcome != "cancelled":
                 raise ValueError("Inbox unexpectedly granted permission")
             return PromptResponse(stop_reason="end_turn")
+        if text == "ask question":
+            if not self.form_supported:
+                raise ValueError("Client did not advertise native form support")
+            response = await self.connection.create_elicitation(
+                "Which validation should run?",
+                ElicitationFormSessionMode(session_id=session_id, requested_schema=ElicitationSchema(
+                    type="object", properties={
+                        "choice": {"type": "string", "enum": ["focused", "full"]},
+                        "confirm": {"type": "boolean"},
+                    }, required=["choice", "confirm"],
+                )),
+            )
+            if response.action == "accept" and response.content != {"choice": "focused", "confirm": False}:
+                raise ValueError("Native question values changed")
+            return PromptResponse(stop_reason="cancelled" if response.action == "cancel" else "end_turn")
         await self.cancelled.wait()
         return PromptResponse(stop_reason="cancelled")
 

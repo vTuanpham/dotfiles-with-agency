@@ -330,17 +330,17 @@ def test_mid_snapshot_handoff_skips_one_owner_and_keeps_watching_the_other(monke
 
     delivery = Delivery()
     monkeypatch.setattr(watch.root_wake, "prepare", lambda owners: delivery)
-    render = watch.status_render.job_status
+    render = watch.status_render.event
     handed_off = False
 
-    def render_with_handoff(job):
+    def render_with_handoff(job, event):
         nonlocal handed_off
         if job.owner == "a" and not handed_off:
             owner_binding.handoff(owners[0], {"backend": "claude", "session_id": "new-root"})
             handed_off = True
-        return render(job)
+        return render(job, event)
 
-    monkeypatch.setattr(watch.status_render, "job_status", render_with_handoff)
+    monkeypatch.setattr(watch.status_render, "event", render_with_handoff)
     assert watch.watch(["a", "b"], until_event=True) is True
     assert handed_off
     assert delivery.calls == [(["b"], "event")]

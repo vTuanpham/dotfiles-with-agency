@@ -20,6 +20,26 @@ def encode_cursor(offset, identifier):
     return json.dumps({"offset": offset, "anchor": identifier}, separators=(",", ":"))
 
 
+def display_content(content):
+    """Keep the wire page independent of tool output/arguments and private reasoning."""
+    if type(content) is not list:
+        return content
+    result = []
+    for block in content:
+        if type(block) is not dict:
+            raise ValueError("Invalid SDK content block")
+        if block.get("type") in ("text", "image"):
+            result.append(block)
+        elif block.get("type") == "tool_use":
+            result.append({key: block[key] for key in ("type", "id", "name") if key in block})
+        elif block.get("type") == "tool_result":
+            outputs = block.get("content")
+            images = [part for part in outputs if type(part) is dict and part.get("type") == "image"] \
+                if type(outputs) is list else []
+            result.append({"type": "tool_result", "content": images})
+    return result
+
+
 def channel_message(body):
     if not body.startswith('<channel source="agent-inbox" '):
         return None

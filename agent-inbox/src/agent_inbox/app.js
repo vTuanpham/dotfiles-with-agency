@@ -1,5 +1,6 @@
-let selected = null, roots = [], older = null, newer = null, reading = false, historyLoaded = false;
-let loading = false, rootSignature = '', discoveryWarning = '', canSend = false, status = '';
+let selected = null, roots = [], older = null, newer = null, reading = null, historyLoaded = false;
+let loading = null, rootSignature = '', discoveryWarning = '', canSend = false, status = '';
+let viewVersion = 0, catalogVersion = 0, viewReady = false;
 let renderedTranscript = '', firstPaint = true, anchorOlder = false, lastNear = true;
 let headHarness = null;
 const outbox = new Map();
@@ -69,7 +70,8 @@ function setDraft(text) { $('message').value=text; fit(); }
 /* One place decides which composer controls are usable, from the selected root's own state. */
 function syncComposer() {
   if(!selected) return;
-  const state=composeState(), open=canSend, canSteer=selected.capabilities.mid_turn_steering && status==='active';
+  const state=composeState(), open=canSend && viewReady && !document.hidden;
+  const canSteer=selected.capabilities.mid_turn_steering && status==='active';
   $('message').disabled=!open;
   $('send').disabled=!open || state.sending || state.uploading;
   $('attach').hidden=!selected.capabilities.images;
@@ -106,7 +108,6 @@ async function api(path, data) {
     throw error?.name==='TimeoutError' ? new Error('Inbox is not responding; retrying') : error;
   });
   const result = await response.json();
-  if (response.status === 401) { $('pairing').hidden=false; $('inbox').hidden=true; }
   if (!response.ok) {
     const error=new Error(result.error || 'Connection unavailable'); error.status=response.status; throw error;
   }
@@ -248,14 +249,15 @@ function setStatus(next) {
 function setConnection(text) { $('connection').textContent=text==='Connected' ? '' : text; }
 
 async function read(cursor=null) {
-  if (!selected || reading || !roots.some(root=>root.id===selected.id)) return;
-  reading=true;
+  if (document.hidden || !selected || reading===viewVersion || !roots.some(root=>root.id===selected.id)) return;
+  const version=viewVersion;
+  reading=version;
   const target=selected.id;
   let reset=false;
   try {
     const query=cursor?'&cursor='+encodeURIComponent(cursor):newer?'&since='+encodeURIComponent(newer):'';
     const page=await api('/api/view?id='+encodeURIComponent(target)+query);
-    if (selected.id!==target || !roots.some(root=>root.id===target)) return;
+    if (version!==viewVersion || selected.id!==target || !roots.some(root=>root.id===target)) return;
     if (cursor) { const merged=new Map(page.messages.map(m=>[m.id,m])); for(const [id,m] of transcript) merged.set(id,m); transcript.clear(); for(const [id,m] of merged) transcript.set(id,m); anchorOlder=true; }
     else for (const message of page.messages) transcript.set(message.id,message);
     if(cursor || !historyLoaded) older=page.older_cursor;
@@ -264,7 +266,7 @@ async function read(cursor=null) {
     for(const row of page.activity || []) activityItems.set(row.id,row);
     if(page.timeline) mergeOrder(page.timeline,!!cursor);
     const statusChanged=status && status!==page.status;
-    canSend=page.can_send;
+    canSend=page.can_send; viewReady=true;
     setStatus(page.status);
     if(statusChanged) commandPanel.load();
     if(!cursor && (page.status==='active' || page.status==='input-needed' || formsPanel.hasAny())) formsPanel.load();
@@ -274,17 +276,20 @@ async function read(cursor=null) {
     $('delivery').textContent=composeState().delivery || (page.can_send?'':'Continue in the native conversation.');
     renderMessages();
   } catch(error) {
-    if(selected.id===target) {
+    if(version===viewVersion && selected.id===target) {
+      viewReady=false; canSend=false; syncComposer();
+      if(error.status===401) { $('pairing').hidden=false; $('inbox').hidden=true; }
       if(!cursor && newer && error.status===400) {
         newer=null; older=null; historyLoaded=false; transcript.clear(); activityItems.clear(); order.length=0; reset=true;
-      } else { setConnection('Unavailable'); $('delivery').textContent=error.message; canSend=false; syncComposer(); }
+      } else { setConnection(transcript.size?'Unavailable · showing saved conversation':'Unavailable'); $('delivery').textContent=error.message; }
     }
   }
-  finally { reading=false; if(reset || selected.id!==target) read(); }
+  finally { if(reading===version) reading=null; if(reset && version===viewVersion) read(); }
 }
 function choose(root) {
   sessions.close(false);
   if (selected?.id===root.id) { read(); return; }
+  viewVersion++; reading=null; viewReady=false;
   if(selected) composeState().draft=$('message').value;
   selected=root; older=null; newer=null; historyLoaded=false; transcript.clear(); firstPaint=true; canSend=false;
   activityItems.clear(); order.length=0; openBlocks.clear(); status=''; commandPanel.reset(); contextPanel.reset(); formsPanel.reset();
@@ -332,19 +337,23 @@ function renderRoots() {
 }
 $('session-search').addEventListener('input',renderRoots);
 async function load() {
-  if(loading) return;
-  loading=true;
+  if(document.hidden || loading===catalogVersion) return;
+  const version=catalogVersion;
+  loading=version;
   try {
-    const result=decodeRoots(await api('/api/roots')); roots=result.roots;
+    const result=decodeRoots(await api('/api/roots'));
+    if(version!==catalogVersion) return;
+    roots=result.roots;
     discoveryWarning=(result.warnings || []).join(' · ');
     $('pairing').hidden=true; $('inbox').hidden=false;
-    setConnection(discoveryWarning || (roots.length?'Connected':'No online sessions'));
+    setConnection(discoveryWarning || (roots.length ? viewReady?'Connected':'Checking session…' : 'No online sessions'));
     const signature=JSON.stringify(roots);
     if(signature!==rootSignature) { rootSignature=signature; renderRoots(); }
     if(!selected && roots.length) choose(roots[0]);
     const current=selected && roots.find(root=>root.id===selected.id);
     if(current) { selected=current; rootHeading(current); syncComposer(); }
     if(selected && !roots.some(root=>root.id===selected.id)) {
+      viewVersion++; reading=null; viewReady=false;
       canSend=false; setStatus('offline');
       $('delivery').textContent='This session is offline. Its conversation history is preserved.';
     }
@@ -352,10 +361,13 @@ async function load() {
       if(!roots.some(root=>root.id===id) && !state.draft && !state.images.length && !state.pending && !state.sending) outbox.delete(id);
     }
   } catch(error) {
+    if(version!==catalogVersion) return;
+    canSend=false; viewReady=false; syncComposer();
+    if(error.status===401) { $('pairing').hidden=false; $('inbox').hidden=true; }
     setConnection(error.status===401?'Pair device':'Unavailable');
     $('pair-error').textContent=error.status===401?'':error.message;
   }
-  finally { loading=false; }
+  finally { if(loading===version) loading=null; }
 }
 $('pair-form').addEventListener('submit',async event=>{
   event.preventDefault(); $('pair-error').textContent='';
@@ -388,7 +400,8 @@ async function deliver(target,state,payload) {
   }
 }
 $('compose').addEventListener('submit',async event=>{
-  event.preventDefault(); if(!selected || composeState().sending || composeState().uploading ||
+  event.preventDefault(); if(!selected || !canSend || !viewReady || document.hidden ||
+    composeState().sending || composeState().uploading ||
     (!$('message').value.trim() && !composeState().images.length)) return;
   const body=$('message').value, target=selected.id, state=composeState(target), images=state.images.slice();
   if(!images.length && /^\/(?:[a-z][\w-]*)?(?:\s|$)/i.test(body.trim())) {
@@ -470,7 +483,20 @@ const commandPanel=new CommandPanel(api,()=>selected,()=>read(),messageId,{
 });
 const contextPanel=new ContextPanel(api,()=>selected,id=>roots.find(root=>root.id===id),root=>{ details.close(false); choose(root); });
 const formsPanel=new FormsPanel(api,()=>selected,messageId,()=>{ renderMessages(); if(lastNear) toBottom(false); });
-setInterval(()=>{if(!document.hidden) read();},4000);
+setInterval(()=>{
+  if(document.hidden) return;
+  read();
+  if(selected?.capabilities.questions) formsPanel.load();
+},4000);
 setInterval(()=>{if(!document.hidden) load();},10000);
-document.addEventListener('visibilitychange',async ()=>{if(!document.hidden) { await load(); read(); }});
+document.addEventListener('visibilitychange',async ()=>{
+  viewVersion++; catalogVersion++; reading=null; loading=null; viewReady=false; canSend=false;
+  formsPanel.reset(); commandPanel.reset(); contextPanel.reset();
+  syncComposer();
+  setConnection(document.hidden?'Paused':'Checking session…');
+  if(!document.hidden) {
+    await load(); read(); commandPanel.load(); formsPanel.load();
+    if(details.isOpen) contextPanel.load();
+  }
+});
 load();

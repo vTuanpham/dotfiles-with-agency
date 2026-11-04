@@ -1,0 +1,86 @@
+[
+  {
+    "request": {
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "clientInfo": {
+          "name": "agent-inbox",
+          "version": "0.1.0"
+        },
+        "capabilities": {
+          "experimentalApi": true
+        }
+      }
+    },
+    "response": {
+      "id": 1,
+      "result": {
+        "platformFamily": "unix",
+        "platformOs": "linux"
+      }
+    }
+  },
+  {
+    "request": {
+      "id": 2,
+      "method": "thread/read",
+      "params": {
+        "threadId": "root-id"
+      }
+    },
+    "response": {
+      "id": 2,
+      "result": {
+        "thread": {
+          "id": "root-id",
+          "sessionId": "root-id",
+          "parentThreadId": null,
+          "status": {
+            "type": "active",
+            "activeFlags": []
+          },
+          "canAcceptDirectInput": true
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "id": 3,
+      "method": "thread/turns/list",
+      "params": {
+        "threadId": "root-id",
+        "limit": 3,
+        "sortDirection": "desc",
+        "itemsView": "notLoaded"
+      }
+    },
+    "response": {
+      "id": 3,
+      "result": {
+        "data": [
+          {
+            "id": "turn-0",
+            "status": "inProgress",
+            "itemsView": "notLoaded",
+            "items": []
+          },
+          {
+            "id": "turn-1",
+            "status": "completed",
+            "itemsView": "notLoaded",
+            "items": []
+          },
+          {
+            "id": "turn-2",
+            "status": "completed",
+            "itemsView": "notLoaded",
+            "items": []
+          }
+        ],
+        "nextCursor": "older"
+      }
+    }
+  }
+]

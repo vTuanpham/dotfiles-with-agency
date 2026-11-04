@@ -22,6 +22,7 @@ function decodeField(field) {
 function decodeForms(raw) {
   const ok=raw && typeof raw==='object' && isText(raw.unavailable) &&
     list(raw.forms,form=>isText(form.id) && isText(form.title) && hasHtml(form,'title') && isText(form.unavailable) && Array.isArray(form.fields) && form.fields.every(decodeField));
+  if(ok && raw.forms.some(form=>form.can_decline!==undefined && typeof form.can_decline!=='boolean')) throw new Error('Invalid native question actions.');
   if(!ok) throw new Error('Questions were not in a recognized format.');
   return raw;
 }
@@ -84,17 +85,22 @@ class FormsPanel {
     this.roots=new Map(); this.request=0; this.loading=false;
   }
   rootData(id) {
-    if(!this.roots.has(id)) this.roots.set(id,{forms:[],states:new Map()});
+    if(!this.roots.has(id)) this.roots.set(id,{forms:[],states:new Map(),ready:false,warning:''});
     return this.roots.get(id);
   }
   /* A card is answerable only when it has fields; one with an `unavailable` reason is explanation only. */
   answerable() {
-    const root=this.current(); return !!root && this.rootData(root.id).forms.some(form=>form.fields.length>0);
+    const root=this.current(), data=root && this.rootData(root.id);
+    return !!data && data.ready && !document.hidden && data.forms.some(form=>form.fields.length>0);
   }
   hasAny() { const root=this.current(); return !!root && this.rootData(root.id).forms.length>0; }
-  reset() { this.request++; this.loading=false; this.render(); }
+  reset() {
+    this.request++; this.loading=false;
+    if(this.current()) this.rootData(this.current().id).ready=false;
+    this.render();
+  }
   async load() {
-    const root=this.current(); if(!root || this.loading) return;
+    const root=this.current(); if(document.hidden || !root || this.loading) return;
     if(!root.capabilities.questions) { this.accept(root.id,[]); this.render(); return; }
     const version=++this.request; this.loading=true;
     try {
@@ -102,14 +108,15 @@ class FormsPanel {
       if(version!==this.request) return;
       this.accept(root.id,result.forms);
     } catch(error) {
-      // Questions are optional: a connection without them just shows none. Pending receipts stay visible.
       if(version!==this.request) return;
-      if(error.status!==404) this.accept(root.id,null);
+      const data=this.rootData(root.id);
+      data.ready=false; data.warning='Questions are unavailable. Your answers are saved.';
     } finally { if(version===this.request) { this.loading=false; this.render(); } }
   }
   accept(rootId, forms) {
     if(!forms) return;
     const data=this.rootData(rootId), listed=new Set(forms.map(form=>form.id));
+    data.ready=true; data.warning='';
     data.forms=forms.slice();
     for(const [id,state] of data.states) {
       state.gone=!listed.has(id);
@@ -154,11 +161,13 @@ class FormsPanel {
     const status=el('p',{class:'q-status',role:'status'});
     const send=el('button',{type:'submit',class:'primary',text:'Send answer'});
     const cancel=el('button',{type:'button',class:'quiet',text:'Cancel question',onclick:()=>this.submit(rootId,state,true)});
+    const decline=el('button',{type:'button',class:'quiet',text:'Decline question',hidden:!form.can_decline,
+      onclick:()=>this.submit(rootId,state,false,true)});
     const check=el('button',{type:'button',class:'quiet',text:'Check delivery',onclick:()=>this.deliver(rootId,state)});
     const clear=el('button',{type:'button',class:'quiet',text:'Checked natively, clear receipt',onclick:()=>{
       if(state.pending?.status==='unknown' && !state.pending.sending) { state.pending=null; state.message='Receipt cleared.'; state.sync(); }
     }});
-    const actions=el('div',{class:'q-actions'},send,cancel,check,clear);
+    const actions=el('div',{class:'q-actions'},send,decline,cancel,check,clear);
     const node=el('form',{class:'msg question',novalidate:true,'aria-label':form.title,data:{formId:form.id},
       onsubmit:event=>{ event.preventDefault(); this.submit(rootId,state,false); }},
       el('span',{class:'slot'}),
@@ -171,14 +180,17 @@ class FormsPanel {
         part.node.dataset.invalid=state.errors[key] ? '1' : '';
         part.refresh();
       }
-      fieldset.disabled=!!pending || state.gone;
-      send.disabled=!!pending || state.gone; cancel.disabled=!!pending || state.gone;
+      const data=this.rootData(rootId), stale=!data.ready || document.hidden;
+      fieldset.disabled=!!pending || state.gone || stale;
+      send.disabled=!!pending || state.gone || stale; cancel.disabled=!!pending || state.gone || stale;
+      decline.disabled=!!pending || state.gone || stale;
       check.hidden=!pending || pending.sending;
       clear.hidden=!pending || pending.status!=='unknown' || pending.sending;
       status.textContent=pending ? (pending.sending ? 'Sending…' : pending.status==='unknown' ?
         'Delivery could not be confirmed. Check the native session before clearing.' : pending.status==='sending' ?
         'Still being accepted. Check again shortly.' : 'Delivery not confirmed. Checking uses the same request.') :
-        state.gone ? 'This question is no longer pending in the session.' : state.message;
+        state.gone ? 'This question is no longer pending in the session.' :
+        stale ? data.warning || 'Checking this question…' : state.message;
     };
     return node;
   }
@@ -263,16 +275,18 @@ class FormsPanel {
   }
 
   /* --- delivery: one stable UUID per answer or cancel, checked with the very same payload --- */
-  async submit(rootId, state, cancel) {
-    if(state.pending || state.gone) return;
+  async submit(rootId, state, cancel, decline=false) {
+    if(state.pending || state.gone || document.hidden || this.current()?.id!==rootId || !this.rootData(rootId).ready) return;
+    if(decline && !state.form.can_decline) return;
     let answer={};
-    if(!cancel) {
+    if(!cancel && !decline) {
       const result=readAnswers(state.form,state.raw);
       state.errors=result.errors;
       if(Object.keys(result.errors).length) { state.message='Check the highlighted answers.'; state.sync(); return; }
       answer=result.answer;
     }
-    const payload={id:this.makeId(),target:rootId,form:state.form.id,answer,...(cancel ? {cancel:true} : {})};
+    const payload={id:this.makeId(),target:rootId,form:state.form.id,answer,
+      ...(cancel ? {cancel:true} : {}),...(decline ? {decline:true} : {})};
     state.pending={payload,sending:false,status:''};
     await this.deliver(rootId,state);
   }
