@@ -12,7 +12,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-agent-baton = "agent_baton.cli:main"
+agent-baton = "agent_baton:main"
 
 [tool.setuptools.package-data]
 agent_baton = ["guide.md"]  # the help text shown by `agent-baton --help`
@@ -23,6 +23,7 @@ dev = ["pytest", "ruff"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+filterwarnings = ["error::pytest.PytestUnhandledThreadExceptionWarning"]
 
 [tool.ruff]
 line-length = 110

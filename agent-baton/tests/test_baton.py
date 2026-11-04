@@ -155,10 +155,15 @@ def test_stale_links_explain_themselves_without_revealing_which_part_was_wrong(m
             return error.code, error.read().decode()
         raise AssertionError("expected a refusal")
 
-    pages = {body(f"{base}/old-token/back"), body(link, host="evil.example"), body(f"{link}/frobnicate")}
-    assert len(pages) == 1  # wrong token, wrong host and stale path look identical
-    code, page = pages.pop()
-    assert code == 404 and "not active" in page and "latest" in page
+    try:
+        pages = {body(f"{base}/old-token/back"), body(link, host="evil.example"), body(f"{link}/frobnicate")}
+        assert len(pages) == 1  # wrong token, wrong host and stale path look identical
+        code, page = pages.pop()
+        assert code == 404 and "not active" in page and "latest" in page
+    finally:
+        core.resolve(baton["id"], "cancelled")
+        thread.join(5)
+        assert not thread.is_alive()
 
 
 def test_human_page_is_one_use_token_and_host_bound(monkeypatch):

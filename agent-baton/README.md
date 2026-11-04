@@ -61,6 +61,9 @@ MCP adds no HTTP listener or global conversation state.
   the Claude and Codex configs.
   The [agent-desktop launcher](../computer-use/README.md) also checks it on every call,
   including in harnesses without those hooks.
+  Its exact `guard` entrypoint loads only guard dependencies, keeping the
+  per-tool path independent of web-page, notification and secret-injection startup.
+  CLI/help and guard verdicts remain covered by the same command contracts.
 
 ## Workflow overview
 
