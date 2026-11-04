@@ -66,6 +66,38 @@ Contracts: [Antigravity hooks](https://antigravity.google/docs/hooks),
 [OpenCode server plugins](https://opencode.ai/v2/docs/build/plugins/server/) and
 [plugin discovery](https://opencode.ai/v2/docs/plugins#discover).
 
+## Output from commands that start daemons
+
+A client can exit while its daemon still holds an inherited output pipe open.
+A reader waiting for EOF then looks hung even though the client finished. ADB
+startup from WSL has exhibited this; stopping a shared server is not a safe way
+to release a capture. Check the client separately from its background server.
+
+For an authorized Windows ADB startup, capture both streams to private regular
+files, bound the client, and filter the files after it exits:
+
+```sh
+(
+    umask 077
+    capture_dir=$(mktemp -d) || exit
+    timeout --kill-after=5s 20s adb.exe start-server >"$capture_dir/stdout" 2>"$capture_dir/stderr"
+    client_status=$?
+    rtk read --level none "$capture_dir/stdout"
+    rtk read --level none "$capture_dir/stderr" >&2
+    exit "$client_status"
+)
+```
+
+Run subsequent bounded client diagnostics separately. Keep the exit status and
+stderr; do not replace a failure with an empty successful result. Timeout does
+not establish that a Windows process or its descendants stopped: inspect exact
+task-owned processes before cleanup. Retain the private capture only as needed.
+This avoids waiting for pipe EOF; it does not repair ADB handle inheritance.
+Current [ADB startup source](https://android.googlesource.com/platform/packages/modules/adb/+/refs/heads/main/adb.cpp)
+already guards standard handles against inheritance, so the observed hang alone
+does not prove a current ADB or RTK defect. See also Microsoft's
+[handle inheritance contract](https://learn.microsoft.com/en-us/windows/win32/procthread/inheritance).
+
 ## Credentials
 
 Put credentials in `~/.config/shell/secrets.local.sh`, outside the repository:
