@@ -410,9 +410,6 @@ Codex currently polls root questions only. A native child that reports
 `canAcceptDirectInput=false` cannot receive the adapter's ordinary message replies.
 Claude shares one held hook per session, including hooks from its native children.
 
-Implementation references: [SDK callback ownership](https://github.com/pingdotgg/t3code/blob/3368dd70f20cb192b68895494a4a73455524fb76/apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts),
-[message replies](https://github.com/pingdotgg/t3code/blob/3368dd70f20cb192b68895494a4a73455524fb76/apps/server/src/orchestration-v2/Orchestrator.ts).
-
 State: `${XDG_STATE_HOME:-~/.local/state}/agent-inbox`, configurable with `--state`
 or `AGENT_INBOX_HOME`. Directory mode 0700, database mode 0600. Credentials are
 hashed; receipts store content hashes, not text. HTTP bodies, URLs and native

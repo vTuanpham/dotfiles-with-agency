@@ -279,7 +279,8 @@ account snapshot, then requests a bounded refresh when needed and reads it again
 The rows show remaining allowance by reported window, including OpenCode's current
 workspace budgets. `h` is five-hour, `w` weekly and `m` monthly when the source
 reports those durations; pool and model bindings stay as reported by the provider.
-Hover for the source, observation and reset times, and refresh diagnostics. The
+Hover for the window name, remaining allowance, reset time and last update. Refresh
+failures appear there; the JSON account snapshot retains source metadata. The
 active-account mark describes the current CLI profile, not every running conversation.
 
 `*` marks the active account; `?` means its quota is unknown, and `~` marks a

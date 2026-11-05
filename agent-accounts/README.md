@@ -2,7 +2,7 @@
 
 [← Packages](../README.md#packages) · **uv tool** · account observations
 
-![Cached allowances and native status feed shared account observations; Inbox gets quota from its selected native session.](../docs/images/account-context.gif)
+![Native observations preserve quota periods, pools and freshness. Due refreshes share a lock; Model Guide, Wake and Bridge read the cache, while Inbox uses its selected native connection.](../docs/images/account-context.gif)
 
 Read account inventory without scanning jobs, messages or peer history.
 The JSON contract carries account aliases, provider, windows, observation time

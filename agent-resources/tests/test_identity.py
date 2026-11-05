@@ -3,6 +3,7 @@ import os
 import agent_session
 import pytest
 
+from agent_resources.control import listing
 from agent_resources.identity import agent_id, identity
 
 
@@ -60,3 +61,14 @@ def test_root_id_without_native_thread_does_not_claim_identity(monkeypatch):
     monkeypatch.setenv("CODEX_SESSION_ID", "root")
     assert identity() is None
     assert agent_id() is None
+
+
+@pytest.mark.parametrize("value", ["bad\x7fid", "bad\x85id", "bad\u200bid", "bad\u00a0id"])
+def test_nonprintable_or_whitespace_identities_are_rejected(value, monkeypatch):
+    with pytest.raises(ValueError, match="invalid resource agent identity"):
+        agent_id(value)
+    with pytest.raises(ValueError, match="invalid controller identity filter"):
+        listing(json_output=True, owner=value)
+    monkeypatch.setenv("AGENT_RESOURCES_OWNER", value)
+    with pytest.raises(ValueError, match="invalid resource controller identity"):
+        identity()

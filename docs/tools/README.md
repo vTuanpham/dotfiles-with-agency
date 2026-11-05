@@ -25,6 +25,7 @@ Run them from the repository root with `README_WORK=<scratch dir> uv run --with 
 Every layer is scaled by a whole number and text is drawn at its native size, so the pixels stay sharp. Frames
 share one palette and `gifsicle -O3` stores only what changes, which keeps each file small.
 Edit a diagram in `flows/`, then regenerate its GIF.
+Chrome renders use a separate headless profile under `README_WORK`.
 
 Overview, selection, account, Lab, resource and Codex notification diagrams use the
 same renderer; pass their SVG stems to regenerate only the changed assets. Claude

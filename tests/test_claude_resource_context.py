@@ -20,7 +20,8 @@ class ResourceContextTest(unittest.TestCase):
         self.assertEqual(shlex.split(command), ["export", "AGENT_RESOURCES_WORKER=1",
                          "AGENT_RESOURCES_OWNER=codex:controller", "AGENT_RESOURCES_AGENT_ID=a'$(false)"])
         with patch.dict(os.environ, {}, clear=True):
-            self.assertIn("AGENT_RESOURCES_OWNER=claude:root", hook.context(payload)["hookSpecificOutput"]["additionalContext"])
+            self.assertIn("AGENT_RESOURCES_OWNER=claude:root",
+                          hook.context(payload)["hookSpecificOutput"]["additionalContext"])
 
     def test_invalid_or_wrong_event_is_ignored(self):
         for payload in ({}, {"hook_event_name": "Stop", "session_id": "r", "agent_id": "a"},
@@ -28,7 +29,18 @@ class ResourceContextTest(unittest.TestCase):
                         {"hook_event_name": "SubagentStart", "agent_id": "a"}):
             self.assertIsNone(hook.context(payload))
         with patch.dict(os.environ, {"AGENT_RESOURCES_OWNER": ""}, clear=True):
-            self.assertIsNone(hook.context({"hook_event_name": "SubagentStart", "session_id": "r", "agent_id": "a"}))
+            self.assertIsNone(hook.context({"hook_event_name": "SubagentStart",
+                                           "session_id": "r", "agent_id": "a"}))
+
+    def test_nonprintable_or_whitespace_identities_are_ignored(self):
+        for value in ("bad\x7fid", "bad\x85id", "bad\u200bid", "bad\u00a0id"):
+            for field in ("session_id", "agent_id"):
+                payload = {"hook_event_name": "SubagentStart", "session_id": "r",
+                           "agent_id": "a", field: value}
+                self.assertIsNone(hook.context(payload))
+            with patch.dict(os.environ, {"AGENT_RESOURCES_OWNER": value}, clear=True):
+                self.assertIsNone(hook.context({"hook_event_name": "SubagentStart",
+                                               "session_id": "r", "agent_id": "a"}))
 
 
 if __name__ == "__main__":

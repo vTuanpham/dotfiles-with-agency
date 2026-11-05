@@ -2,7 +2,7 @@
 
 [← Packages](../README.md#packages) · **uv tool** · shared model references
 
-![Native catalogs, domain benchmarks and account observations inform a task comparison. Preserve the requested provider, model, variant and effort; free variants and plan allowances differ. Verify chat in the matching native session, and leave unknown billing unverified.](../docs/images/model-selection.gif)
+![The agent supplies task scope and constraints. Native controls, paired measurements and account observations form a comparison; the agent chooses using the task, allowance and existing context.](../docs/images/model-selection.gif)
 
 Native routes, task evidence and published allowances have one owner, independent
 of worker orchestration. The selecting agent weighs the actual task and current

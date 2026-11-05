@@ -13,7 +13,7 @@ One folder per package; paths mirror `$HOME`. Each README states its install flo
 | [agent-bridge](../agent-bridge/README.md) | uv tool | Cross-harness jobs and direct native session messages |
 | [agent-baton](../agent-baton/README.md) | uv tool | Human handoff: questions, secrets and approved commands |
 | [agent-inbox](../agent-inbox/README.md) | uv tool + user service | Phone chat for existing root conversations |
-| [agent-models](../agent-models/README.md) | uv tool + timer | Model references, benchmark evidence and task shortlists |
+| [agent-models](../agent-models/README.md) | uv tool + timer | Task comparisons, model evidence and cached policy |
 | [agent-resources](../agent-resources/README.md) | uv tool | Cooperative host resource queue |
 | [agent-accounts](../agent-accounts/README.md) | uv tool | Independent cached account observations |
 | [agent-lab](../agent-lab/README.md) | uv tool + live skill and timer | Persistent experiment folders and provenance |

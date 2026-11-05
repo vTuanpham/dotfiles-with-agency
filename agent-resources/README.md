@@ -2,7 +2,7 @@
 
 [← Packages](../README.md#packages) · **uv tool** · host resource admission
 
-![Heavy commands declare their needs to a shared queue. Inspect queue position, admission reason and reserved, budget and free memory before coordinating with the owning session. Admitted commands run in the foreground; exit releases the reservation.](../docs/images/agent-resources.gif)
+![Heavy commands declare their needs to a shared queue. Native agent or Bridge job IDs label wrapped commands; Wake and Bridge show their reservations and available command memory readings. Exit releases the reservation.](../docs/images/agent-resources.gif)
 
 Cooperative admission for memory-heavy or sustained multi-core commands. Kernel
 locks hold reservations across exec and release them on process exit. This is

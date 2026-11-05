@@ -6,7 +6,8 @@ import agent_session
 
 
 def validate_agent_id(value):
-    if type(value) is not str or not value or len(value) > 400 or any(ord(c) < 33 for c in value):
+    if (type(value) is not str or not value or len(value) > 400
+            or any(c.isspace() or not c.isprintable() for c in value)):
         raise ValueError("invalid resource agent identity")
     return value
 
@@ -40,7 +41,8 @@ def native_attribution():
 def identity():
     explicit = os.environ.get("AGENT_RESOURCES_OWNER")
     if explicit is not None:
-        if not explicit or len(explicit) > 400 or any(ord(c) < 33 for c in explicit):
+        if (not explicit or len(explicit) > 400
+                or any(c.isspace() or not c.isprintable() for c in explicit)):
             raise ValueError("invalid resource controller identity")
         return explicit
     return native_attribution()[0]

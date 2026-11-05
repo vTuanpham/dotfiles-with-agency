@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="550" viewBox="0 0 1040 550" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="650" viewBox="0 0 1040 650" role="img" aria-labelledby="title desc">
   <title id="title">Model selection from native controls and domain evidence</title>
-  <desc id="desc">Native model identities and effort ranges, benchmark domain scores with cost and time, and local account observations inform a task shortlist. Preserve the requested harness, provider, model, variant and effort. Free variants and plan allowances differ. Check chat availability in the matching native session; a service API result describes only that context. Unknown billing stays unverified.</desc>
+  <desc id="desc">The calling agent supplies the task, evidence areas and known restrictions. Fresh native catalogs, paired benchmark measurements, cached policy and account observations form a compact comparison. The agent weighs the task, allowance, verification and existing context before continuing or delegating.</desc>
   <defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="none" stroke="#737f7c" stroke-width="1.2"/></marker></defs>
-  <rect width="1040" height="550" fill="#faf9f6"/>
+  <rect width="1040" height="650" fill="#faf9f6"/>
   <g font-family="Arial, Helvetica, sans-serif" fill="#263733">
     <text x="36" y="38" font-size="11" letter-spacing="2.4" fill="#68766f">MODEL GUIDE</text>
     <text x="36" y="79" font-family="Georgia, serif" font-size="32">Choose for the work.</text>
-    <text x="36" y="107" font-size="15" fill="#68766f">Task fit · supported controls · quality, cost and time</text>
+    <text x="36" y="107" font-size="15" fill="#68766f">The agent supplies the task, evidence areas and known restrictions</text>
     <path d="M36 135H1004M346 157V260M697 157V260" stroke="#d3d8d1" fill="none"/>
     <circle cx="43" cy="166" r="5" fill="#23786f"/>
     <text x="60" y="172" font-size="20" font-weight="700">Native catalogs</text>
@@ -16,28 +16,33 @@
     <circle cx="377" cy="166" r="5" fill="#506b90"/>
     <text x="394" y="172" font-size="20" font-weight="700">Domain evidence</text>
     <text x="370" y="205" font-size="14">Arena · LiveBench · AA · Vals</text>
-    <text x="370" y="232" font-size="14" fill="#68766f">Scores, measured settings, cost/time</text>
+    <text x="370" y="232" font-size="14" fill="#68766f">Paired effort, score, cost and time</text>
     <text x="370" y="254" font-size="12" fill="#68766f">Source, release and retrieval date</text>
     <circle cx="727" cy="166" r="5" fill="#a35e43"/>
     <text x="744" y="172" font-size="20" font-weight="700">Account context</text>
-    <text x="720" y="205" font-size="14">Existing caches + native status</text>
-    <text x="720" y="232" font-size="14" fill="#68766f">Plan, billing, windows, freshness</text>
+    <text x="720" y="205" font-size="14">Native observations + cached policy</text>
+    <text x="720" y="232" font-size="14" fill="#68766f">Windows, pools, source and age</text>
     <text x="720" y="254" font-size="12" fill="#68766f">Confirm the selected session's access</text>
     <path d="M177 273V300H470V323" stroke="#a4ada7" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
     <path d="M520 273V323" stroke="#a4ada7" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
     <path d="M865 273V300H570V323" stroke="#a4ada7" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
     <rect x="351" y="334" width="338" height="83" rx="14" fill="#eaf0eb"/>
-    <text x="520" y="366" text-anchor="middle" font-size="22" font-weight="700">A task-sized shortlist</text>
-    <text x="520" y="393" text-anchor="middle" font-size="14" fill="#56675d">Quality leaders + efficient choices</text>
-    <path d="M351 375H248" stroke="#737f7c" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
-    <path d="M689 375H785" stroke="#737f7c" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
-    <text x="36" y="370" font-size="18" font-weight="700">Native delegation</text>
-    <text x="36" y="396" font-size="14" fill="#68766f">Within the same harness</text>
-    <text x="807" y="370" font-size="18" font-weight="700">Agent Bridge</text>
-    <text x="807" y="396" font-size="14" fill="#68766f">To another harness</text>
-    <path d="M36 449H1004" stroke="#d3d8d1"/>
-    <text x="36" y="479" font-size="13" fill="#68766f">Preserve the requested harness, provider, model, variant + effort. Free variants and plan allowances differ.</text>
-    <text x="36" y="504" font-size="13" fill="#68766f">Verify chat in the matching native session. A service/API error describes that context; unknown billing stays unverified.</text>
-    <text x="36" y="529" font-size="12" fill="#68766f">Missing measurements and effort ranges stay unknown. Generated coverage keeps unmatched models visible.</text>
+    <text x="520" y="366" text-anchor="middle" font-size="22" font-weight="700">Evidence comparison</text>
+    <text x="520" y="393" text-anchor="middle" font-size="14" fill="#56675d">Quality · cost · time · intermediate tradeoffs</text>
+    <path d="M520 417V431" stroke="#a4ada7" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
+    <rect x="351" y="435" width="338" height="70" rx="14" fill="#e3ebf4"/>
+    <text x="520" y="464" text-anchor="middle" font-size="21" font-weight="700">The agent decides</text>
+    <text x="520" y="487" text-anchor="middle" font-size="13" fill="#4f6580">Task · allowance · verification · existing context</text>
+    <path d="M351 471H248" stroke="#737f7c" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
+    <path d="M689 471H785" stroke="#737f7c" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
+    <text x="36" y="466" font-size="18" font-weight="700">Native delegation</text>
+    <text x="36" y="492" font-size="14" fill="#68766f">Within the same harness</text>
+    <text x="807" y="466" font-size="18" font-weight="700">Agent Bridge</text>
+    <text x="807" y="492" font-size="14" fill="#68766f">To another harness</text>
+    <path d="M520 505V530" stroke="#737f7c" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
+    <text x="520" y="554" text-anchor="middle" font-size="18" font-weight="700">Continue the current session</text>
+    <path d="M36 581H1004" stroke="#d3d8d1"/>
+    <text x="36" y="607" font-size="13" fill="#68766f">Full evidence and policy excerpts: --json · exact run details: --choice ROUTE</text>
+    <text x="36" y="632" font-size="12" fill="#68766f">Source and account timestamps stay attached.</text>
   </g>
 </svg>

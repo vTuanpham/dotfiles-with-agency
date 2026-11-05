@@ -28,7 +28,8 @@ def require_root(json_owner=None):
 
 def listing(json_output=False, owner=None):
     require_root(owner if json_output else None)
-    if owner is not None and (not owner or len(owner) > 400 or any(ord(c) < 33 for c in owner)):
+    if owner is not None and (not owner or len(owner) > 400
+                              or any(c.isspace() or not c.isprintable() for c in owner)):
         raise ValueError("invalid controller identity filter")
     folder = heavy.prepare()
     unavailable = None
@@ -51,12 +52,15 @@ def listing(json_output=False, owner=None):
         reserved = sum(row["need"] for _, row in active if row["running"])
         budget = free = None
         selected = pressure_reason = None
-        queue_reason = unavailable
+        queue_reason = unavailable or ""
+        memory = "budget=unavailable free=unavailable"
         if unavailable is None:
             budget = max(0, host.shared_capacity - policy.available)
             free = max(0, host.shared_headroom - policy.available)
             selected, reserved, _, queue_reason = heavy.choose(active, budget, policy.slots, now, free)
             pressure_reason = heavy.wait_reason(host, policy, shared=True)
+            memory = (f"reserved={reserved / heavy.MIB:g}MiB budget={budget / heavy.MIB:g}MiB "
+                      f"free={free / heavy.MIB:g}MiB")
         if paused["reason"] is not None:
             selected, queue_reason = None, f"paused by root: {paused['reason']}"
         snapshot_rows = []
@@ -88,9 +92,6 @@ def listing(json_output=False, owner=None):
                         reason += "; declared needs exceed shared budget"
                 waiting_behind = len(waiting) - position - 1
                 if not json_output:
-                    memory = ("budget=unavailable free=unavailable" if unavailable is not None else
-                              f"reserved={reserved / heavy.MIB:g}MiB budget={budget / heavy.MIB:g}MiB "
-                              f"free={free / heavy.MIB:g}MiB")
                     detail = (f" position={position + 1}/{len(waiting)} reason={json.dumps(reason)} "
                               f"{memory} waiting_behind={waiting_behind}")
             if json_output:
@@ -107,7 +108,7 @@ def listing(json_output=False, owner=None):
                         "exclusive": row["exclusive"],
                         "wait_seconds": max(0, elapsed) // 10**9 if state == "queued" else None,
                         "elapsed_seconds": max(0, elapsed) // 10**9 if state == "running" else None,
-                        "queue_position": position + 1 if state == "queued" else None,
+                        "queue_position": position + 1 if position is not None else None,
                         "queue_length": len(waiting),
                         "reason": reason,
                         "reserved_bytes": reserved,

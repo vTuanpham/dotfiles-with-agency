@@ -105,10 +105,10 @@ worker. [Direct messages, discovery and setup](agent-bridge/README.md#direct-ses
 
 ### Model selection that shows its work
 
-<img src="docs/images/model-selection.gif" alt="Model Guide combines native catalogs, domain evidence and account observations. Preserve the requested harness, provider, model, variant and effort; free variants and plan allowances differ. Verify chat in the matching native session, and leave unknown billing unverified." width="100%">
+<img src="docs/images/model-selection.gif" alt="Task scope, native catalogs, paired measurements and account context inform whether to continue, delegate natively or use Bridge." width="100%">
 
 ```sh
-model-guide suggest --task "fix a flaky failing test"
+model-guide suggest --task "fix a flaky failing test" --domain debugging --domain coding
 model-guide benchmarks --domain performance --query sol --brief
 ```
 

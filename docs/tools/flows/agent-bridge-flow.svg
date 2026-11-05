@@ -17,18 +17,14 @@
     <path d="M348 279H370" fill="none" stroke="#737f7c" stroke-width="1.4" marker-end="url(#arrow)"/>
     <circle cx="397" cy="135" r="4" fill="#23786f"/>
     <text x="416" y="142" font-size="20" font-weight="700">Codex</text>
-    <text x="610" y="142" font-size="14" fill="#68766f">Implementation</text>
     <circle cx="397" cy="183" r="4" fill="#a35e43"/>
     <text x="416" y="190" font-size="20" font-weight="700">Claude Code</text>
-    <text x="610" y="190" font-size="14" fill="#68766f">UI / writing</text>
     <circle cx="397" cy="231" r="4" fill="#506b90"/>
     <text x="416" y="238" font-size="20" font-weight="700">Antigravity</text>
-    <text x="610" y="238" font-size="14" fill="#68766f">Research</text>
     <circle cx="397" cy="279" r="4" fill="#65598a"/>
     <text x="416" y="286" font-size="20" font-weight="700">OpenCode</text>
-    <text x="610" y="286" font-size="14" fill="#68766f">Review</text>
-    <path d="M752 135H787V279H752" fill="none" stroke="#a4ada7" stroke-width="1.4"/>
-    <path d="M787 207H825" fill="none" stroke="#a4ada7" stroke-width="1.4" marker-end="url(#arrow)"/>
+    <path d="M602 135H637V279H602" fill="none" stroke="#a4ada7" stroke-width="1.4"/>
+    <path d="M637 207H825" fill="none" stroke="#a4ada7" stroke-width="1.4" marker-end="url(#arrow)"/>
     <text x="847" y="196" font-size="19" font-weight="700">Job state</text>
     <text x="847" y="220" font-size="13" fill="#68766f">Logs · messages</text>
     <text x="847" y="241" font-size="13" fill="#68766f">Results · session</text>

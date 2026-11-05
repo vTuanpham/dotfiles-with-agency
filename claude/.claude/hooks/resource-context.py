@@ -8,7 +8,7 @@ import sys
 
 def valid(value):
     return (isinstance(value, str) and 0 < len(value) <= 400
-            and all(33 <= ord(char) != 127 and char != "`" for char in value))
+            and value.isprintable() and all(not char.isspace() and char != "`" for char in value))
 
 
 def context(payload):

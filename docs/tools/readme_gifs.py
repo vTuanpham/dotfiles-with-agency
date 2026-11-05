@@ -41,7 +41,11 @@ SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans{}.ttf"
 
 
 def run(*cmd, cwd=None):
-    subprocess.run(cmd, cwd=cwd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    browser = cmd[0] == "google-chrome"
+    if browser:
+        cmd = (*cmd, f"--user-data-dir={WORK / 'chrome-profile'}")
+    subprocess.run(cmd, cwd=cwd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   timeout=60 if browser else None)
 
 
 def cells(path, width, height=SCENE_H):
@@ -211,11 +215,12 @@ def quota_segments(chunks):
             out.append((" · ", SUBTLE, tint))
         out.append((head, TEXT if head.endswith("*") else SUBTLE, tint))
         for token in tokens:
-            part = re.match(r"^([A-Za-z]+)(\d+)%(.*)$", token)
+            part = next((p for p in chunk["parts"] if p["pct"] is not None
+                         and token.startswith(f'{p["label"]}{p["pct"]}%')), None)
             if part:
-                pct = int(part[2])
-                out.append((" " + part[1], SUBTLE, tint))
-                out.append((f"{pct}%{part[3]}", GREEN if pct >= 50 else YELLOW if pct >= 20 else RED, tint))
+                pct, label = part["pct"], part["label"]
+                out.append((" " + label, SUBTLE, tint))
+                out.append((token[len(label):], GREEN if pct >= 50 else YELLOW if pct >= 20 else RED, tint))
             else:
                 out.append((" " + token, SUBTLE, tint))
         last = chunk["cli"]
