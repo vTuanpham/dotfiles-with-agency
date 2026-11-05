@@ -280,7 +280,8 @@ class Snapshot:
     direct_messages: tuple[DirectMessage, ...]
     dependencies: tuple[Dependency, ...]
     errors: tuple[str, ...]
-    schema_minor: int = 3
+    schema_minor: int = 4
+    unavailable_jobs: tuple[str, ...] = ()
     groups: tuple[WakeGroup, ...] = ()
     group_events: tuple[GroupNotice, ...] = ()
     unacknowledged_completions: int = 0

@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "rtk hook claude"
+            "command": "rtk hook codex"
           },
           {
             "type": "command",
@@ -57,6 +57,10 @@
       }
     ],
     "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": "codex-wake hook", "timeout": 3}]
+      },
       {
         "matcher": "^mcp__node_repl__js$",
         "hooks": [

@@ -11,6 +11,9 @@
     "SessionStart": [
       {"matcher": "", "hooks": [{"type": "command", "command": "python3 -I ~/.claude/hooks/bridge-stop.py", "timeout": 10}]}
     ],
+    "SubagentStart": [
+      {"matcher": "", "hooks": [{"type": "command", "command": "python3 -I ~/.claude/hooks/resource-context.py", "timeout": 10}]}
+    ],
     "Stop": [
       {"matcher": "", "hooks": [{"type": "command", "command": "python3 -I ~/.claude/hooks/bridge-stop.py", "timeout": 10}]}
     ],
@@ -24,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "rtk hook claude"
+            "command": "python3 -I \"$HOME/.claude/hooks/rtk.py\""
           },
           {
             "type": "command",

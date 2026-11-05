@@ -1,6 +1,7 @@
 """Code-only benchmark proposals and explicit recording of source-reviewed prose."""
 
 import difflib
+import json
 import re
 import subprocess
 import sys
@@ -67,8 +68,8 @@ def validate(old, new, stamp, name="models.md"):
 def content_errors(text, name, stamp, *, checked=True):
     errors = []
     sections = {
-        "models.md": ("### Effort and model strength", "### Capability evidence",
-                      "### Cost versus performance", "### How to use each model", "### Inventory coverage"),
+        "models.md": ("## Model decision evidence", "### Effort and model strength",
+                      "### Capability evidence", "### Cost versus performance", "### Inventory coverage"),
         "subscriptions.md": ("### Find live account state", "### Codex / ChatGPT", "### Antigravity / agy",
                              "### OpenCode", "### Claude / Claude Code"),
     }
@@ -145,11 +146,9 @@ def validate_documents(old, new, stamp, snapshot):
 
 
 def poll():
-    from . import polling
+    from . import policy, polling
 
-    if reference.PENDING.is_file():
-        print("a proposal is waiting; review/apply or discard it before polling resumes")
-        return 0
+    policy.refresh_due()
     try:
         previous = benchmarks.snapshot()
     except ValueError:
@@ -165,26 +164,33 @@ def poll():
     if not names:
         print("no benchmark changes due for regeneration")
         return 0
-    result = run(names=names, previous=previous, fetched=fetched)
-    if result == 0:
-        updated = benchmarks.snapshot()
-        polling.accept([name for name in names if updated["sources"][name]["status"] == "ok"])
-    return result
+    benchmarks.prepare(benchmarks.CACHE, names=names, previous=previous, fetched=fetched)
+    updated = benchmarks.snapshot()
+    polling.accept([name for name in names if updated["sources"][name]["status"] == "ok"])
+    return run(snapshot=updated)
 
 
-def run(force=False, *, names=None, previous=None, fetched=None):
+def run(force=False, *, names=None, previous=None, fetched=None, snapshot=None):
     if reference.PENDING.is_file() and not force:
-        print("a refreshed reference is waiting: `model-guide refresh --apply` or `--discard`")
+        if snapshot is None:
+            return poll()
+        print("observation cache refreshed; existing guide proposal left unchanged and unapproved")
         return 0
     today = date.today().isoformat()
+    captured = snapshot is not None
     # A failed replacement must not leave an older pointer to overwritten scratch files.
-    reference.PENDING.unlink(missing_ok=True)
+    if force:
+        reference.PENDING.unlink(missing_ok=True)
     work = DIR / today
     work.mkdir(parents=True, exist_ok=True)
     current = documents(reference.GUIDES)
     for name, text in current.items():
         (work / f"current-{name}").write_text(text, encoding="utf-8")
-    if names is None:
+    if snapshot is not None:
+        benchmarks.write_snapshot(work / "benchmark-data.json",
+                                  json.dumps(snapshot, indent=2, allow_nan=False) + "\n")
+        (work / "benchmark-report.md").write_text((benchmarks.CACHE / "benchmark-report.md").read_text())
+    elif names is None:
         benchmarks.prepare(work)
     else:
         benchmarks.prepare(work, names=names, previous=previous, fetched=fetched)
@@ -192,9 +198,10 @@ def run(force=False, *, names=None, previous=None, fetched=None):
     new = {**current, "models.md": generated.render(current["models.md"], snapshot)}
     for name, text in new.items():
         (work / f"proposed-{name}").write_text(text, encoding="utf-8")
-    benchmarks.CACHE.mkdir(parents=True, exist_ok=True)
-    for name in ("benchmark-data.json", "benchmark-report.md"):
-        benchmarks.write_snapshot(benchmarks.CACHE / name, (work / name).read_text())
+    if not captured:
+        benchmarks.CACHE.mkdir(parents=True, exist_ok=True)
+        for name in ("benchmark-data.json", "benchmark-report.md"):
+            benchmarks.write_snapshot(benchmarks.CACHE / name, (work / name).read_text())
     (work / "notes.md").write_text(
         "Generated from benchmark-data.json; prose and subscriptions were not reviewed.\n"
         "Inspect release, methodology, source failures and frontier scope before applying.\n",
@@ -215,10 +222,10 @@ def run(force=False, *, names=None, previous=None, fetched=None):
     return 0
 
 
-def install(new):
+def install(new, snapshot):
     for name, text in new.items():
         (reference.GUIDES / name).write_text(text, encoding="utf-8")
-    reference.accept()
+    reference.accept(evidence=snapshot)
     reference.PENDING.unlink(missing_ok=True)
 
 
@@ -281,7 +288,10 @@ def record(yes=False):
             return 1
     if documents(reference.GUIDES) != current:
         sys.exit("guides changed during review; record again")
-    reference.accept(found=found)
+    evidence = benchmarks.snapshot() if (benchmarks.CACHE / "benchmark-data.json").is_file() else None
+    if evidence is not None and generated.render(current["models.md"], evidence) != current["models.md"]:
+        evidence = None
+    reference.accept(found=found, evidence=evidence)
     reference.PENDING.unlink(missing_ok=True)
     print("recorded both guides and live model lists in models.lock; guide text unchanged (uncommitted)")
     return 0
@@ -310,7 +320,7 @@ def apply(yes):
             return 1
     if documents(reference.GUIDES) != old:
         sys.exit("the guides changed during review; refresh again")
-    install(new)
+    install(new, snapshot)
     print("applied to shared models.md, subscriptions.md and models.lock (uncommitted, see `git diff`)")
     return 0
 

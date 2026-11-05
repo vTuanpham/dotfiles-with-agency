@@ -74,7 +74,8 @@ def test_real_kernel_reused_run_id_does_not_cross_hardware_or_hide_conflicting_s
     assert len(rows) == 2 and len({r.run_id for r in rows}) == 1
     rtx = next(r for r in rows if r.hardware == "RTX PRO 6000")
     b200 = next(r for r in rows if r.hardware == "B200")
-    assert rtx.score is None and "conflicting board cell=True" in rtx.caveat
+    assert rtx.score is None and rtx.caveat is not None
+    assert "conflicting board cell=True" in rtx.caveat
     assert b200.score == pytest.approx(1.78)
 
 

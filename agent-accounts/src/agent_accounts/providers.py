@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -10,37 +11,41 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import agy, codex, opencode
 from .models import loads
-from .readers import agy_quota, claude_quotas, codex_quotas
+from .readers import agy_quota, claude_quotas
 
 ACCOUNTS = Path.home() / ".agy-accounts"
 TOKEN = Path(".gemini/antigravity-cli/antigravity-oauth-token")
 _STATE = Path(os.environ.get("XDG_STATE_HOME", ""))  # XDG: an empty or relative value is ignored
-CLAUDE_CACHE = (_STATE if _STATE.is_absolute() else Path.home() / ".local/state") / "agent-accounts/claude.json"
+CLAUDE_CACHE = ((_STATE if _STATE.is_absolute() else Path.home() / ".local/state")
+                / "agent-accounts/claude.json")
+OPENCODE_CACHE = CLAUDE_CACHE.with_name("opencode.json")
 
 
-def account_env(account, root=None):
+def account_env(account, root=None, *, environ=None):
     if not isinstance(account, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", account):
         raise ValueError("invalid account identifier")
     home = (root or ACCOUNTS) / account
     if home.is_symlink() or not (home / TOKEN).is_file():
         raise ValueError("account must already be signed in")
     # Explicit account queries use that account's existing file auth, not inherited API credentials.
-    env = {name: value for name, value in os.environ.items()
+    base = os.environ if environ is None else environ
+    env = {name: value for name, value in base.items()
            if not re.search("KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH|COOKIE", name, re.I)}
     return {**env, "HOME": str(home)}
 
 
-def snapshot(now=None, *, root=None, environ=None, claude_cache=None):
+def snapshot(now=None, *, root=None, environ=None, claude_cache=None, opencode_cache=None):
     now = time.time() if now is None else now
     root = root or ACCOUNTS
     result, errors = [], []
     try:
-        run = subprocess.run(["codex-auth", "list", "--skip-api"], capture_output=True, text=True,
+        run = subprocess.run(["codex-auth", "list", "--skip-api", "--json"], capture_output=True, text=True,
                              timeout=5, env=environ)
-        if run.returncode:
+        if run.returncode or len(run.stdout.encode()) > 1048576:
             raise ValueError("unavailable")
-        result.extend(codex_quotas(run.stdout))
+        result.extend(codex.decode(loads(run.stdout), now))
     except (OSError, ValueError, subprocess.SubprocessError):
         errors.append("codex quota unavailable")
     cache = CLAUDE_CACHE if claude_cache is None else claude_cache
@@ -52,6 +57,18 @@ def snapshot(now=None, *, root=None, environ=None, claude_cache=None):
         pass
     except (OSError, ValueError, TypeError, OverflowError):
         errors.append("claude quota cache invalid")
+    cache = OPENCODE_CACHE if opencode_cache is None else opencode_cache
+    try:
+        if cache.is_symlink() or cache.parent.is_symlink() or cache.stat().st_size > 1048576:
+            raise ValueError("unsafe OpenCode quota cache")
+        data = loads(cache.read_text())
+        row = opencode.quota(data, now)
+        if data["directory"] == str(Path.cwd().resolve()):
+            result.append(row)
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError, TypeError, OverflowError):
+        errors.append("opencode quota cache invalid")
     for path in sorted(root.glob("*/quota.json")):
         try:
             if (path.is_symlink() or not path.resolve().is_relative_to(root.resolve())
@@ -96,6 +113,14 @@ def context():
             "reference": "model-guide read subscriptions"}
 
 
+def refresh_codex(*, environ=None):
+    run = subprocess.run(["codex-auth", "list", "--api", "--json"], capture_output=True, text=True,
+                         timeout=120, env=environ)
+    if run.returncode or len(run.stdout.encode()) > 1048576:
+        raise ValueError("Codex quota query failed")
+    return codex.decode(loads(run.stdout), time.time(), source_command="codex-auth list --api --json")
+
+
 def refresh_claude(*, cache=None, environ=None):
     """Only this explicit refresh invokes cswap; snapshots never consume OAuth grants."""
     cache = CLAUDE_CACHE if cache is None else cache
@@ -123,25 +148,47 @@ def refresh_claude(*, cache=None, environ=None):
                     for window in usage["scoped"]]
             account["usage"] = public_usage
         public["accounts"].append(account)
+    write_cache(cache, public)
+    return observations
+
+
+def write_cache(cache, data):
     if cache.is_symlink() or cache.parent.is_symlink():
-        raise ValueError("unsafe Claude quota cache")
+        raise ValueError("unsafe quota cache")
     cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     cache.parent.chmod(0o700)
-    descriptor, name = tempfile.mkstemp(prefix=".claude-", dir=cache.parent)
+    descriptor, name = tempfile.mkstemp(prefix=".quota-", dir=cache.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(public, stream, allow_nan=False)
+            json.dump(data, stream, allow_nan=False)
         os.replace(name, cache)
     finally:
         Path(name).unlink(missing_ok=True)
-    return observations
+
+
+def refresh_opencode(*, cache=None):
+    cache = OPENCODE_CACHE if cache is None else cache
+    directory = str(Path.cwd().resolve())
+    command = [shutil.which("opencode") or str(Path.home() / ".opencode/bin/opencode"), "api", "GET",
+               "/api/experimental/usage/limits", "--param", "location[directory]=" + directory]
+    with tempfile.TemporaryFile(mode="w+") as output:
+        run = subprocess.run(command, stdout=output, stderr=subprocess.PIPE, text=True, timeout=30)
+        output.seek(0)
+        raw = output.read(1048577)
+    if run.returncode or len(raw.encode()) > 1048576:
+        raise ValueError("OpenCode quota query failed")
+    now = time.time()
+    data = opencode.decode(loads(raw), datetime.fromtimestamp(now, timezone.utc).isoformat(), directory)
+    observation = opencode.quota(data, now)
+    if len(json.dumps(data, allow_nan=False).encode()) > 1048576:
+        raise ValueError("OpenCode quota cache exceeds size limit")
+    write_cache(cache, data)
+    return observation
 
 
 def refresh(account, *, root=None, environ=None):
     root = root or ACCOUNTS
-    env = account_env(account, root)
-    if environ is not None:
-        env = {**environ, "HOME": env["HOME"]}
+    env = account_env(account, root, environ=environ)
     directory = root / account
     if directory.is_symlink() or not (directory / TOKEN).is_file():
         raise ValueError("account must already be signed in")
@@ -149,15 +196,12 @@ def refresh(account, *, root=None, environ=None):
                             capture_output=True, text=True, timeout=120, cwd=str(directory))
     if result.returncode:
         raise RuntimeError(f"agy usage query failed (exit {result.returncode})")
-    out = loads(result.stdout)
-    rows = []
-    for line in out.get("result", out).get("response", "").splitlines():
-        parts = line.split("\t")
-        if len(parts) == 4 and parts[2].rstrip("%").isdigit():
-            rows.append(dict(group=parts[0], limit=parts[1], remaining=int(parts[2].rstrip("%")),
-                             resets=parts[3]))
-    data = {"account": account, "at": datetime.now(timezone.utc).isoformat(), "rows": rows}
+    if len(result.stdout.encode()) > 1048576:
+        raise ValueError("AGY usage response exceeds size limit")
+    data = agy.decode(loads(result.stdout), account, datetime.now(timezone.utc).isoformat())
     observation = agy_quota(data, time.time())
+    if not observation.windows:
+        raise ValueError("AGY usage response has no quota windows")
     descriptor, name = tempfile.mkstemp(prefix=".quota-", dir=directory)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:

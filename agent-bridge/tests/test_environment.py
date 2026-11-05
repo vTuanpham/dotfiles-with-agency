@@ -5,10 +5,11 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import agent_session
 import pytest
 from agent_resources import heavy
 
-from agent_bridge import agy, claude, codex, core, opencode
+from agent_bridge import agy, claude, codex, core, messages, opencode
 
 
 @pytest.fixture
@@ -78,7 +79,13 @@ def test_invalid_policy_does_not_echo_its_contents(parent_env, name, value, caps
 
 
 @pytest.mark.parametrize("backend", ["codex", "claude", "agy", "opencode"])
-def test_backend_spawn_keeps_file_auth_without_parent_keys(parent_env, monkeypatch, tmp_path, backend):
+@pytest.mark.parametrize("root_backend", agent_session.HARNESSES)
+def test_backend_spawn_keeps_auth_and_controller_without_root_identity(
+    parent_env, monkeypatch, tmp_path, backend, root_backend
+):
+    parent_env.update(agent_session.environment(root_backend, "fixture-root"))
+    parent_env["CODEX_SESSION_ID"] = "fixture-root" if root_backend == "codex" else "enclosing-codex-root"
+    parent_env["AGENT_RESOURCES_AGENT_ID"] = "enclosing-command-loop"
     parent_env["UNRELATED_API_KEY"] = "fixture"
     home = Path(parent_env["HOME"])
     auths = [home / ".codex/auth.json", home / ".claude/.credentials.json",
@@ -103,6 +110,15 @@ def test_backend_spawn_keeps_file_auth_without_parent_keys(parent_env, monkeypat
         assert "UNRELATED_API_KEY" not in env
         assert env["AGENT_LAB_HOME"] == str(home / ".local/state/agent-lab")
         assert env[core.WORKER_FLAG] == "1"
+        assert env["AGENT_RESOURCES_OWNER"] == f"{root_backend}:fixture-root"
+        assert "AGENT_RESOURCES_AGENT_ID" not in env
+        assert not set(agent_session.VARIABLES) & env.keys()
+        with monkeypatch.context() as child:
+            child.setattr(os, "environ", env.copy())
+            with pytest.raises(ValueError, match="Native sender identity unavailable"):
+                messages.identity()
+            os.environ.update(agent_session.environment(backend, "fixture-worker"))
+            assert messages.identity() == f"{backend}:fixture-worker"
         if backend == "codex":
             auth = Path(env["CODEX_HOME"]) / "auth.json"
         elif backend == "claude":
@@ -121,6 +137,13 @@ def test_backend_spawn_keeps_file_auth_without_parent_keys(parent_env, monkeypat
             codex.Rpc(str(tmp_path), job / "stderr.log")
         else:
             {"claude": claude, "agy": agy, "opencode": opencode}[backend].run(job, state, path, "probe")
+
+
+def test_native_codex_child_keeps_root_controller_but_not_native_session_environment(parent_env):
+    parent_env.update(CODEX_SESSION_ID="fixture-root", CODEX_THREAD_ID="fixture-child")
+    env = core.worker_env()
+    assert env["AGENT_RESOURCES_OWNER"] == "codex:fixture-root"
+    assert not set(agent_session.VARIABLES) & env.keys()
 
 
 def test_agy_account_queries_use_filtered_environment_and_existing_login(parent_env, monkeypatch):

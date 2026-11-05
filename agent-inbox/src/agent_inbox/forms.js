@@ -98,9 +98,9 @@ class FormsPanel {
     const root=this.current(), data=root && this.rootData(root.id);
     return !!data && (data.forms.length>0 || !!data.unavailable);
   }
-  reset() {
+  reset(rootId=this.current()?.id) {
     this.request++; this.loading=false;
-    if(this.current()) this.rootData(this.current().id).ready=false;
+    if(rootId) this.rootData(rootId).ready=false;
     this.render();
   }
   async load() {

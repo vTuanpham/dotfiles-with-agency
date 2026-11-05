@@ -5,31 +5,15 @@ from datetime import UTC, datetime
 
 from . import benchmarks, coverage, reference
 
-TASK_DOMAINS = {
-    "design": r"\b(ui|ux|visual|layout|front[- ]?end|react|css|design)\b",
-    "coding": r"\b(code|coding|refactor|implement|repository|repo|tests?)\b",
-    "debugging": r"\b(debug\w*|bugs?|fix(?:es|ing)?|fail(?:s|ed|ing)?|flaky|regressions?|diagnos\w*)\b",
-    "performance": r"\b(gpu|cuda|triton|roofline|kernels?|optimi[sz]\w*|latency|throughput|profil\w*)\b",
-    "backend": r"\b(backend|database|sql|server|api)\b",
-    "writing": r"\b(writing|prose|copywriting|editorial|essays?|blogs?|articles?|memos?|poems?)\b",
-    "research": r"\b(research|browse|sources|citations)\b",
-    "documents": r"\b(pdf|documents?)\b",
-    "vision": r"\b(images?|screenshots?|vision)\b",
-    "reasoning": r"\b(math|proof|reasoning|science)\b",
-}
 
-
-def domains(requested=None, task=None):
+def resolve(requested=None, task=None):
     if requested:
-        return list(dict.fromkeys(requested))
+        return {"domains": list(dict.fromkeys(requested)), "method": "explicit domains"}
+    result = {"domains": ["overall"], "method": "overall reference"}
     if task:
-        found = [name for name, pattern in TASK_DOMAINS.items() if re.search(pattern, task, re.I)]
-        if "debugging" in found and "coding" not in found:
-            found.insert(found.index("debugging"), "coding")
-        if not found:
-            raise ValueError("task mapping Unverified; specify one or more --domain values")
-        return found
-    return ["overall"]
+        result["note"] = ("Task retained as context; overall evidence shown. "
+                          "Use --domain for task-specific evidence.")
+    return result
 
 
 def age(stamp, now):
@@ -39,30 +23,35 @@ def age(stamp, now):
     return (now - parsed).total_seconds() / 86400
 
 
-def search(domains, query="", limit=5, catalog=None, *, now=None, include_effort=False):
-    data = benchmarks.snapshot()
+def search(domains, query="", limit=5, catalog=None, *, now=None, include_effort=False, complete=False,
+           data=None):
+    data = benchmarks.snapshot() if data is None else data
     now = now or datetime.now(UTC)
     days = age(data["retrieved"], now)
     notes = []
+    review = reference.review_status(data)
+    if review["status"] != "reviewed":
+        notes.append("Benchmark review: " + review["status"] + "; fetched data is not source approval.")
     if days < 0:
         notes.append("Snapshot retrieval is in the future; freshness Unverified.")
     elif days > reference.MAX_AGE_DAYS:
         notes.append(f"Stale snapshot: over {reference.MAX_AGE_DAYS} days old; refresh evidence.")
     result = {}
     catalog = None if catalog is None else coverage.canonical_catalog(catalog, query)
+    native = coverage.summarize(catalog, data, query) if catalog is not None else None
     for domain in domains:
-        found = benchmarks.search(domain, query, limit, catalog, data=data)
-        if include_effort:
-            aa = data["sources"].get("Artificial Analysis", {})
-            found["effort_curves"] = {key: aa[key] for key in (
-                "status", "effort_tradeoffs", "metadata", "url") if key in aa}
+        found = benchmarks.search(domain, query, limit, catalog, data=data, include_speed=include_effort,
+                                  complete=complete, native_catalog=native)
         found["warnings"] = notes.copy()
+        found["review"] = review
         if found["missing_sources"]:
             found["warnings"].append("Unverified: snapshot lacks " + ", ".join(found["missing_sources"]))
         if found["unsupported_effort_count"]:
             found["warnings"].append(
                 f"Excluded {found['unsupported_effort_count']} measurements at unsupported native efforts.")
         for name, source in found["sources"].items():
+            if source.get("coverage_gap"):
+                found["warnings"].append(name + ": " + source["coverage_gap"])
             if source.get("retrieved") and age(source["retrieved"], now) > reference.MAX_AGE_DAYS:
                 found["warnings"].append(f"{name}: cached source retrieval is stale ({source['retrieved']}).")
             stamp = source.get("published", source.get("release", "")) or ""

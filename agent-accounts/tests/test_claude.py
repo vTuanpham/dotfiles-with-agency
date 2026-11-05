@@ -56,7 +56,7 @@ def document():
 def test_used_percent_becomes_conservative_remaining_with_account_and_freshness():
     rows = claude_quotas(document(), NOW)
     assert rows[0].account == "01" and rows[0].active and rows[0].freshness == "fresh"
-    assert [(w.label, w.remaining_percent) for w in rows[0].windows] == [("h", 74), ("w", 0), ("Opusw", 60)]
+    assert [(w.label, w.remaining_percent) for w in rows[0].windows] == [("h", 74), ("w", 0), ("Opus", 60)]
     assert rows[1].windows == () and rows[1].status == "token expired"
     assert rows[1].freshness == "unknown"
     assert "example.invalid" not in repr(rows) and "private alias" not in repr(rows)
@@ -112,7 +112,7 @@ def test_reset_keeps_unknown_hourly_window_beside_valid_weekly_allowance():
     data["accounts"][0]["usage"]["fiveHour"]["resetsAt"] = AT
     data["accounts"][0]["usage"]["scoped"][0]["resetsAt"] = AT
     row = claude_quotas(data, NOW)[0]
-    assert [(w.label, w.remaining_percent) for w in row.windows] == [("h", None), ("w", 0), ("Opusw", None)]
+    assert [(w.label, w.remaining_percent) for w in row.windows] == [("h", None), ("w", 0), ("Opus", None)]
     assert row.freshness == "stale" and row.status is None
 
 
@@ -141,8 +141,9 @@ def test_refresh_persists_only_public_allowance_fields_and_snapshot_is_offline(t
 
     def local_only(args, **kwargs):
         calls.append(args)
-        assert args == ["codex-auth", "list", "--skip-api"]
-        return subprocess.CompletedProcess(args, 0, "", "")
+        assert args == ["codex-auth", "list", "--skip-api", "--json"]
+        return subprocess.CompletedProcess(args, 0, json.dumps({"schema_version": 1,
+            "command": "list", "active_account_key": None, "accounts": []}), "")
 
     monkeypatch.setattr(providers.subprocess, "run", local_only)
     rows, errors = providers.snapshot(root=tmp_path / "agy")
@@ -163,12 +164,12 @@ def test_bad_refresh_preserves_previous_cache(output, monkeypatch):
     assert cache.read_text() == "previous"
 
 
-def test_invalid_claude_cache_does_not_hide_other_providers(tmp_path, monkeypatch):
+def test_invalid_claude_cache_does_not_hide_other_providers(tmp_path, monkeypatch, codex_data):
     cache = providers.CLAUDE_CACHE
     cache.parent.mkdir()
     cache.write_text("broken")
     monkeypatch.setattr(providers.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
-        a, 0, "* 01 account@example.invalid  Plus      0  62%  81%  Now", ""))
+        a, 0, json.dumps(codex_data), ""))
     rows, errors = providers.snapshot(root=tmp_path / "agy")
     assert len(rows) == 1 and rows[0].backend == "codex"
     assert errors == ["claude quota cache invalid"]

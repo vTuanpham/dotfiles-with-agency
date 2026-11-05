@@ -2,6 +2,8 @@ import concurrent.futures
 import json
 import sqlite3
 import uuid
+from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
@@ -227,14 +229,17 @@ class AccountRpc:
     def __init__(self):
         self.reads = 0
         self.changed = False
-        self.limits = {"accountId": "account-a", "rateLimitsByLimitId": {"codex": {
-            "primary": {"usedPercent": 104, "windowDurationMins": 300, "resetsAt": 1000}}}}
+        fixture_path = Path(__file__).parent / "fixtures/codex-0.166.0-account-contract.json"
+        fixture = json.loads(fixture_path.read_text())
+        self.account, self.limits = fixture["accountRead"], fixture["rateLimits"]
 
     def call(self, method, params):
         if method == "account/read":
             self.reads += 1
-            return {"account": {"type": "chatgpt", "email": "account@example.test", "planType": "plus",
-                                "id": "changed" if self.changed and self.reads > 1 else "original"}}
+            value = deepcopy(self.account)
+            if self.changed and self.reads > 1:
+                value["workspaceRouting"]["chatgptAccountId"] = "account-b"
+            return value
         assert method == "account/rateLimits/read"
         return self.limits
 
@@ -243,15 +248,90 @@ def test_quota_is_connection_scoped_and_published_only_after_consistent_read():
     rpc, result = AccountRpc(), SessionContext()
     codex_context.account(rpc, {"modelProvider": "openai"}, result)
     assert result.account.scope == "connection" and result.account.identity == "account-a"
-    assert result.quotas[0].used_percent == 104
+    assert result.account.quota_identity == "account-a"
+    assert result.ordinary_usage_allowed is True and result.quotas[0].used_percent == 25
     for changed in (True, False):
         rpc, result = AccountRpc(), SessionContext()
         rpc.changed = changed
         if not changed:
-            rpc.limits["rateLimitsByLimitId"]["codex"]["primary"]["usedPercent"] = True
+            rpc.limits["rateLimits"]["primary"]["usedPercent"] = True
         with pytest.raises(ValueError):
             codex_context.account(rpc, {"modelProvider": "openai"}, result)
         assert result.account is None and not result.quotas
+
+
+@pytest.mark.parametrize("field,value", [("chatgptAccountId", "account-b"),
+                                         ("backendOrigin", "https://other.example.test"),
+                                         ("accountRoutingOverride", "us")])
+def test_routing_only_changes_discard_quota_even_when_account_display_is_identical(field, value):
+    rpc, result = AccountRpc(), SessionContext()
+    native = rpc.call
+
+    def changed(method, params):
+        response = native(method, params)
+        if method == "account/read" and rpc.reads > 1:
+            response["workspaceRouting"][field] = value
+        return response
+
+    rpc.call = changed
+    with pytest.raises(ValueError, match="Account changed"):
+        codex_context.account(rpc, {"modelProvider": "openai"}, result)
+    assert result.account is None and not result.quotas
+
+
+def test_snapshot_account_must_match_documented_routing_and_is_not_a_display_identity():
+    rpc, result = AccountRpc(), SessionContext()
+    rpc.limits["accountId"] = "account-b"
+    with pytest.raises(ValueError, match="another account"):
+        codex_context.account(rpc, {"modelProvider": "openai"}, result)
+    assert result.account is None
+    rpc.account["workspaceRouting"] = None
+    codex_context.account(rpc, {"modelProvider": "openai"}, result)
+    assert result.account.identity is None and result.account.quota_identity == "account-b"
+
+
+@pytest.mark.parametrize("allowed,spend,reached", [
+    (False, False, None), (None, None, None), (True, True, "workspace_member_credits_depleted"),
+])
+def test_native_usage_flags_preserve_denial_and_unknown_without_changing_percentages(allowed, spend, reached):
+    rpc, result = AccountRpc(), SessionContext()
+    rpc.limits["ordinaryUsageAllowed"] = allowed
+    rpc.limits["rateLimits"].update(spendControlReached=spend, rateLimitReachedType=reached)
+    codex_context.account(rpc, {"modelProvider": "openai"}, result)
+    assert result.ordinary_usage_allowed is allowed
+    assert result.quotas[0].used_percent == 25
+    assert result.quotas[0].spend_control_reached is spend
+    assert result.quotas[0].rate_limit_reached_type == reached
+
+
+@pytest.mark.parametrize("field,value", [("ordinaryUsageAllowed", 1), ("spendControlReached", "false"),
+                                         ("rateLimitReachedType", "unknown-new-reason")])
+def test_native_usage_flags_reject_coercion_and_unknown_limit_reasons(field, value):
+    rpc, result = AccountRpc(), SessionContext()
+    (rpc.limits if field == "ordinaryUsageAllowed" else rpc.limits["rateLimits"])[field] = value
+    with pytest.raises(ValueError):
+        codex_context.account(rpc, {"modelProvider": "openai"}, result)
+    assert result.account is None and not result.quotas and result.ordinary_usage_allowed is None
+
+
+def test_usage_flags_stay_bucket_scoped_and_missing_flags_do_not_restore_permission():
+    rpc, result = AccountRpc(), SessionContext()
+    limited = rpc.limits["rateLimits"]
+    limited.update(spendControlReached=True, rateLimitReachedType="workspace_owner_usage_limit_reached")
+    other = deepcopy(limited)
+    other.update(limitId="other", spendControlReached=None, rateLimitReachedType=None)
+    rpc.limits["rateLimitsByLimitId"] = {"codex": limited, "other": other}
+    del rpc.limits["ordinaryUsageAllowed"]
+    codex_context.account(rpc, {"modelProvider": "openai"}, result)
+    assert result.ordinary_usage_allowed is None
+    assert result.quotas[0].spend_control_reached is True
+    assert result.quotas[1].spend_control_reached is None
+    assert result.quotas[1].rate_limit_reached_type is None
+    del limited["spendControlReached"], limited["rateLimitReachedType"]
+    codex_context.account(rpc, {"modelProvider": "openai"}, result)
+    assert result.ordinary_usage_allowed is None
+    assert result.quotas[0].spend_control_reached is None
+    assert result.quotas[0].rate_limit_reached_type is None
 
 
 def test_codex_workers_are_descendants_only_and_tools_use_selected_thread():

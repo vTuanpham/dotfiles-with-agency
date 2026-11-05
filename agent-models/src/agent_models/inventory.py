@@ -16,11 +16,16 @@ from agent_accounts.providers import account_env
 ZDR_FREE = (
     "opencode/glm-5.3-flash-free",
     "opencode/deepseek-v4.1-flash-free",
-    "opencode/minimax-m3.1-flash-free",
 )
+# Provider-documented model names, reviewed 2026-11-04; routing is not run equivalence.
+BENCHMARK_MODELS = {
+    "opencode/glm-5.3-flash-free": "glm-5.3-flash",
+    "opencode/deepseek-v4.1-flash-free": "deepseek-v4.1-flash",
+}
+OPENCODE_MODELS_SOURCE = "https://opencode.ai/v2/docs/console/models/#free-models"
 
 
-def logged_free(model):
+def unreviewed_free(model):
     free = not model or (model.startswith("opencode/") and
                          ("free" in model or model == "opencode/big-pickle"))
     return free and model not in ZDR_FREE
@@ -46,8 +51,18 @@ def parse_codex(catalog):
             if type(levels) is not list or any(type(level) is not dict or
                     type(level.get("effort")) is not str for level in levels):
                 raise ValueError("invalid Codex reasoning levels")
-            efforts = ",".join(level["effort"] for level in levels)
-            rows.append(f"{model['slug']}\t{efforts or '-'}")
+            entry = {"id": identifier, "model": identifier,
+                     "efforts": efforts([level["effort"] for level in levels])}
+            if "input_modalities" in model:
+                modalities = model["input_modalities"]
+                if type(modalities) is not list or any(type(v) is not str or not v for v in modalities):
+                    raise ValueError("invalid native input modalities")
+                entry["input_modalities"] = modalities
+            if "description" in model:
+                if type(model["description"]) is not str or len(model["description"]) > 4096:
+                    raise ValueError("invalid native model description")
+                entry["description"] = model["description"]
+            rows.append(entry)
     return rows
 
 
@@ -102,7 +117,7 @@ def parse_opencode(raw):
     value = loads(raw)
     if type(value) is not dict or type(value.get("data")) is not list:
         raise ValueError("invalid OpenCode model catalog")
-    models = []
+    models: list[dict] = []
     for model in value["data"]:
         if type(model) is not dict or type(model.get("enabled")) is not bool:
             raise ValueError("invalid OpenCode model entry")
@@ -112,12 +127,22 @@ def parse_opencode(raw):
         variants = model.get("variants")
         if type(variants) is not list or any(type(v) is not dict for v in variants):
             raise ValueError("invalid OpenCode model variants")
-        tier = "free-logged" if logged_free(identifier) else "free" if "free" in model["id"] else "unverified"
-        models.append({"id": identifier, "model": model["id"],
+        tier = "free" if identifier.startswith("opencode/") and (
+            "free" in model["id"] or model["id"] == "big-pickle") else "unverified"
+        entry = {"id": identifier, "model": model["id"],
                        "efforts": efforts([v.get("id") for v in variants]),
                        "effort_control": "variant", "listing_tier": tier,
-                       "privacy_gate": "reviewed" if identifier in ZDR_FREE else "unreviewed"})
-    return sorted(models, key=lambda m: ("free" not in m["id"].casefold(), m["id"].casefold()))
+                       "privacy_gate": "reviewed" if identifier in ZDR_FREE else "unverified"}
+        entry["billing_route"] = ("subscription allowance" if model["providerID"] == "opencode-go" else
+                                  "free variant" if tier == "free" else
+                                  "pay as you go" if model["providerID"] == "opencode" else "unverified")
+        if identifier in BENCHMARK_MODELS:
+            entry.update(benchmark_model=BENCHMARK_MODELS[identifier],
+                         identity_review={"source": OPENCODE_MODELS_SOURCE, "checked": "2026-11-04",
+                             "scope": "Published underlying model; provider/free route performance "
+                                      "unverified."})
+        models.append(entry)
+    return sorted(models, key=lambda m: m["id"].casefold())
 
 
 def catalog(backend, account=None):
@@ -162,7 +187,8 @@ def catalog(backend, account=None):
         models = parse_opencode(raw)
         rows = []
     elif backend == "codex":
-        rows = parse_codex(raw)
+        models = parse_codex(raw)
+        rows = []
     elif backend == "agy":
         rows = []
         for line in raw.splitlines():
@@ -172,14 +198,12 @@ def catalog(backend, account=None):
             if not tab or not identifier or not label or any(c.isspace() for c in identifier):
                 raise ValueError("invalid agy model inventory")
             rows.append(line)
-    if backend in ("codex", "agy"):
+    if backend == "agy":
         models = []
         for line in rows:
             columns = line.split("\t")
             identifier = identity(columns[0])
-            model = {"id": identifier, "model": identifier,
-                     "efforts": efforts(columns[1].split(",") if columns[1] != "-" else [])
-                     if backend == "codex" else None}
+            model = {"id": identifier, "model": identifier, "efforts": None}
             models.append(model)
     if len({m["id"] for m in models}) != len(models):
         raise ValueError("duplicate native model identity")

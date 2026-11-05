@@ -72,13 +72,13 @@ keeps its native parsing; agent compatibility does not change `.zshenv` options.
 
 | Matcher | Command | What it does |
 | --- | --- | --- |
-| `Bash` | `rtk hook claude` | Runs the command through RTK so its output is filtered before the agent reads it |
+| `Bash` | `rtk.py` | Uses RTK's native rewrite outside auto/plan modes; [classifier-reviewed commands stay intact](.claude/hooks/README.md#rtk-and-auto-review) |
 | `Bash` | `agent-process-guard.py` | Parses shell commands and rejects full-command process matches that include the invoking ancestry; [behavior](../shell/README.md#agent-process-matching) |
 | `Bash` | `agent-baton guard` | Denies the agent `agent-baton back` and `cancel`, and, while a `pass` request is out, any shell route to the browser or screen |
 | MCP tools whose names contain browser, chrome, computer, playwright, puppeteer, cua or devtools | `agent-baton guard` | Blocks those tools while a `pass` request is out, and never lets them open a password manager |
 
-`install.sh --apply hooks` adds any of these that your live `~/.claude/settings.json` lacks, keeps everything
-else in it, and leaves a private recovery copy under
+`install.sh --apply links hooks` links the scripts and adds any entries your live `~/.claude/settings.json` lacks, keeps everything
+else in it (replacing the former managed RTK Bash entry), and leaves a private recovery copy under
 `${XDG_STATE_HOME:-$HOME/.local/state}/backups/dotfiles-with-agency/<timestamp>/`. The guard fails closed only while a `pass` request
 is out. Claude also loads the `ponytail` plugin (`enabledPlugins` and `extraKnownMarketplaces` in
 `settings.json`; see "Plugin: ponytail" in the top-level README), which ships hooks of its own.
@@ -223,10 +223,14 @@ message arrives and a tie fades over 15 minutes. The graph's column hugs the lon
 words, metrics and peer lanes) with a small gap, and steps a few cells further out only while a
 message is crossing, so the packets have room; the row's leader stays empty except for a few beads
 while a message arrives. Every metric opens a card under the pointer: effort says which levels the
-model offers, the time says how long the worker has been silent, and Bridge memory shows scope use/cap.
+model offers, Bridge time reflects its last activity, native Claude time is elapsed since first observed,
+and Bridge memory shows scope use/cap. `?` on a worker means its current state is unknown;
+when a source is unavailable, hover for its last observed state until a later scan succeeds.
 Native `r...` / `⌁...` marks show declared local-command reservations, never agent RAM or a cap; hover
 one for its command, queue state and reason. `r?` means the resource scan was unavailable. A stall reason
-is shown in full. Cards open upward inside
+is shown in full. A SubagentStart hook gives each native child its owner and agent ID and asks it
+to export them in Bash calls that invoke `agent-resources`, including through scripts. This is
+best effort: unattributed commands have no worker mark. Cards open upward inside
 their full row's bounds, including at narrow widths. Peer cards distinguish previews
 withheld by Bridge from missing message metadata; withheld text is never reconstructed
 from raw logs or replaced with an older message. In the scene a trail of faint embers
@@ -270,15 +274,13 @@ proves the recipient read it. The root endpoint is the owner namespace across
 session handoffs. The native Claude `statusline.py` still renders
 Claude's own session/context/cost input; it has no separate Bridge parser.
 
-The quota rows belong to Wake and appear while Bridge jobs are running. They show
-account numbers, never emails, with bars for remaining quota. `h` is five-hour,
-`w` weekly and `m` monthly; Codex plans report different windows (Plus `h w`, Pro `w`).
-agy's `G`, `C`, `A` are Gemini, Claude/GPT and Argon buckets. Codex numbers come
-from the local `codex-auth` cache and can be stale; agy numbers come from each
-account's cache, refreshed with `agent-accounts refresh`. Claude rows use cswap account
-numbers and the last explicit `agent-accounts refresh --backend claude`; they show
-remaining five-hour, weekly and model-specific windows. Cached active-account marks
-describe that refresh, not the account of every running conversation.
+Wake shows quota rows for native sessions and Bridge jobs. It first reads the local
+account snapshot, then requests a bounded refresh when needed and reads it again.
+The rows show remaining allowance by reported window, including OpenCode's current
+workspace budgets. `h` is five-hour, `w` weekly and `m` monthly when the source
+reports those durations; pool and model bindings stay as reported by the provider.
+Hover for the source, observation and reset times, and refresh diagnostics. The
+active-account mark describes the current CLI profile, not every running conversation.
 
 `*` marks the active account; `?` means its quota is unknown, and `~` marks a
 stale reading or one without a known sample time.

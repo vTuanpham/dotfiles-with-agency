@@ -1,8 +1,14 @@
 /* Optional session details from GET /api/context. Scoped to the selected root; never inferred or merged across roots. */
 function decodeContext(raw) {
   const ok=raw && typeof raw==='object' && optional(raw.account,account=>typeof account==='object' &&
-      optional(account.identity,isText) && optional(account.email,isText) && optional(account.plan,isText) && isText(account.scope)) &&
-    list(raw.quotas,q=>isText(q.label) && isNumber(q.used_percent) && optional(q.window_minutes,isNumber) && optional(q.resets_at,isNumber)) &&
+      optional(account.identity,isText) && optional(account.email,isText) && optional(account.plan,isText) && isText(account.scope) &&
+      (account.quota_identity===undefined || optional(account.quota_identity,isText))) &&
+    (raw.ordinary_usage_allowed===undefined || optional(raw.ordinary_usage_allowed,v=>typeof v==='boolean')) &&
+    list(raw.quotas,q=>isText(q.label) && isNumber(q.used_percent) && optional(q.window_minutes,isNumber) && optional(q.resets_at,isNumber) &&
+      (q.spend_control_reached===undefined || optional(q.spend_control_reached,v=>typeof v==='boolean')) &&
+      (q.rate_limit_reached_type===undefined || optional(q.rate_limit_reached_type,v=>[
+        'rate_limit_reached','workspace_owner_credits_depleted','workspace_member_credits_depleted',
+        'workspace_owner_usage_limit_reached','workspace_member_usage_limit_reached'].includes(v)))) &&
     list(raw.metrics,m=>isText(m.label) && isNumber(m.value) && isText(m.unit)) &&
     list(raw.workers,w=>isText(w.id) && isText(w.label) && isText(w.status) && optional(w.model,isText)) &&
     list(raw.tools,t=>isText(t.name) && isText(t.status) && optional(t.tool_count,isNumber)) &&
@@ -30,22 +36,24 @@ function resetLabel(seconds, now=Date.now()) {
 class ContextPanel {
   /* `lookup(id)` returns a currently listed root or undefined; `open(root)` is the app's own root selection. */
   constructor(api, current, lookup, open) {
-    this.api=api; this.current=current; this.lookup=lookup; this.open=open; this.cache=new Map(); this.request=0;
+    this.api=api; this.current=current; this.lookup=lookup; this.open=open; this.cache=new Map(); this.request=0; this.loading=false;
   }
-  reset() { this.request++; this.show(this.cache.get(this.current()?.id)); }
+  reset() { this.request++; this.loading=false; this.show(this.cache.get(this.current()?.id),'',true); }
   async load() {
-    const root=this.current(); if(!root) return;
+    const root=this.current(); if(document.hidden || !root || this.loading) return;
     const version=++this.request, cached=this.cache.get(root.id);
-    this.show(cached, cached ? '' : 'Loading…');
+    this.loading=true;
+    this.show(cached, cached ? 'Refreshing…' : 'Loading…',!!cached);
     try {
       const data=decodeContext(await this.api('/api/context?id='+encodeURIComponent(root.id)));
+      if(document.hidden || this.current()?.id!==root.id || version!==this.request) return;
       this.cache.set(root.id,data);
-      if(this.current()?.id===root.id && version===this.request) this.show(data);
+      this.show(data);
     } catch(error) {
-      if(this.current()?.id===root.id && version===this.request) this.show(cached, error.message);
-    }
+      if(this.current()?.id===root.id && version===this.request) this.show(cached,error.message,true);
+    } finally { if(version===this.request) this.loading=false; }
   }
-  show(data, message='') {
+  show(data, message='', stale=false) {
     const body=$('details-body'); body.textContent='';
     if(message) body.append(el('p',{class:'muted',role:'status',text:message}));
     const origin=readOrigin(data?.origin) || readOrigin(this.current()?.origin);
@@ -57,18 +65,23 @@ class ContextPanel {
       body.append(el('section',{class:'detail'},el('h3',{text:'Account'}),
         name ? el('p',{class:'account-name',text:name}) : null,
         account.plan ? el('p',{class:'pill',text:account.plan}) : null,
-        el('p',{class:'muted small',text:account.scope==='connection' ?
+        account.quota_identity && account.quota_identity!==account.identity ?
+          el('p',{class:'muted small',text:'Usage snapshot account: '+account.quota_identity}) : null,
+        el('p',{class:'muted small',text:stale ? 'Account in the last reading. Refresh to confirm the current connection.' : account.scope==='connection' ?
           'Account of the current connection. It may differ from the account used for earlier turns.' : account.scope})));
     }
-    if(quotas.length) body.append(el('section',{class:'detail'},el('h3',{text:'Usage limits'}),quotas.map(q=>this.quota(q))));
+    if(account || quotas.length) body.append(el('section',{class:'detail'},el('h3',{text:'Usage limits'}),
+      el('p',{class:'small',text:stale ? 'Current included usage is unconfirmed. Showing the last reading.' : data.ordinary_usage_allowed===false ? 'Ordinary included usage is blocked.' :
+        data.ordinary_usage_allowed===true ? 'The provider permits ordinary included usage.' : 'Ordinary included usage is unconfirmed.'}),
+      quotas.map(q=>this.quota(q,data.ordinary_usage_allowed,stale))));
     if(metrics.length) body.append(el('section',{class:'detail'},el('h3',{text:'This session'}),
       el('dl',{class:'metrics'},metrics.map(m=>[el('dt',{text:m.label}),el('dd',{text:m.value.toLocaleString()+(m.unit ? ' '+m.unit : '')})]))));
     if(workers.length) body.append(el('section',{class:'detail'},el('h3',{text:'Sub-agents'}),
-      el('ul',{class:'rows'},workers.map(w=>el('li',{data:{status:w.status}},el('span',{text:w.label}),
-        el('small',{text:[w.model,statusText(w.status)].filter(Boolean).join(' · ')}))))));
+      el('ul',{class:'rows'},workers.map(w=>el('li',{data:{status:stale ? 'unknown' : w.status}},el('span',{text:w.label}),
+        el('small',{text:[w.model,(stale ? 'Last seen: ' : '')+statusText(w.status)].filter(Boolean).join(' · ')}))))));
     if(tools.length) body.append(el('section',{class:'detail'},el('h3',{text:'Tools'}),
-      el('ul',{class:'rows'},tools.map(t=>el('li',{data:{status:t.status}},el('span',{text:t.name}),
-        el('small',{text:[t.tool_count!=null ? t.tool_count+' tools' : null,statusText(t.status)].filter(Boolean).join(' · ')}))))));
+      el('ul',{class:'rows'},tools.map(t=>el('li',{data:{status:stale ? 'unknown' : t.status}},el('span',{text:t.name}),
+        el('small',{text:[t.tool_count!=null ? t.tool_count+' tools' : null,(stale ? 'Last seen: ' : '')+statusText(t.status)].filter(Boolean).join(' · ')}))))));
     for(const notice of notices) body.append(el('p',{class:'muted small',text:notice}));
     if(!origin && !account && !quotas.length && !metrics.length && !workers.length && !tools.length && !notices.length) {
       body.append(el('p',{class:'muted',text:'This connection does not report session details.'}));
@@ -89,13 +102,22 @@ class ContextPanel {
     return el('section',{class:'detail'},el('h3',{text:'Started by'}),el('ol',{class:'graph','aria-label':'Where this session came from'},
       rows.map(row=>el('li',{},row))));
   }
-  quota(q) {
+  quota(q,allowed,stale=false) {
     const used=q.used_percent, over=used>100, width=Math.min(100,Math.max(0,used));
     const label=[q.label,windowLabel(q.window_minutes)].filter(Boolean).join(' · ');
-    return el('div',{class:'quota',data:{level:over ? 'over' : used>=90 ? 'high' : 'ok'}},
-      el('div',{class:'quota-head'},el('span',{text:label}),el('strong',{text:used+'% used'+(over ? ' · over limit' : '')})),
+    const reason=own({rate_limit_reached:'Usage limit reached',workspace_owner_credits_depleted:'Workspace owner credits depleted',
+      workspace_member_credits_depleted:'Workspace member credits depleted',workspace_owner_usage_limit_reached:'Workspace owner usage limit reached',
+      workspace_member_usage_limit_reached:'Workspace member usage limit reached'},q.rate_limit_reached_type);
+    const blocked=!stale && (allowed===false || q.spend_control_reached===true || !!reason);
+    const state=stale ? 'unknown' : blocked ? 'blocked' : allowed===true ? 'allowed' : 'unknown';
+    return el('div',{class:'quota',data:{usage:state,level:stale ? 'stale' : over ? 'over' : used>=90 ? 'high' : 'ok'}},
+      el('div',{class:'quota-head'},el('span',{text:label}),el('strong',{text:used+'% used'+(over && !stale ? ' · over limit' : '')})),
+      reason || q.spend_control_reached===true ? el('p',{class:'small',text:
+        (stale ? 'Last reading: ' : '')+[q.spend_control_reached===true ? 'Spend control reached' : '',reason || ''].filter(Boolean).join(' · ')}) : null,
       el('div',{class:'bar',role:'meter','aria-label':label,'aria-valuemin':0,'aria-valuemax':100,'aria-valuenow':width,
-        'aria-valuetext':used+'% used'+(over ? ', over limit' : '')},el('i',{style:{width:width+'%'}})),
-      q.resets_at!=null ? el('small',{class:'muted',text:resetLabel(q.resets_at)}) : null);
+        'aria-valuetext':used+'% used'+(over ? ', over limit' : '')+', '+(stale ? 'last reading, current usage unconfirmed' : blocked ? 'usage limited' :
+          allowed===true ? 'ordinary included usage permitted' : 'ordinary included usage unconfirmed')},el('i',{style:{width:width+'%'}})),
+      q.resets_at!=null || stale ? el('small',{class:'muted',text:
+        [stale ? 'Last reading' : '',q.resets_at!=null ? resetLabel(q.resets_at) : ''].filter(Boolean).join(' · ')}) : null);
   }
 }

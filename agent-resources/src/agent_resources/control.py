@@ -7,7 +7,7 @@ import sys
 import time
 
 from . import heavy
-from .identity import identity
+from .identity import identity, native_attribution
 
 TERM_GRACE = 5
 
@@ -17,7 +17,7 @@ def request_id(path):
 
 
 def require_root(json_owner=None):
-    if os.environ.get("AGENT_RESOURCES_WORKER"):
+    if os.environ.get("AGENT_RESOURCES_WORKER") or native_attribution()[1] is not None:
         if json_owner is not None and json_owner == identity():
             return
         raise RuntimeError(

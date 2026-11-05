@@ -1,6 +1,7 @@
 import json
 
 from agent_bridge import agy
+from agent_bridge.acknowledgements import urgent
 from agent_bridge.agy import process
 
 
@@ -69,6 +70,27 @@ def test_stream_event_mapping_and_denial_continuation(tmp_path):
     last = json.loads((tmp_path / "live.jsonl").read_text().splitlines()[-1])
     assert last["kind"] == "turn_completed" and last["error"] == quota_error
 
+
+
+def test_worker_messages_queue_to_idle_peer_and_escalate_through_job_events(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_BRIDGE_WORKER", "1")
+    job, peer = tmp_path / "owner/worker", tmp_path / "owner/peer"
+    job.mkdir(parents=True)
+    peer.mkdir()
+    (peer / "state.json").write_text('{"runnerPid": null}')
+    for text in ("TO peer: check", "URGENT: root blocker"):
+        process(
+            {"event": "step_update", "step_update": {
+                "step_type": "agent_response", "step_index": 1,
+                "text_delta": text, "state": "DONE",
+            }},
+            {}, job, lambda _: None,
+        )
+    assert (peer / "steer/001.md").read_text() == "[from worker] check\n"
+    assert json.loads((peer / "state.json").read_text())["runnerPid"] is None
+    logged = [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()]
+    assert [event["kind"] for event in logged] == ["message", "peer_sent", "message"]
+    assert not urgent(logged[0]) and urgent(logged[2])
 
 
 def test_result_confirms_only_the_inflight_steer_turn(tmp_path):

@@ -10,6 +10,7 @@ class Account:
     email: str | None
     plan: str | None
     scope: str
+    quota_identity: str | None = None
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,8 @@ class Quota:
     used_percent: int
     window_minutes: int | None
     resets_at: int | None
+    spend_control_reached: bool | None = None
+    rate_limit_reached_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,7 @@ class SessionContext:
     tools: list[Tool] = field(default_factory=list)
     notices: list[str] = field(default_factory=list)
     fetched_at: int = field(default_factory=lambda: int(time.time()))
+    ordinary_usage_allowed: bool | None = None
 
 
 def context(provider, target):

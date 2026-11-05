@@ -168,15 +168,21 @@ def test_json_listing_filters_owner_and_keeps_shared_admission_totals(queue, cap
     assert row["queue_position"] == 1 and row["queue_length"] == 1
 
 
-def test_worker_can_read_only_its_owner_filtered_json_rows(queue, monkeypatch, capsys):
+@pytest.mark.parametrize("native_child", [False, True])
+def test_worker_can_read_only_its_owner_filtered_json_rows(queue, monkeypatch, capsys, native_child):
+    owner = "codex:root" if native_child else "claude:root"
     native, foreign = request("native"), request("foreign", running=True)
-    native[1].update(owner="claude:root", agent_id="agent-1")
+    native[1].update(owner=owner, agent_id="agent-1")
     foreign[1].update(owner="codex:other", agent_id="agent-2")
     queue.extend([native, foreign])
-    monkeypatch.setenv("AGENT_RESOURCES_WORKER", "1")
-    monkeypatch.setenv("AGENT_RESOURCES_OWNER", "claude:root")
+    if native_child:
+        monkeypatch.setenv("CODEX_SESSION_ID", "root")
+        monkeypatch.setenv("CODEX_THREAD_ID", "child")
+    else:
+        monkeypatch.setenv("AGENT_RESOURCES_WORKER", "1")
+        monkeypatch.setenv("AGENT_RESOURCES_OWNER", owner)
 
-    control.listing(json_output=True, owner="claude:root")
+    control.listing(json_output=True, owner=owner)
 
     snapshot = json.loads(capsys.readouterr().out)
     assert snapshot["admission"]["reserved_bytes"] == GIB
@@ -191,6 +197,13 @@ def test_worker_can_read_only_its_owner_filtered_json_rows(queue, monkeypatch, c
     ):
         with pytest.raises(RuntimeError, match="workers cannot control"):
             call()
+
+
+def test_codex_root_and_explicit_agent_label_keep_root_authority(monkeypatch):
+    monkeypatch.setenv("CODEX_SESSION_ID", "root")
+    monkeypatch.setenv("CODEX_THREAD_ID", "root")
+    monkeypatch.setenv("AGENT_RESOURCES_AGENT_ID", "label-only")
+    control.require_root()
 
 
 def test_json_listing_does_not_trust_a_stale_request_with_a_reused_pid(tmp_path, monkeypatch, capsys):

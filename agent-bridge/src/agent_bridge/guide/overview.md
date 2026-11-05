@@ -2,9 +2,10 @@
 
 One CLI with four backends: `codex`, `agy`, `claude` and `opencode`.
 
-For direct messages to an existing independent session, read `agent-bridge guide
+For root-to-root messages to an existing independent session, read `agent-bridge guide
 messages`. This separate path creates no workers and takes over no jobs; the
 same-harness worker-launch restriction below does not prohibit those messages.
+Managed workers use the job channels under Steer, resume, peers; native sends are refused.
 
 ## Which backend
 - **Never bridge to your own harness.** A Claude root uses its Agent tool for Claude workers, a Codex root its own subagents, an agy root its own. The bridge is only for the other harnesses.

@@ -1,10 +1,10 @@
 # Claude Code → Codex wake parity
 
-Evaluated 2026-11-01 against installed Codex **0.166.0** and current official
-documentation. “Implemented” below means code and snapshot configuration with
-unit checks, **not live TUI acceptance**. The worker has neither an interactive
-TUI nor an accessible user systemd bus. No genuine hook payload was captured;
-test payloads are explicitly derived from the published/versioned schemas.
+Contracts target installed Codex **0.166.0** and its official documentation.
+Implementation, schema-derived tests and live acceptance are separate checks.
+Native idle command delivery has been observed; final polls with exit 0 and 7
+also verified the trusted collection hook and retirement without another send.
+The remaining live checks are listed below.
 
 ## Parity matrix
 
@@ -38,7 +38,7 @@ extract from an initial yielded PostToolUse payload, because that payload is abs
 | UserPromptSubmit | `session_id`, `turn_id`, prompt; child context may include `agent_id` | Ordinary prompts preserve ongoing observers. A parent prompt starts a fresh generation only after Interrupt/SessionEnd paused delivery; child prompts never resume a paused parent. |
 | PreToolUse | canonical tool name, tool-use ID, tool input (`command` for Bash) | Runs before knowing whether exec will yield. Rewriting every command changes semantics and can bypass checks; not used for arming. |
 | PermissionRequest | tool name/input, active turn | Can control an approval. No wake handler; never auto-answer or turn a wake into approval. |
-| PostToolUse | tool name/use ID, input, result | Can deliver from the host, but unified exec omits it while running. Existing browser hook retained; no completion observer here. |
+| PostToolUse | tool name/use ID, input, result | Unified exec omits it while running. A final Bash result carries the original command ID; the synchronous handler retires that command's observer. Existing browser hooks remain. |
 | PreCompact | trigger (`manual`/`auto`), turn | Context maintenance; no new wake handler. |
 | PostCompact | trigger, turn | Context maintenance; no new wake handler. |
 | SubagentStart | parent session context, `agent_id`, `agent_type`, turn | Records generation only; no wake. |

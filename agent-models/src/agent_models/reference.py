@@ -21,7 +21,20 @@ PENDING = HOME / "refresh" / "pending"  # holds the directory of a proposal wait
 MAX_AGE_DAYS = 30
 LISTERS = {name: (lambda backend=name: inventory.show(backend))
            for name in ("codex", "claude", "agy", "opencode")}
-ONLY = {"opencode": "opencode/"}  # the free tier is what the reference covers, not every provider
+ONLY = {"opencode": ("opencode/", "opencode-go/")}
+
+
+def review_status(snapshot):
+    """A recent fetch is distinct from source review of the generated evidence."""
+    locked = LOCK.read_text().splitlines() if LOCK.is_file() else []
+    matches = "evidence " + evidence_digest(snapshot) in locked
+    return {"status": "pending review" if PENDING.is_file() else
+            "reviewed" if matches and not guide_drift() else "review unverified",
+            "guide_reviewed": str(read_lock()[0]), "snapshot_retrieved": snapshot["retrieved"]}
+
+
+def evidence_digest(snapshot):
+    return hashlib.sha256(json.dumps(snapshot, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
 def read_lock():
@@ -31,7 +44,7 @@ def read_lock():
         key, _, value = line.partition(" ")
         if key == "refreshed":
             refreshed = date.fromisoformat(value)
-        elif key != "guide" and value:
+        elif key not in ("guide", "evidence") and value:
             ids.setdefault(key, set()).add(value)
     return refreshed, ids
 
@@ -65,12 +78,14 @@ def live():
     return found
 
 
-def accept(today=None, found=None):
+def accept(today=None, found=None, evidence=None):
     """Record the live lists as reviewed against the reference."""
     _, locked = read_lock()
     known = {**locked, **(live() if found is None else found)}
     lines = [f"refreshed {today or date.today()}"]
     lines += [f"guide {name} {digest}" for name, digest in guide_hashes().items()]
+    if evidence is not None:
+        lines.append("evidence " + evidence_digest(evidence))
     lines += [f"{name} {i}" for name, ids in sorted(known.items()) for i in sorted(ids)]
     LOCK.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -93,7 +108,7 @@ def inspect(*, probe=False):
               for name, ids in (live() if probe else {}).items()}
     return {"refreshed": str(refreshed) if refreshed else None, "age_days": age,
             "max_age_days": MAX_AGE_DAYS, "stale_guides": stale_guides, "models": models,
-            "inventory_checked": probe}
+            "inventory_checked": probe, "pending_review": PENDING.is_file()}
 
 
 def render(data):

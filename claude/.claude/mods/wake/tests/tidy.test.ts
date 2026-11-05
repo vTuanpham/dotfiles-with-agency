@@ -20,7 +20,7 @@ function world() {
 test('tidy consumes Bridge eligibility, dirty exclusions and sizes through one command', async () => {
   const w = world()
   const scan = await scanTidy(w.$)
-  expect(w.calls).toEqual([['agent-bridge', 'status', '--json', '--storage']])
+  expect(w.calls).toEqual([['agent-bridge', 'status', '--json', '--no-quotas', '--storage']])
   expect(scan.jobs.map(j => j.name)).toEqual(['old2', 'old1', 'notgit'])
   expect(scan.reclaimBytes).toBe(3030)
   expect(scan.worktrees[0]?.bytes).toBe(900)

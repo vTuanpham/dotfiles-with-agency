@@ -85,13 +85,28 @@ profile and native session IDs.
 
 The repository's `AskUserQuestion` PreToolUse hook offers new questions to paired
 Inbox devices before the terminal prompt opens. Apply it with `./install.sh --apply hooks`
-and let Claude reload its hook configuration. It holds the actual native callback;
+and let Claude reload its hook configuration. **This is an exclusive relay, not a
+simultaneous terminal and Inbox prompt.** PreToolUse runs before the native dialog,
+so the terminal waits on the hook while Inbox has the question. It holds the hook callback;
 an answer returns the original input plus `updatedInput.answers`, and Cancel denies
 that question. With no paired device or connected profile it leaves the native flow
 alone. After five minutes without an answer, or on hook failure, the native prompt
 takes over; expiry never answers or approves anything. An already-open terminal
 prompt cannot be transferred to Inbox. Question sockets are separate from channel
 consent, so answering questions does not enable ordinary chat replies.
+
+The documented [channel permission relay](https://code.claude.com/docs/en/channels-reference#relay-permission-prompts)
+keeps a terminal approval open and applies the first answer, but its response
+contains only `allow` or `deny`; it provides no question-answer payload.
+[Mods](https://code.claude.com/docs/en/plugins/mods/reference#render-sites) can observe
+and decorate the question dialog, but their published API has no resolver for it.
+The [SDK input callback](https://code.claude.com/docs/en/agent-sdk/user-input)
+belongs to an SDK-owned run; a session ID does not attach it to an existing terminal.
+[Remote Control](https://code.claude.com/docs/en/remote-control) provides Claude's
+own synchronized clients, without a published third-party question endpoint.
+Inbox therefore has no verified supported path to show and resolve the same Claude
+question in both interfaces. The existing relay remains available; this limit is
+not fixed by returning `allow` earlier or moving the wait to an async hook.
 
 The Working label tracks the SDK-selected main conversation's latest native
 `end_turn` marker. A busy process with a completed main turn is Idle; background
@@ -109,6 +124,10 @@ reconfigures the service. Models, commands and question IDs come from the select
 session. Permission requests offer **Allow once** or **Deny**, with no default or
 persistent grant. Inbox rechecks that the request is still pending in the
 selected session before replying; cancelling the question denies it.
+Questions from native descendants also appear under their root, labeled with
+the child name. Their handles bind the exact native child and question IDs.
+Inbox rechecks parent ancestry before replying to that child; an unrelated root,
+peer, removed child or already answered request cannot receive the answer.
 Unsupported terminal menus and external-auth forms stay native.
 Its unarchived list includes saved idle roots: idle does not prove a terminal
 is attached. Provider account identity and allowance are not exposed here.
@@ -227,6 +246,17 @@ Details use the selected connection's measurements. Codex account data is
 account change during the read discards that quota result. Emails appear only
 in the private UI. Session tokens/cost and account allowance are separate;
 a reset time does not imply permission to retry.
+Native workspace routing identifies the current connection account; a separate
+usage-snapshot account ID is labeled as such when routing cannot identify it.
+Routing changes or mismatched account IDs discard the reading. Usage permission,
+spend controls and provider limit reasons are displayed alongside unchanged
+percentages. Missing permission remains unconfirmed; low utilization or a passed
+reset time never supplies permission for included usage or paid credits.
+Open Details refreshes with the chat's existing four-second poll. A failed or
+pending refresh labels cached values as the last reading and leaves current
+usage unconfirmed; switching roots or suspending the page invalidates old reads.
+Cached worker and tool names remain visible with neutral Last seen statuses until
+a fresh read succeeds.
 
 ## Connect your phone
 
@@ -283,6 +313,9 @@ also lists unarchived saved roots. Idle is not treated as closed.
 For Codex, OpenCode and ACP, transient discovery timeouts retain previously seen
 roots with unknown status and a connection warning. An authoritative empty list
 still removes them. Reading failures retain the visible transcript and disable input.
+They also clear the live Working indicator until native activity can be read again.
+An offline root invalidates pending question reads and disables its old controls;
+reconnection requires a fresh native pending list before answering.
 Suspending the page also disables input until a fresh read succeeds on return.
 Late reads from an earlier visit or before suspension cannot replace the current
 conversation or re-enable its composer. Drafts remain in tab memory throughout.
@@ -331,7 +364,7 @@ native conflict. There is no cached pending flag to hang after restart.
 The capability `approvals_survive_restart` refers to an **Inbox** restart; it does
 not promise a provider survives its own restart. Codex blocking questions/approvals stay
 with their owning client, ACP callbacks expire when their SDK connection closes,
-and Claude's native behavior is unchanged. In-flight receipts recover as Unknown,
+and Claude's held hook ends when its process exits. In-flight receipts recover as Unknown,
 never as fresh work. Choices always carry native values; labels need not be unique.
 
 Question cards use the selected adapter's native question metadata, pending-request API or
@@ -343,19 +376,16 @@ simulation never create pending requests or resolve native callbacks.
 Question polling is independent of transcript reads, so a history failure cannot
 hide a newly pending native request.
 
-[T3's Claude adapter](https://github.com/pingdotgg/t3code/blob/3368dd70f20cb192b68895494a4a73455524fb76/apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts)
-owns an SDK process and its `canUseTool` callbacks;
-it can retain the exact pending callback until the user answers. Inbox attaches
-to existing terminal sessions, so that ownership does not transfer automatically.
+Inbox attaches to existing Claude terminal sessions; it does not own their SDK
+process or `canUseTool` callbacks and cannot retain those pending callbacks.
 OpenCode's existing-session form/permission API supports remote answers here.
 Inbox owns its ACP connection and retains the genuine SDK callback until the
-user answers or the connection/turn is cancelled, following T3's ownership pattern.
+user answers or the connection/turn is cancelled.
 Native callback replay tests cover all three actions, turn cancellation, connection
 shutdown and durable answer receipts without a live model call.
 Codex async `agentMessage` items expose `questions` and `delivery=async` through
-`thread/items/list`. Inbox projects those exact fields and follows
-[T3's message-response path](https://github.com/pingdotgg/t3code/blob/3368dd70f20cb192b68895494a4a73455524fb76/apps/server/src/orchestration-v2/Orchestrator.ts):
-the native send API carries the question and answer as plain text, steering an active turn.
+`thread/items/list`. Inbox projects those exact fields. The native send API carries
+the question and answer as plain text, steering an active turn.
 Dismiss resolves the Inbox card locally. Confirmed receipts persist across restarts;
 native answer envelopes also resolve individual answered fields. There is no invented XML
 reply or attempt to answer another client's blocking callback.
@@ -365,6 +395,23 @@ Claude uses its documented [PreToolUse answer contract](https://code.claude.com/
 for new questions. The hook owns the pending call, verifies session/profile/question IDs,
 and returns native input only after the paired user answers. Its private socket disappears
 when the callback ends. Already-open prompts and general tool approvals remain native.
+
+These paths do not establish shared terminal question ownership across all harnesses.
+OpenCode's native form IDs support answers from another client and disappear from
+Inbox on the next pending-list read. Codex's async cards send ordinary message input;
+they do not resolve another client's blocking callback. ACP requests belong to
+Inbox's own connection, not an existing `agy` terminal. OpenCode also reads native
+descendant forms and permissions through their own session routes. Child discovery
+allows up to 64 descendants and 200 child questions. Its soft eight-second budget
+is checked between children; each native HTTP operation has its own eight-second
+socket timeout, so a stalled read can take longer overall. Discovery failure
+leaves root questions available with a warning.
+Codex currently polls root questions only. A native child that reports
+`canAcceptDirectInput=false` cannot receive the adapter's ordinary message replies.
+Claude shares one held hook per session, including hooks from its native children.
+
+Implementation references: [SDK callback ownership](https://github.com/pingdotgg/t3code/blob/3368dd70f20cb192b68895494a4a73455524fb76/apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts),
+[message replies](https://github.com/pingdotgg/t3code/blob/3368dd70f20cb192b68895494a4a73455524fb76/apps/server/src/orchestration-v2/Orchestrator.ts).
 
 State: `${XDG_STATE_HOME:-~/.local/state}/agent-inbox`, configurable with `--state`
 or `AGENT_INBOX_HOME`. Directory mode 0700, database mode 0600. Credentials are
@@ -417,6 +464,11 @@ native controls, conditional forms, image limits, catch-up and session-switch
 races. Visual changes also need rendered phone and desktop checks. Tests never
 start model turns in real conversations. Vendor marks keep their owners' terms
 ([notice](src/agent_inbox/assets/NOTICE.md)).
+
+Question checks include paired HTTP answers through a real Claude hook subprocess
+and ACP SDK peer, with cancellation, decline and restart replay. OpenCode's native
+`session.form.create` API can exercise the same flow in an empty test session
+without inference; remove that owned session after checking answer and cancellation.
 
 `test_protocol_replay.py` drives actual connection/RPC/adapter code with
 [versioned native metadata and documented authored faults](tests/fixtures/README.md).

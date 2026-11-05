@@ -67,7 +67,10 @@ def brief(data):
         lines += [f"  {m['id']}" + (f" → {m['model']}" if m["id"] != m["model"] else "")
                   + f" · {m.get('effort_control', 'effort')}: "
                   + (", ".join(m["efforts"]) if m["efforts"] else "efforts unknown or unavailable")
+                  + (f" · billing: {m['billing_route']} · privacy: {m['privacy_gate']}"
+                     if m.get("billing_route") else "")
                   for m in native["models"]]
+        lines += ["  " + m["identity_review"]["scope"] for m in native["models"] if m.get("identity_review")]
         if native["unmeasured_count"]:
             lines.append(f"Unmeasured native IDs: {native['unmeasured_count']} · "
                          + ", ".join(native["unmeasured_ids"]))
@@ -151,19 +154,48 @@ def brief(data):
         if "ambiguous_names" in source and source["ambiguous_names"]:
             lines.append("Separate evaluations share names: " + ", ".join(source["ambiguous_names"]))
         lines.append(source["url"])
-    accounts = data.get("account_observation")
+    lines += account_lines(data.get("account_observation"))
+    lines += ["", *data.get("coverage_notes", []), data["gaps"], "Full evidence: " + data["full_snapshot"]]
+    return "\n".join("".join(c for c in line if c.isprintable()) for line in lines)
+
+
+def account_lines(accounts, *, compact=False):
+    lines = []
     if accounts:
+        if compact:
+            for account in accounts["quotas"][:2]:
+                windows = "; ".join(w["label"] + "=" + (
+                    "?" if w["remaining_percent"] is None else str(w["remaining_percent"]) + "%")
+                    + (f"/{w['window_minutes']}m" if w.get("window_minutes") is not None else "")
+                    + " reset " + (w["resets"] or "?")
+                    + (" pool=" + w["pool_id"] if w.get("pool_id") else " pool=?")
+                    + (" models=" + ",".join(w["model_ids"]) if w.get("model_ids") is not None
+                       else " models=?") for w in account["windows"][:3])
+                lines.append(f"Allowance: {account['backend']}/{account['account']} "
+                             f"{account['freshness']} {windows} (cached; session binding unverified)")
+                if len(account["windows"]) > 3:
+                    lines.append(f"Allowance: +{len(account['windows']) - 3} source windows in --json")
+            if len(accounts["quotas"]) > 2:
+                lines.append(f"Allowance: +{len(accounts['quotas']) - 2} cached accounts in --json")
+            if not accounts["quotas"]:
+                lines.append("Allowance: no cached account observation; session binding unverified.")
+            return lines
         lines += ["", "Accounts · " + accounts["scope"]]
         for backend, profile in accounts["profiles"].items():
             lines.append(f"  {backend}: " + ", ".join(f"{k}={v}" for k, v in profile.items()))
-        for account in accounts["quotas"]:
+        for account in accounts["quotas"][:4]:
             windows = ", ".join(f"{w['group']} {w['label']}=".lstrip()
                                 + ("?" if w["remaining_percent"] is None else f"{w['remaining_percent']}%")
                                 + (f" reset {w['resets']}" if w["resets"] else "")
-                                for w in account["windows"])
+                                for w in account["windows"][:6])
+            if len(account["windows"]) > 6:
+                windows += f" · {len(account['windows']) - 6} more windows in JSON"
             flags = " · ".join(str(v) for v in (account["plan"], account["freshness"], account["status"],
                                                "active profile" if account["active"] else None) if v)
             lines.append(f"  {account['backend']}/{account['account']} · {flags} · {windows}")
         lines += accounts["errors"]
-    lines += ["", *data.get("coverage_notes", []), data["gaps"], "Full evidence: " + data["full_snapshot"]]
-    return "\n".join("".join(c for c in line if c.isprintable()) for line in lines)
+        if len(accounts["quotas"]) > 4:
+            lines.append(f"  {len(accounts['quotas']) - 4} more account observations in JSON")
+        if not accounts["quotas"] and not accounts["profiles"]:
+            lines.append("  No cached account observation; native session binding Unverified.")
+    return lines

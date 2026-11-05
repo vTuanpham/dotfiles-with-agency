@@ -4,10 +4,11 @@ import subprocess
 from datetime import date as Date
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from agent_models import benchmarks, cli, generated, reference, refresh
+from agent_models import benchmarks, cli, generated, policy, reference, refresh
 from agent_models.inventory import ZDR_FREE
 
 
@@ -18,7 +19,7 @@ class date(Date):
 
 
 TODAY = date.today().isoformat()
-REAL = """## Model strength
+REAL = """## Model decision evidence
 Checked 2001-01-01 for qualitative advice.
 ### Four separate things
 Class, measurement, effort and allowance differ. Unverified claims stay unknown.
@@ -55,7 +56,7 @@ Numeric allowance Unverified.
 - **OpenCode free**: """ + ", ".join(f"\x60{model}\x60" for model in ZDR_FREE) + """
 ### Claude / Claude Code
 """
-SNAPSHOT = {"retrieved": "2029-12-01T12:00:00+00:00", "sources": {
+SNAPSHOT: dict[str, Any] = {"retrieved": "2029-12-01T12:00:00+00:00", "sources": {
     "Artificial Analysis": {
         "status": "ok", "url": "https://artificialanalysis.ai/leaderboards/models",
         "metadata": ["Intelligence Index v5.0"], "tables": [[
@@ -81,6 +82,7 @@ SNAPSHOT = {"retrieved": "2029-12-01T12:00:00+00:00", "sources": {
 def clock(monkeypatch):
     monkeypatch.setattr(reference, "date", date)
     monkeypatch.setattr(refresh, "date", date)
+    monkeypatch.setattr(policy, "refresh_due", lambda: [])
 
 
 @pytest.fixture
@@ -389,6 +391,19 @@ def test_record_after_generated_apply_accepts_only_snapshot_generated_numbers(ho
         refresh.record(yes=True)
 
 
+def test_apply_records_its_frozen_snapshot_without_replacing_newer_query_evidence(home):
+    refresh.run(force=True)
+    frozen = json.loads((proposal() / "benchmark-data.json").read_text())
+    newer = copy.deepcopy(frozen)
+    newer["retrieved"] = "2030-02-02T12:00:00+00:00"
+    newer["sources"]["LiveBench"]["points"]["Overall"][0]["score"] = 99
+    (benchmarks.CACHE / "benchmark-data.json").write_text(json.dumps(newer))
+    assert refresh.apply(yes=True) == 0
+    assert benchmarks.snapshot() == newer
+    assert reference.review_status(frozen)["status"] == "reviewed"
+    assert reference.review_status(newer)["status"] == "review unverified"
+
+
 @pytest.mark.parametrize("failure", ["date", "holder", "section", "link", "unverified"])
 def test_record_rejects_invalid_prose_without_changing_lock(home, failure):
     reference.accept()
@@ -451,3 +466,16 @@ def test_public_docs_and_help_have_no_holder_specific_wording():
     offenders = [str(path.relative_to(repo)) for path in sorted(paths)
                  if refresh.HOLDER_WORDING.search(path.read_text(encoding="utf-8"))]
     assert offenders == []
+
+
+def test_fetch_freshness_does_not_establish_review_and_go_routes_participate_in_drift(home, monkeypatch):
+    reference.accept(evidence=SNAPSHOT)
+    assert reference.review_status(SNAPSHOT)["status"] == "reviewed"
+    changed = {**SNAPSHOT, "retrieved": "2029-12-02T12:00:00Z"}
+    assert reference.review_status(changed)["status"] == "review unverified"
+    reference.PENDING.write_text(str(home))
+    assert reference.inspect()["pending_review"] is True
+    assert reference.review_status(SNAPSHOT)["status"] == "pending review"
+    monkeypatch.setitem(reference.LISTERS, "opencode", lambda: print(
+        "opencode/example-free\t-\nopencode-go/example\t-\nother/x\t-"))
+    assert reference.live()["opencode"] == {"opencode/example-free", "opencode-go/example"}

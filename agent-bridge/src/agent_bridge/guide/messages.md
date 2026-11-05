@@ -1,8 +1,14 @@
 # Direct session messaging
 
-`agent-bridge message` contacts existing sessions independently of Bridge jobs.
+`agent-bridge message` contacts existing root sessions independently of Bridge jobs.
 It does not transfer ownership, start workers, resume saved conversations or
 change the existing `start`, `steer`, `watch` and result workflow.
+
+Native sends are root-to-root only. `send()` and the CLI reject managed Bridge
+workers (`AGENT_BRIDGE_WORKER`) before native discovery or transport access.
+Workers write ordinary `TO <peer>:` job messages for siblings and `URGENT:` job
+messages for root blockers. Those channels do not need native session discovery
+and never fall back to a native message to root. Runner steering remains available.
 
 ```sh
 agent-bridge message whoami

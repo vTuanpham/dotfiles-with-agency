@@ -1,15 +1,17 @@
 import asyncio
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from test_acp_lifecycle import fake_target, wait_until
+from test_inbox import request
 
 from agent_inbox import acp, acp_runtime, adapters
 from agent_inbox.acp_questions import Questions, question
 from agent_inbox.models import DeliveryRejected, NoLongerPending
-from agent_inbox.server import App
+from agent_inbox.server import App, Server
 from agent_inbox.store import Store
 
 SCHEMA = {
@@ -178,3 +180,45 @@ def test_decline_receipt_survives_restart_and_claims_the_callback_once(tmp_path,
                     pool.close()
     finally:
         pool.close()
+
+
+@pytest.mark.parametrize("action", ["accept", "decline", "cancel"])
+def test_paired_http_answer_reaches_sdk_callback_and_stays_resolved(tmp_path, monkeypatch, action):
+    selected = fake_target()
+    pool = acp_runtime.RuntimePool()
+    monkeypatch.setitem(adapters.ADAPTERS, "acp", acp.ACP(pool))
+    store = Store(tmp_path)
+    store.register(selected)
+    _, token = store.pair(store.pair_code(), "Test phone")
+    app = App(store)
+    app.catalog.checked = time.monotonic()
+    app.catalog.live = {selected.id: selected}
+    server = Server(app, 0)
+    serving = threading.Thread(target=server.serve_forever)
+    serving.start()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            turn = executor.submit(pool.call, selected, "send", [{"type": "text", "text": "ask question"}])
+            try:
+                cookie = "inbox=" + token
+                wait_until(lambda: adapters.ADAPTERS["acp"].forms(selected).forms)
+                status, _, forms = request(server, "GET", "/api/forms?id=" + selected.id, cookie=cookie)
+                assert status == 200 and len(forms["forms"]) == 1
+                payload = {"id": str(uuid.uuid4()), "target": selected.id, "form": forms["forms"][0]["id"],
+                           "answer": {"choice": "focused", "confirm": False} if action == "accept" else {},
+                           "cancel": action == "cancel", "decline": action == "decline"}
+                status, _, result = request(server, "POST", "/api/answer", payload, cookie)
+                assert status == 200 and result["status"] == "applied"
+                assert turn.result(timeout=5) == ("cancelled" if action == "cancel" else "end_turn")
+                assert request(server, "GET", "/api/forms?id=" + selected.id, cookie=cookie)[2]["forms"] == []
+                assert App(Store(tmp_path)).answer(payload)["status"] == "applied"
+                replay = {**payload, "id": str(uuid.uuid4())}
+                assert App(Store(tmp_path)).answer(replay)["status"] == "already_answered"
+            finally:
+                if not turn.done():
+                    pool.close()
+    finally:
+        pool.close()
+        server.shutdown()
+        server.server_close()
+        serving.join(timeout=5)

@@ -4,10 +4,23 @@
 processes. Add `--live` to query native inventory. `stale --live` also caches
 inventory warnings; a missing or signed-out provider does not prove disappearance.
 
+`model-guide policy --backend BACKEND` reads official provider policy text and
+automatically fetches missing/due sources (seven days). `--refresh` forces a
+conditional recheck; server backoff still applies. The fixed manifest stores URLs,
+not plan eligibility rules. Native usage is separate and changes much faster.
+Full operative text, source/date/digest and failed-check state remain available;
+failed/challenge/login pages never replace last-good policy. Ordinary `suggest`
+retrieves complete relevant sections and qualifications from the existing cache;
+it never fetches policy. Missing/stale sources point to this local view. Policy refresh is
+independent of pending benchmark proposals and never approves spending or changes
+accounts, subscription facts or code-enforced admission policies.
+
 The daily timer adds 2h jitter; `refresh --poll` checks sources when due (36h).
 Conditional validators or parsed-row digests skip unchanged data; only changed
 sources refresh. Private poll state retains validators and exponential backoff,
-honouring Retry-After/429. Pending review pauses polling. AA uses the official
+honouring Retry-After/429. Validated observations continue refreshing while a guide
+proposal waits: its pointer, saved evidence and proposed documents remain frozen
+until explicit apply/discard/replacement. AA uses the official
 keyed API via ARTIFICIAL_ANALYSIS_API_KEY (optional service EnvironmentFile);
 without a key its automatic poll is disabled under the website terms. Manual
 refresh retains the public-page adapter. Keys never enter reports or snapshots.
@@ -23,21 +36,28 @@ Missing measurements stay Unverified; versions, harnesses and cost definitions
 must not be blended. Then `model-guide refresh --apply --yes`, or `--discard`.
 Apply regenerates the sections from the saved snapshot and rejects tampering or
 intervening guide edits. Only apply/record advances models.lock; edits stay uncommitted.
+Queries can inspect newly fetched evidence before application, but report pending
+or unverified review separately from retrieval freshness. Apply records the exact
+snapshot digest; a prose-only record cannot approve a different numeric snapshot.
 
 `model-guide refresh --prepare` only fetches evidence and computes frontiers.
 Search it with `model-guide benchmarks --domain design --query sonnet --limit 5 --brief`;
 inspect quality and efficiency separately. Omit `--brief` for JSON.
 `model-guide models --backend BACKEND --json` shows native coverage and unmatched IDs.
 Account hints do not establish the selected session's identity, access or billing mode.
+OpenCode drift includes Console and Go routes. Reviewed route-to-model links live
+beside native inventory decoding, with source/date and transfer scope; preserve
+the execution ID and variants. Add a link only when provider evidence identifies
+the underlying model, never by stripping a billing or release suffix.
 
-Qualitative advice, class mapping and domain limits stay hand-written. For chosen
+Source contracts, domain limits and subscription facts stay maintained. For chosen
 prose/subscription changes, read `model-guide read sources`, source-check claims,
 retain unresolved Unverified markers and update the document's Checked date.
 `model-guide refresh --record --yes` validates against the committed baseline and
 records hashes without editing text. It cannot bless hand edits to generated sections.
 Benchmark-only application does not advance the prose's Checked date.
 
-Sources not fetched by the snapshot (including vendor token prices, throughput
+Sources not fetched by the snapshot (including vendor-specific token prices, throughput
 and additional domain boards) stay Unverified here. Adding one needs a reviewed
 decoder and methodology, not a transcription worker. Reference maintenance never
 changes accounts, model defaults, delegation permissions or the OpenCode privacy gate.

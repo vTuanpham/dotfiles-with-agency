@@ -88,3 +88,44 @@ def test_aa_native_effort_comes_from_name_not_unsuffixed_slug():
     data["data"].append(copy.deepcopy(data["data"][0]))
     with pytest.raises(ValueError, match="duplicate"):
         artificial.decode(data)
+
+
+def test_legacy_aa_speed_keeps_metric_workload_and_unknown_provider_without_inventing_task_time():
+    raw = {"status": 200, "prompt_options": {"prompt_length": 1000, "parallel_queries": 1},
+           "data": [aa_record("Claude Opus 5.5 (Max)", "claude-opus-5-5")]}
+    rows = artificial.decode(raw)
+    speed = rows[0]["speed"]
+    assert speed["median_output_tokens_per_second"] == 100
+    assert speed["median_time_to_first_token_seconds"] == 1
+    assert speed["provider"] is None and "legacy" in speed["methodology_version"]
+    assert speed["workload"] == {"prompt_length": 1000, "parallel_queries": 1}
+    assert rows[0]["seconds"] is None and rows[0]["effort"] == "max"
+    cached = {"raw": raw, "measurements": [{k: v for k, v in r.items() if k != "speed"} for r in rows]}
+    before = copy.deepcopy(cached)
+    assert artificial.with_speed(cached)["measurements"][0]["speed"] == speed
+    assert artificial.with_speed(cached)["measurements"][0]["model_metadata"]["release_date"] == "2026-09-23"
+    assert rows[0]["date"] is None  # Model release is not the benchmark run date.
+    assert cached == before
+    raw["data"][0].update(median_output_tokens_per_second=None, median_time_to_first_token_seconds=None)
+    unknown = artificial.decode(raw)[0]
+    assert unknown["speed"]["median_output_tokens_per_second"] is None and unknown["seconds"] is None
+
+
+@pytest.mark.parametrize("value", [True, -1, "100", float("nan")])
+def test_legacy_speed_rejects_non_numeric_or_invalid_values(value):
+    row = aa_record("Example (High)", "example")
+    row["median_output_tokens_per_second"] = value
+    with pytest.raises(ValueError):
+        artificial.decode({"status": 200, "data": [row]})
+
+
+@pytest.mark.parametrize("corrupt", ["duplicate", "status"])
+def test_cached_legacy_speed_uses_the_same_identity_and_status_validation(corrupt):
+    raw = {"status": 200, "data": [aa_record("Example (High)", "example")]}
+    source = {"raw": raw, "measurements": artificial.decode(raw)}
+    if corrupt == "duplicate":
+        raw["data"].append(copy.deepcopy(raw["data"][0]))
+    else:
+        raw["status"] = 200.0
+    with pytest.raises(ValueError):
+        artificial.with_speed(source)

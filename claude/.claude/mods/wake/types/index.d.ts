@@ -17,6 +17,7 @@ export type WakeChip = {
   owner?: string
   name: string; title?: string; backend: string; account: string; model: string; effort: string
   running: boolean; isStale: boolean; since: number; lastEventAt?: number; startedAt?: number
+  observationUnavailable?: boolean
   /** when this view first saw lastEventAt change: the worker just did something */
   activitySeenAt?: number
   /** the effort levels this model offers, weakest first, from the native inventory; absent when unknown */
@@ -29,7 +30,7 @@ export type WakeChip = {
 }
 
 /** Remaining quota of one signed-in account: Codex/Claude windows or agy model buckets. */
-export type WakeQuota = { cli: 'codex' | 'agy' | 'claude'; account: string; plan: string; active: boolean; parts: { label: string; pct: number | null; resets: string | null }[]; status?: string; freshness?: 'fresh' | 'stale' | 'unknown' }
+export type WakeQuota = { cli: 'codex' | 'agy' | 'claude' | 'opencode'; account: string; plan: string; active: boolean; parts: { label: string; pct: number | null; resets: string | null; name?: string }[]; status?: string; freshness?: 'fresh' | 'stale' | 'unknown'; observedAt?: string; refreshStatus?: string }
 
 export type WakeSceneHit = { id: string; title: string; details: string[] }
 
@@ -60,6 +61,8 @@ export type WakePulse = { kind: WakePulseKind; turn: number }
 /** A running Claude Code subagent, from $.agent.list(); `since` is when Wake first saw it; `model` is what its spawn resolved to. */
 export type WakeAgent = {
   id: string; type: string; name?: string; description: string; since: number; model?: string; effort?: string
+  status?: 'running' | 'pending' | 'waiting'
+  unavailable?: boolean
   /** When Wake saw it finish; it stays in the list only while its exit plays (hooks/exits.ts), and nothing else counts it. */
   leftAt?: number
 }
@@ -140,6 +143,7 @@ declare module 'claude-code' {
       effortLevels: { at: number; levels: Record<string, Record<string, string[]>> } // backend -> model -> levels it offers
       surroundings: WakeSurroundings | null
       crewPage: number
+      quotaPage: number
       character: 'mochi' | 'tabby' | 'tuxedo' | 'bun' // who stands in Mochi's place (/wake mochi); see hooks/mochi.ts
     }
   }

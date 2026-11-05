@@ -1,43 +1,56 @@
 ---
 name: model-selection
-description: Choose a model and reasoning effort for a main session or worker using maintained strengths and allowance references. Use for model comparisons or task-to-model selection.
+description: Choose a model, harness and effort using task context, native access, account constraints and current model evidence. Use for model comparisons or task-to-model selection.
 ---
 
 # Model selection
 
-Read `model-guide read models` for the dated strengths, measurements and effort
-advice. This reference is independent of delegation and Agent Bridge.
+Use the conversation and current session to make the decision. The tool supplies
+execution facts and scoped observations; it does not choose through a leaderboard
+or require a maintained per-model role table.
 
-- Establish the target session's account, selectable models/efforts, billing mode
-  and required tools/modalities first. Benchmark search automatically reads local
-  profile hints; an active machine profile is not proof of session identity.
-- Use overall scores to shortlist, then compare the task's domain: models have
-  jagged strengths. Read the current benchmark version, effort/harness and
-  uncertainty; missing results are unknown. Compare cost-performance frontiers
-  within that domain, including success cost and latency when available.
-- Use `model-guide benchmarks --backend BACKEND --domain DOMAIN --query MODEL --limit 5 --brief`
-  for bounded evidence matched to native identities/efforts and local account context.
-  `--query` is optional; omit the backend for unrestricted evidence. Inspect
-  quality leaders and cost-efficient choices separately; a score-only shortlist
-  can hide useful smaller workers. `--domain backend` combines coding/terminal
-  proxies with explicit coverage gaps. Omit `--brief` for structured JSON.
-  Inspect `model-guide models --backend BACKEND --json` for generated coverage and unmatched IDs.
-  Unknown effort ranges remain unknown; never borrow another model's controls.
-  `model-guide refresh --prepare` fetches evidence; `refresh` generates a pending
-  numeric proposal in code. Follow source links for gaps or rechecks.
-  `model-guide suggest --backend BACKEND --task "UI refactor"` returns alternatives; repeat `--domain` for scope.
-  Preserve user/project choices with `--choice MODEL --effort LEVEL`; `--json` explains evidence and constraints.
-  Compare model × harness/version × effort; prefer the target backend's scaffold and label cross-harness evidence.
-  Curves show quality and value effort alternatives, never a default maximum; the agent makes the final call.
-- Separate model positioning, measured performance, effort and account allowance.
-  A benchmark or advertised model does not establish access in this session.
-- Select only models and effort levels exposed by the current harness/tool.
-  Preserve an explicit user choice; investigate unsupported choices rather than
-  silently substituting another model. Verify lighter-model results proportionally.
-- Read `model-guide read subscriptions` only when a published plan or retention
-  policy affects the choice. Account state comes from the selected native session;
-  `agent-accounts snapshot` is a separate machine-wide cache inventory.
-- Check the reference date and `model-guide check` when freshness matters. Before
-  updating claims, read `model-guide read sources` and `model-guide read maintenance`.
-  Numbers are generated; qualitative advice stays hand-written and source-reviewed.
-  Never turn a reference update into a model default or account-policy change.
+1. Establish the actual job: scope, ambiguity, verification, consequences,
+   urgency and expected volume. Include account access, remaining allowance,
+   competing work, required tools/modalities and existing session context. Use
+   what is already known; distinguish constraints from assumptions. Continuing
+   in the current session is an option when delegation adds no value.
+2. Run `model-guide suggest --task "TASK" --domain AREA`, repeating domains
+   for the relevant evidence (e.g. `design` and `coding` for UI implementation).
+   Infer these areas from the actual requested work, including exclusions;
+   `--task` preserves prose and does not classify intent. Omitted scopes show
+   general evidence. CLI help lists supported areas.
+   It compares harnesses by default; `--backend` restricts one.
+   Supply known constraints and task/session facts
+   with `--context PATH|-` JSON; `suggest --help` owns the format. The context is
+   per request, not a file the user must maintain. Native worker controls and
+   selected-session access outrank a general catalog or cached account hint.
+3. Use the compact comparison, which includes different access pools and
+   observed quality/cost/time tradeoffs, then inspect `--choice ROUTE` when exact
+   settings matter. Compare the relevant model/effort combinations and routes. Weigh likely
+   usefulness against allowance, completion time, verification and rework.
+   Read the reported reset windows, shared pools and model-specific limits;
+   follow local policy drill-downs when plan conditions could change the choice.
+   A remaining percentage or plan name alone does not establish capacity.
+   Free access, higher scores, lower tier, newer releases and faster tokens do
+   not independently establish the better choice. Keep source versions,
+   workload, provider and harness scope attached; missing evidence is not poor
+   performance. Public API prices do not measure subscription consumption.
+4. Choose a concrete available model, harness and supported effort, or keep the
+   current session. Explain the decisive tradeoff briefly. Name an alternative
+   or a verification step when uncertainty could change the choice. Preserve
+   explicit selections and do not change billing routes to get around an error.
+
+Use `--query` for partial model names/families/aliases and `--json` for full
+observations. Drill into relevant options rather than loading every provider's
+catalog. `benchmarks` exposes individual source measurements; `read models`
+explains their scope. When access, pool sharing or billing needs interpretation,
+use `model-guide policy --backend BACKEND` for cached official policy evidence.
+It refreshes missing/due policy sources separately from faster-changing model
+and usage observations. Resolve a material mismatch against the selected native
+session; do not turn a dated plan example into a standing eligibility rule.
+
+Use validated cached evidence normally, with dates and source failures visible.
+Research a material gap or changed contract rather than repeating general web
+research for each choice. Fetched observations and reviewed guide changes are
+separate; selection does not require approving a numeric proposal. Read `sources`
+and `maintenance` before changing adapters or applying reference updates.

@@ -1,3 +1,4 @@
+import copy
 import json
 from email.utils import formatdate
 from unittest.mock import Mock
@@ -6,7 +7,7 @@ from urllib.request import Request
 
 import pytest
 
-from agent_models import artificial, benchmarks, kernel_source, polling, reference, refresh, transport
+from agent_models import artificial, benchmarks, kernel_source, policy, polling, reference, refresh, transport
 
 NOW = 1_800_000_000
 URL = "https://example.invalid/table.csv"
@@ -16,6 +17,7 @@ DATA = {"sources": {"LiveBench": {"status": "ok"}}}
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(polling, "STATE", tmp_path / "poll.json")
+    monkeypatch.setattr(policy, "refresh_due", lambda: [])
     monkeypatch.setattr(polling, "endpoints", lambda _: {"LiveBench": [URL]})
     request = Mock(return_value=(200, {"ETag": '"v1"'}, b"model,score\na,1\n"))
     monkeypatch.setattr(polling, "request", request)
@@ -65,9 +67,10 @@ def test_changed_digest_refreshes_only_that_source_and_proposes(setup, monkeypat
     monkeypatch.setattr(reference, "PENDING", tmp_path / "pending")
     monkeypatch.setattr(benchmarks, "snapshot", lambda: DATA)
     monkeypatch.setattr(polling, "check", lambda _: (names, fetched, []))
+    monkeypatch.setattr(benchmarks, "prepare", lambda directory, **kwargs: None)
 
     def generate(**kwargs):
-        assert kwargs == {"names": names, "previous": DATA, "fetched": fetched}
+        assert kwargs == {"snapshot": DATA}
         reference.PENDING.write_text("pending proposal")
         return 0
 
@@ -205,3 +208,92 @@ def test_auth_failure_backs_off_schedule_without_blocking_a_manual_key_correctio
     polling.check(DATA, now=NOW)
     assert polling.load()["sources"]["LiveBench"]["next_due"] > NOW
     assert not polling.load()["hosts"]
+
+
+@pytest.fixture
+def pending_observations(setup, monkeypatch, tmp_path):
+    cache = tmp_path / "benchmarks"
+    cache.mkdir()
+    monkeypatch.setattr(benchmarks, "CACHE", cache)
+    monkeypatch.setattr(reference, "PENDING", tmp_path / "pending")
+    monkeypatch.setattr(refresh, "DIR", tmp_path / "refresh")
+    monkeypatch.setattr(refresh, "STAMP", tmp_path / "last")
+    monkeypatch.setattr(reference, "LOCK", tmp_path / "models.lock")
+    monkeypatch.setattr(reference, "GUIDES", tmp_path / "guides")
+    reference.GUIDES.mkdir()
+    source = {"status": "ok", "url": "https://example.invalid/", "version": "v1",
+        "retrieved": "2026-01-01T00:00:00Z", "efforts": {"example": "medium"},
+        "limits": "fixture", "frontiers": {}, "points": {suite: [
+            {"model": "example", "score": 1, "cost": 0.2}] for suite in ("Overall", "Coding")}}
+    snapshot = {"retrieved": "2026-01-01T00:00:00Z", "sources": {"LiveBench": source}}
+    (cache / "benchmark-data.json").write_text(json.dumps(snapshot))
+    work = tmp_path / "waiting-proposal"
+    work.mkdir()
+    reference.PENDING.write_text(str(work))
+    frozen = {reference.PENDING: str(work), reference.LOCK: "reviewed lock", refresh.STAMP: "old date",
+        work / "benchmark-data.json": json.dumps(snapshot), work / "proposed-models.md": "old proposal",
+        work / "report.md": "old report", reference.GUIDES / "models.md": "current guide",
+        reference.GUIDES / "subscriptions.md": "current terms"}
+    for path, text in frozen.items():
+        path.write_text(text)
+
+    def loader():
+        assert benchmarks.PRELOADED.get()[URL] == b"model,score\na,2\n"
+        result = copy.deepcopy(source)
+        result["points"] = {suite: [{"model": "example", "score": 2, "cost": 0.2}]
+                            for suite in ("Overall", "Coding")}
+        return result
+
+    monkeypatch.setattr(benchmarks, "loaders", lambda: {"LiveBench": loader})
+    polling.check(snapshot, now=NOW)
+    polling.accept(["LiveBench"])
+    setup.return_value = (200, {}, b"model,score\na,2\n")
+    monkeypatch.setattr(polling.time, "time", lambda: NOW + polling.INTERVAL)
+    return frozen
+
+
+def test_pending_proposal_does_not_pause_validated_queryable_observations(pending_observations):
+    assert refresh.run() == 0  # Normal refresh delegates to due polling while pending.
+    assert {path: path.read_text() for path in pending_observations} == pending_observations
+    data = benchmarks.snapshot()
+    found = benchmarks.search("coding", data=data)
+    assert found["sources"]["LiveBench"]["results"][0]["score"] == 2
+    assert data["sources"]["LiveBench"]["retrieved"] != "2026-01-01T00:00:00Z"
+    assert not polling.load()["sources"]["LiveBench"]["refresh_needed"]
+
+
+@pytest.mark.parametrize("stage", ["probe", "decode"])
+def test_pending_observation_failures_preserve_proposal_and_honest_unknowns(
+        pending_observations, setup, monkeypatch, stage):
+    before = (benchmarks.CACHE / "benchmark-data.json").read_text()
+    if stage == "probe":
+        setup.return_value = (200, {}, b"not valid csv")
+    else:
+        def invalid():
+            raise ValueError("malformed source")
+        monkeypatch.setattr(benchmarks, "loaders", lambda: {"LiveBench": invalid})
+    assert refresh.poll() == 0
+    assert {path: path.read_text() for path in pending_observations} == pending_observations
+    if stage == "probe":
+        assert (benchmarks.CACHE / "benchmark-data.json").read_text() == before
+        assert polling.load()["sources"]["LiveBench"]["failures"] == 1
+    else:
+        assert benchmarks.snapshot()["sources"]["LiveBench"]["status"] == "unavailable"
+        assert polling.load()["sources"]["LiveBench"]["refresh_needed"]
+
+
+def test_proposal_appearing_during_cache_refresh_is_not_overwritten_or_false_accepted(
+        pending_observations, monkeypatch):
+    reference.PENDING.unlink()
+    original = benchmarks.prepare
+
+    def arrival(*args, **kwargs):
+        result = original(*args, **kwargs)
+        reference.PENDING.write_text(pending_observations[reference.PENDING])
+        return result
+
+    monkeypatch.setattr(benchmarks, "prepare", arrival)
+    assert refresh.poll() == 0
+    assert {path: path.read_text() for path in pending_observations} == pending_observations
+    assert benchmarks.snapshot()["sources"]["LiveBench"]["points"]["Coding"][0]["score"] == 2
+    assert not polling.load()["sources"]["LiveBench"]["refresh_needed"]

@@ -148,8 +148,15 @@ def test_connection_store_rejects_symlinks_and_public_credentials(tmp_path):
         message_store.read(path / "target.json")
 
 
-def test_worker_can_message_without_claiming_or_mutating_jobs(native, monkeypatch, capsys):
+@pytest.mark.parametrize(
+    "target", ["codex:recipient", "claude:recipient", "agy:recipient", "opencode:recipient"]
+)
+def test_worker_cannot_send_native_messages_through_api_or_cli(native, monkeypatch, capsys, target):
     monkeypatch.setenv("AGENT_BRIDGE_WORKER", "1")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "inherited-root")
+    with pytest.raises(RuntimeError, match="native message send is root-to-root only"):
+        messages.send(target, "hello")
     monkeypatch.setattr(
         sys,
         "argv",
@@ -157,13 +164,16 @@ def test_worker_can_message_without_claiming_or_mutating_jobs(native, monkeypatc
             "agent-bridge",
             "message",
             "send",
-            "codex:recipient",
+            target,
             "--text",
             "hello",
         ],
     )
-    cli.main()
-    assert json.loads(capsys.readouterr().out)["status"] == "accepted"
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+    assert error.value.code == 1
+    assert "URGENT:" in capsys.readouterr().err
+    assert not native
     assert not core.JOBS.exists()
 
 

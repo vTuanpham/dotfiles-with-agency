@@ -1,28 +1,11 @@
-"""Explainable alternatives from comparable observations; never an overall winner."""
+"""Task-scoped evidence for the selecting agent; no model or effort ranking."""
 
+import json
 import re
-from itertools import zip_longest
+from collections import Counter
 
-from . import coverage, harness, reference
-from . import effort as effort_policy
-from .shortlist import frontier, human_duration, measurement
-
-CLASSES = ("small", "mid", "high", "top")
-
-
-def model_class(model):
-    tokens = coverage.key(model["model"])
-    found = set()
-    for line in (reference.GUIDES / "models.md").read_text().splitlines():
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if cells[0] in CLASSES:
-            for vendor, label in zip(("gpt", "claude", "gemini"), cells[1:]):
-                family = coverage.key(label)
-                exact_family = any(tokens[i:i + len(family)] == family
-                                   for i in range(len(tokens) - len(family) + 1))
-                if label != "Unverified" and vendor in tokens and exact_family:
-                    found.add(cells[0])
-    return next(iter(found)) if len(found) == 1 else None
+from . import benchmarks, coverage, decision_context, harness
+from .shortlist import account_lines, human_duration, measurement
 
 
 def duration(value):
@@ -35,18 +18,17 @@ def duration(value):
 
 
 def observations(domain, name, source):
-    """Retain each source's metric and cost definition; no score normalization."""
+    """Retain source metric/cost definitions and every returned effort/configuration."""
+    domain = source.get("evidence_domain", domain)
     for row in source.get("measurements", []):
-        config = row.get("configuration")
-        if name in ("Vals Index", "Vals Terminal-Bench"):
-            config = config.split(":", 1)[0] if config else None
         yield {**row, "score_metric": f"{row['metric']} [{row['unit']}]",
                "group": (domain, name, row["metric"], row["unit"], row["harness"],
-                         config, row["cost_kind"])}
+                         row.get("configuration"), row["cost_kind"])}
     if name == "LiveBench":
         for row in source.get("results", []):
             yield {"model": row["model"], "effort": row["effort"], "score": row["score"],
                    "cost": row["usd_per_success"], "seconds": None, "direction": "higher",
+                   "cost_basis": "estimated USD/success",
                    "group": (domain, name, source["metric"], "estimated USD/success")}
     elif name.startswith("Arena/"):
         for row in source.get("results", []):
@@ -74,253 +56,354 @@ def observations(domain, name, source):
                 yield {"model": row[model], "effort": coverage.setting(row[model]),
                        "score": measurement(row[header.index(metric)]), "cost": cost,
                        "seconds": seconds, "direction": "higher", "harness": scaffold,
+                       "cost_basis": "USD/test" if "Cost / Test" in header else "USD/task",
                        "group": (domain, name, metric, scaffold,
-                                 "fallback" if " with fallback)" in row[model] else None,
-                                 "USD/test" if "Cost / Test" in header else "USD/task")}
+                                 "fallback" if " with fallback)" in row[model] else None)}
 
 
-def tradeoff(row, role):
-    fact = {"domain": row["group"][0], "source": row["group"][1], "role": role,
-            "metric": list(row["group"][2:]), "score": row["score"], "cost": row["cost"],
-            "score_metric": row.get("score_metric", row["group"][2]),
-            "direction": row["direction"], "seconds": row["seconds"],
-            "effort": coverage.setting(row["model"], row["effort"]), "caveat": row.get("caveat"),
-            "harness": row.get("harness"), "harness_version": row.get("harness_version"),
-            "n_runs": row.get("n_runs"), "tasks": row.get("tasks")}
-    fact["cost_basis"] = row.get("cost_basis") or (f"USD/published run ({row['cost_kind']})"
-                          if row.get("cost_kind")
-                          else row["group"][-1]) if row["cost"] is not None else None
-    fact["time_basis"] = row.get("time_basis") or ("published run" if "tasks" in row else
-                          "response" if row["group"][1] == "Artificial Analysis" else "test")
-    return fact
+def fact(row, source, retrieved, backend):
+    result = {"domain": row["group"][0], "source": row["group"][1],
+              "score_metric": row.get("score_metric", row["group"][2]),
+              "score": row["score"], "direction": row["direction"], "cost": row["cost"],
+              "seconds": row["seconds"], "effort": coverage.setting(row["model"], row["effort"])}
+    result.update({key: row.get(key) for key in (
+        "harness", "harness_version", "n_runs", "tasks", "low", "high", "date", "configuration",
+        "hardware", "source_id", "speed", "caveat", "cost_kind", "model_metadata")})
+    result.update(url=source.get("url"), version=source.get("version"),
+                  release=source.get("release", source.get("published")),
+                  retrieved=source.get("retrieved", retrieved))
+    result["cost_basis"] = row.get("cost_basis") or (
+        f"USD/published run ({row['cost_kind']})" if row.get("cost_kind") else None)
+    result["time_basis"] = row.get("time_basis") or (
+        "published run" if "tasks" in row else "response" if result["source"] == "Artificial Analysis"
+        else "test")
+    result["harness_relation"] = harness.native(row.get("harness"), backend)
+    result["execution_scope"] = "Published source run; selected-route cost, latency and reliability unknown."
+    return result
 
 
-def suggest(evidence, catalog, *, choice=None, effort=None, pressure=False,
-            max_usd=None, max_seconds=None, minimum_class=None):
-    """Domain leaders + frontier/cheap alternatives, constrained only by published facts."""
+def route_context(model):
+    return {"efforts": model["efforts"], "listing_tier": model.get("listing_tier", "unverified"),
+            "billing_route": model.get("billing_route", "unverified"),
+            "privacy_gate": model.get("privacy_gate", "unverified"),
+            **{key: model[key] for key in (
+                "benchmark_model", "identity_review", "input_modalities", "description") if key in model}}
+
+
+def meets(row, max_usd, max_seconds):
+    return ((max_usd is None or (row["cost"] is not None and row["cost_kind"] != "floor"
+                                and row["cost"] <= max_usd))
+            and (max_seconds is None or (row["seconds"] is not None and row["seconds"] <= max_seconds)))
+
+
+def suggest(evidence, catalog, *, choice=None, effort=None, context=None, task=None,
+            max_usd=None, max_seconds=None):
+    """All admitted native routes and observations, including interior efforts and unknowns."""
+    context = decision_context.validate({} if context is None else context)
     for value in (max_usd, max_seconds):
         if value is not None:
-            measurement(str(value))  # Reject negative, NaN and infinite CLI constraints.
+            measurement(str(value))
     if effort and not choice:
         raise ValueError("--effort requires an explicit --choice")
+    backend = catalog["backend"]
     models = coverage.canonical_catalog(catalog, choice)["models"]
-    explicit = []
-    problems, notes = [], []
+    problems, notes, options, sources = [], [], [], {}
     if choice:
-        explicit = [m for m in models if any(coverage.key(choice) == coverage.key(value)
-                    for value in (m["id"], m["model"], *m.get("aliases", [])))]
-        if not explicit:
-            explicit = [m for m in models if any(coverage.query_matches(choice, v)
-                                                for v in (m["id"], m["model"]))]
-        if len(explicit) != 1:
-            return {"shortlist": [], "problems": ["Explicit choice unavailable/ambiguous; no substitution."],
-                    "notes": [], "choice": choice}
-        models = explicit
-    classes = {m["id"]: model_class(m) for m in models}
-    controls = {m["id"]: m["efforts"] for m in models}
-    groups = {}
+        models = [m for m in models if decision_context.bound(m, choice, backend)]
+        if len(models) != 1:
+            problems.append("Explicit choice excluded by caller allowed_routes; no substitution."
+                            if catalog.get("choice_excluded_by_context") else
+                            "Explicit choice unavailable/ambiguous; no substitution.")
+            models = []
+    query = next(iter(evidence.values())).get("query", "")
+    if query and not choice:
+        models = [m for m in models if any(coverage.query_matches(query, value)
+                  for value in (m["id"], m["model"], *m.get("aliases", [])))]
+    permitted = context.get("allowed_backends", decision_context.BACKENDS)
+    if backend not in permitted:
+        models = []
+        problems.append(backend + ": excluded by caller allowed_backends.")
+    admitted = [decision_context.admit(m, backend, context) for m in models]
+    locally_excluded = sum(m is None for m in admitted)
+    excluded = locally_excluded + catalog.get("excluded_by_context", 0)
+    models = [m for m in admitted if m is not None]
+    if choice and locally_excluded:
+        problems.append("Explicit choice excluded by caller allowed_routes; no substitution.")
+    indexed = {}
     for domain, found in evidence.items():
         notes.extend(found.get("warnings", []))
         notes.extend(found.get("coverage_notes", []))
-        if not found["sources"]:
-            notes.append(f"{domain}: Unverified; no source evidence.")
         for name, source in found["sources"].items():
+            sources[domain + "/" + name] = {key: source.get(key) for key in
+                ("status", "url", "version", "release", "published", "retrieved", "limits", "error")}
             if source["status"] != "ok":
-                notes.append(f"{domain}/{name}: Unverified; source unavailable.")
+                notes.append(domain + "/" + name + ": source unavailable; model ability unknown.")
                 continue
-            if name in ("Bug Hunt", "KernelBench.com"):
-                notes.append(f"{domain}/{name}: small single-maintainer board; unversioned method, "
-                             "model plus harness, not isolated model ability.")
-            observed = list(observations(domain, name, source))
-            for row in observed:
-                if row["score"] is None:
-                    continue
-                for model in models:
-                    if not coverage.matches(model, row["model"]):
-                        continue
-                    if harness.native(row.get("harness"), catalog["backend"]) is not True and any(
-                        coverage.matches(model, other["model"]) and other["score"] is not None
-                        and coverage.supported(model, other["model"], other["effort"]) is not False
-                        and (not effort or coverage.setting(other["model"], other["effort"])
-                             == effort.casefold())
-                        and harness.native(other.get("harness"), catalog["backend"]) is True
-                        for other in observed):
-                        continue
-                    supported = coverage.supported(model, row["model"], row["effort"])
-                    if supported is False:
-                        continue
-                    if effort and coverage.setting(row["model"], row["effort"]) != effort.casefold():
-                        continue
-                    if minimum_class and (classes[model["id"]] is None or
-                            CLASSES.index(classes[model["id"]]) < CLASSES.index(minimum_class)):
-                        continue
-                    if max_usd is not None and (row["cost"] is None or row.get("cost_kind") == "floor"
-                                                or row["cost"] > max_usd):
-                        continue
-                    if max_seconds is not None and (row["seconds"] is None or row["seconds"] > max_seconds):
-                        continue
-                    item = {**row, "id": model["id"], "support": supported}
-                    item["quality"] = row["score"] if row["direction"] == "higher" else -row["score"]
-                    groups.setdefault(row["group"], []).append(item)
-    roles = {role: [] for role in ("quality leader", "cost-efficient frontier", "cheap observed option",
-                                 "measured option")}
-    domain_leaders = {}
-    comparable_tasks = set()
-    for group, rows in sorted(groups.items(), key=lambda item: str(item[0])):
-        quality = max(row["quality"] for row in rows)
-        first = [r for r in rows if r["quality"] == quality]
-        if len({r["id"] for r in rows}) < 2:
-            roles["measured option"].extend(first)
-            continue
-        if group[0] == "performance":
-            comparable_tasks.add(group)
-        if first and "low" in first[0]:
-            first = [r for r in rows if r["high"] >= first[0]["low"] and r["low"] <= first[0]["high"]]
-        if len({r["id"] for r in first}) > 1:
-            notes.append(f"{group[0]}/{group[1]}: tied scores or overlapping intervals; no clear winner.")
-        domain_leaders.setdefault(group[0], set()).update(r["id"] for r in first)
-        roles["quality leader"] += first
-        efficient = [p["observation"] for p in frontier([
-            {"score": r["quality"], "cost": r["cost"], "observation": r} for r in rows])]
-        if efficient:
-            cheap = min(r["cost"] for r in efficient)
-            cheapest = [r for r in efficient if r["cost"] == cheap]
-            roles["cost-efficient frontier"] += cheapest
-            roles["cheap observed option"] += cheapest
-    if len({tuple(sorted(ids)) for ids in domain_leaders.values()}) > 1:
-        notes.append("Domains favor different options; conflicting evidence is not averaged into a winner.")
-    options = {}
-    order = (("cost-efficient frontier", "quality leader", "cheap observed option", "measured option")
-             if pressure else tuple(roles))
-    # Round-robin across domains prevents the first source consuming the shortlist.
-    for role in order:
-        rows = roles[role]
-        queues = [iter(sorted((r for r in rows if r["group"][0] == domain),
-                              key=lambda r: (r["id"], str(r["effort"])))) for domain in evidence]
-        for batch in zip_longest(*queues):
-            for row in (r for r in batch if r is not None):
-                domain = row["group"][0]
-                if row["id"] not in options and len(options) >= 4:
-                    continue
-                option = options.setdefault(row["id"], {"id": row["id"], "class": classes[row["id"]],
-                    "effort_options": [], "tradeoffs": [], "problems": []})
-                setting = coverage.setting(row["model"], row["effort"])
-                native_setting = next((v for v in controls[row["id"]] or []
-                                       if v.casefold() == setting), None)
-                if row["support"] is True and native_setting not in option["effort_options"]:
-                    option["effort_options"].append(native_setting)
-                fact = tradeoff(row, role)
-                if fact not in option["tradeoffs"]:
-                    option["tradeoffs"].append(fact)
-    for model in explicit:
-        option = options.setdefault(model["id"], {"id": model["id"], "class": classes[model["id"]],
-            "effort_options": [], "tradeoffs": [],
-            "problems": ["Choice evidence/constraints Unverified; retained."]})
+            for row in observations(domain, name, source):
+                item = fact(row, source, found["retrieved"], backend)
+                for key in {coverage.model_key(row["model"]), coverage.key(row["model"].rsplit("/", 1)[-1])}:
+                    indexed.setdefault(key, []).append((row, item))
+    for model in models:
+        option = {"backend": backend, "id": model["id"], "model": model["model"],
+                  **route_context(model), "native_efforts": model["native_efforts"],
+                  "aliases": model.get("aliases", []), "admission": model["admission"],
+                  "effort_restriction": model["effort_restriction"], "requested_effort": effort,
+                  "account_context": context.get("accounts", {}).get(backend, {}),
+                  "evidence": [], "problems": []}
+        if model["efforts"] == []:
+            option["admission"] = "excluded: no permitted native effort"
         if effort and (model["efforts"] is None or effort not in model["efforts"]):
-            option["problems"].append("Explicit effort unsupported or controls Unverified; no substitution.")
-        if minimum_class and (classes[model["id"]] is None or
-                CLASSES.index(classes[model["id"]]) < CLASSES.index(minimum_class)):
-            option["problems"].append("Explicit choice does not establish the minimum class; retained.")
-    for option in options.values():
-        model = next(m for m in models if m["id"] == option["id"])
-        option["model"] = model["model"]
-        option["aliases"] = model.get("aliases", [model["id"]])
-        measured = [r for rows in groups.values() for r in rows if r["id"] == option["id"]]
-        levels = {coverage.setting(r["model"], r["effort"]) for r in measured}
-        option["measured_efforts"] = sorted(level for level in levels if level is not None)
-        curves = [v.get("effort_curves", {}) for v in evidence.values()]
-        plan = ({"setting": None, "plans": []} if choice and effort else
-                effort_policy.recommend(model, groups, curves, max_usd=max_usd, max_seconds=max_seconds))
-        option["effort_evidence"] = plan["plans"]
-        option["requested_effort"] = effort if choice else None
-        option["recommended_effort"] = (effort if effort and effort in (model["efforts"] or [])
-                                        else None) if choice and effort else plan["setting"]
+            option["problems"].append("Explicit effort unsupported or controls unknown; no substitution.")
+            option["admission"] = "excluded: requested effort not established"
         if model["efforts"] is None:
-            option["problems"].append("Native effort controls Unverified.")
-        covered = {r["domain"] for r in option["tradeoffs"]}
-        for domain in (d for d in evidence if d not in covered):
-            available = [r for r in measured if r["group"][0] == domain]
-            if available:
-                # Order contexts before scores: unlike operation metrics are never ranked together.
-                row = min(available, key=lambda r: (str(r["group"]), -r["quality"], str(r["effort"])))
-                option["tradeoffs"].append(tradeoff(row, "measured option"))
-                covered.add(domain)
-        if set(evidence) - covered:
-            option["problems"].append("Thin/Unverified domains: "
-                                      + ", ".join(sorted(set(evidence) - covered)))
-        if "performance" in evidence:
-            wins = {tuple(r["metric"]) for r in option["tradeoffs"]
-                    if r["domain"] == "performance" and r["role"] == "quality leader"}
-            tasks = {group[2:] for group in comparable_tasks}
-            option["performance_comparisons"] = {"leads": len(wins), "tasks": len(tasks)}
-    if not options:
-        problems.append("No verified shortlist meets the constraints; unknown values were not filled.")
-    notes.append("Observed alternatives, not statistically established winners. Agent makes the final call.")
-    notes.append("Native listing is not session entitlement; API cost is not included allowance.")
-    if max_usd is not None or max_seconds is not None:
-        notes.append("Bounds use each source's cost/time metric; unknowns and floors cannot prove a cap.")
-    return {"shortlist": list(options.values()), "problems": problems, "notes": list(dict.fromkeys(notes)),
-            "backend": catalog["backend"],
-            "choice": choice, "constraints": {"max_usd": max_usd, "max_seconds": max_seconds,
-                "minimum_class": minimum_class, "allowance_pressure": pressure}}
-
-
-def brief(result):
-    lines = ["Shortlist · no automatic pick", *result["problems"]]
-    for option in result["shortlist"]:
-        by_domain = {}
-        names = {"quality leader": "leader", "cost-efficient frontier": "frontier",
-                 "cheap observed option": "cheapest", "measured option": "measured"}
-        for row in option["tradeoffs"]:
-            by_domain.setdefault(row["domain"], set()).add(names[row["role"]])
-        for roles in by_domain.values():
-            if "cheapest" in roles:
-                roles.discard("frontier")
-        roles = "; ".join(f"{domain}: " + " + ".join(r for r in names.values() if r in values)
-                          for domain, values in by_domain.items())
-        if option.get("performance_comparisons"):
-            counts = option["performance_comparisons"]
-            roles = re.sub(r"performance: [^;]+", f"performance: leads {counts['leads']} of "
-                           f"{counts['tasks']} comparable tasks", roles)
-        if option["requested_effort"]:
-            effort_note = "requested effort " + option["requested_effort"]
-        elif option["effort_evidence"]:
-            effort_note = "effort alternatives from measured curves"
-        elif len(option["measured_efforts"]) == 1:
-            effort_note = "effort: measured only at " + option["measured_efforts"][0]
-        else:
-            levels = ", ".join(option["measured_efforts"]) or "Unverified"
-            effort_note = "effort: measured at " + levels + "; trade-off Unverified"
-        label = option["model"] + (f" (alias {option['id']})" if option["id"] != option["model"] else "")
-        lines.append(f"- {label} · {effort_note} · {roles}")
-        lines.extend("  " + p["explanation"] for p in option["effort_evidence"][:2])
-        facts = []
-        shown = []
-        for domain in by_domain:
-            shown.append(next(r for r in option["tradeoffs"] if r["domain"] == domain))
-        shown += [r for r in option["tradeoffs"] if r not in shown]
-        for row in shown:
-            key = (row["domain"], row["source"], row["effort"])
-            if key in facts:
+            option["problems"].append("Native effort controls unknown.")
+        for row, item in indexed.get(coverage.benchmark_key(model), []):
+            if coverage.supported(model, row["model"], row["effort"]) is False:
                 continue
-            facts.append(key)
-            cost = (f"{row['cost']:.4g} {row['cost_basis']}"
-                    if row["cost"] is not None else "Unverified")
-            seconds = (f" · time {human_duration(row['seconds'])}/{row['time_basis']}"
-                       if row["seconds"] is not None else "")
-            runs = row['n_runs']
-            replicates = (f"mean of {runs} run{'s' if runs != 1 else ''}"
-                          if runs is not None else "run count Unverified")
-            score = (f"bugs fixed {row['score']:.3g}/105 ({replicates})"
-                     if row['source'] == "Bug Hunt" else
-                     f"{row['score_metric']}={row['score']:.4g} ({row['direction']})")
-            scaffold = harness.note(row["harness"], result.get("backend"), row["harness_version"])
-            measured = " · measured at " + row["effort"] if row["effort"] else " · effort Unverified"
-            lines.append(f"  {row['domain']}/{row['source']}: {score}{measured} · "
-                         f"cost {cost}{seconds} · {scaffold}")
-            if len(facts) == 2:
-                break
-        lines.extend("  " + problem for problem in option["problems"])
-    urgent = [n for n in result["notes"] if any(word in n for word in ("tied", "conflicting", "unavailable"))]
-    lines += list(dict.fromkeys(urgent + result["notes"]))[:6]
+            if effort and coverage.setting(row["model"], row["effort"]) != effort.casefold():
+                continue
+            if item not in option["evidence"]:
+                option["evidence"].append(dict(item))
+        option["coverage"] = {d: sum(r["domain"] == d and r["score"] is not None
+                                    for r in option["evidence"]) for d in evidence}
+        option["measured_efforts"] = list(dict.fromkeys(r["effort"] for r in option["evidence"]
+                                                       if r["effort"] is not None))
+        if max_usd is not None or max_seconds is not None:
+            for row in option["evidence"]:
+                row["meets_published_bounds"] = meets(row, max_usd, max_seconds)
+            if not any(r["meets_published_bounds"] for r in option["evidence"]):
+                excluded += 1
+                if not choice:
+                    continue
+                option["problems"].append(
+                    "Choice does not establish published bounds; retained, no substitution.")
+                option["admission"] = "excluded: published bounds not established"
+        if option["admission"].startswith("excluded") and not choice:
+            excluded += 1
+            continue
+        options.append(option)
+    if max_usd is not None or max_seconds is not None:
+        notes.append("Bounds apply only to each published source run, not actual route cost or task latency.")
+    first = next(iter(evidence.values()))
+    return {"backend": backend, "options": options, "excluded_count": excluded, "task": task,
+            "decision_context": context, "choice": choice, "query": query,
+            "constraints": {"max_usd": max_usd, "max_seconds": max_seconds},
+            "domains": list(evidence), "retrieved": first["retrieved"], "review": first.get("review"),
+            "sources": sources, "problems": problems, "notes": list(dict.fromkeys(notes))}
+
+
+def combine(results, failures, *, context, task, domains):
+    return {"options": [o for r in results for o in r["options"]],
+            "backends": {r["backend"]: {k: v for k, v in r.items() if k not in (
+                "options", "decision_context", "task", "domains")} for r in results},
+            "inventory_failures": failures, "decision_context": context, "task": task,
+            "domains": domains, "retrieved": results[0]["retrieved"] if results else None,
+            "review": results[0].get("review") if results else None,
+            "notes": list(dict.fromkeys(n for r in results for n in r["notes"])),
+            "problems": [p for r in results for p in r["problems"]]}
+
+
+def facets(options):
+    result = {}
+    for backend in decision_context.BACKENDS:
+        rows = [o for o in options if o["backend"] == backend]
+        if rows:
+            result[backend] = {"routes": len(rows),
+                "caller_allowed": sum(o["admission"] == "caller allowed" for o in rows),
+                "with_task_evidence": sum(any(o["coverage"].values()) for o in rows),
+                "billing": dict(Counter(o["billing_route"] for o in rows)),
+                "domains": dict(Counter(d for o in rows for d, n in o["coverage"].items() if n))}
+    return result
+
+
+def important_notes(result):
+    markers = ("unavailable", "stale", "absent", "vision measures", "browser/osworld", "bounds apply")
+    return list(dict.fromkeys(n for n in result.get("notes", [])
+                             if any(word in n.casefold() for word in markers)))[:4]
+
+
+def policy_lines(result):
+    lines = []
+    policy_rows = result.get("policy_evidence", [])
+    for backend in dict.fromkeys(row["backend"] for row in policy_rows):
+        rows = [row for row in policy_rows if row["backend"] == backend]
+        status = ", ".join(dict.fromkeys(row["status"] for row in rows))
+        checked = [row["checked_at"][:10] for row in rows if row.get("checked_at")]
+        lines.append("Policy / " + backend + ": " + status
+                     + (" · checked " + min(checked) if checked else "")
+                     + " · " + rows[0]["read"])
+    return lines
+
+
+def speed_brief(speed):
+    if not speed:
+        return ""
+    values = []
+    for key, label in (("median_output_tokens_per_second", "tokens/s"),
+                       ("median_time_to_first_token_seconds", "s TTFT")):
+        value = speed.get(key)
+        if value is not None:
+            values.append(f"{value:.4g} {label}" + (" (reported 0; validity unknown)" if value == 0 else ""))
+    return "legacy median " + ", ".join(values) if values else "speed unknown"
+
+
+def point(row):
+    score = "?" if row["score"] is None else f"{row['score']:.4g}"
+    result = (row["effort"] or "effort ?") + "=" + score
+    if row.get("low") is not None:
+        result += f" [{row['low']:.4g}, {row['high']:.4g}]"
+    if row["cost"] is not None:
+        result += f" / source {'≥' if row.get('cost_kind') == 'floor' else ''}${row['cost']:.4g}"
+    if row["seconds"] is not None and row["seconds"] > 0:
+        result += " / " + human_duration(row["seconds"])
+    return result
+
+
+def configuration_brief(value):
+    prefix, separator, payload = value.partition(":")
+    if not separator:
+        return value
+    try:
+        fields = json.loads(payload)
+    except ValueError:
+        return value
+    if type(fields) is not dict:
+        return value
+    known = [key + "=" + json.dumps(v, separators=(",", ":"))
+             for key, v in fields.items() if v is not None]
+    unknown = [key for key, v in fields.items() if v is None]
+    return prefix + " {" + ",".join(known) + "}" + ("; null=" + ",".join(unknown) if unknown else "")
+
+
+def evidence_lines(option):
+    groups, speeds = {}, {}
+    for row in option["evidence"]:
+        if row["speed"]:
+            speed = row["speed"]
+            scope = (row["source"], row["version"], row["harness"], row["harness_version"],
+                     row["configuration"], speed.get("provider"),
+                     json.dumps(speed.get("workload"), sort_keys=True), speed.get("methodology_version"))
+            speeds.setdefault(scope, []).append(row)
+        if row["source"] == "Artificial Analysis" and row["domain"] not in option["coverage"]:
+            continue
+        if row["source"].startswith("Arena/") and row["source"][6:] not in benchmarks.ARENA_DECISION_VIEWS:
+            continue
+        scope = (row["domain"], row["source"], row["score_metric"], row["harness"],
+                 row["harness_version"], row["configuration"], row["hardware"], row["cost_basis"],
+                 row["time_basis"], row["tasks"], row["n_runs"], row["version"])
+        groups.setdefault(scope, []).append(row)
+    lines = []
+    primary, extra, seen = [], [], set()
+    for scope, rows in groups.items():
+        pair = scope[:2]
+        (extra if pair in seen else primary).append((scope, rows))
+        seen.add(pair)
+    shown = primary + extra[:2]
+    for scope, rows in shown:
+        domain, source, metric = scope[:3]
+        row = rows[0]
+        context = harness.note(row["harness"], option["backend"], row["harness_version"])
+        if row["configuration"]:
+            context += " · " + configuration_brief(row["configuration"])
+        if row["n_runs"] is not None:
+            context += f" · n={row['n_runs']}"
+        if row["tasks"] is not None:
+            context += f" · tasks={row['tasks']}"
+        basis = ("; $=" + str(row["cost_basis"]) if any(r["cost"] is not None for r in rows) else "")
+        basis += ("; time=" + str(row["time_basis"]) if any(r["seconds"] is not None for r in rows) else "")
+        lines.append(f"  {domain}/{source} {metric}: " + "; ".join(point(r) for r in rows)
+                     + basis + " · " + context)
+    if len(groups) > len(shown):
+        lines.append(f"  +{len(groups) - len(shown)} scoped evidence groups in --json")
+    for scope, rows in speeds.items():
+        speed = rows[0]["speed"]
+        context = ("provider " + str(speed.get("provider") or "unknown")
+                   + " · workload " + json.dumps(speed.get("workload"), separators=(",", ":")))
+        values = list(dict.fromkeys((row["effort"] or "effort ?") + ": "
+                      + speed_brief(row["speed"]).removeprefix("legacy median ") for row in rows))
+        lines.append("  Source speed / " + scope[0] + " · legacy median · " + context
+                     + ": " + "; ".join(values))
+    return lines
+
+
+def context_lines(context):
+    lines = []
+    for label in ("task", "session"):
+        if context.get(label):
+            lines.append(label.capitalize() + " context: " + "; ".join(
+                key + "=" + value for key, value in context[label].items()))
+    for backend, values in context.get("accounts", {}).items():
+        lines.append(backend + " account (caller): " + "; ".join(
+            key + "=" + value for key, value in values.items()))
+    if "allowed_backends" in context:
+        lines.append("Allowed harnesses: " + (", ".join(context["allowed_backends"]) or "none"))
+    if context.get("priorities"):
+        lines.append("Priorities: " + "; ".join(context["priorities"]))
+    return lines
+
+
+def brief(result, *, limit=None, offset=0):
+    options = result["options"]
+    lines = ["Decision evidence · " + ", ".join(result.get("domains", []))]
+    if result.get("task"):
+        lines.append("Task: " + result["task"])
+    context = result.get("decision_context", {})
+    if context:
+        lines.extend(context_lines(context))
+    lines.extend(result["problems"])
+    for backend, error in result.get("inventory_failures", {}).items():
+        lines.append(backend + ": " + error["stage"] + " unavailable (" + error["error"]
+                     + "); access/ability unknown.")
+    for backend, info in facets(options).items():
+        lines.append(f"{backend}: {info['routes']} routes · {info['caller_allowed']} caller allowed · "
+                     f"{info['with_task_evidence']} with task observations · billing "
+                     + ", ".join(f"{k}:{v}" for k, v in info["billing"].items()))
+    lines.append("Published runs do not estimate selected-route spend, latency, reliability "
+                 "or subscription consumption.")
+    if limit is not None:
+        visible = options[offset:offset + limit]
+        lines.append(f"Inventory-order page {offset}:{offset + len(visible)} of {len(options)}; no ranking.")
+        if offset + len(visible) < len(options):
+            lines.append(f"Continue: --limit {limit} --offset {offset + len(visible)}")
+    elif len(options) <= 24:
+        visible = options
+    else:
+        known = [o for o in options if o["admission"] == "caller allowed"]
+        visible = known if len(known) <= 24 else []
+        lines.append("Broad inventory: narrow with --backend / --query WORDS, "
+                     "or page --limit 12 --offset 0; --json retains every candidate and observation.")
+    for option in visible:
+        controls = ",".join(option["efforts"]) if option["efforts"] is not None else "unknown"
+        lines.append(f"- {option['backend']}:{option['id']} · {option['admission']} "
+                     f"· efforts {controls}")
+        if option["billing_route"] != "unverified" or option["privacy_gate"] != "unverified":
+            lines.append(f"  billing {option['billing_route']} · privacy {option['privacy_gate']}")
+        if option.get("input_modalities"):
+            lines.append("  input " + "/".join(option["input_modalities"]))
+        if option.get("description"):
+            lines.append("  Native description: " + option["description"])
+        releases = list(dict.fromkeys(
+            r["model_metadata"]["release_date"] for r in option["evidence"]
+            if r["model_metadata"] and r["model_metadata"].get("release_date")))
+        if releases:
+            lines.append("  Model release date (AA): " + ", ".join(releases))
+        if option.get("benchmark_model"):
+            lines.append("  Model evidence link: " + option["benchmark_model"]
+                         + "; route performance unknown.")
+        lines.extend(evidence_lines(option))
+        missing = [d for d, count in option["coverage"].items() if not count]
+        if missing:
+            lines.append("  Task outcomes unknown: " + ", ".join(missing))
+        lines.extend("  " + p for p in option["problems"])
+    for backend, state in result.get("backends", {}).items():
+        lines.extend("Cached accounts / " + backend + ": " + line.removeprefix("Allowance: ")
+                     for line in account_lines(state.get("account_observation"), compact=True))
+    if "account_observation" in result:
+        lines.extend(account_lines(result["account_observation"], compact=True))
+    lines.extend(important_notes(result))
+    lines.extend(policy_lines(result))
+    review = result.get("review") or {}
+    lines.append("Snapshot " + str(result.get("retrieved") or "unknown")
+                 + (" · " + review["status"] if review else "")
+                 + " · details: --json (source/version, run scope, missing data); suggest --help (context).")
     return "\n".join("".join(c for c in line if c.isprintable()) for line in lines)

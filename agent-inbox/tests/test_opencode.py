@@ -42,6 +42,7 @@ class NativeApi:
         self.error = None
         self.forms = []
         self.permissions = []
+        self.children, self.child_forms, self.child_permissions = {}, {}, {}
 
     def call(self, method, path, body=None):
         self.calls.append((method, path, body))
@@ -56,6 +57,10 @@ class NativeApi:
         if parsed.path == "/api/session/active":
             return {"data": {"ses_root": {"type": "running"}}}
         if parsed.path == "/api/session":
+            parent = parse_qs(parsed.query).get("parentID", ["null"])[0]
+            if parent != "null":
+                return native_page([row for row in self.children.values() if row.get("parentID") == parent],
+                                   following=None)
             return native_page([self.metadata], following=None)
         if parsed.path == "/api/session/ses_root":
             return {"data": self.metadata}
@@ -63,6 +68,14 @@ class NativeApi:
             return {"data": self.forms}
         if parsed.path == "/api/session/ses_root/permission":
             return {"data": self.permissions}
+        for identifier, info in self.children.items():
+            path = "/api/session/" + identifier
+            if parsed.path == path:
+                return {"data": info}
+            if parsed.path == path + "/form":
+                return {"data": self.child_forms.get(identifier, [])}
+            if parsed.path == path + "/permission":
+                return {"data": self.child_permissions.get(identifier, [])}
         if parsed.path.endswith("/message/msg_assistant"):
             return {"data": self.items[0]}
         if parsed.path.endswith("/message"):
@@ -381,23 +394,117 @@ def test_native_pending_request_can_be_answered_after_inbox_restart_only_once(ap
     assert len([call for call in api.calls if call[0] == "POST"]) == 1
 
 
-def test_permission_withdrawal_racing_dispatch_is_rechecked_without_second_post(api, tmp_path):
+@pytest.mark.parametrize("identifier", ["per_one", "frm_one"])
+def test_native_answer_racing_dispatch_is_rechecked_without_second_post(api, tmp_path, identifier):
     api.permissions = [permission()]
+    api.forms = [{"id": "frm_one", "sessionID": "ses_root", "title": "Choose", "fields": [
+        {"key": "choice", "type": "boolean", "required": True},
+    ]}]
     native = api.call
 
     def withdrawn(method, path, body=None):
         if method == "POST":
-            api.permissions = []
+            api.permissions, api.forms = [], []
             api.error = ApiRejected(409)
         return native(method, path, body)
 
     api.call = withdrawn
     store = Store(tmp_path)
     store.register(target())
-    data = {"id": str(uuid.uuid4()), "target": target().id, "form": "per_one",
-            "answer": {"decision": "once"}}
+    data = {"id": str(uuid.uuid4()), "target": target().id, "form": identifier,
+            "answer": {"decision": "once"} if identifier.startswith("per_") else {"choice": False}}
     assert App(store).answer(data)["status"] == "no_longer_pending"
     assert len([call for call in api.calls if call[0] == "POST"]) == 1
+
+
+@pytest.mark.parametrize("kind,cancel", [("form", False), ("form", True),
+                                         ("permission", False), ("permission", True)])
+def test_child_questions_keep_exact_origin_and_native_answer_route(api, kind, cancel):
+    api.children = {"ses_child": root("ses_child", parentID="ses_root", title="Child"),
+                    "ses_nested": root("ses_nested", parentID="ses_child", title="Nested"),
+                    "ses_foreign": root("ses_foreign", parentID="ses_peer", title="Foreign"),
+                    "ses_other_root": root("ses_other_root", title="Other root")}
+    api.child_forms = {identifier: [{"id": "frm_one", "sessionID": identifier,
+                                   "title": "Choose", "fields": [
+                                       {"key": "choice", "type": "boolean", "required": True}]}]
+                       for identifier in api.children}
+    api.child_permissions = {identifier: [permission(sessionID=identifier)] for identifier in api.children}
+    provider = opencode.OpenCode()
+    forms = provider.forms(target())
+    assert not forms.unavailable and len(forms.forms) == 4
+    assert {json.loads(form.id)[0] for form in forms.forms} == {"ses_child", "ses_nested"}
+    assert any(form.title == "Nested · Choose" for form in forms.forms)
+    native_id = "frm_one" if kind == "form" else "per_one"
+    identifier = next(form.id for form in forms.forms if json.loads(form.id) == ["ses_nested", native_id])
+    values = {} if cancel else {"choice": False} if kind == "form" else {"decision": "once"}
+    assert provider.answer(target(), identifier, values, cancel=cancel) == "applied"
+    path = "/api/session/ses_nested/" + kind + "/" + native_id
+    assert api.calls[-1] == (("DELETE", path, None) if kind == "form" and cancel else (
+        "POST", path + "/reply", {"answer": values} if kind == "form" else {
+            "decision": "reject" if cancel else "once"}))
+
+
+@pytest.mark.parametrize("change", ["removed", "reparented", "native_answered"])
+def test_child_question_scope_is_rechecked_after_display_and_never_replayed(api, tmp_path, change):
+    api.children = {"ses_child": root("ses_child", parentID="ses_root", title="Child")}
+    api.child_forms = {"ses_child": [{"id": "frm_one", "sessionID": "ses_child", "title": "Choose",
+                                       "fields": [{"key": "choice", "type": "boolean", "required": True}]}]}
+    handle = opencode.OpenCode().forms(target()).forms[0].id
+    if change == "removed":
+        api.children.clear()
+    elif change == "reparented":
+        api.children["ses_child"]["parentID"] = "ses_peer"
+    else:
+        api.child_forms.clear()
+    assert opencode.OpenCode().forms(target()).forms == []
+    store = Store(tmp_path)
+    store.register(target())
+    payload = {"id": str(uuid.uuid4()), "target": target().id, "form": handle, "answer": {"choice": False}}
+    assert App(store).answer(payload)["status"] == "no_longer_pending"
+    assert App(Store(tmp_path)).answer(payload)["status"] == "no_longer_pending"
+    assert App(Store(tmp_path)).answer({**payload, "id": str(uuid.uuid4())})["status"] == "no_longer_pending"
+    assert not any(method in ("POST", "DELETE") for method, *_ in api.calls)
+
+
+def test_child_answer_receipt_and_native_retirement_survive_inbox_restart(api, tmp_path):
+    api.children = {"ses_child": root("ses_child", parentID="ses_root", title="Child")}
+    api.child_forms = {"ses_child": [{"id": "frm_one", "sessionID": "ses_child", "title": "Choose",
+                                       "fields": [{"key": "choice", "type": "boolean", "required": True}]}]}
+    handle = opencode.OpenCode().forms(target()).forms[0].id
+    native = api.call
+
+    def replied(method, path, body=None):
+        result = native(method, path, body)
+        if method == "POST":
+            api.child_forms.clear()
+        return result
+
+    api.call = replied
+    store = Store(tmp_path)
+    store.register(target())
+    payload = {"id": str(uuid.uuid4()), "target": target().id, "form": handle, "answer": {"choice": False}}
+    assert App(store).answer(payload)["status"] == "applied"
+    assert opencode.OpenCode().forms(target()).forms == []
+    assert App(Store(tmp_path)).answer(payload)["status"] == "applied"
+    assert App(Store(tmp_path)).answer({**payload, "id": str(uuid.uuid4())})["status"] == "already_answered"
+    assert len([call for call in api.calls if call[0] == "POST"]) == 1
+
+
+def test_failed_child_discovery_preserves_root_question_and_answer(api):
+    api.permissions = [permission()]
+    native = api.call
+
+    def unavailable(method, path, body=None):
+        if parse_qs(urlsplit(path).query).get("parentID") == ["ses_root"]:
+            raise TimeoutError("Native discovery unavailable")
+        return native(method, path, body)
+
+    api.call = unavailable
+    provider = opencode.OpenCode()
+    forms = provider.forms(target())
+    assert [form.id for form in forms.forms] == ["per_one"]
+    assert "child questions are unavailable" in forms.unavailable
+    assert provider.answer(target(), "per_one", {"decision": "once"}) == "applied"
 
 
 def test_explicit_steering_uses_native_delivery_and_reports_it_without_implying_consumption(api):

@@ -30,7 +30,9 @@ repository snapshots alone do not arm a wake.
 codex-wake send --message "Analysis done: 2 failures need a decision. See notes.md."
 ```
 
-Read the private output file named in the notification. Its native captured text
+Match a completion's native item ID to work already handled before treating it as
+a new result. Read the private output file named in the notification. Command logs
+start with a JSON context line, a blank line, then native output. Its captured text
 can already be truncated by Codex. A command finishing, the notification
 being accepted, the next turn starting and the logical task being done are four
 separate observations. A worker told to report at a logical boundary sends once

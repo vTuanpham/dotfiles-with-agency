@@ -1,15 +1,6 @@
 import type { EngineInterface } from 'claude-code'
 import type { WakeResource } from '../../types'
 
-/** Tag only a direct allocator invocation; don't change shell state or wrap the native Bash tool. */
-export function resourceCommand(command: string, agentId: string, owner: string): string {
-  const direct = /^(\s*)((?:\/[A-Za-z0-9_.-]+)*\/agent-resources|agent-resources)([ \t]+run)(?=\s|$)/
-  if (!direct.test(command)) return command
-  const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
-  return command.replace(direct, (_match, space: string, program: string, run: string) =>
-    `${space}AGENT_RESOURCES_OWNER=${quote(owner)} AGENT_RESOURCES_AGENT_ID=${quote(agentId)} ${program}${run}`)
-}
-
 export async function resourceOwner($: EngineInterface): Promise<string> {
   return (await $.env.get('AGENT_RESOURCES_OWNER')) ?? `claude:${await $.session.id()}`
 }

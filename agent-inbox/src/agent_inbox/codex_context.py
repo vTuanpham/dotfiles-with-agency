@@ -3,28 +3,43 @@
 import time
 
 from .context import Account, Quota, SessionContext, Tool, Worker
-from .models import text
+from .models import fields, text
 
 
 def account(rpc, info, result):
     if info["modelProvider"] != "openai":
         result.notices.append("The selected provider does not expose account quota here.")
         return
-    before = rpc.call("account/read", {"refreshToken": False})["account"]
-    if before is None or before.get("type") != "chatgpt":
+    before = rpc.call("account/read", {"refreshToken": False})
+    current = before["account"]
+    if current is None or current.get("type") != "chatgpt":
         result.notices.append("No ChatGPT account allowance is exposed by this connection.")
         return
     limits = rpc.call("account/rateLimits/read", {"excludeResetCreditDetails": True})
-    after = rpc.call("account/read", {"refreshToken": False})["account"]
+    after = rpc.call("account/read", {"refreshToken": False})
     if before != after:
         raise ValueError("Account changed during quota read")
-    email = before["email"]
+    routing = before.get("workspaceRouting")
+    identity = None
+    if routing is not None:
+        fields(routing, ("accountRoutingOverride", "backendOrigin", "chatgptAccountId"))
+        if routing["accountRoutingOverride"] not in ("NO_CONSTRAINT", "us", "us_cr"):
+            raise ValueError("Invalid native account routing override")
+        text(routing["backendOrigin"], "account backend", 4096)
+        identity = text(routing["chatgptAccountId"], "active account identity", 400)
+    email = current["email"]
     if email is not None:
         text(email, "account email", 320)
-    identity = limits.get("accountId")
-    if identity is not None:
-        text(identity, "account identity", 400)
-    selected_account = Account(identity, email, text(before["planType"], "account plan", 100), "connection")
+    quota_identity = limits.get("accountId")
+    if quota_identity is not None:
+        text(quota_identity, "usage snapshot account identity", 400)
+    if identity is not None and quota_identity is not None and identity != quota_identity:
+        raise ValueError("Usage snapshot belongs to another account")
+    allowed = limits.get("ordinaryUsageAllowed")
+    if allowed is not None and type(allowed) is not bool:
+        raise ValueError("Invalid native ordinary usage state")
+    selected_account = Account(identity, email, text(current["planType"], "account plan", 100),
+                               "connection", quota_identity)
     quotas = []
     buckets = limits.get("rateLimitsByLimitId")
     if buckets is None:
@@ -37,6 +52,11 @@ def account(rpc, info, result):
             raise ValueError("Invalid native quota bucket")
         label = bucket.get("limitName") or identifier
         text(label, "quota label", 200)
+        spend, reached = bucket.get("spendControlReached"), bucket.get("rateLimitReachedType")
+        if (spend is not None and type(spend) is not bool or reached is not None and reached not in (
+                "rate_limit_reached", "workspace_owner_credits_depleted", "workspace_member_credits_depleted",
+                "workspace_owner_usage_limit_reached", "workspace_member_usage_limit_reached")):
+            raise ValueError("Invalid native usage restriction")
         for name in ("primary", "secondary"):
             window = bucket.get(name)
             if window is None:
@@ -47,8 +67,11 @@ def account(rpc, info, result):
                     or minutes is not None and (type(minutes) is not int or minutes <= 0)
                     or resets is not None and (type(resets) is not int or resets < 0)):
                 raise ValueError("Invalid native quota window")
-            quotas.append(Quota(label + " · " + name, used, minutes, resets))
-    result.account, result.quotas = selected_account, quotas
+            quotas.append(Quota(label + " · " + name, used, minutes, resets, spend, reached))
+        if ((spend is True or reached is not None)
+                and not any(bucket.get(key) for key in ("primary", "secondary"))):
+            result.notices.append(label + ": the provider reports a usage limit.")
+    result.account, result.quotas, result.ordinary_usage_allowed = selected_account, quotas, allowed
 
 
 def workers(rpc, root_id):

@@ -116,13 +116,15 @@ def command_item(call, target, turn, item_id):
         raise RuntimeError("Invalid Codex command item")
     item = row["item"]
     if (item.get("id") != item_id or item.get("type") != "commandExecution"
+            or not isinstance(item.get("command"), str) or not isinstance(item.get("cwd"), str)
             or item.get("status") not in {"inProgress", "completed", "failed", "declined"}):
         raise RuntimeError("Invalid Codex command completion")
     return item
 
 
 def deliver(target, folder, generation, incident, headline, output):
-    if epoch(folder) != generation or generation == "paused":
+    if (epoch(folder) != generation or generation == "paused"
+            or (folder / (key(incident) + ".handled")).exists()):
         return
     marker = folder / (key(incident) + ".sent")
     log = folder / (key(incident) + ".log")
@@ -134,7 +136,7 @@ def deliver(target, folder, generation, incident, headline, output):
         return
     os.close(fd)  # Claim before sending: an uncertain receipt must never trigger another send.
     private_write(log, output)
-    if epoch(folder) == generation:
+    if epoch(folder) == generation and not (folder / (key(incident) + ".handled")).exists():
         target.send(prompt)
 
 
@@ -170,6 +172,12 @@ def observe(job, folder):
     with connection(target.home) as call:
         while pending and epoch(folder) == generation:
             progress = False
+            for item_id in list(pending):
+                if (folder / (key("command:" + item_id) + ".handled")).exists():
+                    pending.remove(item_id)
+                    completed.pop(item_id, None)
+            if not pending:
+                return
             parent = thread(call, target.thread)
             if parent["status"]["type"] in {"notLoaded", "systemError"}:
                 return
@@ -199,9 +207,12 @@ def observe(job, folder):
                         raise RuntimeError("Invalid Codex command result")
                     if thread(call, target.thread)["status"]["type"] != "idle":
                         break
+                    context = json.dumps({"item_id": item_id, "turn_id": turn,
+                                          "command": item["command"], "cwd": item["cwd"]})
                     deliver(target, folder, generation, "command:" + item_id,
                             f"Background command ended: {item['status']}; exit status "
-                            f"{code if code is not None else 'unknown'}.", output or "")
+                            f"{code if code is not None else 'unknown'}. Native item: {item_id[:80]}.",
+                            context + "\n\n" + (output or ""))
                     pending.remove(item_id)
                     del completed[item_id]
                     progress = True
@@ -234,6 +245,13 @@ def handle(payload):
     event = payload.get("hook_event_name")
     target = Wake(identifier(payload.get("session_id")))
     folder = directory(target)
+    if event == "PostToolUse":
+        if payload.get("tool_name") != "Bash":
+            return
+        # A final unified-exec poll carries the original command's tool_use_id.
+        name = identifier(payload.get("tool_use_id"))
+        private_write(folder / (key("command:" + name) + ".handled"), "")
+        return
     if event in {"UserPromptSubmit", "Interrupt", "SessionEnd"}:
         if payload.get("agent_id"):
             return

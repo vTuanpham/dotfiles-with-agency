@@ -2,6 +2,28 @@ import type { EngineInterface } from 'claude-code'
 import type { WakeQuota } from '../../types'
 
 import { readAccountSnapshot } from './account-observations'
+import type { QuotaWindow } from './account-observations'
+
+function durationLabel(minutes: number | null | undefined): string | undefined {
+  if (minutes == null) return undefined
+  if (minutes === 300) return 'h'
+  if (minutes === 10080) return 'w'
+  if (minutes === 43200) return 'm'
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`
+  if (minutes % 60 === 0) return `${minutes / 60}h`
+  return `${minutes}min`
+}
+
+function compactLabel(w: QuotaWindow): string {
+  const duration = durationLabel(w.window_minutes)
+  if (!w.pool_id) return duration ?? w.label
+  const suffix = w.source_window ? '-' + w.source_window.replaceAll('_', '-') : ''
+  const pool = suffix && w.pool_id.length > suffix.length && w.pool_id.endsWith(suffix)
+    ? w.pool_id.slice(0, -suffix.length) : w.pool_id
+  return `${pool === 'gemini' ? 'G' : pool}.${duration ?? '?'}`
+}
+
+const windowIdentity = (w: QuotaWindow) => JSON.stringify([w.pool_id, w.source_window, w.window_minutes, w.label])
 
 /** One display label for any bridge job: short model family + effort, whichever CLI it runs on. */
 export function jobLabel(backend: string, model: string, effort: string): { model: string; effort: string } {
@@ -42,10 +64,7 @@ export const makerOf = (model: string): 'claude' | undefined => (/\b(claude|fabl
 export function quotaGroups(quotas: WakeQuota[]): { cli: WakeQuota['cli']; accounts: string[]; text: string; low: boolean; bad: boolean }[] {
   const out: ReturnType<typeof quotaGroups> = []
   for (const q of quotas) {
-    // agy parts are bucket+window ('Gh', 'Gw'): print each bucket once, then its windows, like codex's 'h39 w39'
-    const text = q.status ?? (q.cli === 'agy'
-      ? [...new Set(q.parts.map(p => p.label[0]))].map(b => `${b} ${q.parts.filter(p => p.label[0] === b).map(p => `${p.label.slice(1)}${p.pct ?? '?'}`).join(' ')}`).join(' · ')
-      : q.parts.map(p => `${p.label}${p.pct ?? '?'}`).join(' '))
+    const text = q.status ?? q.parts.map(p => `${p.label}${p.pct ?? '?'}`).join(' ')
     const name = q.account + (q.active ? '*' : '')
     const last = out.at(-1)
     if (last && last.cli === q.cli && last.text === text) last.accounts.push(name)
@@ -54,17 +73,54 @@ export function quotaGroups(quotas: WakeQuota[]): { cli: WakeQuota['cli']; accou
   return out
 }
 
-export async function scanQuotas($: EngineInterface, opts: { refreshAgy?: boolean; owners?: readonly string[] } = {}): Promise<WakeQuota[]> {
-  if (opts.owners?.length === 0) return []
-  if (opts.refreshAgy) {
-    // Preserve the existing refresh schedule; consume numbers only from the status contract.
-    await $.process.run(['agent-accounts', 'refresh'], { timeoutMs: 180_000 }).catch(() => undefined)
-  }
+export async function scanQuotas($: EngineInterface): Promise<{ quotas: WakeQuota[]; errors: string[] }> {
   const result = await $.process.run(['agent-accounts', 'snapshot'], { timeoutMs: 30_000 }).catch(() => undefined)
-  const quotas = result?.exitCode === 0 && !result.isStdoutTruncated ? readAccountSnapshot(result.stdout) : undefined
-  if (!quotas) throw new Error('Account observations unavailable')
-  return quotas.filter(q => q.backend === 'codex' || q.backend === 'agy' || q.backend === 'claude').map(q => ({
+  const snapshot = result?.exitCode === 0 && !result.isStdoutTruncated ? readAccountSnapshot(result.stdout) : undefined
+  if (!snapshot) throw new Error('Account observations unavailable')
+  const { quotas, errors } = snapshot
+  const identities = new Map<string, Set<string>>()
+  for (const q of quotas) for (const w of q.windows) {
+    const key = `${q.backend}:${compactLabel(w)}`
+    if (!identities.has(key)) identities.set(key, new Set())
+    identities.get(key)!.add(windowIdentity(w))
+  }
+  return { errors, quotas: quotas.filter(q => ['codex', 'agy', 'claude', 'opencode'].includes(q.backend)
+    && !(q.backend === 'opencode' && q.status === 'no Console workspace' && q.freshness === 'fresh' && !q.windows.length)).map(q => ({
     cli: q.backend as WakeQuota['cli'], account: q.account, plan: q.plan ?? '', active: q.active,
-    parts: q.windows.map(w => ({ label: w.label, pct: w.remaining_percent, resets: w.resets })), status: q.status ?? undefined, freshness: q.freshness,
-  }))
+    parts: q.windows.map(w => {
+      const compact = compactLabel(w)
+      const duration = durationLabel(w.window_minutes)
+      const period = duration && (({ h: 'five-hour', w: 'weekly', m: 'monthly' } as Record<string, string>)[duration] ?? duration)
+      const label = identities.get(`${q.backend}:${compact}`)!.size > 1
+        ? [w.pool_id ?? w.label, w.source_window, durationLabel(w.window_minutes)].filter(Boolean).join('/') : compact
+      return { label, pct: w.remaining_percent, resets: w.resets,
+        name: w.group ? `${q.backend === 'opencode' ? (w.pool_id ? 'Console budget' : 'OpenCode Go') : w.group}${period ? ` · ${period}` : ''}`
+          : ({ h: 'Five-hour', w: 'Weekly', m: 'Monthly', '5h': 'Five-hour', '7d': 'Weekly', '30d': 'Monthly' } as Record<string, string>)[w.label] ?? w.label }
+    }), status: q.status ?? undefined, freshness: q.freshness,
+    observedAt: q.observed_at ?? undefined,
+    refreshStatus: (q.last_refresh_status ?? q.refresh_status) && !['ok', 'not_requested'].includes((q.last_refresh_status ?? q.refresh_status)!)
+      ? (q.last_refresh_status ?? q.refresh_status)! : undefined,
+  })) }
+}
+
+/** Brief account-specific hover; the JSON snapshot keeps the full source metadata. */
+export function quotaDetails(q: WakeQuota, now: number): string[] {
+  const reset = (value: string) => {
+    const at = Date.parse(value)
+    if (!Number.isFinite(at)) return value
+    const date = new Date(at)
+    return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', ...(date.getMinutes() ? { minute: '2-digit' } : {}) })
+  }
+  const lines = q.parts.map(part => `${part.name ?? part.label}: ${part.pct === null ? 'unknown' : `${part.pct}% left`}${part.resets ? ` · reset ${reset(part.resets)}` : ''}`)
+  if (q.status) lines.push(q.status)
+  if (!lines.length) lines.push('Usage not reported')
+  if (q.observedAt) {
+    const at = Date.parse(q.observedAt)
+    if (Number.isFinite(at)) {
+      const minutes = Math.max(0, Math.floor((now - at) / 60_000))
+      lines.push(`Updated ${minutes < 1 ? 'just now' : minutes < 60 ? `${minutes}m ago` : minutes < 1440 ? `${Math.floor(minutes / 60)}h ago` : `${Math.floor(minutes / 1440)}d ago`}`)
+    }
+  }
+  if (q.refreshStatus) lines.push(q.refreshStatus === 'missing_auth' ? 'Sign-in needed' : 'Refresh unavailable')
+  return lines
 }

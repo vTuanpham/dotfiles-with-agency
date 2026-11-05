@@ -14,7 +14,14 @@ work, then end the model turn. No wrapper, hand-written completion message, OS
 PID or terminal handle is required for the notification. The `Stop` hook captures
 newly observed running command items and starts a host observer. Once a
 captured command ends and the target is idle, it sends one notification with the
-native exit status and a private captured-output path.
+native exit status, command item ID and a private captured-output path. Command
+logs start with a JSON line identifying the native turn, item, command and cwd,
+then a blank line and the captured output. This also identifies redirected commands.
+
+A synchronous Bash `PostToolUse` hook records results returned by the native tool,
+including a final `write_stdin` poll. The observer retires that exact command
+instead of announcing it again after the parent becomes idle. This records tool
+return, not whether the model read a report file or completed the larger task.
 
 `SubagentStart` records the native worker's launch generation.
 Async `SubagentStop` gives native delivery a two-second head start, verifies the
@@ -79,6 +86,9 @@ The API reads persisted history: live Codex 0.166.0 can return an empty result
 for a running terminal. The observer keeps waiting for its completion to be
 persisted, rather than treating an empty result as a missing command or success.
 Quiet polls back off from 2 to 4, 8, 16 and then 30 seconds, resetting on progress.
+The [PostToolUse contract](https://learn.chatgpt.com/docs/hooks#posttooluse) supplies
+`tool_use_id`. In 0.166.0 a final unified-exec poll [retains the original command ID](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/tools/context.rs#L463),
+so collection needs no command-text, timing or later-test-success matching.
 The [documented event stream](https://learn.chatgpt.com/docs/app-server#events)
 requires starting/resuming a thread; 0.166.0 has no passive subscribe request.
 This observer uses read-only calls instead of resuming or altering the target.
@@ -124,7 +134,7 @@ before relying on these integration details.
 | --- | --- | --- |
 | Native unified-exec completion | The [exit watcher](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/unified_exec/async_watcher.rs#L167) emits command events; it does not itself submit a new model turn. | Prefer a native trigger wherever idle resumption is proven, but do not assume this event is one. |
 | Async hook stdout | [Codex delivers it on the next user turn when idle](https://learn.chatgpt.com/docs/hooks#how-background-hooks-run). | A host hook must call the task-message channel explicitly. |
-| `PostToolUse` on yielded exec | The [0.166.0 implementation](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/tools/context.rs#L481) returns **no hook payload while a process ID is present**. The final response is text, not a background PID/output-file record. [Docs](https://learn.chatgpt.com/docs/hooks#tool-coverage) mention later `write_stdin` delivery. | Reject the proposed post-tool process observer; it cannot arm at background launch. |
+| `PostToolUse` on unified exec | The [0.166.0 implementation](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/tools/context.rs#L481) returns **no hook payload while a process ID is present**. A final poll returns the original command ID and its output. | Use Stop to arm running commands, and PostToolUse to retire a result returned by the native tool. |
 | Host `Stop` + `SubagentStop` | [Lifecycle hooks](https://learn.chatgpt.com/docs/hooks) run at the needed boundaries. [Item pagination](https://learn.chatgpt.com/docs/app-server#list-thread-items) provides native identity/status/output; task delivery already exists locally. | Implement these without rewriting or unsandboxing jobs. |
 | Delivery-only execpolicy rule | [An explicit `allow` can bypass the sandbox](https://learn.chatgpt.com/docs/agent-configuration/rules#understand-rule-fields), not merely skip a prompt. Source [requires every parsed segment to be explicitly allowed](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/exec_policy.rs#L442). A rule for exact `codex-wake send/check` would help separate delivery calls, but cannot elevate a nested child inside an already-sandboxed `run`, or automatically arm completion. | Not installed or recommended over the host hook. Never allow `codex-wake run`, a shell, Python, or the whole executable prefix. |
 | Writable socket path / broader network | [`sandbox_workspace_write` controls filesystem roots/network](https://learn.chatgpt.com/docs/config-file/config-reference), not a per-method exception for the privileged control API. Linux [masks the app-server socket directory and aliases](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/linux-sandbox/src/daemon_mounts.rs#L24); [legacy Landlock is rejected for restricted policies](https://learn.chatgpt.com/docs/permissions#how-enforcement-works). | Do not make `~/.codex` writable or relax socket isolation. |

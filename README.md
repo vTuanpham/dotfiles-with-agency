@@ -26,7 +26,7 @@ git clone https://github.com/vTuanpham/dotfiles-with-agency ~/dotfiles-with-agen
 | **[Agent Bridge](agent-bridge/README.md)** | Delegate persistent jobs across harnesses, or send native peer messages directly to existing Codex, Claude, agy and OpenCode sessions. Jobs can be watched and steered, survive a root change (`handoff`), and archive when finished. It notices when a runtime silently swaps a worker's model. |
 | **[Agent Baton](agent-baton/README.md)** | The agent asks; you answer from a Windows toast or your phone. For passwords, 2FA and API keys the value goes straight into the field or env file and **never reaches the agent or its transcript**. |
 | **[Agent Inbox](agent-inbox/README.md)** | Your existing Codex, Claude Code and OpenCode conversations, plus saved ACP sessions, on your phone: chat, images, tool steps, supported native questions and `/` commands, over Tailscale. |
-| **[Model Guide](agent-models/README.md)** | Picks nothing for you, and says why. It reads the live native model lists, then compares eleven public leaderboards (Arena, LiveBench, Vals, SWE-bench, OSWorld, BFCL, LiveCodeBench, KernelBench, Bug Hunt and more) **per effort level and per harness**, in plain code. |
+| **[Model Guide](agent-models/README.md)** | Combines native model access, account constraints and task evidence across harnesses so the agent can choose a model and effort for the actual job. Measurements retain their source, effort, cost, time and execution setup. |
 | **[Portlink](portlink/README.md)** | `portlink open 3000` gives a private, expiring HTTPS link and QR to a local app, build folder or file, for your phone. |
 | **[agent-resources](agent-resources/README.md)** | Kernel-lock admission for heavy commands, so five agents do not run five test suites at once. Released automatically when the process exits. |
 | **[agent-accounts](agent-accounts/README.md)** | Cached, address-free quota and freshness across Codex, Claude Code and Antigravity accounts, with remaining allowance rounded down. |
@@ -108,13 +108,14 @@ worker. [Direct messages, discovery and setup](agent-bridge/README.md#direct-ses
 <img src="docs/images/model-selection.gif" alt="Model Guide combines native catalogs, domain evidence and account observations. Preserve the requested harness, provider, model, variant and effort; free variants and plan allowances differ. Verify chat in the matching native session, and leave unknown billing unverified." width="100%">
 
 ```sh
-model-guide suggest --backend claude --task "fix a flaky failing test"
+model-guide suggest --task "fix a flaky failing test"
 model-guide benchmarks --domain performance --query sol --brief
 ```
 
-`suggest` returns a shortlist with a quality pick and a value pick per model ("low effort gets 54% of
-the score at 14% of the cost"), labels evidence from another harness, and never averages conflicting
-boards. Debugging (Bug Hunt) and GPU kernel (KernelBench) domains are included.
+`suggest` gathers relevant model and effort observations across harnesses. Its optional context
+contains facts the caller already knows about the job, permitted routes, accounts and current
+session. The agent weighs those facts against the observations; a benchmark leader can be a poor
+fit for the available allowance or workflow. `suggest --help` describes the context format.
 [Native controls, domain evidence and account context](agent-models/README.md).
 An explicit model choice stays intact, including its provider, variant and effort.
 A service API error describes that context; verify a chat request in the matching native session.

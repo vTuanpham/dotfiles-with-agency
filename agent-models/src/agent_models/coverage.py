@@ -1,6 +1,7 @@
 """Generated native-to-benchmark coverage; lexical matches never establish entitlement."""
 
 import re
+from functools import lru_cache
 
 UNSPECIFIED = object()
 EFFORT_LABEL = (r"minimal|low|medium|high|xhigh|max|ultra|adaptive|deep|instant|thinking|non-thinking|"
@@ -8,22 +9,31 @@ EFFORT_LABEL = (r"minimal|low|medium|high|xhigh|max|ultra|adaptive|deep|instant|
 RUN_SETTING = re.compile(r" \(((?:" + EFFORT_LABEL + r")(?:(?: with |, )[^()]*Fallback)?)\)$", re.I)
 
 
+@lru_cache(maxsize=8192)
 def key(value):
     return tuple(re.findall(r"[a-z]+|\d+", value.casefold()))
 
 
 def query_matches(query, value):
     needle, tokens = key(query), key(value)
-    return not needle or any(all(
-        word == token or (i == len(needle) - 1 and word.isalpha() and token.startswith(word))
-        for i, (word, token) in enumerate(zip(needle, tokens[start:start + len(needle)])))
-        for start in range(len(tokens) - len(needle) + 1))
+    # Discovery permits word gaps/prefixes; numeric release tokens remain exact.
+    position = 0
+    for token in tokens:
+        if position < len(needle) and (needle[position] == token or (
+                needle[position].isalpha() and token.startswith(needle[position]))):
+            position += 1
+    return position == len(needle)
 
 
+@lru_cache(maxsize=8192)
 def setting(label, effort=UNSPECIFIED):
     suffix = RUN_SETTING.search(label) if effort is UNSPECIFIED else None
     value = (suffix[1] if suffix else None) if effort is UNSPECIFIED else effort
-    value = value.casefold().split(", ", 1)[0].removesuffix(" with fallback") if value else None
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("invalid reasoning effort")
+    value = value.casefold().split(", ", 1)[0].removesuffix(" with fallback")
     return value if value and value != "default" and re.fullmatch(r"[\w-]+", value) else None
 
 
@@ -33,6 +43,7 @@ def supported(model, label, effort=UNSPECIFIED):
             if value and model["efforts"] is not None else None)
 
 
+@lru_cache(maxsize=8192)
 def model_key(label):
     # Strip a trailing run-setting field, never a parenthesized numeric release.
     label = RUN_SETTING.sub("", label)
@@ -42,7 +53,11 @@ def model_key(label):
 def matches(model, label):
     # Provider routing and parenthesized run settings are not model identity.
     # A native ID can also name the complete bundled setting (e.g. Flash-High).
-    return model_key(model["model"]) in (model_key(label), key(label.rsplit("/", 1)[-1]))
+    return benchmark_key(model) in (model_key(label), key(label.rsplit("/", 1)[-1]))
+
+
+def benchmark_key(model):
+    return model_key(model.get("benchmark_model", model["model"]))
 
 
 def canonical_catalog(catalog, preferred=None):
@@ -98,14 +113,16 @@ def summarize(catalog, snapshot, query=""):
         measured = {}
         for name, evidence in observations.items():
             found = []
-            for label, effort in evidence.get(model_key(model["model"]), []):
+            for label, effort in evidence.get(benchmark_key(model), []):
                 entry = {"label": label, "setting": setting(label, effort),
                          "native_effort_supported": supported(model, label, effort)}
                 if entry not in found:
                     found.append(entry)
             if found:
                 measured[name] = found
-        rows.append({**model, "coverage": "matched" if measured else "no exact benchmark identity",
+        rows.append({**model, "coverage": ("reviewed model link; route performance unverified"
+                     if model.get("benchmark_model") else "matched") if measured
+                     else "no exact benchmark identity",
                      "sources": measured})
     return {**catalog, "benchmark_retrieved": snapshot["retrieved"], "models": rows,
             "matching": "Exact model tokens after separating provider routing and run settings; "

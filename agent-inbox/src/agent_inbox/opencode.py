@@ -1,12 +1,14 @@
 """Existing OpenCode v2 sessions, using the same server as its terminal UI."""
 
+import json
 import time
+from dataclasses import replace
 from urllib.parse import quote, urlencode
 
 from . import opencode_commands, opencode_context, opencode_forms, opencode_history, opencode_permissions
 from .capabilities import AdapterCapabilities
 from .forms import Forms
-from .models import DeliveryRejected, RootInfo, Snapshot, fields, text
+from .models import DeliveryRejected, NoLongerPending, RootInfo, Snapshot, decode_json, fields, text
 from .opencode_http import ApiRejected, Connection
 
 
@@ -57,16 +59,46 @@ class OpenCode:
         path = session_path(target.session_id)
         questions = opencode_forms.read(api, path, target.session_id)
         permissions = opencode_permissions.read(api, path, target.session_id)
-        return Forms(questions.forms + permissions.forms)
+        result = questions.forms + permissions.forms
+        try:
+            deadline, children = time.monotonic() + 8, []
+            workers = opencode_context.workers(api, target.session_id, {})
+            if len(workers) > 64:
+                raise ValueError("Too many native children to read questions")
+            for worker in workers:
+                if time.monotonic() > deadline or len(children) >= 200:
+                    raise TimeoutError("Native child questions are still catching up")
+                path = session_path(worker.id)
+                pending = (opencode_forms.read(api, path, worker.id).forms
+                           + opencode_permissions.read(api, path, worker.id).forms)
+                children.extend(replace(form, id=text(json.dumps([worker.id, form.id], separators=(",", ":")),
+                                                     "child question handle", 200),
+                                        title=worker.label + " · " + form.title) for form in pending)
+                if len(children) > 200:
+                    raise ValueError("Too many native child questions")
+            return Forms(result + children)
+        except (KeyError, TypeError, ValueError, RuntimeError, OSError, TimeoutError):
+            return Forms(result, "Native child questions are unavailable. Answer them in OpenCode.")
 
     def answer(self, target, identifier, answer, cancel=False):
         api = Connection(target)
         root(api, target.session_id)
-        path = session_path(target.session_id)
         text(identifier, "question id", 200)
+        session_id = target.session_id
+        if identifier.startswith("["):
+            origin = decode_json(identifier)
+            if type(origin) is not list or len(origin) != 2:
+                raise DeliveryRejected("Invalid native child question")
+            session_id, identifier = origin
+            session_path(session_id)
+            text(identifier, "native question id", 200)
+            if session_id not in {worker.id for worker in opencode_context.workers(
+                    api, target.session_id, {})}:
+                raise NoLongerPending("This child no longer belongs to the selected root")
+        path = session_path(session_id)
         permission = identifier.startswith("per_")
         questions = (opencode_permissions if permission else opencode_forms).read(
-            api, path, target.session_id,
+            api, path, session_id,
         )
         question = questions.selected(identifier)
         if not cancel:
@@ -83,7 +115,7 @@ class OpenCode:
             if error.status in (404, 409):
                 # A withdrawal can race the last read. Only the native pending list proves it gone.
                 (opencode_permissions if permission else opencode_forms).read(
-                    api, path, target.session_id,
+                    api, path, session_id,
                 ).selected(identifier)
             if error.status in (400, 401, 404, 409):
                 raise DeliveryRejected("Native question reply rejected") from error

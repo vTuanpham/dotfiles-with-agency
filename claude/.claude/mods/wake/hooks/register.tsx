@@ -3,7 +3,7 @@ import type { EngineInterface, Register, RenderElement, Timer } from 'claude-cod
 
 import type { WakeAgent, WakeCall, WakeChip, WakeQuota, WakeResource, WakeDigest, WakeMood, WakeNeed, WakeNow, WakePreset, WakePulse, WakePulseKind, WakeRecap, WakeRecapLine, WakeSceneHit, WakeStep, WakeSurroundings, WakeTally } from '../types'
 import { ownedBy, ownersIn, scanCodex, withoutDetachedOwners, type CodexCursor } from './sources/codex'
-import { makerOf, modelTier, scanQuotas } from './sources/accounts'
+import { makerOf, modelTier, quotaDetails, scanQuotas } from './sources/accounts'
 import { extractCalls, writeRecap } from './sources/recap'
 import { scanTidy, tidyRequest } from './sources/tidy'
 import { type BandState, sceneInput } from './band'
@@ -14,11 +14,11 @@ import { CHARACTERS, CHARACTER_IDS, type CharacterId, asCharacter, isCharacter }
 import { summaryOf } from './summary'
 import { EXIT_MS } from './exits'
 import { COLOR, readable, clock, commandHead, hash, isAnswerText, isTestCommand, lines, patchCounts, shortPath, span } from './util'
-import { CLASS_GLYPH, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, crewLayout, crewJobs, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
+import { CLASS_GLYPH, STATE_GLYPHS, stateOf, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, crewLayout, crewJobs, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
 import { type EffortLevels, effortDots, levelsFor, scanEfforts } from './sources/efforts'
 import { messagePreview, messageStatus, PeerMessageTracker } from './peer-messages'
 import { LOGOS, modelLogo } from './logos'
-import { resourceCommand, resourceDetail, resourceOwner, scanResources } from './sources/resources'
+import { resourceDetail, scanResources } from './sources/resources'
 
 // Wake lives in the flow of the chat: a living diorama above the prompt (the session as a
 // town in the real weather where you are, Mochi on the street), a line of words and the
@@ -29,8 +29,7 @@ import { resourceCommand, resourceDetail, resourceOwner, scanResources } from '.
 const AWAY_MS = 10 * 60_000
 const ASK_AWAY_MS = 3 * 60_000
 const CODEX_POLL_MS = 15_000
-const QUOTA_POLL_MS = 60_000 // Read provider caches; only agy refreshes on this schedule.
-const AGY_REFRESH = 30
+const QUOTA_POLL_MS = 60_000
 const ANIMATE_MS = 400
 const PACKET_FRAME_MS = 120 // rows redraw this often only while a real message's packets are on their way
 const SCENE_MS = 50 // the diorama paints 20 a second: half steps of its frame, which motion paces at 10 a second
@@ -132,6 +131,7 @@ const parentEffort = atom({ plugin: 'wake', key: 'parentEffort' } as const, '') 
 const agentEfforts = atom({ plugin: 'wake', key: 'agentEfforts' } as const, {} as Record<string, string>) // subagent id -> the effort its tool calls reported
 const surroundings = atom({ plugin: 'wake', key: 'surroundings' } as const, null as WakeSurroundings | null)
 const crewPageIndex = atom({ plugin: 'wake', key: 'crewPage' } as const, 0)
+const quotaPageIndex = atom({ plugin: 'wake', key: 'quotaPage' } as const, 0)
 
 /** Bookkeeping must never break a tool call or a turn. */
 async function safely(work: () => unknown): Promise<void> {
@@ -149,7 +149,10 @@ let laneEvery = 0
 let codexPoll: Timer | null = null
 let quotaPoll: Timer | null = null
 let effortPoll: Timer | null = null
-let quotaTicks = 0
+let quotaInFlight = false
+let quotaScanRevision = 0
+let bridgeInFlight = false
+let agentsInFlight = false
 let awayTimer: Timer | null = null
 let recapGeneration = 0
 let userActivityInFlight = 0
@@ -284,14 +287,26 @@ async function refreshSurroundings($: EngineInterface, force = false) {
 }
 
 /** The running Claude Code subagents, written only when the list changes. */
-async function pollAgents($: EngineInterface) {
-  const live = (await $.agent.list()).filter(agent => agent.status === 'running' || agent.status === 'pending' || agent.status === 'waiting')
+export async function pollAgents($: EngineInterface) {
+  if (agentsInFlight) return
+  agentsInFlight = true
+  try { await scanAgents($) } finally { agentsInFlight = false }
+}
+
+async function scanAgents($: EngineInterface) {
+  const listed = await $.agent.list().catch(() => undefined)
+  if (!listed) {
+    if ((await read($, subagents)).some(agent => !agent.unavailable))
+      await update($, subagents, agents => agents.map(agent => ({ ...agent, unavailable: true })))
+    return
+  }
+  const live = listed.filter(agent => agent.status === 'running' || agent.status === 'pending' || agent.status === 'waiting')
   const prior = await read($, subagents)
   const now = await $.clock.now()
   const models = await read($, agentModels)
   const efforts = await read($, agentEfforts)
   const inherited = await read($, parentEffort)
-  const running: WakeAgent[] = live.map(agent => ({ id: agent.id, type: agent.type, description: agent.description, name: agent.name, since: prior.find(p => p.id === agent.id)?.since ?? now, model: models[agent.id], effort: efforts[agent.id] ?? (inherited || undefined) }))
+  const running: WakeAgent[] = live.map(agent => ({ id: agent.id, type: agent.type, description: agent.description, name: agent.name, status: agent.status as WakeAgent['status'], since: prior.find(p => p.id === agent.id)?.since ?? now, model: models[agent.id], effort: efforts[agent.id] ?? (inherited || undefined) }))
   // one that has just finished stays, marked, while its exit plays; the scene draws it and nothing else counts it
   const leaving = prior.filter(agent => !live.some(l => l.id === agent.id)).map(agent => ({ ...agent, leftAt: agent.leftAt ?? now })).filter(agent => now - agent.leftAt < EXIT_MS)
   const next = [...running, ...leaving]
@@ -355,26 +370,35 @@ export async function resourceTick($: EngineInterface) {
 }
 
 /** Which effort levels each model offers, from the native inventory: once on start, then a few times a day. */
-async function effortTick($: EngineInterface) {
+export async function effortTick($: EngineInterface) {
   const known = await read($, effortLevels)
   const now = await $.clock.now()
   if (now - known.at < EFFORT_LEVELS_MS) return
-  const levels = await scanEfforts($, ['codex', 'claude', 'agy', 'opencode'], known.levels)
-  // a scan that found nothing is retried soon: stamping it would leave every effort a bare word for six hours
-  await update($, effortLevels, () => ({ at: Object.keys(levels).length ? now : now - EFFORT_LEVELS_MS + EFFORT_RETRY_MS, levels }))
+  const refreshed = await Promise.all(['codex', 'claude', 'agy', 'opencode'].map(async backend => {
+    const levels = await scanEfforts($, [backend], known.levels)
+    if (levels[backend] === known.levels[backend]) return false
+    // Publish each harness as it arrives; a slow inventory must not hide another one's meter.
+    await update($, effortLevels, current => ({ ...current, levels: { ...current.levels, [backend]: levels[backend]! } }))
+    return true
+  }))
+  await update($, effortLevels, current => ({ ...current,
+    at: refreshed.every(Boolean) ? now : now - EFFORT_LEVELS_MS + EFFORT_RETRY_MS }))
 }
 
 export async function quotaTick($: EngineInterface) {
-  const mine = await read($, owners)
-  const activeOwners = [...new Set((await read($, chips)).flatMap(job =>
-    job.running && job.owner && ownedBy({ owner: job.owner }, mine) ? [job.owner] : []))]
-  if (!activeOwners.length) return
-  const found = await scanQuotas($, { owners: activeOwners, refreshAgy: quotaTicks++ % AGY_REFRESH === 0 })
-  // an account that timed out this read keeps its last numbers rather than dropping off the line
-  const projectQuotas = (previous: WakeQuota[]) =>
-    found.map(q => (q.parts.length > 0 || q.status !== undefined ? q : { ...q, parts: previous.find(p => p.cli === q.cli && p.account === q.account)?.parts ?? q.parts }))
-  const priorQuotas = await read($, quotas)
-  if (JSON.stringify(projectQuotas(priorQuotas)) !== JSON.stringify(priorQuotas)) await update($, quotas, projectQuotas)
+  const publish = async () => {
+    const revision = ++quotaScanRevision
+    const found = await scanQuotas($).catch(() => ({ quotas: [], errors: ['Account observations unavailable'] }))
+    if (revision !== quotaScanRevision) return
+    if (JSON.stringify(found.quotas) !== JSON.stringify(await read($, quotas))) await update($, quotas, () => found.quotas)
+  }
+  await publish()
+  if (quotaInFlight) return
+  quotaInFlight = true
+  try {
+    await $.process.run(['agent-accounts', 'refresh', '--backend', 'all', '--if-stale'], { timeoutMs: 240_000 }).catch(() => undefined)
+    await publish()
+  } finally { quotaInFlight = false }
 }
 
 async function isAway($: EngineInterface, threshold: number) {
@@ -423,13 +447,24 @@ function activity(e: { tool: string } & Record<string, unknown>): { label: strin
 const recapBody = (lines_: WakeRecapLine[]) => lines_.map(line => `${MARK[line.mark].glyph} ${line.text}`)
 
 export async function codexTick($: EngineInterface) {
+  if (bridgeInFlight) return
+  bridgeInFlight = true
+  try { await scanBridgeTick($) } finally { bridgeInFlight = false }
+}
+
+async function scanBridgeTick($: EngineInterface) {
   const mine = await read($, owners)
   const sessionId = await $.session.id()
   const cursor = await read($, bridgeCursor)
   const scan = await scanCodex($, cursor, {
     root: { backend: 'claude', session_id: sessionId },
     owners: mine,
-  })
+  }).catch(() => undefined)
+  if (!scan) {
+    if ((await read($, chips)).some(job => !job.observationUnavailable))
+      await update($, chips, jobs => jobs.map(job => ({ ...job, observationUnavailable: true })))
+    return
+  }
   // Session state survives a mod reload; replaying an unacknowledged question must not add another dismiss row.
   if (JSON.stringify(cursor) !== JSON.stringify(scan.cursor)) await update($, bridgeCursor, () => scan.cursor)
   const priorNeeds = await read($, needs)
@@ -456,7 +491,7 @@ export async function codexTick($: EngineInterface) {
   // New IDs pulse when Bridge first exposes their record to this Wake session.
   // `lastAt` can be the attempt-start time, so it is not an observation clock.
   const newPeerMessages = peerMessages.observe(peerScope, scan.jobs)
-  const projectChips = (previous: WakeChip[]) => scan.jobs
+  const projectChips = (previous: WakeChip[]) => [...scan.jobs
     .filter(job => job.running || job.awaitingRoot || (job.finishedAt ?? 0) > now - 30 * 60_000)
     .map(job => ({ id: job.id, owner: job.owner, name: job.name, title: titleOf(job), backend: job.backend, account: job.account, model: job.model, effort: job.effort, running: job.running, isStale: job.isStale, since: job.finishedAt ?? job.lastEventAt, startedAt: job.startedAt, lastEventAt: job.eventKnown ? job.lastEventAt : undefined, activitySeenAt: (() => {
       // When this view first saw the worker do something new; the first sight of a job is not an event.
@@ -470,7 +505,9 @@ export async function codexTick($: EngineInterface) {
       // one packet per message that arrived since the last look (a burst of three runs three), capped so a flood stays legible
       const fresh = changed ? Math.min(5, Math.max(1, peer.count - (old?.count ?? peer.count - 1))) : old?.messageId === peer.messageId ? old?.fresh : undefined
       return { ...peer, observedAt: changed ? now : old?.messageId === peer.messageId ? old?.observedAt : undefined, fresh }
-    }), waitingPeer: job.waitingPeer }))
+    }), waitingPeer: job.waitingPeer })), ...previous.filter(job => job.id && scan.unavailableJobs.includes(job.id)
+      && job.owner && ownedBy({ owner: job.owner }, mine) && !detachedOwners.includes(job.owner)
+      && !scan.jobs.some(current => current.id === job.id)).map(job => ({ ...job, observationUnavailable: true }))]
   const priorChips = await read($, chips)
   const nextChips = projectChips(priorChips)
   if (JSON.stringify(nextChips) !== JSON.stringify(priorChips)) await update($, chips, projectChips)
@@ -677,9 +714,7 @@ export const register: Register = on => {
     if (named.length) await safely(async () => update($, owners, list => (named.every(o => list.includes(o)) ? list : [...new Set([...list, ...named])])))
     let ran: Awaited<ReturnType<typeof next>> | undefined
     try {
-      const tagged = e.tool === 'Bash' && e.agentId !== undefined
-        ? { ...e, command: resourceCommand(e.command, e.agentId, await resourceOwner($)) } : e
-      ran = await next(tagged)
+      ran = await next(e)
       return ran
     } finally {
       await safely(async () => {
@@ -858,12 +893,14 @@ export const register: Register = on => {
     const rowWidth = Math.max(0, width - 2) // extras has one cell of padding on either side
     const currentJobs = crewJobs(jobs, now)
     const inUse = new Set(currentJobs.map(job => job.backend))
-    const quotaLines = jobs.some(job => job.running) ? quotaRows([
+    const urgentRowsNeeded = open.length + allCalls.length * (width < 60 ? 2 : 1)
+    const pageDigits = String(Math.max(1, currentJobs.length + crewAgents.length + accounts.length)).length
+    const quotaWidth = Math.max(1, rowWidth - (e.props.maxRows - 2 - urgentRowsNeeded <= 1 ? 2 * pageDigits + 5 : 0))
+    const quotaLines = quotaRows([
       ...accounts.filter(q => inUse.has(q.cli)), ...accounts.filter(q => !inUse.has(q.cli)),
-    ], rowWidth) : []
+    ], quotaWidth)
     const crewRowsNeeded = currentJobs.length + crewAgents.length + quotaLines.length
     // Important rows keep their space; trim decorative sky before giving up the compact scene.
-    const urgentRowsNeeded = open.length + allCalls.length * (width < 60 ? 2 : 1)
     // A waiting recap shares the room with the scene (it asks for one row, the rest is paged by "+N more"); it never evicts it.
     const recapRowsNeeded = waiting ? 1 : 0
     const sceneRows = Math.max(MIN_SCENE_ROWS, Math.min(SCENE_ROWS,
@@ -1038,10 +1075,10 @@ export const register: Register = on => {
       const resource = resourceDetail(resourceRows, agent.id)
       return (
             <Box width={rowBox} flexShrink={0} flexDirection="row" position="relative">
-              <Box key={`wake-agent-harness-${index}`} position="relative" flexShrink={0} hover={popups.show(`Claude subagent · ${agent.type}`, [agent.name ?? agent.description, span(now - agent.since)])}>
+              <Box key={`wake-agent-harness-${index}`} position="relative" flexShrink={0} hover={popups.show(`Claude subagent · ${agent.type}`, [agent.name ?? agent.description, `Observed for ${span(now - agent.since)}`, ...(agent.unavailable ? ['Subagent list unavailable; last observed state'] : [])])}>
                 {logo('claude')}
               </Box>
-              <Text color={ink.pink}> {diamond(frame)} </Text>
+              <Text color={agent.unavailable ? ink.yellow : ink.pink}> {agent.unavailable ? '?' : diamond(frame)} </Text>
               <Text color={ink.text} wrap="truncate-end">{agent.name ?? agent.description}</Text>
               <Box key={`wake-agent-model-${index}`} position="relative" flexShrink={0} hover={popups.show('Claude subagent · model mark', [
                   agent.model ? `Model ID: ${agent.model}` : parentModelId ? `Model not reported; size mark follows parent ${parentModelId}` : 'Model not reported; size mark uses the default class',
@@ -1079,12 +1116,12 @@ export const register: Register = on => {
         messagePreview(peer.preview),
       ])
       const familyColor = job.backend === 'agy' ? ink.blue : job.backend === 'claude' ? ink.pink : job.backend === 'opencode' ? ink.green : ink.teal
-      const stateColor = row.state === 'stalled' ? ink.red : row.state === 'blocked_on_question' ? ink.peach
+      const stateColor = row.state === 'unavailable' ? ink.subtle : row.state === 'stalled' ? ink.red : row.state === 'blocked_on_question' ? ink.peach
         : row.state === 'paused' || row.state === 'waiting_for_heavy' ? ink.yellow
         : row.state === 'retrying' ? ink.mauve : row.state === 'done' || row.state === 'waiting_for_root' ? ink.green : ink.teal
       const [, modelMark] = [...row.family]
       return <Box width={rowBox} flexDirection="row" position="relative">
-        {row.family && <Box key={`wake-crew-harness-${index}`} position="relative" flexShrink={0} hover={popups.show(`Crew · ${job.backend}`, [row.title.trim(), `State: ${row.state}`, ...(job.waitingPeer ? [`Waiting for: ${job.waitingPeer.target}`] : [])])}>
+        {row.family && <Box key={`wake-crew-harness-${index}`} position="relative" flexShrink={0} hover={popups.show(`Crew · ${job.backend}`, [row.title.trim(), ...(job.observationUnavailable ? [`Bridge status unavailable; last observed: ${job.state ?? 'unknown'}`] : [`State: ${row.state}`]), ...(job.waitingPeer ? [`Waiting for: ${job.waitingPeer.target}`] : [])])}>
           {logo(job.backend)}
         </Box>}
         {row.family && <Text color={familyColor}> {row.state === 'running' ? harnessSpin(job.backend ?? 'codex', frame) : ' '} </Text>}
@@ -1133,24 +1170,19 @@ export const register: Register = on => {
     const quotaElements: RenderElement[] = []
     if (quotaLines.length > 0) {
       for (const [lineIndex, line] of quotaLines.entries()) {
-        const popups = hoverCards(`wake-quota-line-${lineIndex}`, rowWidth)
-        quotaElements.push(<Box width={rowWidth} flexDirection="row" position="relative">
+        const popups = hoverCards(`wake-quota-line-${lineIndex}`, quotaWidth)
+        quotaElements.push(<Box width={quotaWidth} flexDirection="row" position="relative">
           {line.map((chunk, chunkIndex) => {
             const scope = `wake-quota-${lineIndex}-${chunkIndex}`
             const quota = chunk.quotas[0]!
             const mark = quotaMark(quota)
-            const details = (quota.status ? chunk.quotas : [quota]).flatMap(account => account.status
-              ? [`${account.account}: ${account.status}`]
-              : account.parts.length
-                ? account.parts.map(part => `${part.label} · ${part.pct === null ? 'awaiting the next usage reading' : `${Math.round(part.pct)}% remaining`}${part.resets ? ` · reset: ${truncate(part.resets, 48)}` : ''}`)
-                : ['Usage not reported'])
+            const details = quotaDetails(quota, now)
             const first = chunk.quotas.length === 1 ? quota.account : `${quota.account}–${chunk.quotas.at(-1)!.account}`
             const hasMark = chunk.text.startsWith(mark)
             // one logo opens each CLI's run of accounts, a divider closes it; the accounts after it share that logo
             const opensCli = chunkIndex === 0 || line[chunkIndex - 1]!.quotas[0]!.cli !== quota.cli
             const popup = popups.show(`${quota.cli} quota · ${first}${chunk.quotas.length === 1 && quota.active ? ' · active' : ''}`, [
               ...details,
-              ...(quota.freshness && quota.freshness !== 'fresh' ? [`Snapshot ${quota.freshness}`] : []),
             ])
             const text = hasMark ? chunk.text.slice(mark.length) : chunk.text
             // Each harness's run of accounts sits on its own faint tint with hard edges at the │ between harnesses;
@@ -1161,9 +1193,10 @@ export const register: Register = on => {
             const body = <Text>
               <Text color={quota.active ? ink.text : ink.subtle} weight={quota.active ? 'bold' : undefined}>{head}</Text>
               {tokens.map((token, k) => {
-                const part = /^([A-Za-z]+)(\d+)%(.*)$/.exec(token) // label, percent, bar: anything else (a status, a cut token) stays plain
+                const part = quota.status ? undefined : quota.parts.find(part => part.pct !== null
+                  && token.startsWith(`${part.label}${Math.round(part.pct)}%`))
                 return part
-                  ? <Text key={`part-${k}`}> <Text color={ink.subtle}>{part[1]}</Text><Text color={level(Number(part[2]))}>{part[2]}%{part[3]}</Text></Text>
+                  ? <Text key={`part-${k}`}> <Text color={ink.subtle}>{part.label}</Text><Text color={level(part.pct!)}>{token.slice(part.label.length)}</Text></Text>
                   : <Text key={`part-${k}`} color={ink.subtle}> {token}</Text>
               })}
             </Text>
@@ -1258,9 +1291,42 @@ export const register: Register = on => {
     rows.length = 0
     rows.push(...otherRows.slice(0, otherLimit))
     const hiddenOther = otherRows.length - Math.min(otherRows.length, otherLimit)
+    const crowded = workerCount > 0 && quotaElements.length > Math.max(0, room - rows.length - 1)
     const crewRoom = room - rows.length - quotaElements.length
     const pager = crewPage(workerCount, crewRoom, await read($, crewPageIndex))
-    if (pager) {
+    if (crowded && room > rows.length) {
+      const oneRow = room - rows.length === 1
+      const compactCrew = [...crewAgents.map((agent, i) => {
+        const popups = hoverCards(`compact-native-${i}`, quotaWidth)
+        const resource = resourceDetail(resourceRows, agent.id)
+        const status = agent.unavailable ? 'unknown' : agent.status ?? 'unknown'
+        const details = [`State: ${status}`, `Model: ${agent.model ?? 'unknown'}`, `Effort: ${agent.effort ?? 'unknown'}`,
+          `Observed for ${span(now - agent.since)}`, ...(resource?.lines ?? [])]
+        return <Box width={quotaWidth} position="relative" hover={popups.show('Claude subagent', details)}>
+          <Text color={ink.text} wrap="truncate-end">{`◆ ${status === 'running' ? '●' : status === 'pending' ? '○' : '?'} ${agent.name ?? agent.description}`}</Text>{popups.cards}
+        </Box>
+      }), ...running.map((job, i) => {
+        const popups = hoverCards(`compact-bridge-${i}`, quotaWidth)
+        const state = stateOf(job)
+        const details = [job.observationUnavailable ? `State unknown; last observed: ${job.state ?? 'unknown'}` : `State: ${state}`,
+          `Model: ${job.model || 'unknown'}`, `Effort: ${job.effort || 'unknown'}`,
+          job.lastEventAt === undefined ? 'Last event unknown' : `Last event ${span(now - job.lastEventAt)} ago`,
+          job.memoryBytes == null ? 'Memory unavailable' : `Memory: ${(job.memoryBytes / 1024 ** 2).toFixed(0)} MiB${job.memoryCap ? ` / ${job.memoryCap}` : ''}`,
+          ...(job.reason ? [job.reason] : []), ...(job.peers ?? []).flatMap(peer => [`${peer.outgoing ? 'To' : 'From'} ${peer.target}: ${messagePreview(peer.preview)}`])]
+        return <Box width={quotaWidth} position="relative" hover={popups.show(`${job.backend} worker`, details)}>
+          <Text color={ink.text} wrap="truncate-end">{`${({ codex: '◈', agy: '✦', claude: '◆', opencode: '○' } as Record<string, string>)[job.backend] ?? '◇'} ${STATE_GLYPHS[state] ?? '?'} ${job.title ?? job.name}`}</Text>{popups.cards}
+        </Box>
+      })]
+      const items = [...(oneRow ? compactCrew : crew), ...quotaElements]
+      const page = Math.max(0, Math.min(await read($, quotaPageIndex), items.length - 1))
+      const controls = <Box flexDirection="row">
+        <Button key="quota-crew-prev" plain label="‹" onPress={async () => { await update($, quotaPageIndex, () => (page + items.length - 1) % items.length) }} />
+        <Text color={ink.subtle}>{` ${page + 1}/${items.length} `}</Text>
+        <Button key="quota-crew-next" plain label="›" onPress={async () => { await update($, quotaPageIndex, () => (page + 1) % items.length) }} />
+      </Box>
+      if (oneRow) rows.push(<Box flexDirection="row">{controls}{items[page]}</Box>)
+      else rows.push(items[page]!, controls)
+    } else if (pager) {
       const { page, pages, start, end } = pager
       const startBridge = Math.max(0, start - crewAgents.length)
       const endBridge = Math.max(0, end - crewAgents.length)
@@ -1286,7 +1352,7 @@ export const register: Register = on => {
     } else if (crewRoom > 0) {
       rows.push(...crew)
     }
-    rows.push(...quotaElements)
+    if (!crowded) rows.push(...quotaElements)
     if (hiddenOther && rows.length < room && !pager) rows.push(<Text color={ink.subtle}>{`+${hiddenOther} more · /wake`}</Text>)
     const visible = rows.slice(0, rows.length > room ? Math.max(0, room - 1) : room)
     const extras = (

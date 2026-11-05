@@ -18,7 +18,8 @@ def test_model_catalog_parser_lists_supported_ids_and_efforts():
             ]
         }
     )
-    assert inventory.parse_codex(catalog) == ["model-a\tlow,high"]
+    assert inventory.parse_codex(catalog) == [
+        {"id": "model-a", "model": "model-a", "efforts": ["low", "high"]}]
 
 
 def test_authoritative_empty_catalog_is_distinct_from_invalid_output():
@@ -35,7 +36,7 @@ def test_reference_check_does_not_start_provider_processes(monkeypatch, tmp_path
     assert reference.inspect()["inventory_checked"] is False
 
 
-def test_models_marks_and_sorts_free_first(monkeypatch, capsys):
+def test_models_marks_terms_without_a_free_route_sorting_bonus(monkeypatch, capsys):
     def run(*args, **kwargs):
         kwargs["stdout"].write(json.dumps({"data": [
             {"providerID": provider, "id": model, "enabled": True, "variants": []}
@@ -50,9 +51,9 @@ def test_models_marks_and_sorts_free_first(monkeypatch, capsys):
     )
     inventory.show("opencode")
     assert capsys.readouterr().out.splitlines() == [
-        "opencode/example-free\t-\tfree-logged",
+        "opencode/big-pickle\t-\tfree",
+        "opencode/example-free\t-\tfree",
         "opencode/glm-5.3-flash-free\t-\tfree",
-        "opencode/big-pickle\t-\tfree-logged",
         "paid/model\t-\tunverified",
     ]
 
@@ -79,3 +80,12 @@ def test_model_name_does_not_establish_billing_or_included_quota(provider, model
     }]}))
     assert rows[0]["id"] == provider + "/" + model
     assert rows[0]["listing_tier"] == "unverified"
+
+
+def test_native_modalities_are_inventory_facts_not_a_task_quality_ranking():
+    rows = inventory.parse_codex(json.dumps({"models": [{"slug": "example", "visibility": "list",
+        "supported_reasoning_levels": [{"effort": "high"}], "input_modalities": ["text", "image"],
+        "description": "Native description"}]}))
+    assert rows[0]["input_modalities"] == ["text", "image"]
+    assert rows[0]["description"] == "Native description"
+    assert "vision_score" not in rows[0]

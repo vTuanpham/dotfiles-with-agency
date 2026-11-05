@@ -10,6 +10,7 @@ from collections.abc import Mapping
 
 HARNESSES = ("claude", "agy", "codex", "opencode")
 VARIABLES = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "ANTIGRAVITY_CONVERSATION_ID", "CODEX_THREAD_ID",
+             "CODEX_SESSION_ID",
              "OPENCODE", "OPENCODE_SESSION_ID",
              "AGENT_BRIDGE_ROOT_HARNESS", "AGENT_BRIDGE_ROOT_SESSION")
 

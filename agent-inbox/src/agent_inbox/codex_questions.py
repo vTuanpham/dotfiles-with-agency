@@ -1,4 +1,4 @@
-"""Codex async question items; message responses follow T3's responseMode=message path."""
+"""Project Codex async question items and format plain-text message replies."""
 
 import hashlib
 import json

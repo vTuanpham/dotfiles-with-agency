@@ -9,6 +9,7 @@ def test_each_harness_reports_its_own_session():
     assert native({"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": ID}) == ("claude", ID)
     assert native({"ANTIGRAVITY_CONVERSATION_ID": ID}) == ("agy", ID)
     assert native({"CODEX_THREAD_ID": ID}) == ("codex", ID)
+    assert native({"CODEX_THREAD_ID": ID, "CODEX_SESSION_ID": "root"}) == ("codex", ID)
     assert native({"OPENCODE": "1", "OPENCODE_SESSION_ID": "ses_1"}) == ("opencode", "ses_1")
     assert native({"AGENT_BRIDGE_ROOT_HARNESS": "opencode", "AGENT_BRIDGE_ROOT_SESSION": "ses_1"}) == (
         "opencode", "ses_1")

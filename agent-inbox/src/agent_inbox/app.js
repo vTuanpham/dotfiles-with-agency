@@ -246,10 +246,12 @@ function renderMessages() {
   $('latest').hidden=lastNear || !filled;
 }
 function setStatus(next) {
+  const changed=status!==next;
   status=next;
   // Working and Ready are shown in the stream and the session list; the header only flags states that need attention.
   $('state').dataset.status=next; $('state').textContent=next==='active' || next==='idle' ? '' : STATUS_LABELS[next] || next;
   for(const button of rootButtons()) if(button.dataset.id===selected?.id) button.dataset.working=next==='active' ? '1' : '';
+  if(changed) renderRoots();
   renderMessages(); syncComposer();
 }
 function setConnection(text) { $('connection').textContent=text==='Connected' ? '' : text; }
@@ -283,7 +285,7 @@ async function read(cursor=null) {
     renderMessages();
   } catch(error) {
     if(version===viewVersion && selected.id===target) {
-      viewReady=false; canSend=false; syncComposer();
+      viewReady=false; canSend=false; setStatus('unknown');
       if(error.status===401) { $('pairing').hidden=false; $('inbox').hidden=true; }
       if(!cursor && newer && error.status===400) {
         newer=null; older=null; historyLoaded=false; transcript.clear(); activityItems.clear(); order.length=0; reset=true;
@@ -323,8 +325,9 @@ function renderRoots() {
   const search=$('session-search').value.toLocaleLowerCase(), matched=roots.filter(root=>
     !search || (root.label+' '+root.harness+' '+(readOrigin(root.origin)?.job || '')).toLocaleLowerCase().includes(search));
   for(const root of matched) {
-    const label=STATUS_LABELS[root.status] || root.status || root.id.slice(-6);
-    const working=root.status==='active' || (root.id===selected?.id && status==='active');
+    const state=root.id===selected?.id && status ? status : root.status;
+    const label=STATUS_LABELS[state] || state || root.id.slice(-6);
+    const working=state==='active';
     const origin=readOrigin(root.origin);
     const button=el('button',{class:'root',type:'button',data:{id:root.id,working:working ? '1' : ''},
       'aria-label':root.label+', '+root.harness+', '+label+(origin ? ', '+origin.tool+' worker' : ''),onclick:()=>choose(root)},
@@ -360,6 +363,7 @@ async function load() {
     if(current) { selected=current; rootHeading(current); syncComposer(); }
     if(selected && !roots.some(root=>root.id===selected.id)) {
       viewVersion++; reading=null; viewReady=false;
+      formsPanel.reset(selected.id); contextPanel.reset();
       canSend=false; setStatus('offline');
       $('delivery').textContent='This session is offline. Its conversation history is preserved.';
     }
@@ -488,11 +492,12 @@ const commandPanel=new CommandPanel(api,()=>selected,()=>read(),messageId,{
   focus() { $('message').focus?.(); },
 });
 const contextPanel=new ContextPanel(api,()=>selected,id=>roots.find(root=>root.id===id),root=>{ details.close(false); choose(root); });
-const formsPanel=new FormsPanel(api,()=>selected,messageId,()=>{ renderMessages(); if(lastNear) toBottom(false); });
+const formsPanel=new FormsPanel(api,()=>roots.find(root=>root.id===selected?.id),messageId,()=>{ renderMessages(); if(lastNear) toBottom(false); });
 setInterval(()=>{
   if(document.hidden) return;
   read();
   if(selected?.capabilities.questions) formsPanel.load();
+  if(details.isOpen) contextPanel.load();
 },4000);
 setInterval(()=>{if(!document.hidden) load();},10000);
 document.addEventListener('visibilitychange',async ()=>{

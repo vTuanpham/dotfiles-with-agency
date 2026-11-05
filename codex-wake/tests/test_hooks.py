@@ -63,7 +63,8 @@ def event(name, **fields):
 
 
 def item(name="command", status="inProgress", command="make build", **fields):
-    return {"id": name, "type": "commandExecution", "command": command, "status": status, **fields}
+    return {"id": name, "type": "commandExecution", "command": command, "cwd": "/workspace",
+            "status": status, **fields}
 
 
 def test_stop_arms_native_items_without_running_or_rewriting_the_command(host):
@@ -92,7 +93,11 @@ def test_observer_captures_result_once_and_has_no_os_pid_dependency(host, code):
     hooks.observe(job, folder)
     assert len(messages) == 1 and f"exit status {code if code is not None else 'unknown'}" in messages[0]
     log = next(folder.glob("*.log"))
-    assert log.read_text() == "captured output" and log.stat().st_mode & 0o777 == 0o600
+    context, output = log.read_text().split("\n\n", 1)
+    assert json.loads(context) == {"item_id": "command", "turn_id": "turn",
+                                   "command": "make build", "cwd": "/workspace"}
+    assert output == "captured output" and log.stat().st_mode & 0o777 == 0o600
+    assert "Native item: command" in messages[0] and "make build" not in messages[0]
 
 
 @pytest.mark.parametrize("name", ["Interrupt", "SessionEnd"])
@@ -279,7 +284,7 @@ def test_running_terminal_can_be_absent_from_persisted_history_until_completion(
                    "turn": "turn", "items": ["command"]}, folder)
     assert waits == [2, 4, 8]
     assert len(messages) == 1 and "exit status 7" in messages[0]
-    assert next(folder.glob("*.log")).read_text() == "native completion"
+    assert next(folder.glob("*.log")).read_text().split("\n\n", 1)[1] == "native completion"
 
 
 def test_stop_page_budget_is_bounded():
@@ -310,6 +315,51 @@ def test_completed_output_is_not_refetched_while_parent_is_busy(host, monkeypatc
                    "turn": "turn", "items": ["command"]}, folder)
     assert len(messages) == 1 and waits == [2, 4, 8]
     assert sum(method == "thread/items/read" for method, _ in data["calls"]) == 1
+
+
+@pytest.mark.parametrize("collected_first", [True, False])
+def test_final_native_poll_retires_only_its_command_across_parent_turns(host, monkeypatch, collected_first):
+    target, data, messages, _ = host
+    folder = hooks.directory(target)
+    data.update(status="active", items=[item(status="failed", exitCode=7),
+                                        item("uncollected", status="completed", exitCode=0)])
+
+    def collect():
+        hooks.handle(event("PostToolUse", turn_id="later-turn", tool_name="Bash",
+                           tool_use_id="command", tool_response="collected native result"))
+
+    if collected_first:
+        collect()
+
+    def idle(seconds):
+        collect()
+        data["status"] = "idle"
+
+    monkeypatch.setattr(hooks.time, "sleep", idle)
+    hooks.observe({"thread": "root", "home": "/codex-home", "generation": hooks.epoch(folder),
+                   "turn": "turn", "items": ["command", "uncollected"]}, folder)
+    assert len(messages) == 1 and "Native item: uncollected" in messages[0]
+    assert "exit status 0" in messages[0]
+    assert not (folder / (hooks.key("command:command") + ".sent")).exists()
+
+
+def test_redirected_command_retains_identity_without_putting_arguments_in_notification(host):
+    target, data, messages, _ = host
+    folder = hooks.directory(target)
+    command = "pytest > /private/results.log 2>&1"
+    data["items"] = [item(command=command, status="failed", exitCode=1, aggregatedOutput=None)]
+    hooks.observe({"thread": "root", "home": "/codex-home", "generation": hooks.epoch(folder),
+                   "turn": "turn", "items": ["command"]}, folder)
+    context, output = next(folder.glob("*.log")).read_text().split("\n\n", 1)
+    assert json.loads(context)["command"] == command and output == ""
+    assert "Native item: command" in messages[0] and "/private/results.log" not in messages[0]
+
+
+def test_other_tool_completion_does_not_suppress_a_shell_result(host):
+    target, _, _, _ = host
+    folder = hooks.directory(target)
+    hooks.handle(event("PostToolUse", tool_name="mcp__example__read", tool_use_id="command"))
+    assert not (folder / (hooks.key("command:command") + ".handled")).exists()
 
 
 MONITOR = "codex-wake monitor --cooldown 1m --max-events 2 --ttl 1h -- test -f /tmp/ready"

@@ -119,7 +119,7 @@ def test_opencode_steer_survives_spawn_failure_and_is_redelivered(monkeypatch, t
 
 @pytest.mark.parametrize("model", [
     "opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free",
-    "opencode/minimax-m3.1-flash-free", "opencode-go/gpt-6-luna",
+    "opencode-go/gpt-6-luna",
 ])
 def test_requested_model_variant_uses_the_standalone_native_cli(monkeypatch, tmp_path, model):
     monkeypatch.setattr(opencode.Path, "home", lambda: tmp_path / "home")
@@ -166,12 +166,13 @@ def test_command_end_output_is_capped(tmp_path):
 
 
 def test_free_tier_runs_only_zero_retention_models(tmp_path):
-    for model in ("opencode/big-pickle", "opencode/mimo-v2.6-flash-free", ""):
+    for model in ("opencode/big-pickle", "opencode/mimo-v2.6-flash-free",
+                  "opencode/minimax-m3.1-flash-free", ""):
         with pytest.raises(RuntimeError, match="zero-retention"):
             opencode.command({**state(tmp_path), "model": model, "effort": ""}, tmp_path, "p")
-    assert not opencode.logged_free("opencode/glm-5.3-flash-free")
-    assert not opencode.logged_free("openrouter/google/gemma-4-31b-it:free")  # another provider's own terms
-    assert not opencode.logged_free("opencode-go/glm-5.3")
+    assert not opencode.unreviewed_free("opencode/glm-5.3-flash-free")
+    assert not opencode.unreviewed_free("openrouter/google/gemma-4-31b-it:free")  # provider's own terms
+    assert not opencode.unreviewed_free("opencode-go/glm-5.3")
 
 
 def fake_turns(monkeypatch, outputs, codes):

@@ -27,14 +27,19 @@ def test_standalone_exec_preserves_environment_argv_stdin_and_exit(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "agent_args,agent_env,expected",
-    [(["--agent-id", "agent-cli"], None, "agent-cli"), ([], "agent-env", "agent-env")],
+    "agent_args,agent_env,native_env,owner,expected",
+    [(["--agent-id", "agent-cli"], None, {}, "claude:test-root", "agent-cli"),
+     ([], "agent-env", {}, "claude:test-root", "agent-env"),
+     ([], None, {"CODEX_SESSION_ID": "root", "CODEX_THREAD_ID": "child"}, "codex:root", "child")],
 )
-def test_run_records_agent_id_from_cli_or_environment(tmp_path, agent_args, agent_env, expected):
+def test_run_records_agent_id_from_cli_or_environment(tmp_path, agent_args, agent_env, native_env,
+                                                    owner, expected):
     env = {"PATH": os.defpath, "HOME": str(tmp_path),
            "PYTHONPATH": str(Path(heavy.__file__).parents[1]),
            "AGENT_RESOURCES_HOME": str(tmp_path / "queue"), "AGENT_RESOURCES_MIN_AVAILABLE_MIB": "0",
-           "AGENT_RESOURCES_MAX_LOAD": "1000000", "AGENT_RESOURCES_OWNER": "claude:test-root"}
+           "AGENT_RESOURCES_MAX_LOAD": "1000000", **native_env}
+    if not native_env:
+        env["AGENT_RESOURCES_OWNER"] = owner
     if agent_env is not None:
         env["AGENT_RESOURCES_AGENT_ID"] = agent_env
     command = [sys.executable, "-c", "import time; time.sleep(3)"]
@@ -53,7 +58,7 @@ def test_run_records_agent_id_from_cli_or_environment(tmp_path, agent_args, agen
                 break
             time.sleep(0.05)
         assert len(rows) == 1
-        assert rows[0][1]["owner"] == "claude:test-root"
+        assert rows[0][1]["owner"] == owner
         assert rows[0][1]["agent_id"] == expected
         request_path = rows[0][0]
         assert "agent_id" not in json.loads(request_path.read_text())

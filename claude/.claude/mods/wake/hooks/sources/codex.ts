@@ -112,8 +112,8 @@ export async function scanCodex(
   $: EngineInterface,
   cursor: CodexCursor,
   opts: { recentMs?: number; root?: { backend: string; session_id: string }; owners?: readonly string[] } = {},
-): Promise<{ jobs: CodexJob[]; cursor: CodexCursor; detachedOwners: string[] }> {
-  if (opts.owners && opts.owners.length === 0) return { jobs: [], cursor: {}, detachedOwners: [] }
+): Promise<{ jobs: CodexJob[]; cursor: CodexCursor; detachedOwners: string[]; unavailableJobs: string[] }> {
+  if (opts.owners && opts.owners.length === 0) return { jobs: [], cursor: {}, detachedOwners: [], unavailableJobs: [] }
   const snapshot = await bridgeSnapshot($, false, opts.owners)
   if (!snapshot) throw new Error('Bridge status unavailable')
   const now = Date.parse(snapshot.generated_at)
@@ -165,5 +165,9 @@ export async function scanCodex(
     })
   }
   jobs.sort((a, b) => Number(b.running) - Number(a.running) || b.lastEventAt - a.lastEventAt)
-  return { jobs, cursor: next, detachedOwners }
+  const unavailableJobs = (snapshot.unavailable_jobs ?? []).filter(id =>
+    !opts.owners || ownedBy({ owner: id.split('/')[0]! }, opts.owners))
+  for (const [key, offset] of Object.entries(cursor))
+    if (unavailableJobs.some(id => key.startsWith(`${id}:`))) next[key] = offset
+  return { jobs, cursor: next, detachedOwners, unavailableJobs }
 }

@@ -12,7 +12,7 @@ const chip = (owner?: string, running = true): WakeChip => ({
 function quotaEngine() {
   const calls: string[][] = []
   const writes: string[] = []
-  const values = new Map<string, unknown>([['owners', ['owner']], ['chips', []], ['quotas', []]])
+  const values = new Map<string, unknown>([['owners', ['owner']], ['chips', []], ['quotas', []], ['quotaErrors', []]])
   const s = snapshot()
   s.jobs = [job()]
   s.quotas = ['01', '02'].map(account => ({ backend: 'codex', account, plan: null, active: false,
@@ -36,31 +36,37 @@ function quotaEngine() {
   return { $, calls, values, s, writes }
 }
 
-test('periodic quotas skip empty, finished, foreign and unattributed crew', async () => {
+test('periodic quotas update without a Bridge worker', async () => {
   const w = quotaEngine()
-  for (const [owners, chips] of [
-    [[], [chip('owner')]],
-    [['owner'], []],
-    [['owner'], [{ ...chip('owner', false), awaitingRoot: true }, chip('other'), chip()]],
-  ]) {
-    w.values.set('owners', owners)
-    w.values.set('chips', chips)
-    await quotaTick(w.$)
-  }
-  expect(w.calls).toEqual([])
-})
-
-test('periodic quotas use account observations only while this session owns active work', async () => {
-  const w = quotaEngine()
-  w.values.set('chips', [chip('owner'), chip('owner'), chip('other'), chip('owner', false)])
   await quotaTick(w.$)
-  expect(w.calls.filter(args => args[1] === 'snapshot')).toEqual([['agent-accounts', 'snapshot']])
+  expect(w.calls).toEqual([['agent-accounts', 'snapshot'], ['agent-accounts', 'refresh', '--backend', 'all', '--if-stale'], ['agent-accounts', 'snapshot']])
   expect((w.values.get('quotas') as WakeQuota[]).map(quota => [quota.account, quota.freshness])).toEqual([
     ['01', 'stale'], ['02', 'stale'],
   ])
 })
 
-test('periodic quota refresh preserves previous numbers when an account returns no reading', async () => {
+test('publishes the snapshot before a slow refresh and never overlaps a second refresh', async () => {
+  const w = quotaEngine()
+  const run = w.$.process.run
+  let release: () => void = () => {}
+  let started: () => void = () => {}
+  const blocked = new Promise<void>(resolve => { release = resolve })
+  const entered = new Promise<void>(resolve => { started = resolve })
+  w.$.process.run = (async (args: readonly string[], options: unknown) => {
+    if (args[1] === 'refresh') { started(); await blocked }
+    return run(args as never, options as never)
+  }) as typeof run
+  const pending = quotaTick(w.$)
+  await entered
+  expect((w.values.get('quotas') as WakeQuota[]).length).toBe(2)
+  await quotaTick(w.$)
+  expect(w.calls.filter(args => args[1] === 'snapshot')).toHaveLength(2)
+  release()
+  await pending
+  expect(w.calls.filter(args => args[1] === 'refresh')).toHaveLength(1)
+})
+
+test('an empty current reading cannot inherit another account reading by display number', async () => {
   const w = quotaEngine()
   const previous: WakeQuota = { cli: 'codex', account: '01', plan: '', active: false,
     freshness: 'stale', parts: [{ label: 'w', pct: 17, resets: null }] }
@@ -68,7 +74,7 @@ test('periodic quota refresh preserves previous numbers when an account returns 
   w.values.set('quotas', [previous])
   w.s.quotas[0]!.windows = []
   await quotaTick(w.$)
-  expect((w.values.get('quotas') as WakeQuota[])[0]).toMatchObject(previous)
+  expect((w.values.get('quotas') as WakeQuota[])[0]?.parts).toEqual([])
 })
 
 test('unchanged quotas avoid writes while a changed freshness reading still publishes', async () => {
@@ -84,7 +90,7 @@ test('unchanged quotas avoid writes while a changed freshness reading still publ
   expect(w.writes).toEqual(['quotas'])
 })
 
-test('an empty quota reading retains numbers while adopting current account and freshness metadata', async () => {
+test('an empty quota reading adopts metadata without retaining old account numbers', async () => {
   const w = quotaEngine()
   const previous: WakeQuota = { cli: 'codex', account: '01', plan: 'old', active: false,
     freshness: 'fresh', parts: [{ label: 'w', pct: 17, resets: null }] }
@@ -94,14 +100,14 @@ test('an empty quota reading retains numbers while adopting current account and 
   await quotaTick(w.$)
   expect(w.writes).toEqual(['quotas'])
   expect((w.values.get('quotas') as WakeQuota[])[0]).toMatchObject({
-    ...previous, freshness: 'unknown', active: true, plan: 'current',
+    ...previous, parts: [], freshness: 'unknown', active: true, plan: 'current',
   })
   w.writes.length = 0
   await quotaTick(w.$)
   expect(w.writes).toEqual([])
 })
 
-test('quota rows follow active work while finished crew and cached summary remain available', async ($, on) => {
+test('quota rows remain visible without active Bridge work', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })
   mock.env(on, { HOME: '/home/u' })
   on('http.fetch', () => ({ deny: 'offline test' }))
@@ -123,7 +129,7 @@ test('quota rows follow active work while finished crew and cached summary remai
     } as never)
     const rendered = text((await bar.drawn()) as Node)
     expect(rendered).toContain('Quota crew')
-    expect(rendered.includes('w17%')).toBe(running)
+    expect(rendered.includes('w17%')).toBe(true)
     await bar.unmount()
   }
   const summary = await $.command.run({ command: 'wake', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } } as never)

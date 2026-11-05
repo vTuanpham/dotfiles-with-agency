@@ -47,7 +47,7 @@ test('Bridge state is mapped without filesystem access or reclassifying waits', 
   const result = await scanCodex(w.$, {})
   expect(result.jobs.every(j => !j.isStale)).toBe(true)
   expect(result.jobs.at(-1)?.waitingForRoot).toBe(true)
-  expect(w.calls).toEqual([['agent-bridge', 'status', '--json']])
+  expect(w.calls).toEqual([['agent-bridge', 'status', '--json', '--no-quotas']])
 })
 
 test('first sight is not news; later urgent and completion events are new-only', async () => {
@@ -70,10 +70,10 @@ test('owner scope bounds the Bridge request and leaves unowned namespaces out of
   const scoped = await scanCodex(w.$, {}, { owners: ['owner'] })
   expect(scoped.jobs.map(one => one.id)).toEqual(['owner/a', 'owner/child/b'])
   expect(Object.keys(scoped.cursor).sort()).toEqual(['owner/a:1:2', 'owner/child/b:1:2'])
-  expect(w.calls).toEqual([['agent-bridge', 'status', '--json', 'owner']])
+  expect(w.calls).toEqual([['agent-bridge', 'status', '--json', '--no-quotas', 'owner']])
 
   const empty = await scanCodex(w.$, scoped.cursor, { owners: [] })
-  expect(empty).toEqual({ jobs: [], cursor: {}, detachedOwners: [] })
+  expect(empty).toEqual({ jobs: [], cursor: {}, detachedOwners: [], unavailableJobs: [] })
   expect(w.calls).toHaveLength(1)
 })
 
@@ -237,6 +237,13 @@ test('direct message fields remain optional for older snapshots and validate bou
   expect(readSnapshot(JSON.stringify({ ...s, peers: { ...s.peers, recent_messages: [recent] } }))).toBeDefined()
   expect(readSnapshot(JSON.stringify({ ...s, peers: { ...s.peers, recent_messages: [{ ...recent, preview: '🙂'.repeat(161) }] } }))).toBeUndefined()
   expect(readSnapshot(JSON.stringify({ ...s, direct_messages: Array(101).fill(message) }))).toBeUndefined()
+})
+
+test('structured unavailable jobs accept only bounded owner/job IDs', () => {
+  const s = snapshot()
+  expect(readSnapshot(JSON.stringify({ ...s, unavailable_jobs: ['owner/a'] }))).toBeDefined()
+  for (const id of ['', 'owner', 'owner/a/extra', 'owner/a\n', 'owner/\u0000', `owner/${'x'.repeat(401)}`])
+    expect(readSnapshot(JSON.stringify({ ...s, unavailable_jobs: [id] }))).toBeUndefined()
 })
 
 test('snapshot memory, reason and peer edges reach each job', async () => {

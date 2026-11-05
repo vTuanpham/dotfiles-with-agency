@@ -9,8 +9,14 @@ command output before it reaches an agent.
 - `.config/rtk/filters.toml`: user-global output filters; a project's own `.rtk/filters.toml` takes
   precedence over these.
 
-The Claude and Codex configs call `rtk hook claude` as a `PreToolUse` hook, and the shell startup test
-needs `rtk` on PATH. There is no scripted install: install it by hand.
+Codex calls the native `rtk hook codex` adapter as a `PreToolUse` hook. Its rewrite
+output includes the decision required by [Codex's hook contract](https://learn.chatgpt.com/docs/hooks#pretooluse).
+`install.sh --apply hooks` replaces the former managed `rtk hook claude` Bash
+entry; custom hook commands stay intact. Claude's
+[live wrapper](../claude/.claude/hooks/README.md#rtk-and-auto-review) skips rewriting
+in auto/plan modes so the classifier reviews the command that runs; use explicit
+`rtk` commands there. Other known permission modes use the native hook. The shell
+startup test needs `rtk` on PATH. There is no scripted install: install it by hand.
 
 The `uvx-progress` filter removes UVX setup progress, preserving tool output,
 package changes, errors and exit status. It does not filter Baton answers,
@@ -64,17 +70,30 @@ quoting from `awk 'NR>=80'`, leaving a `>=80` redirect and a stray `=80` file.
 Prefer a read tool for line ranges; recover omitted output with `rtk recall` or
 a focused read. Shell quoting alone is not a reason to bypass filtering.
 
-### Known `rtk summary` limits (RTK 1.1.0)
+### Local summary fix (RTK 1.1.0)
 
-`summary` is a heuristic display filter, and these are upstream behaviours to design around, not to bypass RTK for:
+[summary-results.patch](patches/summary-results.patch) applies to the official
+[v1.1.0 source](https://github.com/rtk-ai/rtk/tree/v1.1.0). It identifies test
+results from runner records, preserves their reported counts, and retains failed
+test output. A jq `test(...)` expression, a `test_*.py` filename, or a passing
+test title containing "failed" no longer creates a test result or failure.
+The same fix removes build-summary guesses based on command arguments or filenames.
+The patch carries RTK's [Apache-2.0 license](patches/LICENSE).
+
+Apply it with `patch -p1 < /path/to/dotfiles-with-agency/rtk/patches/summary-results.patch`
+in a clean RTK v1.1.0 checkout. Build its normal release with Rust 1.91 or later:
+`cargo build --locked --release --bin rtk -j 2`, through host resource admission.
+Validate with the built binary first on PATH using this repository's filter
+checks below, then replace the user-local binary. Snapshot installation does not
+manage that binary; rerun these checks after an RTK upgrade.
+
+### Remaining `rtk summary` limit (RTK 1.1.0)
+
+`summary` is a heuristic display filter. Its stdin behavior remains upstream:
 
 - **It does not pass stdin to the command it wraps.** `printf x | rtk summary python3 -c 'import sys; print(len(sys.stdin.read()))'`
   prints 0, with exit status 0 (reproduced). Wrapping the whole pipeline (`rtk summary bash -o pipefail -c '… | …'`) prints 1.
   So the final-consumer rule above applies to the hook's rewrite of supported stages, not to a hand-written `summary` tail.
-- **Its test-result block is a guess.** A report had a plain `wc -l` over files named `test_*.py` and a passing `npm test` come
-  back with an invented "Test Results" count and negative-case test titles under "Failures" (not reproduced on small inputs here).
-  Take counts from the native tool (`wc`, a read of the file) and test outcomes from the runner's own exit status and
-  summary line (`rtk test`, or the project's runner), never from `summary`'s headings.
 
 ## Learning and filter patterns
 

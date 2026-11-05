@@ -92,7 +92,7 @@ def test_opencode_uses_enabled_native_variants_not_a_global_effort_enum():
         {"providerID": "example", "id": "disabled", "enabled": False}]}))
     assert result[0]["id"] == "example/google/model"
     assert result[0]["efforts"] == ["adaptive"]
-    assert result[0]["privacy_gate"] == "unreviewed"
+    assert result[0]["privacy_gate"] == "unverified"
     with pytest.raises(ValueError):
         inventory.parse_opencode('{"data":[{"enabled":true,"providerID":"x","id":"y"}]}')
 
@@ -104,3 +104,21 @@ def test_backend_cli_does_not_require_account_override(monkeypatch, capsys):
     monkeypatch.setattr(benchmarks, "account_observation", lambda backend, account: {})
     assert cli.main() == 0
     assert json.loads(capsys.readouterr().out)["native_catalog"]["backend"] == "claude"
+
+
+def test_reviewed_model_links_preserve_execution_route_and_never_strip_generic_suffixes():
+    catalog = {"backend": "opencode", "models": inventory.parse_opencode(json.dumps({"data": [
+        {"providerID": "opencode", "id": "glm-5.3-flash-free", "enabled": True,
+         "variants": [{"id": "high"}]},
+        {"providerID": "opencode-go", "id": "glm-5.3-flash", "enabled": True,
+         "variants": [{"id": "max"}]}]}))}
+    free = next(m for m in catalog["models"] if m["id"] == "opencode/glm-5.3-flash-free")
+    go = next(m for m in catalog["models"] if m["id"] == "opencode-go/glm-5.3-flash")
+    assert free["id"] == "opencode/glm-5.3-flash-free" and free["model"] == "glm-5.3-flash-free"
+    assert coverage.matches(free, "GLM-5.3-Flash") and coverage.matches(go, "GLM-5.3-Flash")
+    assert free["billing_route"] == "free variant" and go["billing_route"] == "subscription allowance"
+    assert free["privacy_gate"] == "reviewed" and "unverified" in free["identity_review"]["scope"]
+    assert not coverage.matches(free, "GLM-5.3-Flash (FP8)")
+    assert not coverage.matches({"model": "other-free"}, "other")
+    assert not coverage.matches({"model": "minimax-m3.1-flash-free"}, "MiniMax M3.1 Flash")
+    assert coverage.supported(go, "GLM-5.3-Flash (High)") is False

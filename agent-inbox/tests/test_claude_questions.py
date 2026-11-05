@@ -10,10 +10,12 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from test_inbox import request
 
-from agent_inbox import claude_questions
+from agent_inbox import claude, claude_questions
 from agent_inbox.claude_channel import channel_path, profile_channels
 from agent_inbox.models import NoLongerPending, Target
+from agent_inbox.server import App, Server
 from agent_inbox.store import Store
 
 INPUT = {"questions": [
@@ -91,6 +93,64 @@ def test_unanswered_callback_expires_without_answering_or_denying_native_questio
         thread.join(timeout=2)
         assert not thread.is_alive() and result == [{}]
         assert claude_questions.forms(selected).forms == []
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_paired_http_answer_completes_real_hook_and_cannot_resurrect_on_restart(cancel, monkeypatch):
+    with tempfile.TemporaryDirectory(prefix="iq-") as directory:
+        home = Path(directory)
+        selected = target(home)
+        monkeypatch.setattr(claude, "root", lambda selected: {"status": "waiting"})
+        store = Store(home)
+        store.register(selected)
+        _, token = store.pair(store.pair_code(), "Test phone")
+        app = App(store)
+        app.catalog.checked = time.monotonic()
+        app.catalog.live = {selected.id: selected}
+        server = Server(app, 0)
+        serving = threading.Thread(target=server.serve_forever)
+        serving.start()
+        process = subprocess.Popen([sys.executable, "-m", "agent_inbox.cli", "--state", str(home),
+                                    "claude-question"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE,
+                                   env={**os.environ, "CLAUDE_CONFIG_DIR": selected.settings["config_dir"]})
+        try:
+            native = {"hook_event_name": "PreToolUse", "session_id": selected.session_id,
+                      "tool_name": "AskUserQuestion", "tool_use_id": "tool-http", "tool_input": INPUT}
+            process.stdin.write(json.dumps(native).encode())
+            process.stdin.close()
+            path = channel_path(selected.settings["channels"], selected.session_id).with_suffix(".q")
+            deadline = time.monotonic() + 5
+            while not path.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert path.exists(), "Native hook did not publish its callback"
+            cookie = "inbox=" + token
+            status, _, forms = request(server, "GET", "/api/forms?id=" + selected.id, cookie=cookie)
+            assert status == 200 and [form["id"] for form in forms["forms"]] == ["tool-http"]
+            payload = {"id": str(uuid.uuid4()), "target": selected.id, "form": "tool-http",
+                       "answer": {} if cancel else {"0": ["API"], "1": "Keep the draft"},
+                       "cancel": cancel}
+            status, _, result = request(server, "POST", "/api/answer", payload, cookie)
+            assert status == 200 and result["status"] == "applied"
+            assert process.wait(timeout=5) == 0
+            output = json.loads(process.stdout.read())["hookSpecificOutput"]
+            assert output["permissionDecision"] == ("deny" if cancel else "allow")
+            if not cancel:
+                assert output["updatedInput"]["answers"] == {
+                    "Which checks?": "API", "Any constraints?": "Keep the draft"}
+            assert request(server, "GET", "/api/forms?id=" + selected.id, cookie=cookie)[2]["forms"] == []
+            restarted = App(Store(home))
+            assert restarted.answer(payload)["status"] == "applied"
+            assert restarted.answer({**payload, "id": str(uuid.uuid4())})["status"] == "already_answered"
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=5)
+            process.stdout.close()
+            process.stderr.close()
+            server.shutdown()
+            server.server_close()
+            serving.join(timeout=5)
 
 
 def test_malformed_question_and_duplicate_native_labels_fail_closed():

@@ -17,8 +17,8 @@ and the removed PID poll are listed below.
 | Wait / timeout | Current default | Source | Fits? Recommendation |
 | --- | --- | --- | --- |
 | Code-mode `functions.exec` initial yield | 30 s | [config/mod.rs:1220][config] | Yes for mixed work; explicitly yield sooner for background commands. It is not a job timeout. |
-| Code-mode `functions.wait` yield | 10 s | [wait_spec.rs:18][waitspec] | Yes for collecting a yielded cell; do not use repeated cell polls as an idle wake producer. |
-| Unified-exec `exec_command` initial yield | 10 s; clamp 250 ms–30 s (Windows minimum 10 s) | [shell_spec.rs:27][shellspec], [unified_exec/mod.rs:66][unified] | Yes; use a short explicit yield for known background work. |
+| Code-mode `functions.wait` yield | 10 s | [wait_spec.rs:18][waitspec] | When only collecting a running cell, choose an explicit 30–60 s window within harness limits. Completion can return sooner. |
+| Unified-exec `exec_command` initial yield | 10 s; clamp 250 ms–30 s (Windows minimum 10 s) | [shell_spec.rs:27][shellspec], [unified_exec/mod.rs:66][unified] | Prefer an explicit 30 s yield for ordinary checks; return sooner for interactive/background work. |
 | `write_stdin`, nonempty input | 250 ms; cap 30 s | [shell_spec.rs:125][shellspec], [handler defaults:117][handler] | Yes; preserves interactive responsiveness. |
 | `write_stdin`, empty poll | Omitted value 250 ms is clamped to **5 s**; maximum **300 s** | [handler defaults:117][handler], [process_manager.rs:1047][manager] | Yes as a poll window; choose an explicit longer wait only when no independent work remains and the harness permits it. “5–300 s” is a range, not a 300 s default poll. |
 | Background-terminal maximum poll window | `background_terminal_max_timeout = 300000` ms, minimum 5000 ms | [config/mod.rs:4139][config] | Keep. This caps empty `write_stdin` waits; it does **not** kill a terminal after five minutes. |

@@ -35,6 +35,10 @@ runtime does not expose them; no global context file is inferred.
 Tool-specific policy stays with each tool: Baton's `AGENT_BATON_SESSION`, Resources'
 `AGENT_RESOURCES_OWNER`, a Bridge worker's own job, Lab's `/proc` lookup when Claude hides
 its ID, and each tool's stored identity format.
+Codex's [root-session environment](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/exec_env.rs)
+also supplies `CODEX_SESSION_ID`. Resources uses it to group native child commands under
+their root controller; `native()` still identifies the child's own `CODEX_THREAD_ID`.
+`VARIABLES` includes both IDs so independent launches discard the enclosing session.
 
 Installed through its consumers (`install.sh` passes `--with-editable`). Checks:
 `uv run --locked pytest` and `uv run --locked ruff check src tests`.

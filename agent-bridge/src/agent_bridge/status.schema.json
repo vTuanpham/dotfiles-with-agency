@@ -642,6 +642,13 @@
         "limit": {
           "type": "string"
         },
+        "window_minutes": {"type": ["integer", "null"], "minimum": 1},
+        "source_window": {"type": ["string", "null"]},
+        "pool_id": {"type": ["string", "null"]},
+        "model_ids": {"type": ["array", "null"], "items": {"type": "string"}},
+        "scope_kind": {"type": ["string", "null"]},
+        "used_percent": {"type": ["number", "null"], "minimum": 0},
+        "remaining_fraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
         "resets": {
           "anyOf": [
             {
@@ -722,6 +729,12 @@
             }
           ]
         },
+        "source": {"type": ["string", "null"]},
+        "source_version": {"type": ["string", "null"]},
+        "account_key_hash": {"type": ["string", "null"]},
+        "refresh_status": {"type": ["string", "null"]},
+        "last_refresh_status": {"type": ["string", "null"]},
+        "last_refresh_at": {"type": ["string", "null"]},
         "freshness": {
           "type": "string",
           "enum": [
@@ -1354,6 +1367,11 @@
           "type": "array",
           "items": {"$ref": "#/$defs/DirectMessage"},
           "maxItems": 100
+        },
+        "unavailable_jobs": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "maxLength": 200},
+          "uniqueItems": true
         },
         "dependencies": {
           "type": "array",

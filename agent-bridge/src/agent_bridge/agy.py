@@ -351,19 +351,10 @@ def run(job, state, path, prompt, resume=False):
         err.close()
 
 
-def tier(model):
-    """(cost tier, quota bucket) inferred from the id, so new models need no table: Argon/Opus ≈ Sol/Astra,
-    Sonnet ≈ our Sonnet, Flash ≈ Luna/Haiku. GPT-OSS is excluded by the user."""
-    m = model.lower()
-    bucket = "argon" if "argon" in m else "claude" if ("claude" in m or "gpt" in m) else "gemini"
-    cost = "heavy" if ("argon" in m or "opus" in m) else "mid" if "sonnet" in m else "cheap"
-    return cost, bucket
-
-
 def fallback(job, state, state_path):
     if os.environ.get("AGENT_BRIDGE_AGY_FALLBACK") == "0":
         return
-    bucket = tier(state.get("model") or "")[1]
+    model = state.get("model")
     cooldowns = state.get("agyFallbackCooldowns", {})
 
     def quota_cache(account_dir):
@@ -381,7 +372,8 @@ def fallback(job, state, state_path):
             cached = agy_quota(data, time.time())
             if cached.account != account_dir.name:
                 raise ValueError("quota account mismatch")
-        return cached.windows
+        return [window for window in cached.windows if window.model_ids is not None
+                and model in window.model_ids]
 
     while True:
         completed = []
@@ -404,9 +396,15 @@ def fallback(job, state, state_path):
         previous = state.get("account")
         try:
             current_rows = quota_cache(ACCOUNTS / str(previous))
-            current_row = next((row for row in current_rows if bucket in row.group.casefold()), None)
+            if not current_rows:
+                log(job, "account_fallback_unavailable", level="urgent",
+                    message="Native exact model-to-quota-pool binding unavailable; account unchanged.")
+                return
+            current_row = min(current_rows, key=lambda row: row.resets or "")
         except (OSError, ValueError, KeyError, TypeError):
-            current_row = None
+            log(job, "account_fallback_unavailable", level="urgent",
+                message="Native account/model quota binding unavailable; account unchanged.")
+            return
         reset = current_row.resets if current_row and current_row.resets else error
         cooldowns[previous] = reset
         for account_dir in sorted(ACCOUNTS.iterdir()):
@@ -428,8 +426,11 @@ def fallback(job, state, state_path):
                         continue
                 except ValueError:
                     continue
-            row = next((row for row in rows if bucket in row.group.casefold()), None)
-            if row and row.remaining_percent is not None and row.remaining_percent > 0:
+            available = rows and all(
+                row.remaining_percent is not None
+                and (row.remaining_fraction > 0 if row.remaining_fraction is not None
+                     else row.remaining_percent > 0) for row in rows)
+            if available:
                 switch_account(job, state, account)
                 state["agyFallbackCooldowns"] = cooldowns
                 save(state_path, state)

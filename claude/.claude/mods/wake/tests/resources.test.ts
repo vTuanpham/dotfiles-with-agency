@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { EngineInterface } from 'claude-code'
-import { readResources, resourceCommand, resourceDetail, resourceOwner, scanResources } from '../hooks/sources/resources'
+import { readResources, resourceDetail, resourceOwner, scanResources } from '../hooks/sources/resources'
 
 const owner = 'claude:root-a'
 const request = (changes: Record<string, unknown> = {}) => ({ id: 'request-a', owner, agent_id: 'worker-a',
@@ -37,19 +37,6 @@ test('foreign owners, malformed numbers and unsupported resource schemas fail cl
     expect(() => readResources(snapshot([request(change)]), owner)).toThrow()
   }
   expect(() => readResources('{"schema_version":2,"requests":[]}', owner)).toThrow()
-})
-
-test('native attribution changes only a direct allocator invocation and safely quotes identities', () => {
-  expect(resourceCommand('agent-resources run --mem 3G -- python task.py', 'worker-a', owner))
-    .toBe("AGENT_RESOURCES_OWNER='claude:root-a' AGENT_RESOURCES_AGENT_ID='worker-a' agent-resources run --mem 3G -- python task.py")
-  expect(resourceCommand('/home/u/.local/bin/agent-resources run --mem 1G -- task', 'a', owner))
-    .toContain("AGENT_RESOURCES_AGENT_ID='a' /home/u/.local/bin/agent-resources run")
-  expect(resourceCommand('agent-resources run --mem 1G -- task', "a'$(false)", owner))
-    .toContain("AGENT_RESOURCES_AGENT_ID='a'\\''$(false)'")
-  for (const command of ['echo agent-resources run', 'cd /repo && agent-resources run --mem 1G -- task',
-    'agent-resources list', 'agent-resources\nrun', 'agent-resources-helper run']) {
-    expect(resourceCommand(command, 'a', owner)).toBe(command)
-  }
 })
 
 test('resource scans filter the exact root and preserve an explicitly inherited controller', async () => {

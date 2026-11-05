@@ -487,8 +487,8 @@ def write_snapshot(path, text):
             temporary.unlink(missing_ok=True)
 
 
-def account_observation(backend, account):
-    context = providers.context()
+def account_observation(backend, account, *, data=None):
+    context = providers.context() if data is None else dict(data)
     if backend:
         context["quotas"] = [row for row in context["quotas"]
                              if row["backend"] == backend and (account is None or row["account"] == account)]
@@ -503,17 +503,25 @@ def snapshot():
     return loads(path.read_text())
 
 
-def search(domain, query="", limit=5, catalog=None, *, data=None):
+def search(domain, query="", limit=5, catalog=None, *, data=None, include_speed=False, complete=False,
+           native_catalog=None):
     """Bounded offline evidence, grouped by source; never blend unlike metrics."""
     data = snapshot() if data is None else data
-    native = coverage.summarize(catalog, data, query) if catalog is not None else None
+    native = (dict(native_catalog) if native_catalog is not None else
+              coverage.summarize(catalog, data, query) if catalog is not None else None)
 
     unsupported = set()
+    domain_observed = set()
+    by_identity = {}
+    for model in (native or {}).get("models", []):
+        by_identity.setdefault(coverage.benchmark_key(model), []).append(model)
 
     def selected(label, effort=coverage.UNSPECIFIED):
         if native is None:
             return name_matches(query, label)
-        models = [m for m in native["models"] if coverage.matches(m, label)]
+        identities = {coverage.model_key(label), coverage.key(label.rsplit("/", 1)[-1])}
+        models = [m for identity in identities for m in by_identity.get(identity, [])]
+        domain_observed.update(m["id"] for m in models)
         if models and all(coverage.supported(m, label, effort) is False for m in models):
             unsupported.add((label, effort))
             return False
@@ -542,15 +550,27 @@ def search(domain, query="", limit=5, catalog=None, *, data=None):
     if domain == "browser":
         wanted.add("OSWorld")
     wanted.update({"performance": {"KernelBench.com"}, "debugging": {"Bug Hunt"}}.get(domain, set()))
-    if domain == "overall" or query:
+    if domain == "overall" or query or include_speed:
         wanted.add("Artificial Analysis")
     results = {}
+    source: dict
     for name, source in data["sources"].items():
         if name not in wanted:
             continue
+        if name == "Artificial Analysis" and source["status"] == "ok":
+            from . import artificial
+
+            try:
+                source = artificial.with_speed(source)
+            except ValueError:
+                source = {**source, "status": "unavailable",
+                          "error": "Retained AA source validation failed; refresh or inspect this source."}
         info = {key: value for key, value in source.items()
                 if key not in ("rows", "tables", "cost_rows", "points", "frontiers", "sha256", "efforts",
                                "effort_tradeoffs", "categories", "weights", "measurements", "raw")}
+        if name == "Artificial Analysis":
+            info["evidence_domain"] = "overall"
+            info["speed_only"] = domain != "overall"
         if source["status"] != "ok":
             results[name] = info
             continue
@@ -575,7 +595,7 @@ def search(domain, query="", limit=5, catalog=None, *, data=None):
             # Bound each metric/hardware/harness/cost basis independently; never merge units.
             groups = {}
             for row in matches:
-                if row["score"] is None:
+                if row["score"] is None and not complete:
                     continue
                 groups.setdefault((row["metric"], row["unit"], row["direction"],
                                    row["harness"], row.get("harness_version"), row.get("configuration"),
@@ -588,16 +608,19 @@ def search(domain, query="", limit=5, catalog=None, *, data=None):
                            if r["score"] is not None else None, "cost": r["cost"]}
                           for i, r in enumerate(rows)]
                 efficient = sorted(frontier(points), key=lambda p: (p["cost"], -p["score"]))
-                found = quality[:limit] + [rows[p["model"]] for p in efficient[:limit]]
+                found = rows if complete else quality[:limit] + [rows[p["model"]] for p in efficient[:limit]]
                 info["measurements"].extend(r for i, r in enumerate(found) if r not in found[:i])
             info["measurements"].sort(key=lambda r: (
                 harness.native(r["harness"], catalog["backend"]) is not True if catalog else False,
-                r["metric"], r["unit"], -r["score"] if r["direction"] == "higher" else r["score"],
+                r["metric"], r["unit"],
+                -(r["score"] or 0) if r["direction"] == "higher" else (r["score"] or 0),
                 r["model"], str(r["effort"]), str(r["harness"]), str(r["cost_kind"])))
             info["frontier_scope"] = "Per metric/unit/hardware/harness/cost basis; not an aggregate rank."
         elif name == "LiveBench":
             assert suite is not None
-            values = source["points"][suite]
+            values = source["points"].get(suite, [])
+            if suite not in source["points"]:
+                info["coverage_gap"] = f"{suite} measurements absent from this source export."
             matches = [p for p in values if selected(p["model"], source["efforts"].get(p["model"]))]
             efficient = sorted(frontier(matches), key=lambda p: (p["cost"], -p["score"]))
             pareto = {p["model"] for p in efficient}
@@ -608,7 +631,7 @@ def search(domain, query="", limit=5, catalog=None, *, data=None):
                 info[field] = [{"model": p["model"], "effort": source["efforts"].get(p["model"]),
                                 "score": p["score"], "usd_per_success": p["cost"],
                                 "time_per_task": None, "on_frontier": p["model"] in pareto}
-                               for p in points[:limit]]
+                               for p in (points if complete else points[:limit])]
             info["efficient_matches"] = len(efficient)
             info["frontier_scope"] = (
                 "Matching candidates in this release/suite after native/query filtering; "
@@ -616,11 +639,12 @@ def search(domain, query="", limit=5, catalog=None, *, data=None):
         elif name.startswith("Arena/"):
             matches = [r for r in source["rows"] if r.get("category", "overall") == "overall"
                        and selected(r["model_name"])]
-            info["results"] = sorted(matches, key=lambda r: r["rank"])[:limit]
+            ordered = sorted(matches, key=lambda r: r["rank"])
+            info["results"] = ordered if complete else ordered[:limit]
         else:
             info["tables"] = []
             matches = []
-            for table in source["tables"]:
+            for table in source.get("tables", []):
                 header = next(i for i, row in enumerate(table) if any("Model" in c for c in row))
                 model_column = next(i for i, cell in enumerate(table[header]) if "Model" in cell)
                 start = header + 1
@@ -632,7 +656,8 @@ def search(domain, query="", limit=5, catalog=None, *, data=None):
                 found = [r for r in table[start:] if selected(r[model_column])]
                 matches.extend(found)
                 if name != "Artificial Analysis" or domain == "overall":
-                    info["tables"].append(table_views(table[header:start], found, limit))
+                    info["tables"].append(table_views(table[header:start], found,
+                                                    max(1, len(found)) if complete else limit))
             trades = [r for r in source.get("effort_tradeoffs", [])
                       if selected(r["model"], r["from"]) and selected(r["model"], r["to"])]
             info["effort_tradeoffs"] = trades[:limit]
@@ -667,10 +692,13 @@ def search(domain, query="", limit=5, catalog=None, *, data=None):
         returned = [group[i] for i in range(max(map(len, groups), default=0))
                     for group in groups if i < len(group)]
         all_models = native.pop("models")
+        positions = {}
+        for index, label in enumerate(returned):
+            for identity in {coverage.model_key(label), coverage.key(label.rsplit("/", 1)[-1])}:
+                positions.setdefault(identity, index)
         candidates = [{key: value for key, value in m.items() if key not in ("sources", "coverage")}
-                      for m in all_models if any(coverage.matches(m, label) for label in returned)]
-        candidates.sort(key=lambda m: next(i for i, label in enumerate(returned)
-                                            if coverage.matches(m, label)))
+                      for m in all_models if coverage.benchmark_key(m) in positions]
+        candidates.sort(key=lambda m: positions[coverage.benchmark_key(m)])
         native["models"] = candidates[:limit]
         native["matches"] = len(candidates)
         native["limit"] = limit
@@ -678,6 +706,7 @@ def search(domain, query="", limit=5, catalog=None, *, data=None):
         native["unmeasured_count"] = len(missing)
         native["unmeasured_ids"] = missing[:limit]
         native["coverage_command"] = "model-guide models --backend " + native["backend"] + " --json"
+        native["domain_observed_ids"] = sorted(domain_observed)
     return {"retrieved": data["retrieved"], "domain": domain, "query": query,
             "missing_sources": sorted(wanted - data["sources"].keys()),
             "unsupported_effort_count": len(unsupported),
@@ -690,6 +719,12 @@ def search(domain, query="", limit=5, catalog=None, *, data=None):
                                      "not general CPU/server performance."] if domain == "performance"
                                else ["Planted-bug discovery without a bug report in two repos, judge-graded; "
                                      "not production incident diagnosis."] if domain == "debugging"
+                               else ["Vision measures perception/preferences; "
+                                     "computer-use outcomes are separate."]
+                               if domain == "vision" else
+                               ["Browser/OSWorld measure agent outcomes with published scaffold and budgets; "
+                                "perception-only vision scores do not prove computer-use ability."]
+                               if domain == "browser"
                                else []),
             "sources": results, "gaps": "Missing measurements/settings are unknown; source scales differ.",
             "review_sources": (

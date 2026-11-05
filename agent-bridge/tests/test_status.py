@@ -6,8 +6,9 @@ from pathlib import Path
 
 import jsonschema
 import pytest
+from agent_accounts import codex
 from agent_accounts.models import Quota, QuotaWindow
-from agent_accounts.readers import agy_quota, codex_quotas
+from agent_accounts.readers import agy_quota
 from agent_resources import heavy
 
 from agent_bridge import cli, core, peers, status, status_model, status_render, watch
@@ -375,6 +376,7 @@ def test_hostile_state_is_rejected_without_echo(world, raw):
     (job / "state.json").write_text(raw)
     snapshot = status.Collector().collect()
     assert not snapshot.jobs and snapshot.errors == ("owner/a: invalid or unreadable state",)
+    assert snapshot.unavailable_jobs == ("owner/a",)
 
 
 def test_symlinks_malformed_events_and_ack_are_not_guessed(world, tmp_path):
@@ -386,8 +388,10 @@ def test_symlinks_malformed_events_and_ack_are_not_guessed(world, tmp_path):
     snapshot = status.Collector().collect()
     assert snapshot.jobs[0].last_message == "valid"
     assert len(snapshot.errors) == 2
+    assert snapshot.unavailable_jobs == ()
     (job.parent / "ack.json").write_text('{"version":1,"jobs":{"a":null}}')
     assert not status.Collector().collect().jobs
+    assert status.Collector().collect().unavailable_jobs == ("owner/a",)
     (job.parent / "ack.json").unlink()
     outside = tmp_path / "outside.json"
     outside.write_text('{"title":"outside"}')
@@ -483,12 +487,15 @@ def test_renderer_parity_and_ack_semantics(world):
 
 
 def test_quota_decoder_parity_freshness_and_hostile_input():
-    q = codex_quotas("* 03 account@example.invalid  Plus      0  62%  81%  Now")[0]
-    assert [(w.label, w.remaining_percent) for w in q.windows] == [("h", 62), ("w", 81)]
-    assert q.freshness == "unknown" and "@" not in str(q)
-    unknown = codex_quotas("  04 account@example.invalid  New Plan      0  62%  81%  Now")[0]
-    assert unknown.status == "unsupported plan" and unknown.windows == ()
     now = datetime.fromisoformat(NOW).timestamp()
+    data = {"schema_version": 1, "command": "list", "active_account_key": "synthetic-key", "accounts": [
+        {"number": 3, "account_key": "synthetic-key", "active": True, "plan": "New Plan", "usage": {
+            "source": "cache", "updated_at": None,
+            "primary": {"used_percent": 38, "window_minutes": 240, "resets_at": None},
+            "refresh": {"requested": False, "status": "not_requested"}}}]}
+    q = codex.decode(data, now)[0]
+    assert [(w.label, w.remaining_percent) for w in q.windows] == [("4h", 62)]
+    assert q.freshness == "unknown" and "@" not in str(q) and q.plan == "New Plan"
     data = {
         "account": "a1",
         "at": NOW,
@@ -497,7 +504,7 @@ def test_quota_decoder_parity_freshness_and_hostile_input():
                 "group": "Gemini Models",
                 "limit": "Five Hour Limit Remaining",
                 "remaining": 42,
-                "resets": "soon",
+                "resets": "2099-01-01T00:00:00Z",
             }
         ],
     }

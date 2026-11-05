@@ -1,7 +1,87 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { EngineInterface } from 'claude-code'
-import { codexTick } from '../hooks/register'
+import { codexTick, pollAgents } from '../hooks/register'
 import { job, NOW, snapshot } from './status-world'
+
+test('Bridge polls serialize event delivery and recover after status failure', async () => {
+  const s = snapshot()
+  s.jobs = [job()]
+  const values = new Map<string, unknown>([['owners', ['owner']], ['lastActivity', Date.parse(NOW)]])
+  let version = 1, calls = 0, cards = 0, failed = false
+  let release: () => void = () => {}, started: () => void = () => {}
+  let blocked = false
+  const waiting = new Promise<void>(resolve => { release = resolve })
+  const entered = new Promise<void>(resolve => { started = resolve })
+  const $ = {
+    state: {
+      get: async (ref: { key: string }) => ({ value: values.get(ref.key), version }),
+      set: async (ref: { key: string }, value: unknown) => { values.set(ref.key, value); return { isSet: true, version: ++version } },
+    },
+    session: { id: async () => 'root', append: async () => { cards++; return { uuid: 'card' } } },
+    clock: { now: async () => Date.parse(NOW) },
+    process: { run: async () => {
+      calls++
+      if (blocked) { started(); await waiting }
+      if (failed) throw new Error('offline')
+      return { stdout: JSON.stringify(s), exitCode: 0, isStdoutTruncated: false }
+    } },
+  } as unknown as EngineInterface
+  await codexTick($)
+  s.events = [{ id: 'event-1', job: 'owner/a', offset: 10, kind: 'question', at: NOW, text: 'URGENT: Choose', wakes: true }]
+  blocked = true
+  const pending = codexTick($)
+  await entered
+  await codexTick($)
+  expect(calls).toBe(2)
+  release()
+  await pending
+  expect(cards).toBe(1)
+  expect((values.get('needs') as unknown[]).length).toBe(1)
+  blocked = false
+  s.jobs = [job({ title: 'Newer worker state' })]
+  await codexTick($)
+  expect((values.get('chips') as { title: string }[])[0]?.title).toBe('Newer worker state')
+  failed = true
+  await codexTick($)
+  expect((values.get('chips') as { isStale: boolean; observationUnavailable: boolean }[])[0]).toMatchObject({ isStale: false, observationUnavailable: true })
+  failed = false
+  await codexTick($)
+  expect((values.get('chips') as { isStale: boolean; observationUnavailable?: boolean }[])[0]).toMatchObject({ isStale: false })
+  expect((values.get('chips') as { observationUnavailable?: boolean }[])[0]?.observationUnavailable).toBeUndefined()
+  expect(cards).toBe(1)
+  const latest = s.jobs[0]!
+  s.jobs = []
+  Object.assign(s, { unavailable_jobs: ['owner/a'] })
+  await codexTick($)
+  expect((values.get('chips') as { observationUnavailable?: boolean }[])[0]?.observationUnavailable).toBe(true)
+  expect(values.get('bridgeCursor')).toEqual({ 'owner/a:1:2': 10 })
+  s.jobs = [latest]
+  Object.assign(s, { unavailable_jobs: [] })
+  await codexTick($)
+  expect((values.get('chips') as { observationUnavailable?: boolean }[])[0]?.observationUnavailable).toBeUndefined()
+  expect(cards).toBe(1)
+})
+
+test('native worker list failure marks the last observation and recovery clears it', async () => {
+  const values = new Map<string, unknown>()
+  let version = 1, failed = false
+  const $ = {
+    state: {
+      get: async (ref: { key: string }) => ({ value: values.get(ref.key), version }),
+      set: async (ref: { key: string }, value: unknown) => { values.set(ref.key, value); return { isSet: true, version: ++version } },
+    },
+    clock: { now: async () => 1000 },
+    agent: { list: async () => { if (failed) throw new Error('offline'); return [{ id: 'a', type: 'worker', description: 'review', status: 'running' }] } },
+  } as unknown as EngineInterface
+  await pollAgents($)
+  expect((values.get('subagents') as { unavailable?: boolean }[])[0]?.unavailable).toBeUndefined()
+  failed = true
+  await pollAgents($)
+  expect((values.get('subagents') as { unavailable?: boolean }[])[0]?.unavailable).toBe(true)
+  failed = false
+  await pollAgents($)
+  expect((values.get('subagents') as { unavailable?: boolean }[])[0]?.unavailable).toBeUndefined()
+})
 
 test('unchanged idle crew polling performs no state writes or process calls', async () => {
   const writes: string[] = [], calls: string[] = []

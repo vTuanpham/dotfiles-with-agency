@@ -139,8 +139,8 @@ reading, searching and running commands.
 - Delegate only with explicit user authorization and when independent progress
   or scrutiny outweighs briefing cost. Use the `delegation` skill for coordination
   and native harness guidance, and `model-selection` for model/effort tradeoffs.
-  Honor user choices; otherwise choose each worker's model/effort for its task,
-  using the current frontier family rather than blindly accepting defaults.
+  Honor user choices; otherwise choose each worker's model and effort using
+  current task evidence, supported native controls and allowance context.
 - Use native subagents for same-harness work. The `agent-bridge` skill owns
   execution in another harness, model or quota pool; never bridge same-harness work.
 - When root quota is nearly exhausted (user/harness says so), other-harness

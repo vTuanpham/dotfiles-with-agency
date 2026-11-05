@@ -5,16 +5,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent_accounts import providers
-from agent_accounts.readers import agy_quota, codex_quotas
+from agent_accounts import codex, providers
+from agent_accounts.readers import agy_quota
 
 
-def test_codex_cache_keeps_alias_and_unknown_freshness_without_address():
-    rows = codex_quotas("* 03 account@example.invalid  Plus      0  62%  81%  Now")
+def test_codex_cache_keeps_reported_windows_freshness_and_omits_address(codex_data):
+    rows = codex.decode(codex_data, datetime.now(timezone.utc).timestamp())
     assert len(rows) == 1 and rows[0].account == "03" and rows[0].active
-    assert rows[0].freshness == "unknown" and rows[0].observed_at is None
+    assert rows[0].freshness == "fresh" and rows[0].observed_at is not None
     assert [window.remaining_percent for window in rows[0].windows] == [62, 81]
     assert "example.invalid" not in repr(rows)
+    assert [window.window_minutes for window in rows[0].windows] == [240, 2880]
+    assert rows[0].plan == "unpublished plan" and rows[0].account_key_hash
 
 
 @pytest.mark.parametrize("remaining", [True, -1, 101, "40"])
@@ -49,12 +51,12 @@ def test_account_refresh_requires_existing_auth_and_keeps_cache_on_invalid_respo
     assert cache.read_text() == "previous cache"
 
 
-def test_cached_inventory_needs_no_bridge_or_job_state(tmp_path, monkeypatch):
+def test_cached_inventory_needs_no_bridge_or_job_state(tmp_path, monkeypatch, codex_data):
     monkeypatch.setattr(providers.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
-        a, 0, "  01 account@example.invalid  Pro      0  71%  Now", ""))
+        a, 0, json.dumps(codex_data), ""))
     rows, errors = providers.snapshot(root=tmp_path)
     assert errors == [] and len(rows) == 1 and rows[0].backend == "codex"
-    assert rows[0].windows[0].remaining_percent == 71
+    assert rows[0].windows[0].remaining_percent == 62
 
 
 def test_explicit_refresh_atomically_writes_private_validated_observation(tmp_path, monkeypatch):
@@ -62,9 +64,12 @@ def test_explicit_refresh_atomically_writes_private_validated_observation(tmp_pa
     token.parent.mkdir(parents=True)
     token.write_text("synthetic")
     monkeypatch.setattr(providers.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
-        a, 0, '{"response":"Gemini Models\\tweekly\\t90%\\ttomorrow"}', ""))
+        a, 0, json.dumps({"num_turns": 0, "command": {"name": "usage", "data": {"groups": [
+            {"name": "Native Group", "buckets": [{"id": "pool-1", "name": "Weekly",
+                "window": "weekly", "remaining_fraction": 0.9,
+                "reset_time": "2099-01-01T00:00:00Z"}]}]}}}), ""))
     observation = providers.refresh("a1", root=tmp_path)
     cache = tmp_path / "a1/quota.json"
     assert observation.freshness == "fresh" and observation.account == "a1"
-    assert json.loads(cache.read_text())["rows"][0]["remaining"] == 90
+    assert json.loads(cache.read_text())["groups"][0]["buckets"][0]["remaining_fraction"] == 0.9
     assert cache.stat().st_mode & 0o777 == 0o600

@@ -1,5 +1,26 @@
 # Claude hooks (live)
 
+## RTK and auto review
+
+`rtk.py` delegates to `rtk hook claude` only in known permission modes without
+the auto classifier. Auto mode, plan mode (which can use that classifier), and
+missing or unknown modes leave the command untouched. Use explicit `rtk` commands
+in those modes, following the shared shell filtering guidance.
+
+This avoids [invalidating review of the original input](https://code.claude.com/docs/en/hooks#pretooluse-updatedinput-in-auto-mode),
+including denials of sibling tool calls. The wrapper never grants permission,
+denies a command, or retries it. `install.sh --apply links hooks` installs the live
+wrapper and replaces only the former managed `rtk hook claude` Bash entry in Claude
+settings, preserving local settings and Codex's native RTK hook.
+
+## Native resource reservations
+
+`resource-context.py` uses [SubagentStart](https://code.claude.com/docs/en/hooks#subagentstart)
+to give each child its root owner and agent ID as context. The child must export these values
+in each Bash call that invokes `agent-resources`; this also covers nested scripts. The hook
+does not change commands or enforce attribution, and omitted exports leave requests unattributed.
+Install its link and hook with `./install.sh --apply links hooks`.
+
 ## Process matching
 
 The shared [process-match guard](../../../shell/README.md#agent-process-matching)

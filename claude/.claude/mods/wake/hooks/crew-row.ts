@@ -30,9 +30,10 @@ export function truncate(text: string, width: number): string {
 
 export const STATE_GLYPHS: Record<string, string> = {
   running: '●', waiting_for_heavy: '⌁', paused: '=', retrying: '↻', blocked_on_question: '?',
-  waiting_for_root: '✓', idle: '○', retired: '○', stalled: '!', done: '✓',
+  waiting_for_root: '✓', idle: '○', retired: '○', stalled: '!', done: '✓', unavailable: '?',
 }
 export function stateOf(job: WakeChip): string {
+  if (job.observationUnavailable) return 'unavailable'
   if (job.isStale) return 'stalled'
   if (job.state === 'blocked_on_question') return job.state
   if (job.awaitingRoot && (!job.running || job.waitingForRoot)) return 'done'
@@ -379,6 +380,7 @@ function foldDead(quotas: WakeQuota[]): QuotaChunk[] {
     let j = i
     // neighbours that read the same fold into one: a dead state, or the same numbers on idle accounts (never the active one)
     const same = (other: WakeQuota | undefined) => other?.cli === quota.cli && other.status === quota.status
+      && other.refreshStatus === quota.refreshStatus && other.observedAt === quota.observedAt
       && (quota.status !== undefined || (!quota.active && !other.active && other.freshness === quota.freshness
         && JSON.stringify(other.parts.map(p => [p.label, p.pct === null ? null : Math.round(p.pct)])) === JSON.stringify(quota.parts.map(p => [p.label, p.pct === null ? null : Math.round(p.pct)]))))
     while (same(quotas[j + 1])) j++

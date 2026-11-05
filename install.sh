@@ -159,6 +159,8 @@ LINKS=(
   "claude/.claude/CLAUDE.md .claude/CLAUDE.md"
   "claude/.claude/mods .claude/mods"
   "claude/.claude/hooks/bridge-stop.py .claude/hooks/bridge-stop.py"
+  "claude/.claude/hooks/resource-context.py .claude/hooks/resource-context.py"
+  "claude/.claude/hooks/rtk.py .claude/hooks/rtk.py"
   "claude/.claude/skills/agent-baton .claude/skills/agent-baton"
   "claude/.claude/skills/agent-bridge .claude/skills/agent-bridge"
   "codex/.codex/AGENTS.md .codex/AGENTS.md"
@@ -276,7 +278,22 @@ merge_hooks() { # merge_hooks <snapshot in the repo> <live file under $HOME>
     fi
   else
     if [[ ! -f $live ]]; then say "  ~/$2 is missing: the snapshots step copies it"; return 0; fi
-    merged=$(jq --slurpfile s "$snap" "$HOOKS_JQ" "$live")
+    local migrate='.' rtk_command=''
+    if [[ $2 == .claude/settings.json ]]; then
+      rtk_command='python3 -I "$HOME/.claude/hooks/rtk.py"'
+    elif [[ $2 == .codex/hooks.json ]]; then
+      rtk_command='rtk hook codex'
+    fi
+    if [[ -n $rtk_command ]]; then
+      migrate='(.hooks.PreToolUse[]? | select(.matcher == "Bash") | .hooks) |= (
+        (if any(.[]; .type == "command" and .command == $rtk_command) then
+          map(select(.type != "command" or .command != "rtk hook claude"))
+        else map(if .type == "command" and .command == "rtk hook claude" then .command = $rtk_command else . end) end)
+        | reduce .[] as $hook ([];
+          if $hook.type == "command" and $hook.command == $rtk_command
+            and any(.[]; .type == "command" and .command == $rtk_command) then . else . + [$hook] end))'
+    fi
+    merged=$(jq --arg rtk_command "$rtk_command" --slurpfile s "$snap" "$migrate | $HOOKS_JQ" "$live")
   fi
   if [[ -f $live && $(jq -S . <<<"$merged") == "$(jq -S . "$live")" ]]; then say "  ~/$2 already has the hooks"; return 0; fi
   say "  ~/$2 gains the hooks and plugins it lacks (a private recovery copy goes under state/backups/dotfiles-with-agency/)"

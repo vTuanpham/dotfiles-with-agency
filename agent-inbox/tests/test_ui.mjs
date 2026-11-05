@@ -152,6 +152,27 @@ test('capabilities hide unavailable controls without guessing from harness names
   assert.throws(()=>ui.run('decodeRoots')({roots:[{...roots[0],capabilities:missing}]}),/recognized format/);
 });
 
+test('failed native reads clear Working in the stream and root list until fresh activity returns', async () => {
+  let failed=false;
+  const liveRoots=[{...roots[0],status:'active'},roots[1]];
+  const ui=await boot({roots:liveRoots,view:()=>{
+    if(failed) throw new Error('Native read unavailable');
+    return {status:'active',can_send:true,messages:[{id:'m',role:'assistant',text:'Saved reply'}]};
+  }});
+  assert.equal(findAll(ui.element('messages'),node=>node.text==='Working…').length,1);
+  failed=true; await ui.poll();
+  assert.equal(findAll(ui.element('messages'),node=>node.text==='Working…').length,0);
+  assert.equal(ui.element('state').textContent,'Status not reported');
+  assert.equal(ui.element('roots').children[0].dataset.working,'');
+  assert.match(ui.element('roots').children[0].attributes['aria-label'],/Status not reported/);
+  await ui.refresh([{...liveRoots[0],label:'Updated root'},liveRoots[1]]);
+  assert.equal(ui.element('roots').children[0].dataset.working,'','old discovery activity cannot override a failed selected-root read');
+  assert.equal(ui.bodyOf(ui.messages()[0]).textContent,'Saved reply');
+  failed=false; await ui.poll();
+  assert.equal(ui.element('roots').children[0].dataset.working,'1');
+  assert.equal(findAll(ui.element('messages'),node=>node.text==='Working…').length,1);
+});
+
 test('a late read from an earlier visit cannot replace a fresh A after A to B to A', async () => {
   const late=deferred(); let aReads=0;
   const page=(id,text)=>({status:'idle',can_send:true,messages:[{id,role:'assistant',text}]});
@@ -764,6 +785,128 @@ test('session details keep the account scope and never invent a capped usage rea
   assert.equal(findAll(body,node=>node.text==='120% used · over limit').length,1);
 });
 
+test('native denial and unknown usage stay distinct from low utilization and past reset times', async () => {
+  for(const [allowed,spend,reached,expected] of [
+    [false,false,null,'blocked'], [true,true,null,'blocked'], [null,null,null,'unknown'],
+    [true,false,'workspace_member_credits_depleted','blocked'], [true,false,null,'allowed'],
+  ]) {
+    const sample={account:{identity:null,quota_identity:'snapshot-only',email:'user@example.test',plan:'Plus',scope:'connection'},
+      ordinary_usage_allowed:allowed,quotas:[{label:'Primary',used_percent:25,window_minutes:300,resets_at:1,
+        spend_control_reached:spend,rate_limit_reached_type:reached}],metrics:[],workers:[],tools:[],notices:[],fetched_at:1};
+    const ui=await boot({context:()=>sample});
+    await ui.element('details-toggle').listeners.click(); await tick();
+    const body=ui.element('details-body'), quota=find(body,node=>hasClass(node,'quota'));
+    assert.equal(quota.dataset.usage,expected);
+    const meter=find(body,node=>node.attributes.role==='meter');
+    assert.equal(meter.attributes['aria-valuenow'],'25');
+    assert.match(meter.attributes['aria-valuetext'],new RegExp(expected==='blocked' ? 'usage limited' :
+      expected==='allowed' ? 'ordinary included usage permitted' : 'ordinary included usage unconfirmed'));
+    assert.equal(findAll(body,node=>node.text==='25% used').length,1);
+    assert.equal(findAll(body,node=>node.text==='Reset time passed').length,1);
+    assert.equal(findAll(body,node=>node.text==='Usage snapshot account: snapshot-only').length,1);
+    const state=allowed===false ? 'Ordinary included usage is blocked.' : allowed===true ?
+      'The provider permits ordinary included usage.' : 'Ordinary included usage is unconfirmed.';
+    assert.equal(findAll(body,node=>node.text===state).length,1);
+    if(spend) assert.equal(findAll(body,node=>node.text==='Spend control reached').length,1);
+    if(reached) assert.equal(findAll(body,node=>node.text==='Workspace member credits depleted').length,1);
+  }
+});
+
+test('usage denial remains visible without percentage windows and malformed flags are refused', async () => {
+  const sample={account:{identity:null,email:null,plan:'Plus',scope:'connection'},ordinary_usage_allowed:false,
+    quotas:[],metrics:[],workers:[],tools:[],notices:[],fetched_at:1};
+  const ui=await boot({context:()=>sample});
+  await ui.element('details-toggle').listeners.click(); await tick();
+  assert.equal(findAll(ui.element('details-body'),node=>node.text==='Ordinary included usage is blocked.').length,1);
+  assert.throws(()=>ui.run('decodeContext')({...sample,ordinary_usage_allowed:'false'}),/recognized format/);
+  for(const flags of [{spend_control_reached:1},{rate_limit_reached_type:'__proto__'}]) {
+    assert.throws(()=>ui.run('decodeContext')({...sample,quotas:[{
+      label:'Primary',used_percent:25,window_minutes:300,resets_at:null,...flags}]}),/recognized format/);
+  }
+});
+
+test('open Details refreshes stale quota values neutrally after failure and recovers on success', async () => {
+  const sample=used=>({account:{identity:'account-a',email:null,plan:'Plus',scope:'connection'},ordinary_usage_allowed:true,
+    quotas:[{label:'Primary',used_percent:used,window_minutes:300,resets_at:1,spend_control_reached:false,
+      rate_limit_reached_type:null}],metrics:[],workers:[],tools:[],notices:[],fetched_at:1700000000});
+  let calls=0;
+  const ui=await boot({context:()=>{ if(++calls===2) throw new Error('Quota connection unavailable'); return sample(calls===1 ? 25 : 40); }});
+  await ui.element('details-toggle').listeners.click(); await tick();
+  assert.equal(find(ui.element('details-body'),node=>hasClass(node,'quota')).dataset.usage,'allowed');
+  await ui.poll();
+  const body=ui.element('details-body'), stale=find(body,node=>hasClass(node,'quota'));
+  assert.equal(stale.dataset.usage,'unknown');
+  assert.equal(stale.dataset.level,'stale');
+  assert.equal(findAll(body,node=>node.text==='25% used').length,1);
+  assert.equal(findAll(body,node=>node.text==='Last reading · Reset time passed').length,1);
+  assert.equal(findAll(body,node=>node.text==='Quota connection unavailable').length,1);
+  assert.equal(findAll(body,node=>node.text==='The provider permits ordinary included usage.').length,0);
+  assert.match(find(body,node=>node.attributes.role==='meter').attributes['aria-valuetext'],/last reading, current usage unconfirmed/);
+  assert.equal(findAll(body,node=>/^Updated /.test(node.text || '')).length,1);
+  await ui.poll();
+  assert.equal(find(ui.element('details-body'),node=>hasClass(node,'quota')).dataset.usage,'allowed');
+  assert.equal(findAll(ui.element('details-body'),node=>node.text==='40% used').length,1);
+  ui.element('details-close').listeners.click();
+  await ui.poll(); assert.equal(calls,3,'closed Details does not keep refreshing');
+});
+
+test('obsolete Details requests cannot overwrite another root or its cached values on return', async () => {
+  const abandoned=deferred(), fresh=deferred(); let aReads=0;
+  const sample=(used,email)=>({account:{identity:null,email,plan:'Plus',scope:'connection'},ordinary_usage_allowed:true,
+    quotas:[{label:'Primary',used_percent:used,window_minutes:300,resets_at:null}],metrics:[],workers:[],tools:[],notices:[],fetched_at:1});
+  const ui=await boot({context:id=>id==='b' ? sample(50,'second@example.test') :
+    ++aReads===1 ? sample(25,'first@example.test') : aReads===2 ? abandoned.promise : fresh.promise});
+  await ui.element('details-toggle').listeners.click(); await tick();
+  await ui.poll(); await ui.poll(); assert.equal(aReads,2,'an in-flight Details read is not duplicated by polling');
+  await ui.choose(1);
+  abandoned.resolve(sample(99,'obsolete@example.test')); await tick();
+  assert.equal(findAll(ui.element('details-body'),node=>node.text==='second@example.test').length,1);
+  await ui.choose(0);
+  assert.equal(findAll(ui.element('details-body'),node=>node.text==='25% used').length,1);
+  assert.equal(find(ui.element('details-body'),node=>hasClass(node,'quota')).dataset.usage,'unknown');
+  assert.equal(findAll(ui.element('details-body'),node=>node.text==='obsolete@example.test').length,0);
+  fresh.resolve(sample(30,'first@example.test')); await tick();
+  assert.equal(findAll(ui.element('details-body'),node=>node.text==='30% used').length,1);
+});
+
+test('suspending Details invalidates its pending read and resumes without stale quota replay', async () => {
+  const abandoned=deferred(), fresh=deferred(); let calls=0;
+  const sample=used=>({account:{identity:null,email:null,plan:'Plus',scope:'connection'},ordinary_usage_allowed:true,
+    quotas:[{label:'Primary',used_percent:used,window_minutes:300,resets_at:null}],metrics:[],workers:[],tools:[],notices:[],fetched_at:1});
+  const ui=await boot({context:()=>++calls===1 ? sample(25) : calls===2 ? abandoned.promise : fresh.promise});
+  await ui.element('details-toggle').listeners.click(); await tick();
+  await ui.poll();
+  ui.document.hidden=true; for(const handler of ui.document.handlers.visibilitychange) await handler();
+  abandoned.resolve(sample(99)); await tick(); await ui.poll();
+  assert.equal(calls,2,'hidden documents do not poll Details');
+  ui.document.hidden=false; for(const handler of ui.document.handlers.visibilitychange) await handler();
+  assert.equal(findAll(ui.element('details-body'),node=>node.text==='25% used').length,1);
+  assert.equal(find(ui.element('details-body'),node=>hasClass(node,'quota')).dataset.usage,'unknown');
+  fresh.resolve(sample(40)); await tick();
+  assert.equal(findAll(ui.element('details-body'),node=>node.text==='40% used').length,1);
+});
+
+test('stale Details retains worker and tool names with neutral last-seen statuses until recovery', async () => {
+  let stage=0;
+  const ui=await boot({context:()=>{
+    if(stage===1) throw new Error('Context source unavailable');
+    return {account:null,quotas:[],metrics:[],workers:[{id:'child',label:'Reviewer',status:stage===0 ? 'running' : 'idle',model:null}],
+      tools:[{name:'Project tools',status:stage===0 ? 'connected' : 'failed',tool_count:2}],notices:[],fetched_at:1};
+  }});
+  await ui.element('details-toggle').listeners.click(); await tick();
+  stage=1; await ui.poll();
+  const body=ui.element('details-body');
+  assert.equal(findAll(body,node=>node.text==='Reviewer').length,1);
+  assert.equal(findAll(body,node=>node.text==='Project tools').length,1);
+  assert.equal(findAll(body,node=>node.dataset.status==='unknown').length,2);
+  assert.equal(findAll(body,node=>node.text==='Last seen: running').length,1);
+  assert.equal(findAll(body,node=>node.text==='2 tools · Last seen: connected').length,1);
+  stage=2; await ui.poll();
+  assert.equal(findAll(ui.element('details-body'),node=>node.dataset.status==='unknown').length,0);
+  assert.equal(findAll(ui.element('details-body'),node=>node.text==='idle').length,1);
+  assert.equal(findAll(ui.element('details-body'),node=>node.text==='2 tools · failed').length,1);
+});
+
 test('reset times round once and never show 60 minutes', async () => {
   const ui = await boot();
   const label = minutes => ui.run('resetLabel')(Date.now()/1000+minutes*60-1,Date.now()-1).replace(/^.*in /,'');
@@ -833,6 +976,30 @@ const formUi = ui => {
     button:text => find(card(),node=>node.text===text),
     submit:() => card().listeners.submit({preventDefault() {}})};
 };
+
+test('root removal invalidates pending question reads and keeps old controls inert through reconnect', async () => {
+  const abandoned=deferred(), fresh=deferred(); let reads=0, settled=false;
+  const ui=await boot({forms:()=>settled ? {forms:[],unavailable:''} : ++reads===1 ?
+    {forms:[pickForm],unavailable:''} : reads===2 ? abandoned.promise : fresh.promise});
+  const initial=formUi(ui), oldCard=initial.card();
+  initial.radios()[0].checked=true; initial.radios()[0].listeners.change();
+  await ui.poll(); await ui.refresh([]);
+  assert.equal(ui.element('state').textContent,'Offline');
+  assert.equal(ui.element('forms').children.length,0);
+  oldCard.listeners.submit({preventDefault() {}}); await tick();
+  abandoned.resolve({forms:[pickForm],unavailable:''}); await tick();
+  assert.equal(ui.element('forms').children.length,0,'an old pending-list response cannot reopen an offline question');
+  assert.equal(ui.answerRequests.length,0);
+  await ui.refresh(roots);
+  oldCard.listeners.submit({preventDefault() {}}); await tick();
+  assert.equal(ui.answerRequests.length,0,'reconnect needs a fresh native question list before answers');
+  fresh.resolve({forms:[pickForm],unavailable:''}); await tick();
+  const current=formUi(ui);
+  assert.equal(current.radios()[0].checked,true,'the native request can recover its saved draft after verification');
+  const sending=current.submit(); await tick(); assert.equal(ui.answerRequests.length,1);
+  settled=true; ui.answerRequests[0].finish('applied'); await sending; await tick();
+  await ui.poll(); assert.equal(ui.element('forms').children.length,0);
+});
 
 test('unavailable question polling keeps typed answers but blocks new native decisions until refreshed', async () => {
   let offline=false;

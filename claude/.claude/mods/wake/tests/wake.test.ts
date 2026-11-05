@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 import { crewRows } from '../hooks/crew-row'
 import { LANDSCAPES } from '../hooks/landscapes'
 import { CAT_COLUMNS, MIN_SCENE_ROWS, SCENE_ROWS, sceneCardBounds, sceneFrame, type SceneInput } from '../hooks/scene'
-import { crewTiming, isTestCommand } from '../hooks/util'
+import { COLOR, crewTiming, isTestCommand } from '../hooks/util'
 import ScenePointer from '../hooks/scene-hover'
 import type { WakeAgent, WakeChip, WakeRecap } from '../types'
 
@@ -92,7 +92,10 @@ test('native subagent resource commands keep native execution and show their own
   await $.tool.call({ tool: 'Bash', command: 'agent-resources run --mem 3G -- task', agentId: 'worker-a' } as never)
   expect(observedBashCalls).toHaveLength(1)
   expect(observedBashCalls[0]?.agentId).toBe('worker-a')
-  expect(observedBashCalls[0]?.command).toContain("AGENT_RESOURCES_AGENT_ID='worker-a'")
+  expect(observedBashCalls[0]?.command).toBe('agent-resources run --mem 3G -- task')
+  await $.tool.call({ tool: 'Bash', command: 'agent-resources list --json' } as never)
+  expect(observedBashCalls[1]?.agentId).toBeUndefined()
+  expect(observedBashCalls[1]?.command).toBe('agent-resources list --json')
   const bar = await mount($, 'AbovePrompt', false, 100, 24)
   const tree = (await bar.drawn()) as Node
   expect(flat(tree)).toContain('⌁3G')
@@ -299,6 +302,63 @@ test('urgent actions remain visible in two rows with a large crew', async ($, on
   await bar.unmount()
 })
 
+test('crowded short views page workers and quota rows without hiding the urgent action', async ($, on) => {
+  engine(on)
+  const jobs: WakeChip[] = ['Alpha worker', 'Beta worker'].map((title, i) => ({ id: `owner/${i}`, name: title, title, backend: 'codex', account: '01', model: 'gpt-6-sol', effort: 'high', running: true, isStale: false, since: 1 }))
+  const quotas = [11, 22, 33, 44].map((pct, i) => ({ cli: 'codex', account: `0${i + 1}`, plan: '', active: i === 0, parts: [{ label: 'w', pct, resets: null }] }))
+  on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: jobs, version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'quotas' }, () => ({ value: { value: quotas, version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'needs' }, () => ({ value: { value: [{ id: 'n', kind: 'codex-ask', job: 'worker', text: 'Choose a path', at: 1 }], version: 1 } }))
+  for (const [width, height] of [[40, 4], [90, 5], [40, 7]] as const) {
+    const bar = await mount($, 'AbovePrompt', false, width, height)
+    const pages: string[] = []
+    for (let i = 0; i < 8; i++) {
+      const text = flat((await bar.drawn()) as Node)
+      expect(text).toContain('Choose a path')
+      expect(text).toContain('[reply]')
+      pages.push(text)
+      const buttons = boxes((await bar.drawn()) as Node)
+      const next = buttons.some(node => node.props?.key === 'quota-crew-next') ? 'quota-crew-next'
+        : buttons.some(node => node.props?.key === 'crew-next') ? 'crew-next' : undefined
+      if (!next) break
+      await bar.press({ key: next })
+    }
+    for (const title of ['Alpha work', 'Beta work']) expect(pages.join('\n')).toContain(title)
+    for (const pct of [11, 22, 33, 44]) expect(pages.join('\n')).toContain(`${pct}%`)
+    await bar.unmount()
+  }
+})
+
+test('one-row pager keeps worker and quota hover cards outside clipping containers', async ($, on) => {
+  engine(on)
+  const jobs: WakeChip[] = [{ id: 'owner/a', name: 'Alpha', backend: 'codex', account: '01', model: 'gpt-6-sol', effort: 'high', running: true, isStale: false, since: 1, state: 'running', lastEventAt: 995_000, memoryBytes: 1024 * 1024, memoryCap: '3G' }]
+  const agents: WakeAgent[] = [{ id: 'native', type: 'worker', name: 'Native', description: 'Native', since: 1, status: 'running', model: 'sonnet', effort: 'medium' }]
+  const quotas = [11, 22, 33].map((pct, i) => ({ cli: 'codex', account: `0${i + 1}`, plan: '', active: i === 0, parts: [{ label: 'w', pct, resets: null }] }))
+  on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: jobs, version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'subagents' }, () => ({ value: { value: agents, version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'nativeResources' }, () => ({ value: { value: [{ id: 'r', agentId: 'native', command: 'pytest', state: 'queued', running: false, needBytes: 1024 ** 3, position: 1, queueLength: 1, reason: 'waiting' }], version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'quotas' }, () => ({ value: { value: quotas, version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'needs' }, () => ({ value: { value: [{ id: 'n', kind: 'codex-ask', job: 'worker', text: 'Choose', at: 1 }], version: 1 } }))
+  const bar = await mount($, 'AbovePrompt', false, 40, 4)
+  let tree = (await bar.drawn()) as Node
+  expect(flat(tree)).toContain('◆ ● Native')
+  expect(flat(tree, true)).toContain('Effort: medium')
+  expect(flat(tree, true)).toContain('pytest · 1G · queued')
+  await bar.press({ key: 'quota-crew-next' })
+  tree = (await bar.drawn()) as Node
+  expect(flat(tree)).toContain('◈ ● Alpha')
+  expect(flat(tree, true)).toContain('Model: gpt-6-sol')
+  expect(flat(tree, true)).toContain('Memory: 1 MiB / 3G')
+  await bar.press({ key: 'quota-crew-next' })
+  tree = (await bar.drawn()) as Node
+  expect(flat(tree, true)).toContain('11% left')
+  const walk = (node: Node, clipped = false): boolean => typeof node === 'string' ? false
+    : (node.hover?.scope && node.props?.display !== 'none' && clipped) === true
+      || (node.children ?? []).some(child => walk(child, clipped || node.props?.overflow === 'hidden'))
+  expect(walk(tree)).toBe(false)
+  await bar.unmount()
+})
+
 test('quota rows stay inline when crew is paged', async ($, on) => {
   engine(on)
   const jobs: WakeChip[] = Array.from({ length: 8 }, (_, i) => ({ id: `owner/${i}`, name: `worker-${i}`, backend: 'codex', account: '01', model: 'gpt-6-sol', effort: 'high', running: true, isStale: false, since: 1 }))
@@ -310,6 +370,32 @@ test('quota rows stay inline when crew is paged', async ($, on) => {
   const result = await $.command.run({ command: 'wake', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as never)
   expect(result.text).toContain('5h42%')
   expect(result.text).toContain('tomorrow')
+  await bar.unmount()
+})
+
+test('quota amounts and bars keep their level colors for native window and pool labels', async ($, on) => {
+  engine(on)
+  on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: [{
+    id: 'owner/reviewer', name: 'reviewer', backend: 'codex', account: '01', model: 'gpt-6-luna',
+    effort: 'high', running: true, isStale: false, since: 1,
+  }], version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'quotas' }, () => ({ value: { value: [{
+    cli: 'codex', account: '01', plan: '', active: true, freshness: 'stale', parts: [
+      { label: '7d', pct: 50, resets: null }, { label: '30d', pct: 20, resets: null },
+      { label: 'gemini-weekly', pct: 19, resets: null }, { label: '3p-weekly', pct: 0, resets: null },
+      { label: 'pool80', pct: 100, resets: null }, { label: 'h', pct: null, resets: null },
+    ],
+  }], version: 1 } }))
+  const bar = await mount($, 'AbovePrompt', false, 200, 5)
+  const drawn = (await bar.drawn()) as Node
+  for (const [amount, color] of [['50%', COLOR.green], ['20%', COLOR.yellow], ['19%', COLOR.red],
+    ['0%', COLOR.red], ['100%', COLOR.green]]) {
+    const span = boxes(drawn).find(node => node.type === 'Text' && node.props?.color === color
+      && flat(node).startsWith(amount!))
+    expect(span).toBeDefined()
+    expect(flat(span!)).toMatch(/[▰▱]/)
+  }
+  expect(flat(drawn)).toContain('h?')
   await bar.unmount()
 })
 
@@ -461,7 +547,8 @@ test('crew, model and quota marks carry per-item details and keep the text legen
   engine(on)
   const job: WakeChip = { name: 'review', title: 'Review messages', backend: 'codex', account: '01', model: 'gpt-6.1-terra', effort: 'high', running: true, isStale: false, since: 1, lastEventAt: 995_000 }
   const agent: WakeAgent = { id: 'agent1', type: 'worker', description: 'Review worker', since: 1, model: 'claude-sonnet-5-5' }
-  const quotas = [{ cli: 'agy', account: 'a1', plan: 'Pro', active: false, parts: [{ label: 'Cw', pct: 25, resets: 'in 2 hours' }] }]
+  const quotas = [{ cli: 'agy', account: 'a1', plan: 'Pro', active: false, parts: [{ label: '3p.w',
+    name: 'Claude models', pct: 25, resets: 'in 2 hours' }] }]
   on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: [job], version: 1 } }))
   on('state.get', { plugin: 'wake', key: 'quotas' }, () => ({ value: { value: quotas, version: 1 } }))
   on('state.get', { plugin: 'wake', key: 'subagents' }, () => ({ value: { value: [agent], version: 1 } }))
@@ -476,7 +563,8 @@ test('crew, model and quota marks carry per-item details and keep the text legen
   expect(nodes.some(node => node.props?.display === 'none' && node.hover?.scope === modelScope)).toBe(true)
   expect(text).toContain('Model ID: gpt-6.1-terra')
   expect(text).toContain('Model ID: claude-sonnet-5-5')
-  expect(text).toContain('reset: in 2 hours')
+  expect(text).toContain('Claude models: 25% left · reset in 2 hours')
+  expect(text).not.toContain('10080 minutes')
   await bar.unmount()
   const legend = await $.command.run({ command: 'wake', args: 'legend', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as never)
   expect(legend.text).toContain('Hover crew marks')

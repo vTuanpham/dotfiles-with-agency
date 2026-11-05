@@ -1,0 +1,168 @@
+--- a/src/cmds/system/summary.rs
++++ b/src/cmds/system/summary.rs
+@@ -9,0 +10 @@
++use std::sync::LazyLock;
+@@ -13,0 +15,16 @@
++// Only runner records establish test results; command arguments and test titles do not.
++static TEST_SUMMARY: LazyLock<Regex> = LazyLock::new(|| {
++    Regex::new(concat!(
++        r"(?x)^(?:",
++        r"test\ result:\ (?:ok|FAILED)\.\ \d+\ passed;[^\r\n]*|",
++        r"(?:=+\s+)?\d+\ (?:passed|failed|skipped|xfailed|xpassed|deselected|errors?)",
++        r"(?:,\ \d+\ (?:passed|failed|skipped|xfailed|xpassed|deselected|errors?|warnings?))*",
++        r"(?:\ in\ [\d.]+s)?(?:\s+=+)?|",
++        r"(?:Tests|Test\ Suites|Test\ Files):\s+\d+\ (?:passed|failed|skipped|todo|total)\b[^\r\n]*|",
++        r"(?:\#|ℹ)\s+(?:tests|suites|pass|fail|cancelled|skipped|todo)\s+\d+|",
++        r"\d+\ (?:pass|fail|skip|todo)|Ran\ \d+\ tests?\ in\ [\d.]+s",
++        r")$"
++    ))
++    .expect("valid test summary regex")
++});
++
+@@ -74 +91,2 @@
+-    let output_type = detect_output_type(output, command);
++    let cleaned = crate::core::utils::strip_ansi(output);
++    let output_type = detect_output_type(&cleaned);
+@@ -77 +95,2 @@
+-        OutputType::TestResults => summarize_tests(output, &mut result),
++        OutputType::TestResults if !success => return output.to_string(),
++        OutputType::TestResults => summarize_tests(&cleaned, &mut result),
+@@ -98,2 +117 @@
+-fn detect_output_type(output: &str, command: &str) -> OutputType {
+-    let cmd_lower = command.to_lowercase();
++fn detect_output_type(output: &str) -> OutputType {
+@@ -102,5 +120,3 @@
+-    if cmd_lower.contains("test") || out_lower.contains("passed") && out_lower.contains("failed") {
+-        OutputType::TestResults
+-    } else if cmd_lower.contains("build")
+-        || cmd_lower.contains("compile")
+-        || out_lower.contains("compiling")
++    if output
++        .lines()
++        .any(|line| TEST_SUMMARY.is_match(line.trim()))
+@@ -107,0 +124,2 @@
++        OutputType::TestResults
++    } else if out_lower.contains("compiling") {
+@@ -132,6 +150 @@
+-
+-    let mut passed = 0;
+-    let mut failed = 0;
+-    let mut skipped = 0;
+-    let mut failures = Vec::new();
+-
++    let unittest = output.lines().any(|line| line.starts_with("Ran "));
+@@ -139,19 +152,4 @@
+-        let lower = line.to_lowercase();
+-        if lower.contains("passed") || lower.contains("✓") || lower.contains("ok") {
+-            // Try to extract number
+-            if let Some(n) = extract_number(&lower, "passed") {
+-                passed = n;
+-            } else {
+-                passed += 1;
+-            }
+-        }
+-        if lower.contains("failed") || lower.contains("[x]") || lower.contains("fail") {
+-            if let Some(n) = extract_number(&lower, "failed") {
+-                failed = n;
+-            }
+-            if !line.contains("0 failed") {
+-                failures.push(line.to_string());
+-            }
+-        }
+-        if (lower.contains("skipped") || lower.contains("ignored"))
+-            && let Some(n) = extract_number(&lower, "skipped").or(extract_number(&lower, "ignored"))
++        let line = line.trim();
++        if TEST_SUMMARY.is_match(line)
++            || unittest
++                && (line == "OK" || line.starts_with("OK (") || line.starts_with("FAILED ("))
+@@ -159,17 +157 @@
+-            skipped = n;
+-        }
+-    }
+-
+-    result.push(format!("   [ok] {} passed", passed));
+-    if failed > 0 {
+-        result.push(format!("   [FAIL] {} failed", failed));
+-    }
+-    if skipped > 0 {
+-        result.push(format!("   skip {} skipped", skipped));
+-    }
+-
+-    if !failures.is_empty() {
+-        result.push(String::new());
+-        result.push("   Failures:".to_string());
+-        for f in failures.iter().take(5) {
+-            result.push(format!("   • {}", truncate(f, 70)));
++            result.push(format!("   {}", line));
+@@ -314,5 +296,66 @@
+-fn extract_number(text: &str, after: &str) -> Option<usize> {
+-    let re = Regex::new(&format!(r"(\d+)\s*{}", after)).ok()?;
+-    re.captures(text)
+-        .and_then(|c| c.get(1))
+-        .and_then(|m| m.as_str().parse().ok())
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn metadata_is_not_a_test_run() {
++        let raw =
++            "free/model billing=free observations=5\nother/model billing=free observations=7\n";
++        for command in [
++            "jq '.items[] | select(test(\"free\"))' data.json",
++            "wc -l test_policy.py",
++            "agent-lab new --purpose 'test detection'",
++            "wc -l build_metadata.json",
++            "jq '.build' data.json",
++            "cat compile_statistics.txt",
++        ] {
++            let shown = summarize_output(raw, command, true);
++            assert!(!shown.contains("Test Results"), "{shown}");
++            assert!(!shown.contains("Build Summary"), "{shown}");
++            assert!(shown.contains("observations=5"), "{shown}");
++        }
++        let prose = "The failed connection passed through the fallback.\n";
++        assert!(!summarize_output(prose, "cat note.txt", true).contains("Test Results"));
++    }
++
++    #[test]
++    fn passing_titles_do_not_create_failures_or_counts() {
++        let raw = "ok 1 - handles failed saves\nok 2 - skips broken links\n# tests 2\n# pass 2\n# fail 0\n# skipped 0\n";
++        let shown = summarize_output(raw, "npm test", true);
++        assert!(shown.contains("# pass 2"), "{shown}");
++        assert!(shown.contains("# fail 0"), "{shown}");
++        assert!(!shown.contains("Failures:"), "{shown}");
++        assert!(!shown.contains("[ok] 0 passed"), "{shown}");
++    }
++
++    #[test]
++    fn runner_records_are_preserved_without_recounting() {
++        for raw in [
++            "test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s",
++            "================ 3 passed, 1 skipped in 0.12s ================",
++            "Tests:       3 passed, 3 total",
++            "Test Files:  1 passed (1)",
++            "ℹ pass 3\nℹ fail 0",
++            " 3 pass\n 0 fail",
++            "Ran 3 tests in 0.001s\n\nOK",
++            "\u{1b}[32m3 passed in 0.1s\u{1b}[0m",
++        ] {
++            let shown = summarize_output(raw, "run-checks", true);
++            assert!(shown.contains("Test Results:"), "{shown}");
++            assert!(shown.contains('3') || shown.contains("1 passed"), "{shown}");
++            assert!(!shown.contains("[ok] 0 passed"), "{shown}");
++        }
++    }
++
++    #[test]
++    fn failed_runs_keep_their_diagnostics() {
++        let raw = "first test\nAssertionError: expected saved data\n1 failed, 2 passed in 0.1s\n";
++        assert_eq!(summarize_output(raw, "pytest", false), raw);
++    }
++
++    #[test]
++    fn a_test_command_without_results_does_not_invent_success() {
++        let shown = summarize_output("No matching files\n", "npm test", true);
++        assert!(!shown.contains("Test Results"), "{shown}");
++        assert!(shown.contains("No matching files"), "{shown}");
++    }

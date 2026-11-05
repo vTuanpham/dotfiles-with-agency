@@ -9,7 +9,7 @@ import stat
 import subprocess
 from pathlib import Path
 
-from agent_models.inventory import ZDR_FREE, logged_free
+from agent_models.inventory import ZDR_FREE, unreviewed_free
 from agent_resources.heavy import prepare as heavy_directory
 
 from .core import (
@@ -39,7 +39,7 @@ def command(state, job, prompt, resume=False):
     if not shutil.which("bwrap"):
         raise RuntimeError("bwrap is required for opencode; refusing to run unconfined")
     model = state.get("model") or ""
-    if logged_free(model):
+    if unreviewed_free(model):
         raise RuntimeError(
             f"{model or 'no --model'}: the free tier is limited to zero-retention models; "
             f"pass one of {', '.join(ZDR_FREE)}"

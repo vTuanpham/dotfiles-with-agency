@@ -3,6 +3,7 @@
 import math
 import re
 
+from . import agy
 from .models import Quota, QuotaWindow, timestamp
 
 AGY_QUOTA_FRESH_SECONDS = 600
@@ -51,7 +52,8 @@ def claude_quotas(data, now):
                 if (type(window) is not dict or type(window.get("name")) is not str
                         or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._/-]{0,63}", window["name"])):
                     raise ValueError("invalid Claude model name")
-                entries.append(("scoped", window["name"] + "w", window["name"], "weekly", window))
+                entries.append(("scoped", window["name"], window["name"],
+                                "model scoped; duration not exposed", window))
             for _, label, group, limit, window in entries:
                 if type(window) is not dict:
                     raise ValueError("invalid Claude quota window")
@@ -64,7 +66,11 @@ def claude_quotas(data, now):
                 if elapsed:
                     freshness = "stale"
                 remaining = None if elapsed else math.floor(max(0, 100 - used))
-                windows.append(QuotaWindow(label, remaining, group, limit, resets))
+                length = 300 if label == "h" else 10080 if label == "w" else None
+                windows.append(QuotaWindow(label, remaining, group, limit, resets,
+                    window_minutes=length, source_window="scoped" if group else
+                    "fiveHour" if label == "h" else "sevenDay", used_percent=used,
+                    scope_kind="provider-named model scope" if group else "account-shared"))
         elif usage is not None:
             raise ValueError("unavailable Claude account carries actionable usage")
         state = ("disabled" if row.get("disabled", False) else
@@ -72,47 +78,16 @@ def claude_quotas(data, now):
         if not windows and state is None:
             state = "usage unknown"
         result.append(Quota("claude", f"{number:02d}", None, row["active"], tuple(windows),
-                            state, observed, age, freshness))
+                            state, observed, age, freshness,
+                            source="cswap list --json", source_version="JSON v1"))
     if active is not None and active not in seen:
         raise ValueError("Claude active account is absent")
     return tuple(result)
 
 
-def codex_quotas(text):
-    result = []
-    for line in text.splitlines():
-        match = re.fullmatch(r"\s*(\*)?\s*(\d{2})\s+\S+@\S+\s+(.*)", line)
-        if not match:
-            continue
-        rest = match[3]
-        plan = re.match(r"([A-Za-z][A-Za-z ]*?)\s{2,}", rest)
-        if not plan:
-            raise ValueError("invalid codex quota plan")
-        plan = plan[1].strip()
-        pcts = [int(p) for p in re.findall(r"(\d+)%", rest)]
-        if any(p > 100 for p in pcts) or len(pcts) > 2:
-            raise ValueError("invalid codex quota percentage")
-        parts, unsupported = [], False
-        if pcts:
-            if plan.lower().startswith("free"):
-                parts = [("m", pcts[0])]
-            elif plan.lower().startswith("plus"):
-                parts = list(zip(("h", "w"), pcts))
-            elif plan.lower().startswith("pro"):
-                parts = [("w", pcts[-1])]
-            else:
-                unsupported = True
-        status = ("expired" if "token_expired" in rest else
-                  "signed out" if re.search(r"\b401\b", rest) else None)
-        if unsupported and status is None:
-            status = "unsupported plan"
-        result.append(Quota("codex", match[2], plan, match[1] == "*",
-                            tuple(QuotaWindow(label, pct, "", label, None) for label, pct in parts),
-                            status, None, None, "unknown"))
-    return result
-
-
 def agy_quota(data, now):
+    if type(data) is dict and "schema_version" in data:
+        return agy.quota(data, now)
     if (type(data) is not dict or type(data.get("account")) is not str
             or not re.fullmatch(r"[A-Za-z0-9_-]+", data["account"])):
         raise ValueError("invalid quota account")
@@ -120,7 +95,6 @@ def agy_quota(data, now):
     if at > now + 60 or type(data.get("rows")) is not list or not data["rows"]:
         raise ValueError("invalid quota time or rows")
     parts = []
-    groups = {"Gemini Models": "G", "Claude and GPT models": "C", "Gemini 4 Argon": "A"}
     for row in data["rows"]:
         if (type(row) is not dict
                 or any(type(row.get(k)) is not str for k in ("group", "limit", "resets"))
@@ -129,16 +103,13 @@ def agy_quota(data, now):
         if any(len(row[k]) > 4096 or any(ord(c) < 32 for c in row[k])
                for k in ("group", "limit", "resets")):
             raise ValueError("invalid quota row text")
-        label = groups.get(row["group"], row["group"])
-        if "five hour" in row["limit"].lower():
-            label += "h"
-        elif "weekly" in row["limit"].lower():
-            label += "w"
-        else:
-            label += "/" + row["limit"]
-        parts.append(QuotaWindow(label, row["remaining"], row["group"], row["limit"], row["resets"]))
-    order = list(dict.fromkeys(p.label[0] for p in parts))
-    parts.sort(key=lambda p: (order.index(p.label[0]), p.label))
+        resets = row["resets"] or None
+        elapsed = resets is not None and timestamp(resets) <= now
+        parts.append(QuotaWindow(row["group"] + "/" + row["limit"],
+                                None if elapsed else row["remaining"], row["group"], row["limit"], resets,
+                                scope_kind="legacy text; binding unknown"))
     age = max(0, int(now - at))
     return Quota("agy", data["account"], None, False, tuple(parts), None, data["at"], age,
-                 "fresh" if age <= AGY_QUOTA_FRESH_SECONDS else "stale")
+                 "fresh" if age <= AGY_QUOTA_FRESH_SECONDS and all(
+                     p.resets is None or timestamp(p.resets) > now for p in parts) else "stale",
+                 source="legacy AGY /usage text cache")

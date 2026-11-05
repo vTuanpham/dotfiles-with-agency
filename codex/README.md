@@ -42,6 +42,12 @@ question. No question-cancellation hook is installed here.
 
 ## Native integrations
 
+Running threads can retain their old hooks after a file edit. Compare native
+`hooks/list` with `threadId` against discovery with `cwds`; a
+`config/batchWrite` request with `edits: []` and `reloadUserConfig: true` reloads
+runtime settings without changing hook trust. Then review the changed definition
+in `/hooks`. Verify the loaded command and trust status before reporting activation.
+
 [Codex task notifications](../codex-wake/README.md) deliver native task messages to an
 existing conversation from background commands, hooks and event producers.
 With the trusted snapshot hooks installed, launch commands normally: host

@@ -11,6 +11,14 @@ removed. Native status, ancestry, input capability and empty item views retain
 their recorded types and values. No transcript or credential was recorded.
 Replay uses the production connection handshake, RPC decoder and adapter.
 
+`codex-0.166.0-account-contract.json` is an authored fixture, not a live account
+recording. Its fields follow the installed CLI's experimental JSON schemas for
+`GetAccountResponse` and `GetAccountRateLimitsResponse`, generated with
+`codex app-server generate-json-schema --experimental`. It preserves native
+workspace routing, nullable usage permission and restriction flag shapes, using
+invented account/workspace values. Tests change routing independently of display
+data and exercise provider denial at low utilization without any model call.
+
 History workloads, steering acknowledgements, turn-finished errors and lost
 connections in `test_protocol_replay.py` are **authored fault schedules**, not
 recordings of real model turns. They test receipt/restart semantics without

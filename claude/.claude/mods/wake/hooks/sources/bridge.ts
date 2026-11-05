@@ -20,6 +20,8 @@ export type DirectMessage = {
 }
 export type BridgeSnapshot = {
   schema_version: 1; generated_at: string; jobs: Job[]; events: Event[]; wake_events?: Event[]; quotas: Quota[]
+  errors?: string[]
+  unavailable_jobs?: string[]
   owners?: Owner[]
   retention: { scanned: boolean; items: TidyItem[]; reclaim_bytes: number | null; archive_path: string }
   peers: {
@@ -45,6 +47,8 @@ export function readSnapshot(text: string): BridgeSnapshot | undefined {
     if (!object(s) || s.schema_version !== 1 || !rfc3339(s.generated_at)
       || !Array.isArray(s.jobs) || !Array.isArray(s.events) || !Array.isArray(s.quotas)
       || !(s.wake_events === undefined || Array.isArray(s.wake_events))
+      || !(s.errors === undefined || Array.isArray(s.errors) && s.errors.every(e => typeof e === 'string' && e.length <= 4096 && !/[\x00-\x1f\x7f]/.test(e)))
+      || !(s.unavailable_jobs === undefined || Array.isArray(s.unavailable_jobs) && s.unavailable_jobs.every(id => typeof id === 'string' && id.length <= 400 && /^[^\s/:\x00-\x1f\x7f]+\/[^\s/:\x00-\x1f\x7f]+$/.test(id)))
       || !object(s.retention) || !Array.isArray(s.retention.items) || !str(s.retention.archive_path)
       || typeof s.retention.scanned !== 'boolean' || !(s.retention.reclaim_bytes === null || number(s.retention.reclaim_bytes))
       || !(s.owners === undefined || Array.isArray(s.owners))
@@ -93,7 +97,7 @@ export async function bridgeSnapshot(
   ownerScopes?: readonly string[],
 ): Promise<BridgeSnapshot | undefined> {
   if (ownerScopes && ownerScopes.length === 0) return undefined
-  const args = ['agent-bridge', 'status', '--json', ...(storage ? ['--storage'] : [])]
+  const args = ['agent-bridge', 'status', '--json', '--no-quotas', ...(storage ? ['--storage'] : [])]
   args.push(...ownerScopes ?? [])
   const r = await $.process.run(args,
     { timeoutMs: storage ? 120_000 : 30_000 }).catch(() => undefined)

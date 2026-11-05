@@ -14,7 +14,7 @@ Jobs persist under `~/.local/state/agent-bridge`, so another root can resume or 
 workers can message each other with `TO <peer>:`. Plain worker messages, including ones addressed `TO root:`,
 go to the coordinator as info.
 
-`agent-bridge message` adds direct native messages between independent sessions,
+`agent-bridge message` adds direct native messages between independent root sessions,
 without creating jobs or taking over another root's workers. Read
 `agent-bridge guide messages` for discovery, reply addresses, native transports,
 native API setup and receipt limits. It uses agent-message APIs, with no user-chat
@@ -77,8 +77,10 @@ agent-bridge message send claude:NATIVE_ID --text 'Can you review the shared cha
 agent-bridge guide messages
 ```
 
-This path is available to roots and workers in all four harnesses, independently
-of managed jobs. Use the exact native recipient address. Steering is used where
+This path is available to roots in all four harnesses. Native sends from managed
+workers are rejected by both the CLI and import API. Workers use `TO <peer>:` job
+messages for siblings and `URGENT:` job messages for root blockers; these channels
+need no native session discovery. Use the exact native recipient address. Steering is used where
 the native API supports it; a send receipt does not prove the message was read.
 Messages remain peer content and grant no user approval. The
 [messaging guide](src/agent_bridge/guide/messages.md) owns setup and transport limits.
@@ -195,6 +197,14 @@ cannot be recovered from its parent environment later. Variables such as
 when required. This filters inherited environments; it does not restrict auth
 files or prevent a shell startup file from exporting variables again. Start a
 fresh worker process to apply the policy to an already-running backend.
+
+Launches also remove the parent's native conversation markers before the child
+harness supplies its own. Resource controller identity is captured first and
+retained separately, so a worker's resource requests still belong to its root.
+Existing workers need a fresh backend launch for that cleanup. The native send
+guard applies immediately to workers using the updated CLI/import API, including
+those with inherited root markers. It enforces the supported tool contract, not
+an operating-system security boundary.
 
 ## Restore and root access
 

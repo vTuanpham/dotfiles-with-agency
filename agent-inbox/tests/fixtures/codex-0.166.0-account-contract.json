@@ -1,0 +1,33 @@
+{
+  "accountRead": {
+    "account": {
+      "type": "chatgpt",
+      "email": "account@example.test",
+      "planType": "plus",
+      "workspaceName": "Example workspace"
+    },
+    "requiresOpenaiAuth": true,
+    "workspaceRouting": {
+      "accountRoutingOverride": "NO_CONSTRAINT",
+      "backendOrigin": "https://chatgpt.com",
+      "chatgptAccountId": "account-a"
+    }
+  },
+  "rateLimits": {
+    "accountId": "account-a",
+    "ordinaryUsageAllowed": true,
+    "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "primary": {
+        "usedPercent": 25,
+        "windowDurationMins": 300,
+        "resetsAt": 2000000000
+      },
+      "secondary": null,
+      "spendControlReached": false,
+      "rateLimitReachedType": null
+    },
+    "rateLimitsByLimitId": null
+  }
+}

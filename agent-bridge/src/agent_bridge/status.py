@@ -264,6 +264,7 @@ class Collector:
         now = time.time()
         self.observed_at = now
         errors, jobs, wake, recent, messages, direct_messages, retired_items = [], [], [], [], [], [], []
+        unavailable_jobs = []
         retired = expired = 0
         all_events = []
         scope_jobs, job_scopes = {}, {}
@@ -288,6 +289,7 @@ class Collector:
                 states.append((job, read_job(job, self.root)))
             except (OSError, ValueError, RuntimeError):
                 errors.append(f"{identifier}: invalid or unreadable state")
+                unavailable_jobs.append(identifier)
         nodes = {f"{j.parent.name}/{j.name}" for j, _ in states}
         live = {f"{j.parent.name}/{j.name}": running(s) for j, s in states}
         running_jobs = {identifier for identifier, alive in live.items() if alive}
@@ -493,6 +495,7 @@ class Collector:
                 )
             except (OSError, ValueError, TypeError, KeyError, RuntimeError, subprocess.SubprocessError):
                 errors.append(f"{identifier}: status unavailable")
+                unavailable_jobs.append(identifier)
         # A root filtering its text view still needs to rule out other runners sharing a scope.
         if owners and not caller and scope_jobs:
             visible = {j.id for j in jobs}
@@ -659,6 +662,7 @@ class Collector:
             tuple(direct_messages[-DIRECT_MESSAGE_LIMIT:]),
             dependencies,
             tuple(errors),
+            unavailable_jobs=tuple(unavailable_jobs),
             groups=tuple(group_views),
             group_events=tuple(group_events),
             unacknowledged_completions=len(unread),

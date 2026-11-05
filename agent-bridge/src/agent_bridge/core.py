@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+import agent_session
 from agent_resources import identity
 
 from . import retries
@@ -40,6 +41,8 @@ MESSAGING_RULE = (
     "(comma-separate several names). Plain messages already reach the coordinator, so never address "
     "it with 'TO'. The runner delivers it into that peer's live turn. Use it for "
     "concrete cross-area requests or hand-offs, not chatter; replies arrive as '[from <name>] ...'. "
+    "These job channels need no native session discovery. Native agent-bridge message send "
+    "is root-to-root only; never use it or ask the coordinator to relay peer traffic. "
     "Coordinator steers may arrive mid-turn as user messages; follow them. You are a delegated worker "
     "and must never start agent-bridge jobs, subagents, or other agents yourself. "
     "For heavy commands use agent-resources run --mem SIZE -- <command>; "
@@ -274,7 +277,9 @@ def worker_env(job=None, **extra):
     lab_home = os.environ.get("AGENT_LAB_HOME", str(state_home / "agent-lab"))
     controller = identity.identity()
     return {
-        **command_env(**{"AGENT_LAB_HOME": lab_home, **extra}),
+        # Native markers and command attribution belong to the new worker, not its launching loop.
+        **{name: value for name, value in command_env(**{"AGENT_LAB_HOME": lab_home, **extra}).items()
+           if name not in agent_session.VARIABLES and name != "AGENT_RESOURCES_AGENT_ID"},
         "AGENT_RESOURCES_HOST_PID_NAMESPACE": os.readlink("/proc/self/ns/pid"),
         "AGENT_RESOURCES_WORKER": "1",
         "AGENT_RESOURCES_SLICE": "codex.slice",

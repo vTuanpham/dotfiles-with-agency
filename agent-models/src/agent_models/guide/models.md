@@ -1,33 +1,44 @@
-## Model strength (dated reference)
-Checked 2026-11-03 for selection/context guidance; unchanged model-positioning advice retains its 2026-10-30 review. Benchmark retrieval dates belong to the generated sections below. Read with `model-guide read models`. User/project instructions outrank this advice. A listing does not prove included usage.
+## Model decision evidence
 
-Read [the subscription guide](subscriptions.md) (`model-guide read subscriptions`) only when the choice depends on a plan, allowance or retention policy. Use live commands for account state; this document records no account balances or subscriptions.
+Checked 2026-11-05 for source scope and interface contracts; benchmark dates are separate.
 
-Preserve explicit choices of harness, provider, model and variant, including free/paid variants
-and effort. Similar names across providers are different selections; free variants, included
-subscription allowances and separately billed usage are different cases. The
-[subscription guide](subscriptions.md) owns those distinctions.
-For a native chat/availability check, test the matching CLI/session with the requested selection.
-A catalog or service/API result establishes only its own context. For example, OpenCode's
-`api GET /api/model` describes that service; an API error does not prove a fresh standalone CLI
-session will fail or justify changing the requested provider/model/variant.
+`model-guide suggest --task "THE ACTUAL TASK" --domain AREA` combines native
+inventories with cached observations for the selecting agent. The caller supplies
+the evidence areas using its task understanding. Bare `--task` keeps the request
+as context and explicitly shows general evidence. Full task/session context,
+verification needs, urgency and allowance inform that choice. Staying in the
+current session can be sensible; switching/setup and review costs may be unknown.
 
-### Four separate things: do not infer one from another
-1. **Class** is where a model sits in its vendor's lineup. It is a naming and positioning rank, not a score. This guide always says "class" for it; "tier" means a subscription level only.
+Pass known restrictions and considerations through `--context PATH|-` (JSON;
+schema in `suggest --help`). Actual account/model/effort limits restrict admission;
+a plan name or scarce allowance does not establish access, adequacy or a winner.
+`--backend` restricts discovery; `--query "deep flash"` finds partial model words
+and aliases. `--choice EXACT_NATIVE_ROUTE --effort LEVEL` preserves a selection
+without substitution. OpenCode provider routes remain distinct.
 
-| Class | Codex | Claude | Gemini |
-|---|---|---|---|
-| small | Luna | Haiku | Flash |
-| mid | Terra | Sonnet | Unverified |
-| high | Sol | Opus | Unverified |
-| top | Astra | Fable | Argon |
+The compact comparison retains examples across access pools and observed quality,
+cost, time and intermediate tradeoffs, including the current session. It shows
+effort/score/cost/time points and source speed separately; `--choice` exposes other
+settings. Points retain their run scope, missing measurements and sample counts.
+Equivalent models share a comparison while execution/billing routes stay distinct.
+`--json` retains every
+candidate, source/version, configuration, uncertainty and full caller context.
+No tier, model name, release date or billing route receives a ranking bonus.
 
-   Matching Sol to Opus and Terra to Sonnet is a positioning convention; the Gemini placements are Unverified.
-2. **Measured performance** depends on the domain, benchmark version and execution setup. Overall indices help shortlist; a model can lead at coding and trail at research or design. Read the capability evidence below before choosing for a task. Class names do not establish performance.
-3. **Effort** is a per-job setting that moves a model along its own row in the table: it changes score, cost and latency, and its effect differs by model (small models gain a lot from it, large ones flatten, see below). It is chosen per task and is independent of class and of the allowance; a high-class model at low effort can score below a lower-class model at high effort. Each backend accepts only some levels (the selected native tool or execution backend's help).
-4. **Usage guidance** (how freely to spend a model) depends on the account's allowance, not on class, score or effort. The same model at the same effort can be used freely on a deep allowance and needs more care with job size and count on a thin one. The advice below is conditional on that; the [subscription guide](subscriptions.md) lists what each tier allows.
+Native controls and tools establish what can execute. A listing or local account
+cache does not prove selected-session entitlement. [Subscriptions](subscriptions.md)
+routes account observation and retention constraints;
+`model-guide policy --backend BACKEND` supplies cached current official terms on a slower cadence.
+The selecting agent interprets plan exceptions, shared pools and scarce allowance;
+native missing windows/membership remain unknown. Published model-release dates and
+native descriptions are metadata/claims, separate from measured task outcomes;
+neither names nor unpublished training details establish strengths.
 
-Choose in this order: establish the target session's account, included access/billing mode, selectable model/effort, tools, modalities and context; compare the task's domain evidence and reliability; then weigh quality against completion time, cost and remaining allowance. Shortlist two or three suitable options. Local profile/cache observations are useful hints; they do not prove an already-running session uses that account. Optional paid access is separate from included allowance and authorization to spend. See [subscriptions](subscriptions.md).
+Use validated cached observations normally, without a human stamp per decision.
+Fetch dates and source-review status are separate; neither makes a cache timeless.
+Resolve a material identity/methodology conflict, unavailable essential evidence
+or expired route term through its owning source. Generated tables below are
+bounded reference views, not the candidate pool for a task.
 
 ### Effort and model strength
 Broad capability indices help shortlist; they are not domain scores. The generated view keeps exact published effort/configuration labels and observed costs. Missing settings are Unverified; native controls establish selectable levels. Each table shows a bounded source view and cost-efficient candidates where available; query `model-guide benchmarks` for other models.
@@ -46,9 +57,9 @@ Up to 2 leaders and 2 cheapest frontier candidates per table; **bold** marks the
 Free API: task-cost curves and methodology version Unverified.
 <!-- model-guide:effort:end -->
 
-- **Small models need effort**: compensate for lower capability with more reasoning. For models exposing high/xhigh/max, these suit simple/routine/harder worker tasks respectively. This is a model-specific example, not a shared range: use the actual catalog and measured curve. Low/medium remain allowed but are usually less attractive small-worker starting points. Larger-model quality is not guaranteed by extra effort.
-- **Large models flatten**: start larger models at low/medium or task-appropriate high. Raise effort for demonstrated difficulty or worthwhile measured gains, not as a universal default. The curve can be non-monotonic; a more expensive setting need not improve the observed score.
-- **A bigger class beats more effort within a family, not across families**: treat this as a hypothesis to check in the relevant domain, not a selection rule. Neither model size nor effort guarantees the better result.
+Compare measured efforts within the same source/workload/harness. Curves can be
+non-monotonic; more effort, a larger model or a newer release does not guarantee
+better outcomes. A missing measurement leaves an option unknown, not disqualified.
 
 ### Capability evidence
 
@@ -94,6 +105,13 @@ Use separate domain profiles; never average unlike benchmark scales. Human prefe
 
 Compare frontiers within one source/release/domain and exact effort/harness. Keep API spend, included allowance, optional paid credits, response latency and agent completion time separate. Higher effort changes quality, token use and time together; inspect measured combinations rather than assuming a smooth or monotonic curve.
 
+Compare measured task/run duration, output tokens/s and first-token latency as
+separate axes, alongside outcomes and spend. Vision perception and computer-use outcomes
+also stay separate. Legacy AA median TPS/TTFT retains its workload and field names;
+provider and methodology version are unknown, and TTFT does not establish first-answer
+latency. These are source-run measurements, not verified speed of a free, Go or native
+subscription route. Newer v3 performance definitions are a different measurement.
+
 <!-- model-guide:cost:start -->
 <!-- Generated by model-guide; do not edit. -->
 - [BFCL](https://gorilla.cs.berkeley.edu/data_overall.csv) · BFCL V4 / eval f7cf735; 2026-04-12 · retrieved 2026-11-01
@@ -127,25 +145,7 @@ The generated frontiers use each source's candidate set, release and metric sepa
 
 ### What vendors advertise (claims, not measurements)
 
-Vendor positioning is qualitative. Consult [OpenAI models](https://learn.chatgpt.com/docs/models.md), [Anthropic models overview](https://docs.anthropic.com/en/docs/about-claude/models/overview) and [OpenRouter models](https://openrouter.ai/api/v1/models) for current claims and token prices. These sources are not in the benchmark snapshot; token-price and throughput measurements here remain Unverified. Advertised capability and token throughput do not establish domain superiority or task completion speed.
-
-### How to use each model (a starting point; override for the task)
-Effort is limited to what each backend accepts (the selected native tool or execution backend's help). The top of a range is for audits or deep diagnosis. Small-model output always gets a spot-check. With a thin allowance, keep jobs small and spend the expensive models where they matter most; with a deep allowance or no short-window limit, repeat useful sweeps while checking weekly limits and live quota. [Subscriptions](subscriptions.md) maps published tiers to these conditions.
-
-| Model | Role | Effort | Allowance-dependent advice |
-|---|---|---|---|
-| Luna | bulk implementation, sweeps, tests, first-pass audits | follow the small-worker effort guidance above | split into bounded jobs on thin allowances; repeat sweeps when the allowance is deep |
-| Sol | tricky implementation, diagnosis, second-opinion review | medium to high; xhigh for hard diagnosis | step up when Luna struggles; serialize jobs when the allowance is thin |
-| Terra 6.1 | fast visual, UI and computer-use work; writing | medium to high | inspect domain results and success cost; token throughput alone does not establish faster completion |
-| Astra | hardest audits, architecture and read-only brainstorming | low to medium; high for the hardest tasks | step up effort when justified; check domain quality, completion time and cost before xhigh/max |
-| Fable 5.1 | demanding reasoning and long-horizon agentic work; when the domain evidence warrants it | medium to high | verify included plan access versus paid credits, then compare long-horizon quality and cost |
-| Gemini 3.8 Flash (agy) | summaries, log triage, docs, mechanical sweeps | high | check the shared Gemini bucket before large fan-outs |
-| Opus 4.6 Thinking (agy) | taste-heavy visual work, hard design review | medium to high | check the shared Claude/GPT bucket; benchmark strength Unverified |
-| Sonnet 4.6 Thinking (agy) | mid-weight visual work | medium to high | check the same bucket; benchmark strength Unverified |
-| Haiku 5.5 | cheap exploration, summaries, quick lookups | follow the small-worker effort guidance above | prefer bounded tasks and verify the domain; small-model efficiency is not uniform |
-| Sonnet 5.5 | UI/TUI/visual taste, live collaboration | medium to high | keep some capacity for iteration when the allowance is thin |
-| Opus 5.5 | the vendor's default start for most workloads; long-running agentic coding, high-value design decisions | medium to high | on a thin allowance, pick the tasks where it matters most |
-| OpenCode free (zero-retention) | read-only exploration, summaries, mechanical edits | use the endpoint's exposed settings | rotating availability; treat as small-model output and check retention in the subscription guide |
+Vendor positioning is qualitative. Consult [OpenAI models](https://learn.chatgpt.com/docs/models.md), [Anthropic models overview](https://docs.anthropic.com/en/docs/about-claude/models/overview) and [OpenRouter models](https://openrouter.ai/api/v1/models) for current claims and token prices. These sources are separate from the benchmark snapshot and its legacy AA median speed. Provider-specific prices/speed and task completion time remain Unverified where not measured; advertising does not establish a domain ranking.
 
 ### Inventory coverage
 `model-guide models --backend BACKEND --json` generates coverage from the current

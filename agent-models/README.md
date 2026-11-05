@@ -2,13 +2,12 @@
 
 [← Packages](../README.md#packages) · **uv tool** · shared model references
 
-![Native catalogs, domain benchmarks and account observations inform a task shortlist. Preserve the requested provider, model, variant and effort; free variants and plan allowances differ. Verify chat in the matching native session, and leave unknown billing unverified.](../docs/images/model-selection.gif)
+![Native catalogs, domain benchmarks and account observations inform a task comparison. Preserve the requested provider, model, variant and effort; free variants and plan allowances differ. Verify chat in the matching native session, and leave unknown billing unverified.](../docs/images/model-selection.gif)
 
-Model strengths, effort and published allowances have one owner, independent of
-worker orchestration. The model-selection skill reads this reference on demand.
-The reference compares domain evidence and cost-performance frontiers alongside
-the overall score: Arena, Artificial Analysis, LiveBench and Vals measure different
-parts of a model's strengths. Sources and benchmark versions are recorded explicitly.
+Native routes, task evidence and published allowances have one owner, independent
+of worker orchestration. The selecting agent weighs the actual task and current
+session against these observations; no model-role table or score chooses for it.
+Arena, Artificial Analysis, LiveBench and Vals measure different outcomes.
 
 ![Sol 6.1 effort curve: measured index against API cost per task, with response time for each setting.](../docs/tools/flows/model-effort.svg)
 
@@ -19,22 +18,40 @@ uv tool install --with-editable ./agent-accounts --editable ./agent-models
 model-guide read models
 model-guide models --backend codex --json  # native IDs/efforts + generated coverage
 model-guide read subscriptions     # only for allowance/retention decisions
+model-guide policy --backend claude # official policy text; auto-fetch missing/due 7-day cache
 model-guide check                  # reference files only; no provider processes
 model-guide check --live           # explicitly query native inventories
 model-guide refresh --prepare      # public data + cost curves; no model worker
 model-guide benchmarks --backend claude --domain design --query sonnet --limit 5 --brief
 model-guide benchmarks --backend codex --domain backend --limit 3 --brief
-model-guide suggest --backend codex --task "UI refactor"  # design + coding; alternatives, no automatic pick
+model-guide suggest --task "UI refactor" --domain design --domain coding
+model-guide suggest --task "Records disappear when writers run together" --domain debugging --domain backend
+model-guide suggest --task "Fix failing tests" --domain debugging --context /tmp/decision.json
+model-guide suggest --backend codex --task "Fix code" --domain coding --query luna --json
+model-guide suggest --help          # optional context JSON schema and exact admission rules
 model-guide benchmarks --domain performance --query sol --brief
 model-guide benchmarks --domain debugging --query sonnet --brief
 model-guide read maintenance
 ```
 
 The daily `agent-models-reference.timer` checks drift and conditionally polls due
-sources (36h, with backoff); changed sources regenerate a pending numeric proposal.
-No agent or Bridge is launched. Qualitative advice and subscription facts stay
-hand-written and are source-reviewed on demand with `refresh --record --yes`.
-No update applies automatically. State belongs to `$AGENT_MODELS_HOME` or
+sources (36h, with backoff); changed observations update the cache and generate a
+numeric guide proposal when none is waiting.
+No agent or Bridge is launched. Subscription facts and source contracts are
+source-reviewed on demand with `refresh --record --yes`. Cached numeric observations
+are usable without a human stamp per decision; no proposal applies automatically.
+Pending guide review freezes that proposal while due/backoff-aware observation
+polling continues; queries use the current cache, and apply reviews its saved snapshot.
+Official subscription policy has a separate seven-day cache, refreshed when due
+by `policy` or routine polling. It stores complete source text, digest and check
+dates; a failed check retains last-good text and reports the error. `suggest`
+retrieves relevant sections, tables and their qualifications from that cache;
+selection never waits for a policy fetch. Missing/stale sources link to `policy`.
+Text shows one policy status/drill-down per harness. Retrieved sections and their
+conditions stay complete in JSON; ordinary comparisons omit unrelated policy prose.
+The selecting agent interprets current conditions, exceptions and quota
+opportunity cost; no plan-to-window/model/multiplier table is encoded in selection.
+State belongs to `$AGENT_MODELS_HOME` or
 `${XDG_STATE_HOME:-~/.local/state}/agent-models`; documents and review hashes live
 in `src/agent_models/guide/`. Reference edits remain uncommitted.
 
@@ -43,19 +60,49 @@ scores, effort, available cost/time and automatically read local account hints.
 Missing measurements stay unknown. The full local snapshot supports rechecks
 without loading an entire leaderboard into the agent's context.
 
-Repeat `--domain` for mixed tasks, or use explicit keyword routing with `--task`;
-unrecognized tasks require a domain. `suggest` returns up to four alternatives
-from comparable source/domain observations, with ties, conflicts, supported effort
-and missing/stale evidence exposed. It never averages benchmark scales or chooses
-for the agent. `--choice`/`--effort` preserve a user or project selection and report
-problems instead of substituting. `--allowance-pressure`, `--max-usd`, `--max-seconds`
-and `--min-class` are optional; unknown measurements cannot establish a bound.
-Native aliases share one resolved model. Effort labels distinguish measurements
-from quality/value effort alternatives; the latter show retained score and relative
-published cost, with broad-index advice explicitly scoped outside task-specific gains.
-Costs/durations keep their source definitions; API cost is not subscription quota.
-Use `--json` for evidence and constraint details. Account overrides are supported
-only by agy's native listing; other backends must use their selected native session.
+The calling agent chooses evidence areas with repeated `--domain` flags using
+its existing task understanding. `--task` keeps the full description and context;
+without a domain, the tool explicitly shows general evidence. Without `--backend`, native
+inventories are discovered independently across all four harnesses; partial
+failures remain visible. No provider model is prompted. Native catalogs are read
+fresh, evidence is indexed once per query, and account state is captured once.
+
+Use optional ephemeral `--context PATH|-` JSON for actual caller restrictions and
+considerations (full schema in `suggest --help`). `allowed_backends` is closed when
+supplied. `allowed_routes` restricts only its listed backends using exact native
+routes/aliases; omitted backends have unknown entitlement. `allowed_efforts`
+intersects native controls. Account, task, session and priority descriptions stay
+context for the selecting agent. Plan names, urgency, scarcity and free billing
+never imply access, adequacy or a winner. Context is not persisted.
+
+Every admitted route and supported measured effort remains in `--json`, including
+unmeasured models and missing speed. The default comparison shows up to 12 models:
+the current session, distinct access/billing pools and source-scoped examples of
+quality, cost, time and intermediate tradeoffs. Equivalent underlying models share
+a comparison while their execution/billing routes stay distinct. Each example
+shows selected measured efforts with their paired score, cost and time, preserving
+missing prices and source/run scope. Different sample counts stay visible. Speed
+points likewise keep effort, tokens/s and first-token latency together. These are
+source measurements, not predictions of this job's cost or duration.
+Inspect `--choice ROUTE` for other settings and run scope;
+use flexible `--query` discovery or `--limit N --offset K` for explicitly labelled
+inventory-order pages. There is no winner shortlist, tier/newness bonus, combined
+score or cheapest-first policy. Native aliases share a resolved model, while
+OpenCode provider/free variants remain separate execution routes.
+
+`--choice EXACT_NATIVE_ROUTE --effort LEVEL` preserves explicit choices and reports
+problems without substitution. Optional `--max-usd`/`--max-seconds` constrain each
+published source observation; unknowns cannot establish a bound or prove actual
+route spend/latency. Reviewed model links transfer model evidence, not provider
+reliability, speed, price or entitlement. Account overrides are supported only by
+agy's native listing; other backends use their selected native session.
+
+Source/version, dates, samples, intervals, harness, configuration and workload
+remain available in JSON. Task duration, response/first-token latency and tokens/s
+are distinct. Legacy cached AA speed and model release dates are recovered in
+memory without fetch or proposal approval; reported zero remains validity-unknown.
+Native descriptions/modalities are facts or claims, not task-quality scores.
+Vision perception and browser/OSWorld outcomes remain separate.
 
 Queries show **quality leaders** and **cost-efficient choices** as separate bounded
 views, so a small limit does not hide cheap workers. Frontiers are recalculated
@@ -78,11 +125,9 @@ Native responses are captured through a temporary regular-file handle: OpenCode
 can truncate large JSON when it exits while pipe output is still pending. The
 file closes after each read; catalogs and account observations are not tracked.
 
-For a coding worker, query `--backend codex --domain coding --query gpt-6.1-sol`,
-compare its measured effort curve, then use a model/effort exposed by the actual
-native subagent tool. For visual work, query `--backend claude --domain design`;
-use Bridge only when delegating across harnesses. Measurements narrow the choice;
-the agent still judges task fit, allowance and verification needs.
+Use a model/effort exposed by the actual native worker tool. The selecting agent
+weighs task fit, verification, context/setup, allowance and risk; benchmark values
+cannot establish these task-specific costs. Bridge owns cross-harness execution.
 
 Listings describe native CLI inventory, not entitlement or the models selectable
 by a particular native subagent tool. Account caches are separate observations;
@@ -95,9 +140,7 @@ of included quota. Preserve the requested provider/model/variant, and verify a
 chat request in the matching native CLI/session. A service catalog or API error
 does not establish the result for a standalone CLI session.
 
-This separation follows the useful distinction in
-[T3 Code's provider constraints](https://github.com/pingdotgg/t3code/blob/main/docs/internals/providers.md):
-shared orchestration does not own provider protocols or account lifecycle.
-We reuse that boundary; no T3 runtime or additional provider server is installed.
+Shared orchestration does not own provider protocols or account lifecycle.
 
-Checks: `uv run pytest` and `uv run ruff check src tests`.
+Checks: `uv run pytest`, `uv run ruff check src tests` and `uv run ty check`.
+The ordinary suite is offline.

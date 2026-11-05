@@ -1,338 +1,387 @@
 import copy
+import io
 import json
 from datetime import UTC, datetime
 
 import pytest
 
-from agent_models import benchmarks, cli, coverage, queries, reference, selection
+from agent_models import benchmarks, cli, coverage, decision_context, queries, selection
 
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
 
 
+def measured(model, effort="medium", score=80, cost=1, seconds=30, **extra):
+    return {"model": model, "label": model, "effort": effort, "score": score, "cost": cost,
+        "cost_kind": "published", "cost_basis": "USD/test", "seconds": seconds,
+        "time_basis": "agent session", "metric": "bugs fixed", "unit": "/105", "tasks": 105,
+        "direction": "higher", "harness": "Codex CLI", "harness_version": "1.0",
+        "n_runs": 3, "date": "2026-10-31", "configuration": "same repo", "caveat": None, **extra}
+
+
 @pytest.fixture
-def setup(monkeypatch, tmp_path):
-    (tmp_path / "models.md").write_text("| small | Luna | Haiku | Flash |\n"
-                                       "| mid | Terra | Sonnet | Unverified |\n"
-                                       "| high | Sol | Opus | Unverified |\n"
-                                       "| top | Astra | Fable | Argon |\n")
-    monkeypatch.setattr(reference, "GUIDES", tmp_path)
-    catalog = {"backend": "codex", "models": [
-        {"id": "gpt-6.1-sol", "model": "gpt-6.1-sol", "efforts": ["high"]},
-        {"id": "gpt-6-astra", "model": "gpt-6-astra", "efforts": ["high"]},
-        {"id": "gpt-6-luna", "model": "gpt-6-luna", "efforts": ["high"]},
-    ]}
-    data = {"retrieved": "2026-10-31T00:00:00Z", "sources": {
-        "LiveBench": {"status": "ok", "url": "https://livebench.ai/", "release": "20261025",
-            "efforts": {m["id"]: "high" for m in catalog["models"]}, "points": {
-                "Coding": [{"model": m["id"], "score": score, "cost": cost}
-                           for m, score, cost in zip(catalog["models"], (95, 90, 70), (1, 10, 0.1))],
-                "Design": [{"model": m["id"], "score": score, "cost": cost}
-                           for m, score, cost in zip(catalog["models"], (80, 98, 70), (1, 10, 0.1))],
-            }}}}
-    data["sources"]["LiveBench"]["points"]["Overall"] = copy.deepcopy(
-        data["sources"]["LiveBench"]["points"]["Coding"])
+def setup(monkeypatch, no_policy_refresh):
+    catalog = {"backend": "codex", "observed": "2026-11-01T00:00:00Z", "models": [
+        {"id": name, "model": name, "efforts": ["low", "medium", "high", "max"]}
+        for name in ("gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna")]}
+    rows = [measured(m["id"], effort, score=score, cost=cost, seconds=seconds)
+            for m in catalog["models"] for effort, score, cost, seconds in (
+                ("low", 50, 0.1, 10), ("medium", 70, 0.3, 20), ("high", 80, 1, 30), ("max", 85, 5, 90))]
+    data = {"retrieved": "2026-10-31T00:00:00Z", "sources": {"Bug Hunt": {
+        "status": "ok", "url": "https://example.invalid/", "version": "v1", "measurements": rows}}}
     monkeypatch.setattr(benchmarks, "snapshot", lambda: data)
+    monkeypatch.setattr(benchmarks, "account_observation", lambda *a, **k: {})
     return data, catalog
 
 
-def test_ui_refactor_maps_to_multiple_domains_and_unknown_tasks_need_help():
-    assert queries.domains(task="Refactor the UI layout and tests") == ["design", "coding"]
-    assert queries.domains(task="Optimize a CUDA GPU kernel") == ["performance"]
-    assert queries.domains(task="Find and fix hidden bugs") == ["coding", "debugging"]
-    assert queries.domains(task="Refactor a React component") == ["design", "coding"]
-    assert queries.domains(task="Debug a Linux kernel panic") == ["coding", "debugging", "performance"]
-    assert queries.domains(task="Write unit tests") == ["coding"]
-    assert queries.domains(["coding", "design", "coding"], "GPU work") == ["coding", "design"]
-    with pytest.raises(ValueError, match="mapping Unverified"):
-        queries.domains(task="help with this project")
+def found(catalog, domains=("debugging",), query=""):
+    return queries.search(domains, query, catalog=catalog, now=NOW, include_effort=True, complete=True)
 
 
-def test_partial_names_aliases_and_versions_do_not_loan_other_models(setup):
-    assert coverage.query_matches("sol", "GPT-6.1 Sol")
-    assert coverage.query_matches("gpt-6.1", "gpt-6.1-sol")
-    assert not coverage.query_matches("gpt-6.1", "gpt-6.10-sol")
-    assert coverage.matches({"model": "deepseek-v4.1-flash-1017"}, "DeepSeek V4.1 Flash (1017)")
-    assert not coverage.matches({"model": "deepseek-v4.1-flash"}, "DeepSeek V4.1 Flash (1017)")
-    assert coverage.matches({"model": "deepseek-v4.1-flash-1017"},
-                            "deepseek/deepseek-v4.1-flash-1017")
-    assert coverage.supported({"efforts": ["high"]}, "DeepSeek V4.1 Flash (1017)") is None
-    for annotation in ("Vision", "Beta", "FP8", "NVFP4", "v1"):
-        assert coverage.setting(f"Example ({annotation})") is None
-        assert not coverage.matches({"model": "Example"}, f"Example ({annotation})")
-    data, _ = setup
-    data["sources"]["LiveBench"]["points"]["Coding"][0]["model"] = "claude-sonnet-5.5"
-    data["sources"]["LiveBench"]["efforts"]["claude-sonnet-5.5"] = "high"
-    native = {"backend": "claude", "models": [
-        {"id": "sonnet", "model": "claude-sonnet-5-5", "efforts": ["high"]}]}
-    found = queries.search(["coding"], "sonnet", catalog=native, now=NOW)
-    assert found["coding"]["sources"]["LiveBench"]["results"][0]["model"] == "claude-sonnet-5.5"
-
-
-def test_explicit_native_bundled_setting_matches_without_inventing_an_effort_control(setup):
-    data, _ = setup
-    data["sources"]["LiveBench"]["points"]["Coding"] = [
-        {"model": "Gemini 3.8 Flash (High)", "score": 90, "cost": 1}]
-    data["sources"]["LiveBench"]["points"]["Overall"] = copy.deepcopy(
-        data["sources"]["LiveBench"]["points"]["Coding"])
-    catalog = {"backend": "agy", "models": [{"id": "gemini-3.8-flash-high",
-                "model": "gemini-3.8-flash-high", "efforts": None}]}
-    found = queries.search(["coding"], "flash", catalog=catalog, now=NOW)["coding"]
-    assert found["sources"]["LiveBench"]["results"][0]["score"] == 90
-    assert coverage.summarize(catalog, data)["models"][0]["coverage"] == "matched"
-    assert not coverage.matches(catalog["models"][0], "Gemini 3.8 Flash (Low)")
-    assert coverage.supported(catalog["models"][0], "Gemini 3.8 Flash (High)") is None
-
-
-def test_multi_domain_shortlist_reports_conflict_and_preserves_cheap_alternative(setup):
+def test_all_models_interior_efforts_and_unknowns_survive_without_winner_roles(setup):
     _, catalog = setup
-    evidence = queries.search(["coding", "design"], catalog=catalog, now=NOW)
-    result = selection.suggest(evidence, catalog)
-    assert result == selection.suggest(evidence, catalog)
-    ids = {r["id"] for r in result["shortlist"]}
-    assert ids == {m["id"] for m in catalog["models"]}
-    assert any("conflicting" in n for n in result["notes"])
-    assert all(r["recommended_effort"] is None and r["measured_efforts"] == ["high"]
-               for r in result["shortlist"])
-    assert "cheapest" in selection.brief(result)
-    assert "effort: measured only at high" in selection.brief(result)
-    assert "0.1" in selection.brief(result)
+    catalog["models"] += [{"id": f"unfamiliar-{i}", "model": f"unfamiliar-{i}", "efforts": None}
+                           for i in range(8)]
+    result = selection.suggest(found(catalog), catalog)
+    assert len(result["options"]) == 11
+    assert result["options"][0]["measured_efforts"] == ["max", "high", "medium", "low"]
+    assert all("role" not in row for option in result["options"] for row in option["evidence"])
+    assert all("recommended_effort" not in option for option in result["options"])
+    unknown = result["options"][-1]
+    assert unknown["evidence"] == [] and unknown["coverage"] == {"debugging": 0}
+    text = selection.brief(result)
+    assert "medium=70 / source $0.3 / 20s" in text and "low=50 / source $0.1 / 10s" in text
+    assert "n=3" in text and "tasks=105" in text and "agent session" in text
 
 
-def test_equal_scores_keep_tied_alternatives_instead_of_breaking_tie_by_name(setup):
+@pytest.mark.parametrize("backend", decision_context.BACKENDS)
+def test_common_rules_across_harnesses_keep_cross_harness_scope(setup, backend):
     data, catalog = setup
-    data["sources"]["LiveBench"]["points"]["Coding"][1]["score"] = 95
-    result = selection.suggest(queries.search(["coding"], catalog=catalog, now=NOW), catalog)
-    assert any("tied" in n for n in result["notes"])
-    assert {r["id"] for r in result["shortlist"]} >= {"gpt-6.1-sol", "gpt-6-astra"}
+    catalog["backend"] = backend
+    data["sources"]["Bug Hunt"]["measurements"].append(
+        measured("gpt-6.1-sol", "medium", score=100, harness="mini-swe-agent"))
+    result = selection.suggest(found(catalog), catalog)
+    assert len(result["options"]) == 3
+    rows = result["options"][0]["evidence"]
+    assert {r["harness"] for r in rows} == {"Codex CLI", "mini-swe-agent"}
+    assert any(r["harness_relation"] is False for r in rows)
+    assert all(r["score_metric"] == "bugs fixed [/105]" and r["version"] == "v1" for r in rows)
 
 
-def test_effort_filter_runs_before_ranking_and_unknown_controls_are_explicit(setup):
+def test_task_context_changes_request_seen_by_agent_without_changing_model_evidence(setup):
+    _, catalog = setup
+    evidence = found(catalog)
+    variants = [
+        ("Fix code in a three-line README example", {"scope": "three lines", "verification": "diff review"}),
+        ("Fix code in a 20-file concurrent correctness bug", {"scope": "20 files", "failure_cost": "high"}),
+        ("Fix code under an interactive deadline", {"deadline": "first useful triage in a minute"}),
+        ("Fix code overnight", {"deadline": "overnight", "verification": "repeatable failing test"}),
+    ]
+    results = [selection.suggest(evidence, catalog, task=task, context={"task": context})
+               for task, context in variants]
+    assert all(r["options"] == results[0]["options"] for r in results)
+    assert len({selection.brief(r) for r in results}) == 4
+    assert results[2]["decision_context"]["task"]["deadline"] == "first useful triage in a minute"
+
+
+def test_account_constraints_admit_only_exact_allowed_luna_and_native_efforts(setup):
+    _, catalog = setup
+    context = {"allowed_backends": ["codex"], "allowed_routes": {"codex": ["gpt-6-luna"]},
+        "allowed_efforts": {"codex": {"gpt-6-luna": ["low", "medium", "nonexistent"]}},
+        "accounts": {"codex": {"plan": "free", "billing": "included", "allowance": "unknown"}}}
+    result = selection.suggest(found(catalog), catalog, context=context)
+    assert [o["id"] for o in result["options"]] == ["gpt-6-luna"]
+    option = result["options"][0]
+    assert option["admission"] == "caller allowed" and option["efforts"] == ["low", "medium"]
+    assert {r["effort"] for r in option["evidence"]} == {"low", "medium"}
+    assert option["native_efforts"] == ["low", "medium", "high", "max"]
+    context["allowed_routes"]["codex"] = ["luna"]
+    assert selection.suggest(found(catalog), catalog, context=context)["options"] == []
+
+
+def test_resolved_claude_ids_are_proved_bindings_but_opencode_providers_are_exact(setup):
+    _, _ = setup
+    catalog = {"backend": "claude", "models": [{"id": alias, "model": "claude-sonnet-5-5",
+        "efforts": ["medium"]} for alias in ("default", "sonnet")]}
+    context = {"allowed_routes": {"claude": ["claude-sonnet-5-5"]}}
+    result = selection.suggest(found(catalog), catalog, context=context)
+    assert [o["id"] for o in result["options"]] == ["sonnet"]
+    catalog = {"backend": "opencode", "models": [
+        {"id": provider + "/model", "model": "model", "efforts": ["medium"]}
+        for provider in ("opencode", "opencode-go")]}
+    context = {"allowed_routes": {"opencode": ["model"]}}
+    assert selection.suggest(found(catalog), catalog, context=context)["options"] == []
+    context["allowed_routes"]["opencode"] = ["opencode/model"]
+    assert [o["id"] for o in selection.suggest(found(catalog), catalog, context=context)["options"]] == [
+        "opencode/model"]
+
+
+def test_prefilter_does_not_confuse_other_exclusions_with_explicit_choice_rejection(setup):
+    _, catalog = setup
+    context = {"allowed_routes": {"codex": ["gpt-6-luna"]}}
+    prepared = decision_context.restrict(catalog, context, "gpt-6-luna")
+    result = selection.suggest(found(prepared), prepared, choice="gpt-6-luna", effort="high",
+                               context=context)
+    assert result["excluded_count"] == 2 and not result["problems"]
+    assert result["options"][0]["admission"] == "caller allowed"
+    prepared = decision_context.restrict(catalog, context, "gpt-6-astra")
+    result = selection.suggest(found(prepared), prepared, choice="gpt-6-astra", context=context)
+    assert result["options"] == [] and "excluded by caller" in result["problems"][0]
+
+
+def test_resolved_native_effort_restrictions_use_the_same_binding_as_route_admission(setup):
+    _, catalog = setup
+    catalog.update(backend="claude", models=[{"id": "sonnet", "model": "claude-sonnet-5-5",
+        "efforts": ["low", "medium", "high"]}])
+    context = {"allowed_efforts": {"claude": {"claude-sonnet-5-5": ["medium", "unavailable"]}}}
+    prepared = decision_context.restrict(catalog, context)
+    assert prepared["models"][0]["efforts"] == ["medium"]
+    assert prepared["models"][0]["native_efforts"] == ["low", "medium", "high"]
+    twice = decision_context.restrict(prepared, context)
+    assert twice["models"][0]["efforts"] == ["medium"]
+    assert twice["models"][0]["native_efforts"] == ["low", "medium", "high"]
+
+
+def test_scarce_or_free_account_prose_never_invents_access_or_a_winner(setup):
+    _, catalog = setup
+    basic = selection.suggest(found(catalog), catalog)
+    scarce = selection.suggest(found(catalog), catalog, context={"accounts": {
+        "claude": {"plan": "$20", "allowance": "scarce"}, "codex": {"billing": "included"}}})
+    assert [o["id"] for o in basic["options"]] == [o["id"] for o in scarce["options"]]
+    assert all(o["admission"] == "conditional: entitlement unknown" for o in scarce["options"])
+    catalog["backend"] = "opencode"
+    catalog["models"][0].update(id="opencode/deepseek-free", model="gpt-6.1-sol",
+        billing_route="free variant", benchmark_model="gpt-6.1-sol")
+    evidence = found(catalog)
+    for context in ({"priorities": ["zero money", "bounded executable check"]},
+                    {"task": {"deadline": "urgent"}, "session": {"context": "Luna already loaded"}}):
+        result = selection.suggest(evidence, catalog, context=context)
+        assert len(result["options"]) == 3
+        assert all("rank" not in o for o in result["options"])
+        assert result["options"][0]["evidence"][0]["seconds"] == 90
+        assert "selected-route" in result["options"][0]["evidence"][0]["execution_scope"]
+
+
+def test_exact_choices_do_not_substitute_or_invent_supported_effort(setup):
+    _, catalog = setup
+    evidence = found(catalog)
+    assert selection.suggest(evidence, catalog, choice="sol")["options"] == []
+    result = selection.suggest(evidence, catalog, choice="gpt-6-luna", effort="ultra")
+    assert [o["id"] for o in result["options"]] == ["gpt-6-luna"]
+    assert result["options"][0]["admission"].startswith("excluded")
+    assert "no substitution" in " ".join(result["options"][0]["problems"])
+    catalog["models"][2]["efforts"] = None
+    result = selection.suggest(found(catalog), catalog, choice="gpt-6-luna", effort="medium")
+    assert result["options"][0]["efforts"] is None
+    assert result["options"][0]["admission"].startswith("excluded")
+
+
+def test_unknown_or_excluded_measurements_cannot_establish_published_bounds(setup):
     data, catalog = setup
-    data["sources"]["LiveBench"]["efforts"]["gpt-6.1-sol"] = "max"
-    found = queries.search(["coding"], catalog=catalog, now=NOW)
-    assert found["coding"]["unsupported_effort_count"] == 1
-    assert found["coding"]["sources"]["LiveBench"]["results"][0]["model"] == "gpt-6-astra"
-    catalog["models"][0]["efforts"] = None
-    result = selection.suggest(queries.search(["coding"], catalog=catalog, now=NOW), catalog)
-    sol = next(r for r in result["shortlist"] if r["id"] == "gpt-6.1-sol")
-    assert sol["recommended_effort"] is None and "Unverified" in " ".join(sol["problems"])
-    model = {"efforts": ["high"]}
-    assert coverage.supported(model, "Gemini 4 Argon (High)") is True
-    assert coverage.supported(model, "Gemini 4 Argon (High)", None) is None
-
-
-def test_explicit_choice_is_never_replaced_when_unavailable_or_unsupported(setup):
-    _, catalog = setup
-    evidence = queries.search(["coding"], catalog=catalog, now=NOW)
-    missing = selection.suggest(evidence, catalog, choice="not-installed")
-    assert missing["shortlist"] == [] and "no substitution" in missing["problems"][0]
-    selected = selection.suggest(evidence, catalog, choice="sol", effort="max", max_usd=0.01)
-    assert [r["id"] for r in selected["shortlist"]] == ["gpt-6.1-sol"]
-    assert selected["shortlist"][0]["requested_effort"] == "max"
-    assert selected["shortlist"][0]["recommended_effort"] is None
-    assert any("unsupported" in p for p in selected["shortlist"][0]["problems"])
-
-
-def test_unknown_latency_and_class_cannot_satisfy_a_constraint(setup):
-    _, catalog = setup
-    evidence = queries.search(["coding"], catalog=catalog, now=NOW)
-    assert selection.suggest(evidence, catalog, max_seconds=2)["shortlist"] == []
-    constrained = selection.suggest(evidence, catalog, minimum_class="top")
-    assert [r["id"] for r in constrained["shortlist"]] == ["gpt-6-astra"]
+    catalog["models"].append({"id": "new-model", "model": "new-model", "efforts": ["low"]})
+    for row in data["sources"]["Bug Hunt"]["measurements"]:
+        row.update(seconds=None, cost=None)
+    result = selection.suggest(found(catalog), catalog, max_usd=1, max_seconds=10)
+    assert result["options"] == []
+    explicit = selection.suggest(found(catalog), catalog, choice="new-model", max_usd=1)
+    assert explicit["options"][0]["admission"].startswith("excluded")
     with pytest.raises(ValueError):
-        selection.suggest(evidence, catalog, max_usd=float("nan"))
-    assert selection.model_class({"model": "gpt-6-solarium"}) is None
-    assert selection.model_class({"model": "other-vendor/sol"}) is None
+        selection.suggest(found(catalog), catalog, max_seconds=float("nan"))
 
 
-def test_recommended_effort_preserves_the_native_control_identifier(setup):
+def test_source_failure_does_not_remove_models_or_mark_quality_as_zero(setup):
     data, catalog = setup
-    catalog["models"][0]["efforts"] = ["HIGH", "max"]
-    data["sources"]["Artificial Analysis"] = {"status": "ok", "effort_tradeoffs": [{
-        "model": "GPT-6.1 Sol", "configuration": "", "from": "high", "to": "max",
-        "before": {"Artificial Analysis Intelligence Index": 95, "Cost per Task USD": 4},
-        "after": {"Artificial Analysis Intelligence Index": 100, "Cost per Task USD": 10},
-    }]}
-    result = selection.suggest(queries.search(["coding"], catalog=catalog, now=NOW,
-                                              include_effort=True), catalog)
-    sol = next(r for r in result["shortlist"] if r["id"] == "gpt-6.1-sol")
-    assert sol["recommended_effort"] is None
-    assert sol["effort_evidence"][0]["quality"] == ["max"]
-    assert sol["effort_evidence"][0]["value"] == ["HIGH"]
-    assert sol["effort_evidence"][0]["score_fraction"] == 0.95
-    assert sol["effort_evidence"][0]["cost_fraction"] == 0.4
+    data["sources"] = {"Bug Hunt": {"status": "unavailable", "error": "offline"}}
+    result = selection.suggest(found(catalog), catalog)
+    assert len(result["options"]) == 3 and all(o["evidence"] == [] for o in result["options"])
+    assert "source unavailable; model ability unknown" in " ".join(result["notes"])
+
+
+def test_invalid_retained_speed_source_is_isolated_without_losing_native_candidates(setup):
+    data, catalog = setup
+    data["sources"]["Artificial Analysis"] = {"status": "ok", "raw": {"status": 200.0, "data": []},
+                                               "measurements": []}
+    result = selection.suggest(found(catalog), catalog)
+    assert len(result["options"]) == 3
+    assert all(o["coverage"]["debugging"] for o in result["options"])
+    assert result["sources"]["debugging/Artificial Analysis"]["status"] == "unavailable"
+
+
+def test_speed_keeps_raw_zero_scope_and_all_efforts_without_inventing_task_duration(setup):
+    data, catalog = setup
+    data["sources"]["Artificial Analysis"] = {"status": "ok", "version": "legacy", "measurements": [
+        measured("gpt-6-luna", level, cost=None, seconds=None, harness=None,
+            metric="artificial_analysis_intelligence_index", model_metadata={"release_date": "2026-09-23"},
+            speed={"median_output_tokens_per_second": tps, "median_time_to_first_token_seconds": ttft,
+                   "provider": provider, "workload": {"prompt_length": 1000},
+                   "methodology_version": "legacy unknown"})
+        for level, tps, ttft, provider in (("low", 0, 0, None), ("medium", 100, 1, "provider-a"),
+                                          ("high", 120, 90, "provider-b"))]}
+    result = selection.suggest(found(catalog), catalog)
+    option = result["options"][2]
+    rows = [r for r in option["evidence"] if r["source"] == "Artificial Analysis"]
+    assert {r["effort"] for r in rows} == {"low", "medium", "high"}
+    assert all(r["seconds"] is None for r in rows)
+    assert {r["speed"]["provider"] for r in rows} == {None, "provider-a", "provider-b"}
     text = selection.brief(result)
-    assert "quality: max; value: HIGH, 95% of score at 40% cost" in text
-    assert "domain-specific effort gains Unverified" in text
+    assert "reported 0; validity unknown" in text and "120 tokens/s, 90 s TTFT" in text
+    assert rows[0]["model_metadata"]["release_date"] == "2026-09-23"
 
 
-@pytest.mark.parametrize("task,expected", [
-    ("fix a flaky failing test", ["coding", "debugging"]),
-    ("Find a bug in the parser", ["coding", "debugging"]),
-    ("Debug a race condition", ["coding", "debugging"]),
-    ("Investigate a regression", ["coding", "debugging"]),
-    ("Fix failing tests after a refactor", ["coding", "debugging"]),
-    ("Optimize CUDA kernel throughput", ["performance"]),
-    ("Profile inference latency", ["performance"]),
-    ("Optimize cache locality", ["performance"]),
-])
-def test_realistic_task_routing(task, expected):
-    assert queries.domains(task=task) == expected
+@pytest.mark.parametrize("query,label", [("deepseek", "opencode/deepseek-v4.1-flash-free"),
+    ("deep flash", "opencode-go/deepseek-v4.1-flash"), ("glm", "GLM-5.3-Flash"),
+    ("Luna", "gpt-6-luna"), ("gpt sol", "gpt-6.1-sol")])
+def test_flexible_discovery_is_not_exact_admission(query, label):
+    assert coverage.query_matches(query, label)
+    assert not coverage.query_matches("gpt-6.1", "gpt-6.10-sol")
 
 
-def test_claude_aliases_resolve_once_without_merging_provider_routes(setup):
-    data, _ = setup
-    source = data["sources"]["LiveBench"]
-    source["points"]["Coding"] = [{"model": "claude-opus-5.5", "score": 95, "cost": 1}]
-    source["efforts"] = {"claude-opus-5.5": "high"}
-    catalog = {"backend": "claude", "models": [
-        {"id": alias, "model": "claude-opus-5-5", "efforts": ["high"]} for alias in ("default", "opus")]}
-    result = selection.suggest(queries.search(["coding"], catalog=catalog, now=NOW), catalog)
-    assert len(result["shortlist"]) == 1 and result["shortlist"][0]["id"] == "opus"
-    assert selection.brief(result).count("alias opus") == 1
-    explicit = selection.suggest(queries.search(["coding"], catalog=catalog, now=NOW), catalog,
-                                 choice="default")
-    assert explicit["shortlist"][0]["id"] == "default"
-    routes = {"backend": "opencode", "models": [
-        {"id": p + "/claude-opus-5-5", "model": "claude-opus-5-5", "efforts": ["high"]}
-        for p in ("provider-a", "provider-b")]}
-    assert len(coverage.canonical_catalog(routes)["models"]) == 2
-
-
-def test_brief_collapses_roles_and_keeps_score_and_cost_metrics_separate(setup):
+def test_query_limits_unknowns_and_preserves_explicit_native_choice(setup):
     _, catalog = setup
-    result = selection.suggest(queries.search(["design", "coding"], catalog=catalog, now=NOW), catalog)
+    catalog["models"] += [{"id": name, "model": name, "efforts": None}
+                           for name in ("unknown-model", "unrelated-model")]
+    result = selection.suggest(found(catalog, query="unknown"), catalog)
+    assert [o["id"] for o in result["options"]] == ["unknown-model"]
+
+
+def test_broad_facets_do_not_select_alphabetic_winners_and_have_honest_pages(setup):
+    _, catalog = setup
+    catalog["models"] += [{"id": f"new-{i}", "model": f"new-{i}", "efforts": None} for i in range(30)]
+    result = selection.suggest(found(catalog), catalog)
     text = selection.brief(result)
-    assert "Design score=" in text and "cost " in text
-    assert "; estimated USD" not in text
-    for line in text.splitlines():
-        if line.startswith("- "):
-            assert line.count("design:") <= 1 and line.count("coding:") <= 1
-    assert all(not option["problems"] for option in result["shortlist"])
+    assert "33 routes" in text and "Broad inventory" in text and "- codex:" not in text
+    page = selection.brief(result, limit=5, offset=4)
+    assert page.count("- codex:") == 5 and "Continue: --limit 5 --offset 9" in page
 
 
-def test_measured_context_keeps_requested_domain_order(setup):
+def test_context_validation_rejects_unknown_coercions_duplicates_and_oversize(tmp_path):
+    for value in ([], {"allowed_backends": "codex"}, {"allowed_backends": ["other"]},
+                  {"allowed_routes": {"codex": ["a", "a"]}}, {"task": {"difficulty_score": 4}}):
+        with pytest.raises(ValueError):
+            decision_context.validate(value)
+    with pytest.raises(ValueError):
+        decision_context.read("-", io.StringIO('{"task":{},"task":{}}'))
+    path = tmp_path / "context.json"
+    path.write_text(" " * (decision_context.MAX_BYTES + 1))
+    with pytest.raises(ValueError, match="64 KiB"):
+        decision_context.read(str(path), io.StringIO())
+
+
+def test_context_display_does_not_truncate_late_operative_constraints():
+    constraint = "The account has a limited allowance. " * 10 + "Only Luna is permitted."
+    assert constraint in "\n".join(selection.context_lines({"accounts": {"codex": {
+        "allowance": constraint}}}))
+
+
+def test_cli_default_cross_harness_partial_failure_and_luna_only_context(setup, monkeypatch, capsys):
     _, catalog = setup
-    evidence = queries.search(["design", "coding", "backend"], catalog=catalog, now=NOW)
-    result = selection.suggest(evidence, catalog)
-    astra = next(option for option in result["shortlist"] if option["id"] == "gpt-6-astra")
-    assert list(dict.fromkeys(r["domain"] for r in astra["tradeoffs"])) == ["design", "coding", "backend"]
+    called = []
+
+    def native(backend, account):
+        called.append(backend)
+        if backend == "agy":
+            raise RuntimeError("offline")
+        result = copy.deepcopy(catalog)
+        result["backend"] = backend
+        return result
+
+    monkeypatch.setattr(cli.inventory, "catalog", native)
+    args = ["model-guide", "suggest", "--task", "Fix code with failing tests", "--json"]
+    monkeypatch.setattr(cli.sys, "argv", args)
+    assert cli.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert set(called) == set(decision_context.BACKENDS)
+    assert len(result["options"]) == 9 and result["inventory_failures"]["agy"]["stage"] == "inventory"
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO(json.dumps({"allowed_backends": ["codex"],
+        "allowed_routes": {"codex": ["gpt-6-luna"]}, "task": {"scope": "three lines"}})))
+    monkeypatch.setattr(cli.sys, "argv", args + ["--context", "-"])
+    assert cli.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert [o["id"] for o in result["options"]] == ["gpt-6-luna"]
 
 
-def test_a_single_measured_effort_is_not_recommended_as_a_default(setup):
+def test_cross_backend_comparison_uses_one_captured_snapshot(setup, monkeypatch, capsys):
     data, catalog = setup
-    source = data["sources"]["LiveBench"]
-    source["efforts"] = {m["id"]: "max" for m in catalog["models"]}
-    for model in catalog["models"]:
-        model["efforts"] = ["high", "max"]
-    result = selection.suggest(queries.search(["coding"], catalog=catalog, now=NOW), catalog)
-    assert all(option["recommended_effort"] is None for option in result["shortlist"])
-    assert "effort: measured only at max" in selection.brief(result)
-    assert "recommend max" not in selection.brief(result)
+    snapshots, seen = [], []
+    monkeypatch.setattr(benchmarks, "snapshot", lambda: snapshots.append(1) or data)
+    monkeypatch.setattr(cli.inventory, "catalog", lambda backend, account: {**catalog, "backend": backend})
+    original = queries.search
+
+    def search(*args, **kwargs):
+        seen.append(kwargs["data"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(cli.queries, "search", search)
+    monkeypatch.setattr(cli.sys, "argv", ["model-guide", "suggest", "--task", "Fix code", "--json"])
+    assert cli.main() == 0
+    capsys.readouterr()
+    assert snapshots == [1] and len(seen) == 4 and all(value is data for value in seen)
 
 
-def test_effort_cost_ties_do_not_invent_a_recommended_setting():
-    from agent_models import effort
-
-    model = {"efforts": ["high", "max"]}
-    rows = [{"model": "Example", "effort": level, "score": 100, "cost": 1, "direction": "higher"}
-            for level in model["efforts"]]
-    plan = effort.knee(rows, "test curve", model)
-    assert plan["setting"] is None and "tie" in plan["explanation"]
-
-
-def test_effort_display_does_not_round_a_below_threshold_point_up_to_the_target():
-    from agent_models import effort
-
-    model = {"efforts": ["high", "max"]}
-    rows = [{"model": "Example", "effort": level, "score": score, "cost": cost, "direction": "higher"}
-            for level, score, cost in (("high", 94.5, 4), ("max", 100, 10))]
-    plan = effort.knee(rows, "test curve", model)
-    assert plan["setting"] is None and plan["quality"] == ["max"] and plan["value"] == ["high"]
-    assert "94.5% of score at 40% cost" in plan["explanation"]
-
-
-def test_stale_missing_and_unavailable_evidence_are_reported(setup):
-    data, catalog = setup
-    data["retrieved"] = "2026-01-01T00:00:00Z"
-    data["sources"]["Vals Terminal-Bench"] = {"status": "unavailable", "error": "offline"}
-    found = queries.search(["coding", "performance"], catalog=catalog, now=NOW)
-    assert any("Stale snapshot" in n for n in found["coding"]["warnings"])
-    assert any("KernelBench.com" in n for n in found["performance"]["warnings"])
-    result = selection.suggest(found, catalog)
-    assert any("unavailable" in n for n in result["notes"])
-    assert all("performance" in " ".join(r["problems"]) for r in result["shortlist"])
-
-
-def test_native_availability_and_unrounded_cost_bounds_are_applied_before_selection(setup):
-    data, catalog = setup
-    rows = data["sources"]["LiveBench"]["points"]["Coding"]
-    rows.insert(0, {"model": "unavailable-super-model", "score": 100, "cost": 0.01})
-    rows[1]["cost"] = 0.123949
-    evidence = queries.search(["coding"], catalog=catalog, now=NOW)
-    assert all(r["model"] != "unavailable-super-model"
-               for r in evidence["coding"]["sources"]["LiveBench"]["results"])
-    constrained = selection.suggest(evidence, catalog, max_usd=0.12392)
-    assert "gpt-6.1-sol" not in {r["id"] for r in constrained["shortlist"]}
-
-
-def test_overlapping_preference_intervals_and_allowance_pressure_keep_alternatives(setup):
-    data, catalog = setup
-    data["sources"]["Arena/webdev"] = {"status": "ok", "url": "https://arena.ai/",
-        "published": "2026-10-31", "rows": [
-            {"model_name": "GPT-6 Astra (High)", "rank": 1,
-             "rating": 100, "rating_lower": 95, "rating_upper": 105},
-            {"model_name": "GPT-6.1 Sol (High)", "rank": 2,
-             "rating": 98, "rating_lower": 93, "rating_upper": 103},
-        ]}
-    result = selection.suggest(queries.search(["design"], catalog=catalog, now=NOW), catalog, pressure=True)
-    assert result["shortlist"][0]["id"] == "gpt-6-luna"
-    assert len(result["shortlist"]) > 1
-    assert any("overlapping intervals" in n for n in result["notes"])
-
-
-def test_suggest_cli_defaults_to_brief_and_supports_json(setup, monkeypatch, capsys):
+def test_allowance_linkage_uses_exact_reported_membership_not_pool_name_or_equal_values(
+        setup, monkeypatch, capsys):
     _, catalog = setup
     monkeypatch.setattr(cli.inventory, "catalog", lambda *a: catalog)
-    monkeypatch.setattr(benchmarks, "account_observation", lambda *a: {})
-    args = ["model-guide", "suggest", "--backend", "codex", "--task", "UI refactor"]
-    monkeypatch.setattr(cli.sys, "argv", args)
-    assert cli.main() == 0 and "no automatic pick" in capsys.readouterr().out
-    monkeypatch.setattr(cli.sys, "argv", args + ["--json"])
+    windows = [{"label": "native pool", "remaining_percent": 90, "group": "Luna and friends",
+        "limit": "weekly", "resets": None, "model_ids": models}
+        for models in (None, ["gpt-6-luna"], ["gpt-6.1-sol"])]
+    monkeypatch.setattr(benchmarks, "account_observation", lambda *a, **k: {"profiles": {}, "errors": [],
+        "quotas": [{"backend": "codex", "account": "01", "freshness": "fresh", "windows": windows}]})
+    monkeypatch.setattr(cli.sys, "argv", ["model-guide", "suggest", "--backend", "codex", "--json"])
     assert cli.main() == 0
-    assert json.loads(capsys.readouterr().out)["domains"] == ["design", "coding"]
-    monkeypatch.setattr(cli.sys, "argv", ["model-guide", "benchmarks", "--backend", "codex",
-                                         "--account", "another-account"])
-    with pytest.raises(SystemExit):
-        cli.main()
+    result = json.loads(capsys.readouterr().out)
+    luna = next(o for o in result["options"] if o["id"] == "gpt-6-luna")
+    assert luna["allowance_links"] == [{"account_index": 0, "window_indices": [1]}]
+    assert "empty links mean unknown" in result["backends"]["codex"]["allowance_link_scope"]
 
 
-def test_conflicting_harnesses_never_merge_or_lend_a_native_score(setup):
+def test_unknown_task_text_is_preserved_and_falls_back_to_broad_retrieval(setup, monkeypatch, capsys):
+    _, catalog = setup
+    monkeypatch.setattr(cli.inventory, "catalog", lambda *a: catalog)
+    task = "Straighten the explanation without changing its meaning"
+    monkeypatch.setattr(cli.sys, "argv", ["model-guide", "suggest", "--backend", "codex", "--task", task])
+    assert cli.main() == 0
+    text = capsys.readouterr().out
+    assert task in text and "Evidence areas: overall" in text
+    assert queries.resolve(["coding"], task)["domains"] == ["coding"]
+
+
+def test_multiple_cohorts_cannot_hide_requested_performance_or_browser_evidence(setup):
     data, catalog = setup
-    template = {"model": "gpt-6.1-sol", "label": "Sol", "effort": "high", "metric": "bugs fixed",
-                "score": 20, "unit": "/105", "direction": "higher", "tasks": 105,
-                "cost": 1, "cost_kind": "list", "seconds": 30, "date": "2026-10-01", "caveat": None,
-                "harness_version": "1.0", "n_runs": 1}
-    data["sources"]["Bug Hunt"] = {"status": "ok", "measurements": [
-        {**template, "harness": "Codex CLI"},
-        {**template, "harness": "mini-swe-agent", "score": 100, "cost": 0.01}]}
-    result = selection.suggest(queries.search(["debugging"], catalog=catalog, now=NOW), catalog)
-    facts = result["shortlist"][0]["tradeoffs"]
-    assert all(r["score"] == 20 and r["harness"] == "Codex CLI" for r in facts)
-    data["sources"]["Bug Hunt"]["measurements"].pop(0)
-    result = selection.suggest(queries.search(["debugging"], catalog=catalog, now=NOW), catalog)
-    assert "other harness: mini-swe-agent" in selection.brief(result)
-    assert "bugs fixed 100/105 (mean of 1 run)" in selection.brief(result)
-
-
-def test_performance_never_calls_singletons_on_different_tasks_leaders(setup):
-    data, catalog = setup
-    template = {"label": "test", "effort": "high", "score": 10, "unit": "% roofline",
-                "direction": "higher", "tasks": 1, "cost": None, "cost_kind": None,
-                "seconds": None, "date": None, "caveat": None, "harness": "Codex CLI"}
+    data["sources"]["Bug Hunt"]["measurements"] += [measured("gpt-6-luna", configuration=str(i))
+                                                    for i in range(10)]
     data["sources"]["KernelBench.com"] = {"status": "ok", "measurements": [
-        {**template, "model": "gpt-6-astra", "metric": "operation A / H100"},
-        {**template, "model": "gpt-6.1-sol", "metric": "operation B / RTX"}]}
-    result = selection.suggest(queries.search(["performance"], catalog=catalog, now=NOW), catalog)
-    assert not any(r["role"] == "quality leader" for o in result["shortlist"] for r in o["tradeoffs"])
-    assert "leads 0 of 0 comparable tasks" in selection.brief(result)
+        measured("gpt-6-luna", metric="latency us", direction="lower", score=20, seconds=100)]}
+    data["sources"]["OSWorld"] = {"status": "ok", "measurements": [
+        measured("gpt-6-luna", metric="desktop success", score=30)]}
+    result = selection.suggest(found(catalog, domains=["debugging", "performance", "browser"]), catalog)
+    text = selection.brief(result)
+    assert "performance/KernelBench.com" in text and "browser/OSWorld" in text
+    assert "scoped evidence groups in --json" in text
+
+
+def test_cli_prefilters_before_queries_and_empty_backend_restriction_launches_nothing(
+        setup, monkeypatch, capsys):
+    _, catalog = setup
+    calls = []
+    monkeypatch.setattr(cli.inventory, "catalog", lambda *a: calls.append(a) or catalog)
+    real_search = queries.search
+
+    def restricted_search(*args, **kwargs):
+        assert [m["id"] for m in args[3]["models"]] == ["gpt-6-luna"]
+        return real_search(*args, **kwargs)
+
+    monkeypatch.setattr(cli.queries, "search", restricted_search)
+    monkeypatch.setattr(cli.sys, "argv", ["model-guide", "suggest", "--context", "-", "--json"])
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO(json.dumps({"allowed_backends": ["codex"],
+        "allowed_routes": {"codex": ["gpt-6-luna"]}})))
+    assert cli.main() == 0
+    assert len(json.loads(capsys.readouterr().out)["options"]) == 1
+    calls.clear()
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO('{"allowed_backends":[]}'))
+    assert cli.main() == 0 and not calls
+    assert json.loads(capsys.readouterr().out)["options"] == []
+
+
+def test_vision_and_computer_use_domains_remain_distinct():
+    routing = queries.resolve(["vision", "browser"], "Use screenshots to control the desktop GUI")
+    assert routing["domains"] == ["vision", "browser"]

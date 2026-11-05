@@ -1,6 +1,7 @@
 import os
 import stat
 
+import agent_session
 import pytest
 
 from agent_bridge import core, groups
@@ -15,8 +16,7 @@ def isolated_bridge_environment(monkeypatch, tmp_path):
     for name in ("AGENT_RESOURCES_JOB", "AGENT_RESOURCES_OWNER", "AGENT_RESOURCES_WORKER"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("AGENT_RESOURCES_SLICE", "codex.slice")
-    for name in ("CODEX_THREAD_ID", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID",
-                 "AGENT_BRIDGE_ROOT_HARNESS", "AGENT_BRIDGE_ROOT_SESSION"):
+    for name in agent_session.VARIABLES:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("AGENT_RESOURCES_HOME", str(tmp_path / "heavy"))
     monkeypatch.setattr(core, "JOBS", tmp_path / "jobs")

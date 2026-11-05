@@ -312,8 +312,10 @@ def test_agy_fallback_uses_fresh_account_quota_and_resumes(monkeypatch, tmp_path
                 {
                     "account": account,
                     "at": "2026-10-20T00:00:00+00:00",
-                    "rows": [{"group": "gemini", "limit": "Weekly", "remaining": 50,
-                              "resets": "2026-10-21T00:00:00+00:00"}],
+                    "schema_version": 2,
+                    "groups": [{"name": "provider pool", "buckets": [{"id": "native-pool",
+                        "name": "Weekly", "window": "weekly", "remaining_fraction": 0.5,
+                        "reset_time": "2099-01-01T00:00:00Z", "model_ids": ["gemini-pro"]}]}],
                 }
             )
         )
@@ -327,8 +329,10 @@ def test_agy_fallback_uses_fresh_account_quota_and_resumes(monkeypatch, tmp_path
                 {
                     "account": account,
                     "at": now,
-                    "rows": [{"group": "gemini", "limit": "Weekly", "remaining": 50,
-                              "resets": "2026-10-21T00:00:00+00:00"}],
+                    "schema_version": 2,
+                    "groups": [{"name": "provider pool", "buckets": [{"id": "native-pool",
+                        "name": "Weekly", "window": "weekly", "remaining_fraction": 0.5,
+                        "reset_time": "2099-01-01T00:00:00Z", "model_ids": ["gemini-pro"]}]}],
                 }
             )
         )
@@ -351,3 +355,29 @@ def test_agy_fallback_uses_fresh_account_quota_and_resumes(monkeypatch, tmp_path
         json.loads(line)["kind"] == "account_switched"
         for line in (job / "live.jsonl").read_text().splitlines()
     )
+
+
+def test_agy_fallback_never_infers_membership_from_group_or_model_family(monkeypatch, tmp_path):
+    accounts = tmp_path / "accounts"
+    for name in ("a1", "a2"):
+        directory = accounts / name
+        (directory / agy.TOKEN).parent.mkdir(parents=True)
+        (directory / agy.TOKEN).write_text("synthetic")
+        (directory / "quota.json").write_text(json.dumps({"schema_version": 2, "account": name,
+            "at": datetime.now(timezone.utc).isoformat(), "groups": [
+                {"name": "Claude and GPT models", "buckets": [{"id": "3p-weekly", "name": "Weekly",
+                    "window": "weekly", "remaining_fraction": 1, "reset_time": "2099-01-01T00:00:00Z"}]}]}))
+    monkeypatch.setattr(agy, "ACCOUNTS", accounts)
+    monkeypatch.setattr(agy, "switch_account",
+                        lambda *a: pytest.fail("unknown model binding switched account"))
+    job = tmp_path / "job"
+    job.mkdir()
+    state = {"account": "a1", "model": "claude-sonnet-5.5"}
+    path = job / "state.json"
+    path.write_text(json.dumps(state))
+    event(job, "turn_completed", error="quota reached")
+    agy.fallback(job, state, path)
+    assert state["account"] == "a1"
+    events = [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()]
+    assert any(e["kind"] == "account_fallback_unavailable" and "binding unavailable" in e["message"]
+               for e in events)

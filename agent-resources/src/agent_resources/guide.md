@@ -19,6 +19,10 @@ until it returns.
 Waiting for a slot is normal, never a blocker or progress message to send. Report
 only a holder shown dead while still blocked or a wait exceeding 30 minutes,
 excluding time paused by root. A root pause is normal; wait for resume.
+Bridge workers report such blockers to their own root with an ordinary `URGENT:`
+job message. Native `agent-bridge message send` is root-to-root only; the root
+coordinates with another request's root when needed. Workers never relay sibling
+traffic through root; use ordinary `TO <peer>:` job messages without native discovery.
 
 ```sh
 agent-resources run --mem 1G -- uv run pytest

@@ -1,11 +1,13 @@
 """Direct native session messages, independent of Bridge job ownership."""
 
 import json
+import os
 import uuid
 
 from codex_wake.client import Wake, connection, validate_message
 
 from . import owner_binding
+from .core import WORKER_FLAG
 
 
 def address(value):
@@ -126,6 +128,11 @@ def sessions():
 
 def send(target, text):
     """One attempt, native transport only. Acceptance never means read or approval."""
+    if os.environ.get(WORKER_FLAG):
+        raise RuntimeError(
+            "delegated workers must use job messages: TO <peer>: for siblings, "
+            "URGENT: for a root blocker; native message send is root-to-root only"
+        )
     harness, recipient = address(target)
     sender = identity()
     if not isinstance(text, str) or not text.strip():
