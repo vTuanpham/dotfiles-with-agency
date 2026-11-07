@@ -37,7 +37,7 @@ class Connection:
                 or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment
                 or not parsed.port or type(data["pid"]) is not int or data["pid"] <= 0):
             raise ValueError("Expected a local OpenCode service")
-        if data["version"] != "2.2.2":
+        if data["version"] != "2.2.6":
             raise ValueError("Unsupported OpenCode protocol version")
         password = text(data["password"], "service credential", 1024)
         self.port = parsed.port

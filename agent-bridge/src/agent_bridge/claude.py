@@ -13,6 +13,7 @@ from .core import (
     capped,
     confirm_steer,
     log,
+    log_turn_started,
     poll_steers,
     route_to_peers,
     runner_finished,
@@ -220,7 +221,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
         message_id += 1
         idle = False
         state["activeTurnId"] = f"turn-{message_id}"
-        log(job, "turn_started", turnId=state["activeTurnId"])
+        log_turn_started(job, state, state["activeTurnId"])
         save(path, state)
 
     stdin_closed = False

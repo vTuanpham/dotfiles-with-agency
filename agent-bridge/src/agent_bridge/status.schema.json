@@ -855,6 +855,19 @@
             }
           ]
         },
+        "native_observation": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {"type": "string", "enum": ["thread_started", "prompt_accepted", "message", "command_start", "command_end", "step_finished"]},
+                "at": {"type": "string", "format": "date-time"}
+              },
+              "required": ["kind", "at"]
+            },
+            {"type": "null"}
+          ]
+        },
         "last_event_age_seconds": {
           "anyOf": [
             {

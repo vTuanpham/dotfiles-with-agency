@@ -120,6 +120,7 @@ def read_job(job, root):
         "title",
         "model",
         "effort",
+        "effectiveEffort",
         "account",
         "cwd",
         "memoryMax",

@@ -4,7 +4,7 @@
 
 OpenCode's user config under `~/.config/opencode`.
 
-The installer restores OpenCode 2.2.2 from its official V2 installer, matching
+The installer restores OpenCode 2.2.6 from its official V2 installer, matching
 the inbox adapter's verified protocol.
 
 - `AGENTS.md`: **live**, appendable OpenCode preferences.
@@ -22,11 +22,11 @@ the inbox adapter's verified protocol.
   directory.
 
 Resource attribution reads the tool hook's session ID and follows verified
-[`parentID` ancestry](https://github.com/anomalyco/opencode/blob/v2.2.2/packages/core/src/tool/plugin/subagent.ts),
+[`parentID` ancestry](https://github.com/anomalyco/opencode/blob/v2.2.6/packages/core/src/tool/plugin/subagent.ts),
 with a three-second deadline and at most 32 sessions. Missing, malformed or cyclic
 ancestry rejects that shell call instead of guessing a controller. Ordinary
-[forks have separate history metadata](https://github.com/anomalyco/opencode/blob/v2.2.2/packages/core/src/session/projector.ts)
-and no native parent. The [native shell creates a fresh process per call](https://github.com/anomalyco/opencode/blob/v2.2.2/packages/core/src/shell.ts),
+[forks have separate history metadata](https://github.com/anomalyco/opencode/blob/v2.2.6/packages/core/src/session/projector.ts)
+and no native parent. The [native shell creates a fresh process per call](https://github.com/anomalyco/opencode/blob/v2.2.6/packages/core/src/shell.ts),
 so the export prefix changes neither the plugin process environment nor another
 agent's shell. The command keeps its own working directory and exit status.
 Commands that explicitly clear their environment must preserve attribution themselves.

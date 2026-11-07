@@ -1,10 +1,137 @@
 import json
 from collections import deque
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from agent_bridge import opencode
+
+
+def test_effective_variant_requires_matching_native_message_and_model(monkeypatch):
+    data = {"id": "msg_assistant", "type": "assistant", "model": {
+        "providerID": "opencode", "id": "deepseek-v4.1-flash-free", "variant": "default"}}
+    calls = []
+    def request(*args):
+        calls.append(args)
+        return data
+    monkeypatch.setattr(opencode, "native_request", request)
+    st = {"sessionId": "ses_worker", "model": "opencode/deepseek-v4.1-flash-free"}
+    assert opencode.read_effective_variant(
+        st, "http://127.0.0.1:1234", "secret", {"messageID": "msg_assistant"}
+    ) == "default"
+    assert calls[0][2:] == ("GET", "/api/session/ses_worker/message/msg_assistant")
+    assert opencode.read_effective_variant(
+        {**st, "model": "other/model"}, "url", "secret", {"messageID": "msg_assistant"}
+    ) is None
+    assert opencode.read_effective_variant(st, "url", "secret", {"messageID": "../bad"}) is None
+
+
+def test_live_steer_uses_native_prompt_and_confirms_exact_receipt(tmp_path, monkeypatch):
+    (tmp_path / "steer").mkdir()
+    (tmp_path / "steer/001.md").write_text("First prompt\n")
+    (tmp_path / "steer/002.md").write_text("Change course\n")
+    (tmp_path / "steer/003.md").write_text("Later\n")
+    (tmp_path / "steer/003.queue").touch()
+    (tmp_path / "steer/004.md").write_text("Existing queue\n")
+    st = {"sessionId": "ses_worker", "inflight": {"file": "001.md"}}
+    calls = []
+
+    class Connection:
+        def __init__(self, host, port, timeout):
+            assert (host, port, timeout) == ("127.0.0.1", 1234, 2)
+
+        def request(self, method, path, body, headers):
+            calls.append((method, path, json.loads(body) if body else None, headers))
+
+        def getresponse(self):
+            body = next(call[2] for call in reversed(calls) if call[0] == "POST")
+            data = ({"id": body["id"], "type": "user", "text": body["text"]}
+                    if calls[-1][0] == "GET" else
+                    {"id": body["id"], "sessionID": "ses_worker", "type": "user",
+                     "delivery": "steer", "payload": {"text": body["text"]}})
+            return SimpleNamespace(status=200, getheader=lambda *a: "application/json",
+                                   read=lambda _: json.dumps({"data": data}).encode())
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(opencode.http.client, "HTTPConnection", Connection)
+    opencode.steer_live(tmp_path, st, "http://127.0.0.1:1234", "fixture", skip={"004.md"})
+    assert calls[0][0:2] == ("POST", "/api/session/ses_worker/prompt")
+    assert calls[0][2]["text"] == "Change course" and calls[0][2]["delivery"] == "steer"
+    assert calls[0][2]["id"].startswith("msg_")
+    assert (tmp_path / "steer/001.md").exists()
+    assert (tmp_path / "steer/sent/002.md").read_text() == "Change course\n"
+    assert "liveSteer" not in json.loads((tmp_path / "state.json").read_text())
+    opencode.steer_live(tmp_path, st, "http://127.0.0.1:1234", "fixture", skip={"004.md"})
+    assert len(calls) == 2 and (tmp_path / "steer/003.md").exists()
+    assert (tmp_path / "steer/004.md").exists()
+
+
+def test_live_steer_uncertain_response_retains_stable_id(tmp_path, monkeypatch):
+    (tmp_path / "steer").mkdir()
+    (tmp_path / "steer/001.md").write_text("follow up")
+    st = {"sessionId": "ses_worker"}
+    calls = []
+
+    class Connection:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def request(self, method, path, body, headers):
+            calls.append(json.loads(body)["id"])
+
+        def getresponse(self):
+            raise TimeoutError("fixture")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(opencode.http.client, "HTTPConnection", Connection)
+    for _ in range(2):
+        with pytest.raises(TimeoutError):
+            opencode.steer_live(tmp_path, st, "http://127.0.0.1:1234", "fixture")
+    assert calls[0] == calls[1] == st["liveSteer"]["id"]
+    assert (tmp_path / "steer/001.md").is_file()
+
+
+def test_admitted_steer_is_not_confirmed_until_native_history_contains_it(tmp_path, monkeypatch):
+    (tmp_path / "steer").mkdir()
+    (tmp_path / "steer/001.md").write_text("follow up")
+    st = {"sessionId": "ses_worker"}
+    posts = []
+    ready = False
+
+    def request(_url, _password, method, _path, body=None):
+        if method == "POST":
+            posts.append(body["id"])
+            return {"id": body["id"], "sessionID": "ses_worker", "type": "user",
+                    "delivery": "steer", "payload": {"text": "follow up"}}
+        if not ready:
+            raise opencode.NativeMessagePending()
+        return {"id": posts[-1], "type": "user", "text": "follow up"}
+
+    monkeypatch.setattr(opencode, "native_request", request)
+    assert opencode.steer_live(tmp_path, st, "url", "secret") is False
+    assert (tmp_path / "steer/001.md").exists() and st["liveSteer"]
+    assert not (tmp_path / "live.jsonl").exists()
+    ready = True
+    assert opencode.steer_live(tmp_path, st, "url", "secret") is True
+    assert posts[0] == posts[1] and (tmp_path / "steer/sent/001.md").exists()
+
+
+def test_live_steer_recovers_after_receipt_file_was_moved(tmp_path, monkeypatch):
+    (tmp_path / "steer/sent").mkdir(parents=True)
+    (tmp_path / "steer/sent/001.md").write_text("follow up")
+    session = "ses_worker"
+    identity = opencode.hashlib.sha256(f"{tmp_path.resolve()}\0{session}\0{'001.md'}".encode()).hexdigest()
+    st = {"sessionId": session, "liveSteer": {"id": "msg_" + identity, "file": "001.md", "session": session}}
+    monkeypatch.setattr(opencode, "command", lambda *a, **k: pytest.fail("no server needed"))
+    opencode.recover_live_steer(tmp_path, st)
+    assert "liveSteer" not in st
+    events = [json.loads(line) for line in (tmp_path / "live.jsonl").read_text().splitlines()]
+    assert [event["kind"] for event in events] == ["steer_sent"]
 
 
 def state(tmp_path, sandbox="workspace-write"):
@@ -121,11 +248,11 @@ def test_opencode_steer_survives_spawn_failure_and_is_redelivered(monkeypatch, t
     "opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free",
     "opencode-go/gpt-6-luna",
 ])
-def test_requested_model_variant_uses_the_standalone_native_cli(monkeypatch, tmp_path, model):
+def test_requested_model_variant_uses_the_private_native_server(monkeypatch, tmp_path, model):
     monkeypatch.setattr(opencode.Path, "home", lambda: tmp_path / "home")
     st = {**state(tmp_path), "model": model, "effort": None}
     command, _ = opencode.command(st, tmp_path / "job", "Reply only OK")
-    assert "--standalone" in command
+    assert any(str(value).endswith("opencode_supervisor.py") for value in command)
     assert command[command.index("-m") + 1] == model
 
 
@@ -236,6 +363,7 @@ def test_steer_runs_as_next_session_turn(monkeypatch, tmp_path):
     st = state(tmp_path)
     (job / "steer").mkdir()
     (job / "steer" / "001.md").write_text("next turn")
+    (job / "steer" / "001.queue").touch()
     commands, prompts = fake_turns(monkeypatch, [STOP + b"{partial", b"", STOP, b""], [0, 0])
     opencode.run(job, st, state_path, "first prompt")
     assert len(commands) == 2
@@ -243,9 +371,72 @@ def test_steer_runs_as_next_session_turn(monkeypatch, tmp_path):
     assert "next turn" not in commands[1] and prompts[1] == b"next turn"
     assert commands[1][commands[1].index("--session") + 1] == "sid"
     assert not (job / "steer" / "001.md").exists()
+    assert not (job / "steer" / "001.queue").exists()
     assert (job / "steer" / "sent" / "001.md").exists()
     kinds = [json.loads(line)["kind"] for line in (job / "live.jsonl").read_text().splitlines()]
     assert kinds.count("turn_completed") == 2  # one per process, not per model step
+
+
+def test_running_turn_delivers_steer_through_private_server(monkeypatch, tmp_path):
+    (tmp_path / "steer").mkdir()
+    announcement = b'{"bridge_server":"http://127.0.0.1:1234"}\n'
+    native = b'{"type":"step_start","sessionID":"ses_worker","part":{}}\n'
+    end = b'{"type":"step_finish","sessionID":"ses_worker","part":{"reason":"stop"}}\n'
+    commands, prompts = fake_turns(monkeypatch, [announcement + native, end, b""], [0])
+    deliveries = []
+
+    def deliver(job, st, url, password, *, skip):
+        if not deliveries:
+            deliveries.append((st["sessionId"], url, password, skip))
+            (job / "steer/001.md").write_text("Change course\n")
+            (job / "steer/sent").mkdir()
+            (job / "steer/001.md").rename(job / "steer/sent/001.md")
+
+    monkeypatch.setattr(opencode, "steer_live", deliver)
+    st = state(tmp_path)
+    opencode.run(tmp_path, st, tmp_path / "state.json", "initial prompt")
+    assert len(commands) == len(prompts) == 1
+    assert deliveries[0][:2] == ("ses_worker", "http://127.0.0.1:1234")
+    assert deliveries[0][3] == set()
+    assert "bridge_server" not in (tmp_path / "stream.ndjson").read_text()
+    assert (tmp_path / "steer/sent/001.md").exists()
+
+
+def test_undelivered_native_steer_recovery_resumes_without_reprompting_it(monkeypatch, tmp_path):
+    (tmp_path / "steer").mkdir()
+    (tmp_path / "steer/001.md").write_text("change course")
+    announcement = b'{"bridge_server":"http://127.0.0.1:1234"}\n'
+    native = b'{"type":"step_start","sessionID":"ses_worker","part":{}}\n'
+    end = b'{"type":"step_finish","sessionID":"ses_worker","part":{"reason":"stop"}}\n'
+    _, prompts = fake_turns(monkeypatch, [announcement + native, end, b""], [0])
+    monkeypatch.setattr(opencode, "recover_live_steer", lambda *_: None)
+
+    def deliver(job, st, *_args, **_kwargs):
+        if st.get("liveSteer"):
+            (job / "steer/sent").mkdir(exist_ok=True)
+            (job / "steer/001.md").rename(job / "steer/sent/001.md")
+            st.pop("liveSteer")
+        return True
+
+    monkeypatch.setattr(opencode, "steer_live", deliver)
+    st = {**state(tmp_path), "sessionId": "ses_worker", "liveSteer": {"file": "001.md"}}
+    opencode.run(tmp_path, st, tmp_path / "state.json", "", resume=True)
+    assert prompts == [b"Continue."]
+    assert (tmp_path / "steer/sent/001.md").is_file()
+
+
+def test_running_turn_uses_native_variant_once(monkeypatch, tmp_path):
+    announcement = b'{"bridge_server":"http://127.0.0.1:1234"}\n'
+    event = b'{"type":"step_start","sessionID":"ses_worker","part":{"messageID":"msg_assistant"}}\n'
+    end = b'{"type":"step_finish","sessionID":"ses_worker","part":{"reason":"stop"}}\n'
+    fake_turns(monkeypatch, [announcement + event + event, end, b""], [0])
+    calls = []
+    monkeypatch.setattr(opencode, "read_effective_variant", lambda *args: calls.append(args) or "default")
+    monkeypatch.setattr(opencode, "steer_live", lambda *args, **kwargs: None)
+    st = {**state(tmp_path), "effectiveEffort": "stale"}
+    opencode.run(tmp_path, st, tmp_path / "state.json", "initial prompt")
+    assert st["effectiveEffort"] == "default"
+    assert len(calls) == 1
 
 
 def test_denied_call_is_reported_and_worker_continues(monkeypatch, tmp_path):

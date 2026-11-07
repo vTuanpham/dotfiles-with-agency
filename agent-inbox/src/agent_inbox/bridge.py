@@ -117,7 +117,7 @@ class Bridge:
             identifier = uuid.uuid5(uuid.NAMESPACE_URL, "agent-inbox:bridge:" + job["id"] + ":" + session).hex
             label = (job["title"] or binding["title"] or job["name"])[:200]
             target = Target(identifier, "bridge", origin.BACKENDS[backend], session, label, settings)
-            capabilities = {**asdict(self.capabilities), "mid_turn_steering": backend != "agy"}
+            capabilities = asdict(self.capabilities)
             result.append((target, {**target.public(), "status": status(job),
                                    "saved": not job["running"] and not job["awaiting_root"],
                                    "capabilities": capabilities}))
@@ -143,8 +143,6 @@ class Bridge:
     def send(self, target, message):
         if message.images:
             raise DeliveryRejected("Bridge steering accepts text only")
-        if message.delivery == "steer" and target.settings["bridge_backend"] == "agy":
-            raise DeliveryRejected("This native worker API does not expose mid-turn steering")
         text(message.text, "Bridge worker message")
         job, _ = self.selected(target, fresh=True)
         found = origin.read().get(identity(target))

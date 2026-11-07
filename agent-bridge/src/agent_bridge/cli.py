@@ -678,6 +678,8 @@ def main():
                     if state.get("retiredAt"):
                         raise RuntimeError(f"job is retired; run agent-bridge restore {a.job} first")
                     path = make_steer(job, text)
+                    if a.queue and state.get("backend") in {"opencode", "agy"}:
+                        path.with_suffix(".queue").touch(mode=0o600)
                     log(job, "root_steer", level="info", file=path.name)
                     if not a.queue:
                         try:
@@ -722,6 +724,7 @@ def main():
             for key in ("model", "effort"):
                 if getattr(a, key, None):
                     state[key] = getattr(a, key)
+                    state.pop("effectiveEffort", None)
         else:
             if state_path.exists():
                 raise RuntimeError("job exists; use resume")
@@ -759,9 +762,7 @@ def main():
                     except json.JSONDecodeError:
                         state["config"][key] = value
             if a.backend == "agy":
-                state.update(
-                    conversationId="", allow=a.allow or [], deny=a.deny or [], turnsSent=0, turnsDone=0
-                )
+                state.update(conversationId="", allow=a.allow or [], deny=a.deny or [])
             if a.backend == "claude":
                 state.update(sessionId="")
             if a.backend == "opencode":

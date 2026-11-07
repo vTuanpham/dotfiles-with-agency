@@ -115,6 +115,9 @@ basename (no command arguments), start time, PID and PID namespace. Host PID is
 recorded directly when known; a host-side `owners`/`watch` scan resolves a
 namespaced holder and updates its record. Before that scan, or when host process
 visibility is unavailable, it says `host_pid=unavailable` instead of guessing.
+Cancellation can also resolve a visible holder when its recorded host namespace
+is wrong, but only if its namespace, local PID and inherited request descriptor
+uniquely match.
 The matching `.request.need` file (0600) stores declared need, exclusivity,
 queue time and optional job cap. Missing or malformed request metadata stops
 admission rather than guessing a reservation.

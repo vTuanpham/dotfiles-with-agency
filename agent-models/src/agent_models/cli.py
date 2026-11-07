@@ -13,6 +13,7 @@ from . import (
     decision_context,
     inventory,
     policy,
+    preferences,
     queries,
     reference,
     refresh,
@@ -85,6 +86,11 @@ def suggestions(args, context, routing):
     result["facets"] = selection.facets(result["options"])
     result["total_options"] = len(result["options"])
     result["comparison"] = comparison.portfolio(result)
+    try:
+        result["preferences"] = preferences.applicable(args.backend)
+    except (OSError, ValueError, TypeError) as error:
+        result["preferences"] = []
+        result["problems"].append("Preferences unavailable: " + str(error))
     result["policy_evidence"] = policy.excerpts(backends, context=context, observations=result["backends"])
     result["choice"] = args.choice
     result["task_routing"] = routing
@@ -99,6 +105,18 @@ def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(prog="model-guide", description="Shared model selection reference.")
     commands = parser.add_subparsers(dest="command", required=True)
+    pref = commands.add_parser("preferences", help="manage private, attributed model-selection notes")
+    pref_commands = pref.add_subparsers(dest="action", required=True)
+    pref_commands.add_parser("list", help="list all notes, including expired ones")
+    add = pref_commands.add_parser("add", help="record a note; provenance is supplied by the caller")
+    add.add_argument("--source", choices=("user", "agent"), required=True)
+    add.add_argument("--note", required=True)
+    add.add_argument("--backend", choices=decision_context.BACKENDS)
+    for name in ("model", "account", "task", "reason"):
+        add.add_argument("--" + name)
+    add.add_argument("--expires", help="last applicable date, YYYY-MM-DD")
+    remove = pref_commands.add_parser("remove", help="remove a note by its id")
+    remove.add_argument("id")
     read = commands.add_parser("read", help="read only the reference needed for this task")
     read.add_argument("topic", choices=("models", "subscriptions", "sources", "maintenance"))
     compare = commands.add_parser("benchmarks", help="search benchmark evidence with local account context")
@@ -151,6 +169,14 @@ def main():
     update.add_argument("--yes", action="store_true", help="confirm completed source review")
     args = parser.parse_args()
     try:
+        if args.command == "preferences":
+            if args.action == "list":
+                print(json.dumps(preferences.read(), indent=2, ensure_ascii=False))
+            elif args.action == "add":
+                print(json.dumps(preferences.add(args), ensure_ascii=False))
+            else:
+                preferences.remove(args.id)
+            return 0
         if args.command == "read":
             print((reference.GUIDES / (args.topic + ".md")).read_text().strip())
         elif args.command in ("benchmarks", "suggest"):

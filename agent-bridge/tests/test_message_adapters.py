@@ -81,13 +81,13 @@ def test_opencode_private_service_auth_and_process_identity(monkeypatch, tmp_pat
     path = tmp_path / "state/opencode/service.json"
     path.parent.mkdir(parents=True)
     core.atomic_save(
-        path, {"url": "http://127.0.0.1:12345", "pid": 42, "version": "2.2.2", "password": "fixture-secret"}
+        path, {"url": "http://127.0.0.1:12345", "pid": 42, "version": "2.2.6", "password": "fixture-secret"}
     )
     calls = []
 
     def call(self, method, route, body=None):
         calls.append((method, route, self.port, self.headers))
-        return {"pid": 42, "version": "2.2.2"}
+        return {"pid": 42, "version": "2.2.6"}
 
     monkeypatch.setattr(opencode_messages.Connection, "call", call)
     api = opencode_messages.Connection()
@@ -95,11 +95,22 @@ def test_opencode_private_service_auth_and_process_identity(monkeypatch, tmp_pat
     assert api.headers["Authorization"].startswith("Basic ")
     core.atomic_save(
         path,
-        {"url": "http://external.invalid:12345", "pid": 42, "version": "2.2.2", "password": "fixture-secret"},
+        {"url": "http://external.invalid:12345", "pid": 42, "version": "2.2.6", "password": "fixture-secret"},
     )
     with pytest.raises(ValueError, match="local"):
         opencode_messages.Connection()
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("version", ["2.2.2", "2.2.7"])
+def test_opencode_unverified_service_version_is_rejected_before_auth(monkeypatch, tmp_path, version):
+    path = tmp_path / "state/opencode/service.json"
+    path.parent.mkdir(parents=True)
+    core.atomic_save(path, {"url": "http://127.0.0.1:12345", "pid": 42,
+                            "version": version, "password": "fixture-secret"})
+    monkeypatch.setattr(opencode_messages.Connection, "call", lambda *_: pytest.fail("unexpected request"))
+    with pytest.raises(ValueError, match="Unsupported"):
+        opencode_messages.Connection()
 
 
 @pytest.fixture

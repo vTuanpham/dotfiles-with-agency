@@ -40,6 +40,8 @@ owns reference updates; `model-guide check` reports drift without changing files
 - To transfer an existing owner namespace to a different known root, run `agent-bridge handoff OWNER` from the new root first. The transfer is locked; afterwards, commands and watches from the previous known root cannot mutate, acknowledge or deliver that owner's jobs. Unknown/rootless sessions keep legacy access without replacing a known binding.
 - Use detached launches and an armed Bridge watch when applying group wake policies.
 - Keep doing your own work while workers run; prefer background waits. If one runs longer than its task warrants or goes quiet, read `tail <job>/live.jsonl` and `<backend>.stderr.log` early, then steer it, stop it, or take over.
+- A running status confirms the runner is alive. `status --json` reports the latest `native_observation` after the request, distinguishing initialization and accepted input from later worker activity; use the watch for subsequent failure or completion. With queued turns, an observation may belong to the preceding turn.
+- Turn-start records include the requested model, account and effort at that time. They do not establish which account or model actually served the turn.
 - If a blocking wait is necessary, use a timeout of at least 180 seconds, subject to harness limits. Tool yield intervals are separate from command timeouts. Avoid foreground sleeps and short polling. Use Bridge's stop/interrupt/watch controls for its jobs; shared shell matching guidance lives in `~/dotfiles-with-agency/shell/README.md#agent-process-matching`.
 
 ## Steer, resume, peers

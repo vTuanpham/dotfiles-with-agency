@@ -1,13 +1,20 @@
 """OpenCode CLI backend, confined by bubblewrap because OpenCode has no filesystem sandbox."""
 
+import base64
+import hashlib
+import http.client
 import json
 import os
+import secrets
 import select
 import shutil
 import signal
 import stat
 import subprocess
+import sys
+import time
 from pathlib import Path
+from urllib.parse import quote, urlsplit
 
 from agent_models.inventory import ZDR_FREE, unreviewed_free
 from agent_resources.heavy import prepare as heavy_directory
@@ -19,12 +26,15 @@ from .core import (
     capped,
     confirm_steer,
     log,
+    log_turn_started,
     route_to_peers,
     runner_finished,
     runner_started,
     save,
+    steer_lock,
     worker_env,
 )
+from .peers import message_fields
 
 DECLINED = "The user declined this tool call"  # OpenCode's auto-reject; it then aborts the turn
 # The only free-tier models OpenCode documents as zero-retention and never trained on. Any other free model
@@ -35,7 +45,7 @@ def binary():
     return shutil.which("opencode") or str(Path.home() / ".opencode/bin/opencode")
 
 
-def command(state, job, prompt, resume=False):
+def command(state, job, prompt, resume=False, server_only=False):
     if not shutil.which("bwrap"):
         raise RuntimeError("bwrap is required for opencode; refusing to run unconfined")
     model = state.get("model") or ""
@@ -48,12 +58,16 @@ def command(state, job, prompt, resume=False):
         if not model or "#" in model:
             raise RuntimeError("--effort needs --model without a #variant")
         model += "#" + state["effort"]
-    cmd = [binary(), "run", "--standalone", "--format", "json"]
-    if model:
-        cmd += ["-m", model]
-    if state.get("sessionId"):
-        cmd += ["--session", state["sessionId"]]
-    cmd += ["--title", state["title"]]
+    cmd = [sys.executable, str(Path(__file__).with_name("opencode_supervisor.py")), binary()]
+    if server_only:
+        cmd += ["--server-only"]
+    else:
+        cmd += ["--format", "json"]
+        if model:
+            cmd += ["-m", model]
+        if state.get("sessionId"):
+            cmd += ["--session", state["sessionId"]]
+        cmd += ["--title", state["title"]]
     env = worker_env(job)
     for key in list(env):
         if key in {"OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR"} or key.startswith(
@@ -133,6 +147,188 @@ def command(state, job, prompt, resume=False):
     return args, env
 
 
+class NativeMessagePending(Exception):
+    """An admitted prompt is not yet in the session history."""
+
+
+def native_request(url, password, method, path, body=None):
+    parsed = urlsplit(url)
+    if (parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not parsed.port
+            or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment):
+        raise ValueError("invalid OpenCode worker server address")
+    auth = base64.b64encode(("opencode:" + password).encode()).decode()
+    connection = http.client.HTTPConnection("127.0.0.1", parsed.port, timeout=2)
+    try:
+        connection.request(method, path, json.dumps(body) if body is not None else None,
+                           {"Authorization": "Basic " + auth, "Content-Type": "application/json"})
+        response = connection.getresponse()
+        if method == "GET" and response.status == 404:
+            raise NativeMessagePending()
+        if response.status != 200:
+            raise RuntimeError(f"OpenCode worker request rejected (HTTP {response.status})")
+        if response.getheader("Content-Type", "").split(";")[0] != "application/json":
+            raise ValueError("invalid OpenCode worker response")
+        raw = response.read(1048577)
+        if len(raw) > 1048576:
+            raise ValueError("OpenCode worker response too large")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise ValueError("invalid OpenCode worker response")
+        return data.get("data")
+    finally:
+        connection.close()
+
+
+def steer_live(job, state, url, password, *, resume=True, skip=()):
+    """Admit one durable native steer without interrupting the active turn."""
+    session = state.get("sessionId")
+    if not isinstance(session, str) or not session.startswith("ses_") or not all(
+        c.isascii() and (c.isalnum() or c in "_-") for c in session
+    ):
+        return
+    pending = state.get("liveSteer")
+    if pending is None:
+        with steer_lock(job):
+            excluded = (state.get("inflight") or {}).get("file")
+            path = next((p for p in sorted((Path(job) / "steer").glob("[0-9]*.md"))
+                         if p.stem.isdecimal() and p.name != excluded and p.name not in skip
+                         and not p.with_suffix(".queue").exists()), None)
+            if path is None:
+                return
+            identity = hashlib.sha256(f"{Path(job).resolve()}\0{session}\0{path.name}".encode()).hexdigest()
+            pending = {"id": "msg_" + identity, "file": path.name, "session": session}
+            state["liveSteer"] = pending
+            save(Path(job) / "state.json", state)
+    if not isinstance(pending, dict) or pending.get("session") != session:
+        raise RuntimeError("OpenCode steer session changed; inspect delivery before continuing")
+    filename = pending.get("file")
+    if (not isinstance(filename, str) or not filename.endswith(".md")
+            or not filename[:-3].isdecimal()):
+        raise ValueError("invalid OpenCode steer identity")
+    identity = hashlib.sha256(f"{Path(job).resolve()}\0{session}\0{filename}".encode()).hexdigest()
+    if pending.get("id") != "msg_" + identity:
+        raise ValueError("invalid OpenCode steer identity")
+    path = Path(job) / "steer" / filename
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("OpenCode steer file is unavailable")
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        raise ValueError("OpenCode steer is empty")
+    data = native_request(url, password, "POST", "/api/session/" + quote(session, safe="") + "/prompt",
+                          {"id": pending["id"], "text": text, "delivery": "steer", "resume": resume})
+    if (not isinstance(data, dict) or data.get("id") != pending["id"]
+            or data.get("sessionID") != session or data.get("type") != "user"
+            or data.get("delivery") != "steer" or not isinstance(data.get("payload"), dict)
+            or data["payload"].get("text") != text):
+        raise ValueError("invalid OpenCode steer receipt")
+    try:
+        delivered = native_request(url, password, "GET", "/api/session/" + quote(session, safe="")
+                                   + "/message/" + quote(pending["id"], safe=""))
+    except NativeMessagePending:
+        return False
+    if (not isinstance(delivered, dict) or delivered.get("id") != pending["id"]
+            or delivered.get("type") != "user" or delivered.get("text") != text):
+        raise ValueError("invalid OpenCode delivered message")
+    sent = path.parent / "sent"
+    sent.mkdir(exist_ok=True)
+    os.replace(path, sent / path.name)
+    log(job, "steer_sent", file=path.name, **message_fields(text))
+    state.pop("liveSteer", None)
+    save(Path(job) / "state.json", state)
+    return True
+
+
+def read_effective_variant(state, url, password, message):
+    session, identifier = state.get("sessionId"), message.get("messageID")
+    if not all(isinstance(value, str) and value and all(
+        c.isascii() and (c.isalnum() or c in "_-") for c in value
+    ) for value in (session, identifier)):
+        return None
+    if not session.startswith("ses_") or not identifier.startswith("msg_"):
+        return None
+    try:
+        data = native_request(url, password, "GET", "/api/session/" + quote(session, safe="")
+                              + "/message/" + quote(identifier, safe=""))
+    except NativeMessagePending:
+        return None
+    if not isinstance(data, dict) or data.get("id") != identifier or data.get("type") != "assistant":
+        return None
+    model = data.get("model")
+    if not isinstance(model, dict):
+        return None
+    selected, provider, identifier = state.get("model"), model.get("providerID"), model.get("id")
+    variant = model.get("variant")
+    if (not isinstance(provider, str) or not isinstance(identifier, str)
+            or not isinstance(selected, str) or selected.split("#", 1)[0] != provider + "/" + identifier
+            or not isinstance(variant, str) or not variant or variant != variant.strip()
+            or not variant.isprintable()):
+        return None
+    return variant
+
+
+def record_live_steer(job, filename, text):
+    log_path = Path(job) / "live.jsonl"
+    if log_path.exists():
+        with log_path.open(encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    event = json.loads(line)
+                    if event.get("kind") == "steer_sent" and event.get("file") == filename:
+                        return
+                except (ValueError, AttributeError):
+                    continue
+    log(job, "steer_sent", file=filename, **message_fields(text))
+
+
+def recover_live_steer(job, state):
+    pending = state["liveSteer"]
+    session, filename = state.get("sessionId"), pending.get("file") if isinstance(pending, dict) else None
+    if (not isinstance(session, str) or not isinstance(filename, str) or not filename.endswith(".md")
+            or not filename[:-3].isdecimal() or pending.get("session") != session):
+        raise ValueError("invalid OpenCode steer recovery state")
+    identity = hashlib.sha256(f"{Path(job).resolve()}\0{session}\0{filename}".encode()).hexdigest()
+    if pending.get("id") != "msg_" + identity:
+        raise ValueError("invalid OpenCode steer recovery identity")
+    original = Path(job) / "steer" / filename
+    sent = original.parent / "sent" / filename
+    if not original.exists() and sent.is_file() and not sent.is_symlink():
+        record_live_steer(job, filename, sent.read_text(encoding="utf-8").strip())
+        state.pop("liveSteer", None)
+        save(Path(job) / "state.json", state)
+        return
+    cmd, env = command(state, job, "", resume=True, server_only=True)
+    password = secrets.token_urlsafe(32)
+    env["OPENCODE_PASSWORD"] = password
+    with (Path(job) / "opencode.stderr.log").open("ab") as stderr:
+        proc = subprocess.Popen(capped(cmd, state), cwd=state["cwd"], env=env, stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=stderr, start_new_session=True)
+        try:
+            ready, _, _ = select.select([proc.stdout], [], [], 20)
+            if not ready:
+                raise TimeoutError("OpenCode recovery server did not become ready")
+            line = proc.stdout.readline(65537)
+            if len(line) > 65536:
+                raise ValueError("OpenCode recovery response too large")
+            info = json.loads(line)
+            if (not isinstance(info, dict) or set(info) != {"bridge_server"}
+                    or not isinstance(info["bridge_server"], str)):
+                raise ValueError("invalid OpenCode recovery server announcement")
+            steer_live(job, state, info["bridge_server"], password, resume=False)
+        finally:
+            try:
+                proc.stdin.close()
+            except BrokenPipeError:
+                pass
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                proc.wait(timeout=5)
+
+
 def process(event, state, job, turn=None):
     turn = turn if turn is not None else {"denied": [], "errors": [], "finished": False, "session": False}
     kind = event.get("type")
@@ -144,7 +340,10 @@ def process(event, state, job, turn=None):
         log(job, "thread_started", sessionId=sid, model=state.get("model"))
     if sid:
         turn["session"] = True
-    if kind == "text":
+    if kind == "step_start" and sid and not turn.get("accepted"):
+        turn["accepted"] = True
+        log(job, "prompt_accepted")
+    elif kind == "text":
         text = (part.get("text") or "").strip()
         if text:
             turn["finished"] = True  # some provider routes emit no step events, only the reply
@@ -185,6 +384,10 @@ def process(event, state, job, turn=None):
 
 
 def run(job, state, path, prompt, resume=False):
+    if state.get("liveSteer"):
+        recover_live_steer(job, state)
+        if not prompt:
+            prompt = "Continue."
     if not prompt and not list((Path(job) / "steer").glob("[0-9]*.md")):
         return
     runner_started(state, path)
@@ -218,6 +421,10 @@ def run(job, state, path, prompt, resume=False):
             if continuing and not state.get("sessionId"):
                 raise RuntimeError("OpenCode session ID is missing; refusing to start a new session")
             cmd, env = command(state, job, pending, resume=continuing)
+            password = secrets.token_urlsafe(32)
+            env["OPENCODE_PASSWORD"] = password
+            with steer_lock(job):
+                initial_queue = {p.name for p in (Path(job) / "steer").glob("[0-9]*.md")}
             stderr_path = Path(job) / "opencode.stderr.log"
             stderr_file = stderr_path.open("ab")
             proc = None
@@ -235,9 +442,11 @@ def run(job, state, path, prompt, resume=False):
                 proc.stdin.write(pending.encode())
                 proc.stdin.close()
                 state["activeTurnId"] = f"turn-{turn + 1}"
-                log(job, "turn_started", turnId=state["activeTurnId"])
+                state["effectiveEffort"] = None
+                log_turn_started(job, state, state["activeTurnId"])
                 save(path, state)
-                buf, interrupted = b"", False
+                buf, interrupted, server_url, retry_at, warned = b"", False, None, 0.0, False
+                variant_messages = set()
                 turn_data = {"denied": [], "errors": [], "finished": False, "session": False}
                 while True:
                     ready, _, _ = select.select([proc.stdout], [], [], POLL)
@@ -245,15 +454,51 @@ def run(job, state, path, prompt, resume=False):
                         data = os.read(proc.stdout.fileno(), 1 << 20)
                         if not data:
                             break
-                        with (Path(job) / "stream.ndjson").open("ab") as stream:
-                            stream.write(data)
                         buf += data
+                        batch, native_events = [], []
                         while b"\n" in buf:
                             line, buf = buf.split(b"\n", 1)
                             try:
-                                process(json.loads(line), state, job, turn_data)
+                                event = json.loads(line)
                             except json.JSONDecodeError:
-                                pass
+                                event = None
+                            if isinstance(event, dict) and set(event) == {"bridge_server"}:
+                                if server_url is not None or not isinstance(event["bridge_server"], str):
+                                    raise RuntimeError("invalid OpenCode worker server announcement")
+                                server_url = event["bridge_server"]
+                                continue
+                            batch.append(line + b"\n")
+                            if event is not None:
+                                native_events.append(event)
+                        if batch:
+                            with (Path(job) / "stream.ndjson").open("ab") as stream:
+                                stream.write(b"".join(batch))
+                        for event in native_events:
+                            process(event, state, job, turn_data)
+                            part = event.get("part")
+                            message_id = part.get("messageID") if isinstance(part, dict) else None
+                            if (server_url and not state.get("effectiveEffort")
+                                    and isinstance(message_id, str) and message_id not in variant_messages):
+                                variant_messages.add(message_id)
+                                try:
+                                    variant = read_effective_variant(state, server_url, password, part)
+                                    if variant:
+                                        state["effectiveEffort"] = variant
+                                        save(path, state)
+                                except (OSError, ValueError, KeyError, TypeError, RuntimeError):
+                                    pass
+                    if server_url and state.get("sessionId") and time.monotonic() >= retry_at:
+                        try:
+                            delivered = steer_live(job, state, server_url, password, skip=initial_queue)
+                            if delivered is False:
+                                retry_at = time.monotonic() + 1
+                            warned = False
+                        except (OSError, ValueError, KeyError, TypeError, RuntimeError):
+                            retry_at = time.monotonic() + 2
+                            if not warned:
+                                log(job, "steer_queued", level="urgent", message=(
+                                    "OpenCode steer delivery not confirmed; retrying while the turn runs"))
+                                warned = True
                     if (Path(job) / "interrupt").exists():
                         (Path(job) / "interrupt").unlink()
                         try:
@@ -269,6 +514,8 @@ def run(job, state, path, prompt, resume=False):
                         return
                 code = proc.wait()
                 if buf.strip():
+                    with (Path(job) / "stream.ndjson").open("ab") as stream:
+                        stream.write(buf)
                     try:
                         process(json.loads(buf), state, job, turn_data)
                     except json.JSONDecodeError:
@@ -314,8 +561,15 @@ def run(job, state, path, prompt, resume=False):
                 else "completed",
             )
             if pending_steer:
+                queue_marker = Path(job) / "steer" / Path(pending_steer["file"]).with_suffix(".queue")
                 confirm_steer(job, state)
+                queue_marker.unlink(missing_ok=True)
                 pending_steer = None
+            if state.get("liveSteer"):
+                reason = "error"
+                log(job, "error", level="urgent", message=(
+                    "OpenCode steer delivery is uncertain; inspect history"))
+                return
             turn += 1
             state["activeTurnId"] = None
             pending = ""

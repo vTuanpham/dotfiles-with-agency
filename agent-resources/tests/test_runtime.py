@@ -1,6 +1,8 @@
 import fcntl
 import json
 import os
+import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -149,3 +151,49 @@ def test_requested_scope_cap_is_required(monkeypatch):
     monkeypatch.setattr(heavy.shutil, "which", lambda _: None)
     with pytest.raises(RuntimeError, match="cannot be applied"):
         heavy.scope_prefix("10")
+
+
+@pytest.mark.skipif(not shutil.which("unshare"), reason="unshare is unavailable")
+def test_cancel_holder_from_nested_pid_namespace(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_RESOURCES_HOME", str(tmp_path / "queue"))
+    monkeypatch.setenv("AGENT_RESOURCES_MIN_AVAILABLE_MIB", "0")
+    monkeypatch.setenv("AGENT_RESOURCES_MAX_LOAD", "1000000")
+    monkeypatch.setenv("CODEX_THREAD_ID", "namespace-test")
+    monkeypatch.delenv("AGENT_RESOURCES_OWNER", raising=False)
+    monkeypatch.delenv("AGENT_RESOURCES_WORKER", raising=False)
+    env = {**os.environ, "PYTHONPATH": str(Path(heavy.__file__).parents[1])}
+    env.pop("AGENT_RESOURCES_ACTIVE", None)  # private test queue inside the suite's reservation
+    env.pop("AGENT_RESOURCES_HOST_PID_NAMESPACE", None)
+    proc = subprocess.Popen(
+        ["unshare", "--user", "--map-root-user", "--pid", "--fork", sys.executable,
+         "-m", "agent_resources.cli", "run", "--mem", "1M", "--", "sleep", "60"],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
+    )
+    folder = Path(env["AGENT_RESOURCES_HOME"])
+    try:
+        deadline = time.monotonic() + 10
+        rows = []
+        while time.monotonic() < deadline and proc.poll() is None:
+            if folder.exists():
+                with heavy.gate(folder):
+                    rows = heavy.entries(folder)
+            if rows and rows[0][1]["running"]:
+                break
+            time.sleep(0.05)
+        if proc.poll() is not None and not rows:
+            error = proc.stderr.read().strip()
+            if "unshare failed: Operation not permitted" in error:
+                pytest.skip(f"nested PID namespace unavailable: {error}")
+            pytest.fail(f"nested request exited before admission: {error}")
+        assert len(rows) == 1 and rows[0][1]["running"]
+        control.cancel(control.request_id(rows[0][0]))
+        proc.wait(timeout=5)
+        with heavy.gate(folder):
+            assert heavy.entries(folder) == []
+    finally:
+        if proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        proc.communicate(timeout=5)

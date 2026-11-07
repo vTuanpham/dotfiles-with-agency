@@ -343,6 +343,8 @@ def context_lines(context):
 
 
 def brief(result, *, limit=None, offset=0):
+    from .preferences import lines as preference_lines
+
     options = result["options"]
     lines = ["Decision evidence · " + ", ".join(result.get("domains", []))]
     if result.get("task"):
@@ -350,6 +352,7 @@ def brief(result, *, limit=None, offset=0):
     context = result.get("decision_context", {})
     if context:
         lines.extend(context_lines(context))
+    lines.extend(preference_lines(result.get("preferences", [])))
     lines.extend(result["problems"])
     for backend, error in result.get("inventory_failures", {}).items():
         lines.append(backend + ": " + error["stage"] + " unavailable (" + error["error"]

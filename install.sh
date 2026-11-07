@@ -40,7 +40,7 @@ step_apt() {
 step_tools() {
   have uv || act bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
   have starship || act bash -c 'curl -sS https://starship.rs/install.sh | sh -s -- -y'
-  have opencode || act bash -c 'curl -fsSL https://opencode.ai/v2/install | bash -s -- --version 2.2.2 --no-modify-path'
+  have opencode || act bash -c 'curl -fsSL https://opencode.ai/v2/install | bash -s -- --version 2.2.6 --no-modify-path'
   if ! have tailscale; then
     act bash -c 'curl -fsSL https://tailscale.com/install.sh | sh'
     say "  then sign in: sudo tailscale up"

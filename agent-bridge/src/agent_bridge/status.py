@@ -435,6 +435,13 @@ class Collector:
                 caps = job_caps(state)
                 completed = [e for e in events if e.kind == "turn_completed"]
                 started = [e for e in events if e.kind == "turn_started"]
+                start_index = next((i for i in range(len(evs) - 1, -1, -1)
+                                    if evs[i]["kind"] == "turn_started"), None)
+                native = next((e for e in reversed(evs[start_index + 1:])
+                               if e["kind"] in {"thread_started", "prompt_accepted", "message",
+                                                "command_start", "command_end", "step_finished"}
+                               and isinstance(e.get("at"), str)), None
+                              ) if start_index is not None else None
                 last_msg = next((e.text for e in reversed(events) if e.kind == "message"), None)
                 stage = next(
                     (
@@ -460,7 +467,7 @@ class Collector:
                         state.get("backend"),
                         state.get("account"),
                         state.get("model"),
-                        state.get("effort"),
+                        state.get("effectiveEffort") or state.get("effort"),
                         state.get("cwd"),
                         str(job),
                         alive,
@@ -491,6 +498,7 @@ class Collector:
                         cursor["completed"],
                         waiting=declaration,
                         in_flight=flight,
+                        native_observation=({"kind": native["kind"], "at": native["at"]} if native else None),
                     )
                 )
             except (OSError, ValueError, TypeError, KeyError, RuntimeError, subprocess.SubprocessError):

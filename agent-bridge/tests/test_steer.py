@@ -276,6 +276,30 @@ def test_live_runner_steer_preserves_turn_and_question(job, monkeypatch, active,
     assert not (job / "inbox").exists()
 
 
+def test_live_agy_steer_is_not_queued(job, monkeypatch, capsys):
+    state = core.load_state(job)
+    state.update(backend="agy", activeTurnId="turn", runnerPid=os.getpid())
+    core.save(job / "state.json", state)
+    fd = core.lock_runner(job)
+    monkeypatch.setattr(cli.os, "fork", lambda: pytest.fail("live runner must own delivery"))
+    try:
+        steer()
+    finally:
+        os.close(fd)
+    assert "queued for the next turn" not in capsys.readouterr().out
+    assert (job / "steer/001.md").read_text() == "follow up\n"
+
+
+@pytest.mark.parametrize("backend", ["opencode", "agy"])
+def test_explicit_queue_keeps_next_turn_marker(job, backend):
+    state = core.load_state(job)
+    state["backend"] = backend
+    core.save(job / "state.json", state)
+    steer("later", "--queue")
+    assert (job / "steer/001.md").read_text() == "later\n"
+    assert (job / "steer/001.queue").is_file()
+
+
 def test_steer_retired_job_requires_restore(job, capsys):
     state = core.load_state(job)
     state["retiredAt"] = core.stamp()

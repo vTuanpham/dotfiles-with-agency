@@ -29,6 +29,7 @@ model-guide suggest --task "Records disappear when writers run together" --domai
 model-guide suggest --task "Fix failing tests" --domain debugging --context /tmp/decision.json
 model-guide suggest --backend codex --task "Fix code" --domain coding --query luna --json
 model-guide suggest --help          # optional context JSON schema and exact admission rules
+model-guide preferences list         # private notes, including expiry and attribution
 model-guide benchmarks --domain performance --query sol --brief
 model-guide benchmarks --domain debugging --query sonnet --brief
 model-guide read maintenance
@@ -74,6 +75,13 @@ routes/aliases; omitted backends have unknown entitlement. `allowed_efforts`
 intersects native controls. Account, task, session and priority descriptions stay
 context for the selecting agent. Plan names, urgency, scarcity and free billing
 never imply access, adequacy or a winner. Context is not persisted.
+
+`model-guide preferences add --source user|agent --note '...'` records a private
+selection note; `--backend`, `--model`, `--account`, `--task`, `--reason` and
+`--expires YYYY-MM-DD` add scope and context. `preferences remove ID` deletes
+one. Unexpired notes appear in `suggest` with user-attributed notes first. Source
+is caller attribution, not an identity check. Notes inform judgment; they do not
+prove entitlement, restrict routes, or replace explicit task context.
 
 Every admitted route and supported measured effort remains in `--json`, including
 unmeasured models and missing speed. The default comparison shows up to 12 models:

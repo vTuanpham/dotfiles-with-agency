@@ -11,6 +11,7 @@ Read `model-guide read subscriptions` only when the choice depends on a plan or 
 
 ## Specifics
 - Steers land inside the active turn.
+- Bridge reports the effective effort returned by the native thread response when available.
 - workspace-write permits network access; read-only disables it.
 - Questions (`question` events) are answered by writing `<job>/inbox/<requestId>.md` within 120 s. Otherwise the worker proceeds on its own judgment.
 - Each job runs with a private `CODEX_HOME` (`<job>/home/codex`): its threads, sqlite and logs never reach the user's `codex resume` and are deleted with the job. Instructions, skills, rules and hooks are shared by symlink, `config.toml` is a copy, and the login is a symlink to the real `auth.json`.

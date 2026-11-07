@@ -122,6 +122,14 @@ def job_status(job):
             f"status: {name} running, last event {job.stall.quiet_seconds // 60}m ago, "
             f"{job.message_count} messages"
         )
+    if job.native_observation:
+        native = job.native_observation
+        description = {"thread_started": "session initialized", "prompt_accepted": "prompt accepted",
+                       "message": "message", "command_start": "command started",
+                       "command_end": "command ended", "step_finished": "step finished"}[native["kind"]]
+        text += f"; native {description} at {native['at']}"
+    elif job.started_at:
+        text += "; no native event observed since the latest request"
     return text + f" memory={job.memory_cap} cpu={job.cpu_cap}"
 
 

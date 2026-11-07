@@ -12,6 +12,33 @@ GIB = 1024 * resources.MIB
 NOW = 3600 * 10**9
 
 
+def test_visible_holder_requires_namespace_pid_and_request_descriptor(tmp_path, monkeypatch):
+    proc = tmp_path / "proc"
+    proc.mkdir()
+    request_file = tmp_path / "owned.request"
+    request_file.touch()
+    other = tmp_path / "other.request"
+    other.touch()
+
+    def process(pid, namespace, local_pid, descriptor):
+        root = proc / str(pid)
+        (root / "ns").mkdir(parents=True)
+        (root / "fd").mkdir()
+        (root / "ns/pid").symlink_to(namespace)
+        (root / "status").write_text(f"NSpid:\t{pid}\t{local_pid}\n")
+        (root / "fd/3").symlink_to(descriptor)
+
+    process(101, "pid:[child]", 2, request_file)
+    process(102, "pid:[other]", 2, request_file)
+    process(103, "pid:[child]", 3, request_file)
+    process(104, "pid:[child]", 2, other)
+    monkeypatch.setattr(heavy, "PROC", proc)
+    row = {"namespace": "pid:[child]", "pid": 2, "host_namespace": "pid:[child]"}
+    assert control.visible_holder(row, request_file) == 101
+    process(105, "pid:[child]", 2, request_file)
+    assert control.visible_holder(row, request_file) is None
+
+
 def request(name, need=GIB, *, running=False, exclusive=False, age=600, cap=None, cancelled=False):
     return Path(f"000-{name}.request"), {
         "job": f"owner/{name}",

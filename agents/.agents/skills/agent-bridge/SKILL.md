@@ -29,9 +29,10 @@ These CLI guides own current defaults, group policies and exact flags.
   Keep a watch armed for unresolved jobs or scheduled wakes. Codex can retain
   its watcher through scheduled reminders; after an event without a remaining
   schedule, re-arm if jobs remain. Other harnesses must re-arm for later events.
-- `steer JOB "message" --watch` reaches a live worker or resumes its idle session.
-  `--queue` queues without starting an idle worker; `resume` starts it. A live
-  worker may consume queued messages. Retired jobs need `restore` first.
+- `steer JOB "message" --watch` routes to a live worker or resumes its idle session.
+  Delivery during a turn depends on the backend; check the backend guide. `--queue`
+  avoids starting an idle worker; `resume` starts it. A live worker may consume
+  queued messages. Retired jobs need `restore` first.
 - Verify worker findings and checks. Keep jobs useful for follow-ups and review;
   retire when their work is resolved and context is no longer needed. Purge is
   permanent; use the guide's retention/cleanup checks, not age alone.

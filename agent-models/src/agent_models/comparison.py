@@ -282,6 +282,9 @@ def render(result):
         "Routes are catalog observations; caller-confirmed access and native worker controls take precedence."
     )
     lines.extend(context_lines(result.get("decision_context", {})))
+    from .preferences import lines as preference_lines
+
+    lines.extend(preference_lines(result.get("preferences", [])))
     session = result.get("decision_context", {}).get("session", {})
     if session.get("model"):
         lines.append(

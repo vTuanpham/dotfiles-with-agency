@@ -45,6 +45,32 @@ def event(job, kind, **fields):
     core.append(job / "live.jsonl", {"at": NOW, "kind": kind, **fields})
 
 
+def test_status_prefers_native_reported_effort_without_changing_request(world):
+    job = job_at(world, effort=None, effectiveEffort="medium")
+    snapshot = status.Collector().collect()
+    assert snapshot.jobs[0].effort == "medium"
+    assert json.loads((job / "state.json").read_text())["effort"] is None
+    VALIDATE.validate(json.loads(json.dumps(snapshot.to_dict())))
+
+
+def test_status_distinguishes_runner_from_native_observation(world):
+    job = job_at(world, runnerPid=12)
+    event(job, "thread_started")  # previous turn must not be mistaken for the new request
+    event(job, "turn_started")
+    collector = status.Collector()
+    pending = collector.collect().jobs[0]
+    assert pending.native_observation is None
+    assert "no native event observed" in status_render.job_status(pending)
+    event(job, "thread_started")
+    ready = collector.collect().jobs[0]
+    assert ready.native_observation == {"kind": "thread_started", "at": NOW}
+    assert "native session initialized" in status_render.job_status(ready)
+    event(job, "prompt_accepted")
+    accepted = collector.collect()
+    assert accepted.jobs[0].native_observation == {"kind": "prompt_accepted", "at": NOW}
+    VALIDATE.validate(json.loads(json.dumps(accepted.to_dict())))
+
+
 def test_schema_validates_produced_cli_snapshots_and_additive_fields(world, monkeypatch, capsys):
     job = job_at(world)
     event(job, "turn_completed", status="completed")

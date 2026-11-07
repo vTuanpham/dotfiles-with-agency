@@ -40,15 +40,12 @@ def test_private_workers_are_discovered_for_every_connected_root_harness(monkeyp
     assert target.harness == origin.BACKENDS[worker] and target.settings["parent"] == {
         "backend": root, "session_id": "parent"}
     assert row["status"] == "active" and not row["saved"]
-    assert row["capabilities"]["mid_turn_steering"] == (worker != "agy")
+    assert row["capabilities"]["mid_turn_steering"]
     view = adapter.snapshot(target)
     assert [m.text for m in view.messages] == ["Report"] and view.can_send
     assert adapter.targets({}, bindings(worker)) == []
     assert adapter.targets({"p": parent, "duplicate": parent}, bindings(worker)) == []
     assert adapter.targets({"p": parent, "w": target}, bindings(worker)) == []
-    if worker == "agy":
-        with pytest.raises(DeliveryRejected, match="mid-turn"):
-            adapter.send(target, Outgoing("request", "Continue", [], "steer"))
 
 
 def test_catalog_adds_worker_and_exact_parent_origin(monkeypatch, tmp_path):
@@ -72,11 +69,12 @@ def test_catalog_adds_worker_and_exact_parent_origin(monkeypatch, tmp_path):
     assert found.target(row["id"]).adapter == "bridge"
 
 
-def test_steering_revalidates_native_worker_and_current_root_and_uses_no_ui(monkeypatch):
-    adapter, value = provider(monkeypatch)
+@pytest.mark.parametrize("worker", list(origin.BACKENDS))
+def test_steering_revalidates_native_worker_and_current_root_and_uses_no_ui(monkeypatch, worker):
+    adapter, value = provider(monkeypatch, worker=worker)
     parent = Target("p", "claude", "Claude", "parent", "Root", {})
-    [(target, _)] = adapter.targets({"p": parent}, bindings())
-    monkeypatch.setattr(origin, "read", bindings)
+    [(target, _)] = adapter.targets({"p": parent}, bindings(worker))
+    monkeypatch.setattr(origin, "read", lambda: bindings(worker))
     monkeypatch.setattr(origin, "command", lambda: "/bin/agent-bridge")
     monkeypatch.setenv("CODEX_THREAD_ID", "inherited-wrong-root")
     monkeypatch.delenv("AGENT_BRIDGE_JOB", raising=False)

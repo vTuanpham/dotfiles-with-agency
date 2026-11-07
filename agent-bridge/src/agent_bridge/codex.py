@@ -19,6 +19,7 @@ from .core import (
     confirm_steer,
     link,
     log,
+    log_turn_started,
     poll_steers,
     route_to_peers,
     runner_finished,
@@ -172,6 +173,12 @@ def active_account():
     return row[1] if len(row) > 1 else ""
 
 
+def reported_effort(response):
+    value = response.get("reasoningEffort")
+    return (value if isinstance(value, str) and value and value == value.strip() and value.isprintable()
+            else None)
+
+
 def run(job, state, path, prompt, resume=False, compact=False):
     rpc = Rpc(state["cwd"], Path(job) / "codex.stderr.log", state)
     thread = state.get("threadId", "")
@@ -208,7 +215,11 @@ def run(job, state, path, prompt, resume=False, compact=False):
                 if state.get(k):
                     args[k] = state[k]
             turn = rpc.call("turn/start", args).get("turn", {}).get("id")
-            log(job, "turn_started", turnId=turn)
+            if state.get("effort"):
+                state["effectiveEffort"] = None
+            log_turn_started(job, state, turn)
+            if turn:
+                log(job, "prompt_accepted", turnId=turn)
         persist()
 
     try:
@@ -221,7 +232,9 @@ def run(job, state, path, prompt, resume=False, compact=False):
         )
         rpc.send({"method": "initialized", "params": {}})
         if resume:
-            thread = rpc.call("thread/resume", {"threadId": thread}).get("thread", {}).get("id", thread)
+            resumed = rpc.call("thread/resume", {"threadId": thread})
+            thread = resumed.get("thread", {}).get("id", thread)
+            state["effectiveEffort"] = reported_effort(resumed)
             turns = rpc.call(
                 "thread/turns/list",
                 {"threadId": thread, "limit": 10, "sortDirection": "desc", "itemsView": "full"},
@@ -247,7 +260,9 @@ def run(job, state, path, prompt, resume=False, compact=False):
                 p["model"] = state["model"]
             if state.get("config"):
                 p["config"] = state["config"]
-            thread = rpc.call("thread/start", p)["thread"]["id"]
+            started = rpc.call("thread/start", p)
+            thread = started["thread"]["id"]
+            state["effectiveEffort"] = reported_effort(started)
             persist()
         if compact:
             awaiting = True

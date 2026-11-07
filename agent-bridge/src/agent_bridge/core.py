@@ -177,6 +177,12 @@ def log(job, kind, level=None, **fields):
     )
 
 
+def log_turn_started(job, state, turn_id):
+    log(job, "turn_started", turnId=turn_id, backend=state.get("backend"),
+        requestedModel=state.get("model"), requestedAccount=state.get("account"),
+        requestedEffort=state.get("effort"))
+
+
 def make_steer(job, text):
     folder = Path(job).resolve() / "steer"
     folder.mkdir(parents=True, exist_ok=True)

@@ -29,12 +29,12 @@ class Connection:
             or not parsed.port
             or type(data.get("pid")) is not int
             or data["pid"] <= 0
-            or data.get("version") != "2.2.2"
+            or data.get("version") != "2.2.6"
             or not isinstance(data.get("password"), str)
             or not data["password"]
             or len(data["password"]) > 1024
         ):
-            raise ValueError("Unsupported private OpenCode service; expected local v2.2.2")
+            raise ValueError("Unsupported private OpenCode service; expected local v2.2.6")
         self.port = parsed.port
         self.headers = {
             "Authorization": "Basic " + base64.b64encode(("opencode:" + data["password"]).encode()).decode(),

@@ -59,6 +59,8 @@ shared base with scoped additions; prefer native includes/merging over copied te
 Think first: identify the user's intended outcome and choose the cleanest
 supported path using the existing tools and environment. Verify assumptions before
 adding steps or switching environments, then proceed.
+Derive values from authoritative sources when reliable, honoring explicit choices;
+ask callers for a value only when it cannot be established from available context.
 
 When designing host tools, compare relevant maintained implementations and official
 contracts. Reuse useful boundaries or workflows without importing an unrelated framework.

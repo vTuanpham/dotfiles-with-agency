@@ -8,6 +8,7 @@ the packaged JSON Schema 2020-12 contract is `agent_bridge/status.schema.json`.
 V1 evolves additively: existing fields retain their types, units and meanings.
 `schema_minor: 1` adds completion wake groups; `schema_minor: 2` adds bounded waits
 and in-flight tools; `schema_minor: 3` adds bounded direct-message previews. Older V1 readers ignore those fields and unfamiliar assessment states.
+`schema_minor: 5` adds the latest observed native event after a worker request.
 Readers ignore unknown fields at every level and reject unsupported
 `schema_version` values. Incompatible changes require another version. Unknown
 readings are `null`, not guessed zeroes. `errors` identifies unavailable/rejected
@@ -17,14 +18,20 @@ Poll about every ten seconds while jobs run, once a minute when idle. Quotas
 need only minute polling. `status` makes no provider/model requests: Codex uses
 `codex-auth list --skip-api`'s local cache; agy and Claude use existing account
 caches. `agent-accounts refresh --backend claude` explicitly refreshes Claude
-through cswap; Wake does not invoke it on a timer. Explicit `quota --backend agy`
-refresh still works; Wake consumes the shared account observations independently
+through cswap; Wake does not invoke it on a timer. Explicit
+`agent-accounts refresh --backend agy` refreshes AGY; Wake consumes the shared account observations independently
 of job status. Use `--storage` on demand
 or hourly: it scans sizes and checks expired retired worktrees with read-only git.
 Ordinary polls leave eligibility/bytes unknown until scanned.
 
 Status never starts, steers, acknowledges, pauses or cancels jobs. Like the
 existing heavy scan, it cleans unlocked stale requests under the queue lock.
+`jobs[].native_observation` names the latest native event recorded after the
+latest turn request. `thread_started` means the session initialized;
+`prompt_accepted` means the harness accepted input, not that a result is ready.
+For queued turns, an event after the request may still belong to the preceding
+turn. A null observation means none was recorded; use the watch for failures
+and completion instead of repeatedly checking status.
 This is a best-effort observation across changing files, not a transaction across
 jobs. Complete JSONL records, atomic state replacement, queue locks and log
 identities protect individual boundaries. No `--follow` is provided: resumable

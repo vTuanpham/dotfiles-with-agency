@@ -185,6 +185,7 @@ class Job:
     group: str | None = None
     waiting: DeclaredWait | None = None
     in_flight: InFlight | None = None
+    native_observation: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -280,7 +281,7 @@ class Snapshot:
     direct_messages: tuple[DirectMessage, ...]
     dependencies: tuple[Dependency, ...]
     errors: tuple[str, ...]
-    schema_minor: int = 4
+    schema_minor: int = 5
     unavailable_jobs: tuple[str, ...] = ()
     groups: tuple[WakeGroup, ...] = ()
     group_events: tuple[GroupNotice, ...] = ()

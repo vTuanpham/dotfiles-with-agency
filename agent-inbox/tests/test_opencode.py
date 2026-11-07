@@ -206,7 +206,7 @@ def test_native_controls_discovered_per_location_and_validated_before_mutation(a
                                  "https://127.0.0.1:123", "http://user@127.0.0.1:123"])
 def test_connection_refuses_nonlocal_or_ambiguous_service_urls(tmp_path, url):
     path = tmp_path / "service.json"
-    path.write_text(json.dumps({"url": url, "password": "fixture", "version": "2.2.2",
+    path.write_text(json.dumps({"url": url, "password": "fixture", "version": "2.2.6",
                                 "pid": 123, "id": "x"}))
     selected = replace(target(), settings={"service": str(path)})
     with pytest.raises(ValueError):
@@ -550,7 +550,7 @@ def test_service_redirect_never_replays_credentials_to_another_host(tmp_path, mo
     monkeypatch.setattr("agent_inbox.opencode_http.http.client.HTTPConnection", Socket)
     path = tmp_path / "service.json"
     path.write_text(json.dumps({"url": "http://127.0.0.1:12345", "password": "fixture",
-                                "version": "2.2.2", "pid": 123, "id": "fixture"}))
+                                "version": "2.2.6", "pid": 123, "id": "fixture"}))
     with pytest.raises(ApiRejected) as error:
         Connection(replace(target(), settings={"service": str(path)}))
     assert error.value.status == 307
@@ -561,8 +561,8 @@ def test_service_redirect_never_replays_credentials_to_another_host(tmp_path, mo
 def test_current_service_identity_is_checked_against_the_native_info_endpoint(tmp_path, monkeypatch, change):
     path = tmp_path / "service.json"
     path.write_text(json.dumps({"url": "http://127.0.0.1:12345", "password": "fixture",
-                                "version": "2.2.2", "pid": 123, "id": "fixture"}))
-    info = {"version": "2.2.2", "pid": 123, "hostname": "localhost", "paths": {},
+                                "version": "2.2.6", "pid": 123, "id": "fixture"}))
+    info = {"version": "2.2.6", "pid": 123, "hostname": "localhost", "paths": {},
             "urls": {}, "capabilities": {}, **change}
     calls = []
 
@@ -578,3 +578,13 @@ def test_current_service_identity_is_checked_against_the_native_info_endpoint(tm
     else:
         assert Connection(selected).port == 12345
     assert calls == [("GET", "/api/info")]
+
+
+@pytest.mark.parametrize("version", ["2.2.2", "2.2.7"])
+def test_unverified_service_version_is_rejected_before_auth(tmp_path, monkeypatch, version):
+    path = tmp_path / "service.json"
+    path.write_text(json.dumps({"url": "http://127.0.0.1:12345", "password": "fixture",
+                                "version": version, "pid": 123, "id": "fixture"}))
+    monkeypatch.setattr(Connection, "call", lambda *_: pytest.fail("unexpected request"))
+    with pytest.raises(ValueError, match="Unsupported"):
+        Connection(replace(target(), settings={"service": str(path)}))

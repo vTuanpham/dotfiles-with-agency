@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="650" viewBox="0 0 1040 650" role="img" aria-labelledby="title desc">
   <title id="title">Model selection from native controls and domain evidence</title>
-  <desc id="desc">The calling agent supplies the task, evidence areas and known restrictions. Fresh native catalogs, paired benchmark measurements, cached policy and account observations form a compact comparison. The agent weighs the task, allowance, verification and existing context before continuing or delegating.</desc>
+  <desc id="desc">The calling agent supplies the task, evidence areas and known restrictions. Fresh native catalogs, paired benchmark measurements, cached policy, account observations and local preferences form a compact comparison. The agent weighs the task, allowance, verification and existing context before continuing or delegating.</desc>
   <defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="none" stroke="#737f7c" stroke-width="1.2"/></marker></defs>
   <rect width="1040" height="650" fill="#faf9f6"/>
   <g font-family="Arial, Helvetica, sans-serif" fill="#263733">
@@ -21,7 +21,7 @@
     <circle cx="727" cy="166" r="5" fill="#a35e43"/>
     <text x="744" y="172" font-size="20" font-weight="700">Account context</text>
     <text x="720" y="205" font-size="14">Native observations + cached policy</text>
-    <text x="720" y="232" font-size="14" fill="#68766f">Windows, pools, source and age</text>
+    <text x="720" y="232" font-size="14" fill="#68766f">Quota windows · local preferences</text>
     <text x="720" y="254" font-size="12" fill="#68766f">Confirm the selected session's access</text>
     <path d="M177 273V300H470V323" stroke="#a4ada7" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
     <path d="M520 273V323" stroke="#a4ada7" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>

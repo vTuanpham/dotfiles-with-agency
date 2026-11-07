@@ -173,6 +173,25 @@ def process_has_request(pid, path):
     return False
 
 
+def visible_holder(row, path):
+    """Resolve a namespace-local holder only when its inherited request descriptor matches."""
+    matches = []
+    for process in heavy.PROC.glob("[0-9]*"):
+        try:
+            if os.readlink(process / "ns/pid") != row["namespace"]:
+                continue
+            lines = (process / "status").read_text().splitlines()
+            if not any(line.startswith("NSpid:") and int(line.split()[-1]) == row["pid"]
+                       for line in lines):
+                continue
+            pid = int(process.name)
+            if process_has_request(pid, path):
+                matches.append(pid)
+        except (OSError, ValueError, IndexError):
+            continue
+    return matches[0] if len(matches) == 1 else None
+
+
 def group_members(pgid, only_pid=None):
     members = {}
     processes = [heavy.PROC / str(only_pid)] if only_pid is not None else heavy.PROC.glob("[0-9]*")
@@ -218,7 +237,12 @@ def _cancel_request(folder, target, selected):
             return
         namespace = os.readlink(heavy.PROC / "self/ns/pid")
         pid = row.get("pid") if row.get("namespace") == namespace else heavy.resolve_host_pid(row)
+        recorded_pid = pid
+        if pid is None or not process_has_request(pid, path):
+            pid = visible_holder(row, path)
         if pid is None:
+            if recorded_pid is not None:
+                raise RuntimeError("holder identity changed; no signal sent; refresh heavy list")
             raise RuntimeError("holder PID is not visible here; run cancellation from the host root harness")
         # Verify the inherited descriptor; never signal the worker's process group.
         if not process_has_request(pid, path):

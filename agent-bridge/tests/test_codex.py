@@ -86,6 +86,37 @@ def test_rpc_closes_stderr_when_process_start_fails(monkeypatch, tmp_path):
     assert opened[0].closed
 
 
+@pytest.mark.parametrize("resume,requested,reported,expected", [
+    (False, None, "medium", "medium"),
+    (True, None, "high", "high"),
+    (False, "low", "medium", None),
+    (False, None, None, None),
+])
+def test_records_native_effective_effort_without_changing_requested(
+    monkeypatch, tmp_path, resume, requested, reported, expected
+):
+    job, path, state = job_state(tmp_path)
+    state.update(threadId="thread-1" if resume else "", effort=requested)
+    events = [{"method": "turn/completed", "params": {"turn": {"id": "turn-1", "status": "completed"}}}]
+    rpc = FakeRpc(state["cwd"], job / "stderr", events)
+    call = rpc.call
+
+    def with_effort(method, params=None):
+        result = call(method, params)
+        if method in ("thread/start", "thread/resume"):
+            result["reasoningEffort"] = reported
+        return result
+
+    rpc.call = with_effort
+    monkeypatch.setattr(codex, "Rpc", lambda *args: rpc)
+    monkeypatch.setattr(codex, "runner_started", lambda *_: None)
+    monkeypatch.setattr(codex, "runner_finished", lambda *_: None)
+    codex.run(job, state, path, "prompt", resume=resume)
+    assert state["effectiveEffort"] == expected
+    assert state["effort"] == requested
+    assert json.loads(path.read_text())["effectiveEffort"] == expected
+
+
 def test_event_mapping_and_inbox(monkeypatch, tmp_path):
     job, path, state = job_state(tmp_path)
     answer_text = "SERVICE_TOKEN=hidden-value"
@@ -128,7 +159,7 @@ def test_event_mapping_and_inbox(monkeypatch, tmp_path):
     codex.run(job, state, path, "prompt")
     logged = [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()]
     kinds = [event["kind"] for event in logged]
-    assert kinds[:7] == ["turn_started", "message", "message", "peer_sent",
+    assert kinds[:8] == ["turn_started", "prompt_accepted", "message", "message", "peer_sent",
                          "command_start", "command_end", "question"]
     assert "question_answered" in kinds
     question = next(event for event in logged if event["kind"] == "question")
@@ -137,7 +168,7 @@ def test_event_mapping_and_inbox(monkeypatch, tmp_path):
     assert "preview" not in answer and "size" not in answer
     assert answer_text not in json.dumps(answer)
     assert logged[0]["kind"] == "turn_started" and logged[0]["at"]
-    assert logged[1]["level"] == "urgent"
+    assert next(event for event in logged if event["kind"] == "message")["level"] == "urgent"
     assert "turn_completed" in kinds and "approval_declined" in kinds
     approval = next(event for event in logged if event["kind"] == "approval_declined")
     assert approval["command"] == "rm" and approval["turnId"] == "turn-1"

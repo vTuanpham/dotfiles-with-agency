@@ -119,7 +119,7 @@ held question callbacks still show Needs input.
 <summary><b>OpenCode</b>: running v2 service</summary>
 
 OpenCode uses its already-running [v2 service API](https://dev.opencode.ai/v2/docs/api)
-and currently verifies protocol version 2.2.2. Registration never starts or
+and currently verifies protocol version 2.2.6. Registration never starts or
 reconfigures the service. Models, commands and question IDs come from the selected
 session. Permission requests offer **Allow once** or **Deny**, with no default or
 persistent grant. Inbox rechecks that the request is still pending in the

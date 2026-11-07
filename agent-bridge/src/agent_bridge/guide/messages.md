@@ -40,7 +40,7 @@ there is no automatic reply, acknowledgement loop or fallback to user chat.
 | --- | --- | --- |
 | Codex app task | `codex_tui.send_message_to_thread` through the local app server | `accepted` means native task-message admission, not read/completed |
 | Running Claude session | Authenticated native `SendMessage` peer socket, `priority=now` | `sent` means native socket write completed; a native hold/refusal is reported when received |
-| OpenCode 2.2.2 | `/api/session/ID/synthetic`, `delivery=steer` | `accepted` validates the native synthetic receipt and exact session |
+| OpenCode 2.2.6 | `/api/session/ID/synthetic`, `delivery=steer` | `accepted` validates the native synthetic receipt and exact session |
 | agy | `agentapi send-message` | `accepted` means the native CLI confirmed its request; no mid-turn option is exposed |
 
 Codex-to-Codex delivery uses the sender's MCP connection and the exact recipient
@@ -60,9 +60,10 @@ refusal and unsupported protocol versions fail explicitly. Sandbox denial means 
 delivery-only command needs an authorized host context; never unsandbox a larger
 command or worker to make messaging work.
 
-Steering is the default wherever native APIs offer it. agy exposes no steering
-flag, so its own agent API controls the delivery boundary; Bridge does not imitate
-it with prompt input. Native user pauses, approval holds and refusals stay in force.
+Steering is the default wherever native APIs offer it. AGY's direct-session
+`agentapi send-message` has no steering flag, so that API controls its delivery
+boundary. Managed AGY workers use their separate ACP steering path. Native user
+pauses, approval holds and refusals stay in force.
 Acceptance, a socket write, the next turn and actually reading a message are
 different observations. A reply provides stronger evidence than a send receipt.
 

@@ -1,27 +1,15 @@
 import json
 import os
-import select
 import shutil
-import signal
-import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .core import (
-    MESSAGING_RULE,
-    POLL,
-    capped,
     command_env,
-    confirm_steer,
     link,
     log,
-    poll_steers,
-    route_to_peers,
-    runner_finished,
-    runner_started,
     save,
-    worker_env,
 )
 
 ACCOUNTS = Path.home() / ".agy-accounts"
@@ -36,7 +24,7 @@ AGY_RULE = (
     "manage_task status, re-running a summary) is a full-context model request that spends quota. "
     "Never poll. Do not start a command that may take more than two minutes: send one message with the "
     "exact command, its working directory and what output to expect, then end your turn; the coordinator "
-    "runs it and resumes you with the result."
+    "runs it and resumes you with the result. Report useful progress or blockers, not repeated wait updates."
 )
 
 
@@ -46,10 +34,7 @@ def transcript_path(job, conversation):
 
 
 def burn_check(job, state, mon):
-    """Once per BURN_WINDOW, count the model requests agy's own transcript recorded since the last sample.
-    agy's stream-json holds back every step after one that is still running (a backgrounded command), so a
-    polling model leaves live.jsonl silent while it spends quota. A window with requests is logged as
-    `model_requests`; BURN_WINDOWS in a row without a single streamed step is one urgent `quota_burn`."""
+    """Count native transcript requests and warn on sustained unseen activity, when available."""
     now = time.monotonic()
     if now - mon["at"] < BURN_WINDOW:
         return
@@ -158,197 +143,10 @@ def switch_account(job, state, account):
     state["account"] = account
 
 
-def process(ev, state, job, send, texts=None):
-    texts = texts if texts is not None else {}
-    kind = ev.get("event")
-    body = ev.get(kind) if isinstance(ev.get(kind), dict) else {}
-    if kind == "init":
-        state["conversationId"] = ev.get("conversation_id") or state.get("conversationId", "")
-        save(Path(job) / "state.json", state)
-        log(
-            job,
-            "thread_started",
-            conversationId=state["conversationId"],
-            model=(ev.get("init") or {}).get("model"),
-        )
-    elif kind == "step_update":
-        st = body.get("state")
-        if body.get("step_type") == "agent_response":
-            step = body.get("step_index")
-            texts[step] = texts.get(step, "") + (body.get("text_delta") or "")
-            if st == "DONE" and texts.get(step, "").strip():
-                text = texts.pop(step).strip()
-                urgent = text.upper().startswith("URGENT:")
-                routed = text[7:].lstrip() if urgent else text
-                log(
-                    job,
-                    "message",
-                    level="urgent" if urgent else "info",
-                    text=routed,
-                )
-                route_to_peers(job, routed)
-        elif body.get("step_type") == "tool":
-            params = (body.get("tool_info") or {}).get("parameters") or {}
-            if st == "ACTIVE":
-                log(
-                    job,
-                    "command_start",
-                    stepId=str(body["step_index"]) if body.get("step_index") is not None else None,
-                    tool=body.get("tool_name"),
-                    command=params.get("CommandLine") or params,
-                )
-            elif st == "DONE":
-                log(job, "command_end", tool=body.get("tool_name"),
-                    stepId=str(body["step_index"]) if body.get("step_index") is not None else None)
-    elif kind == "result":
-        state["turnsDone"] = state.get("turnsDone", 0) + 1
-        inflight = state.get("inflight")
-        if inflight and state["turnsDone"] >= inflight.get("turnsSent", 0):
-            confirm_steer(job, state)
-        if state["turnsDone"] >= state.get("turnsSent", 0):
-            state["activeTurnId"] = None
-        denied = body.get("denied_actions") or []
-        error = body.get("error") or (body.get("response") if body.get("status") != "SUCCESS" else None)
-        log(
-            job,
-            "turn_completed",
-            status=body.get("status"),
-            error=error or None,
-            usage=body.get("usage"),
-            denied=denied or None,
-        )
-        denied_seen = state.get("deniedSeen", 0)
-        new_denial = len(denied) > denied_seen
-        state["deniedSeen"] = max(denied_seen, len(denied))
-        if new_denial:
-            log(job, "permission_denied", level="urgent", denied=denied)
-            continues = state.get("autoContinues", 0)
-            if continues < 3:
-                state["autoContinues"] = continues + 1
-                send(
-                    "The runner auto-denied these actions (not in this job's allow list): "
-                    + json.dumps(denied)
-                    + ". Continue without them. If one is essential, finish everything else, "
-                    "then send a message starting with 'URGENT:' that names the exact command "
-                    "or path you need."
-                )
-        else:
-            state["autoContinues"] = 0
-        save(Path(job) / "state.json", state)
-
-
 def run(job, state, path, prompt, resume=False):
-    if "gpt-oss" in (state.get("model") or "").lower():
-        raise RuntimeError(
-            "GPT-OSS models are excluded; pick a Gemini or Claude model (see `models --backend agy`)"
-        )
-    if not resume:
-        build_home(job, state)
-    cmd = ["agy", "--input-format", "stream-json", "--output-format", "stream-json", "--sandbox"]
-    for flag, key in (("--model", "model"), ("--effort", "effort"), ("--conversation", "conversationId")):
-        if state.get(key):
-            cmd += [flag, state[key]]
-    cmd.append("-p=")
-    err = (Path(job) / "agy.stderr.log").open("a", encoding="utf-8")
-    proc = subprocess.Popen(
-        capped(cmd, state),
-        cwd=state["cwd"],
-        env=worker_env(job, HOME=str(Path(job) / "home")),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=err,
-        bufsize=0,
-        start_new_session=True,
-    )
-    runner_path = Path(job) / "state.json"
-    runner_started(state, runner_path)
-    buf = b""
-    texts = {}
-    reason = "normal"
-    try:  # a resumed conversation's transcript already holds the earlier requests
-        offset = transcript_path(job, state.get("conversationId", "")).stat().st_size
-    except OSError:
-        offset = 0
-    mon = {"at": time.monotonic(), "offset": offset, "seen": False, "hidden": 0}
+    from .agy_acp import run as run_acp
 
-    def send(text):
-        proc.stdin.write(
-            (json.dumps({"event": "user", "message": {"role": "user", "content": text}}) + "\n").encode()
-        )
-        proc.stdin.flush()
-        state["turnsSent"] = state.get("turnsSent", 0) + 1
-        state["activeTurnId"] = f"turn-{state['turnsSent']}"
-        log(job, "turn_started", turnId=state["activeTurnId"])
-        save(path, state)
-
-    try:
-        if state.get("inflight"):
-            poll_steers(job, send, state=state, defer=True, redeliver=True, turn_key="turnsSent")
-        if prompt:
-            send(prompt if resume else f"{MESSAGING_RULE}\n\n{AGY_RULE}\n\n---\n\n{prompt}")
-        while True:
-            ready, _, _ = select.select([proc.stdout], [], [], POLL)
-            if ready:
-                data = os.read(proc.stdout.fileno(), 1 << 20)
-                if not data:
-                    if state.get("turnsDone", 0) < state.get("turnsSent", 0):
-                        reason = "error"
-                        raise RuntimeError(f"agy exited mid-turn (code {proc.poll()}); see agy.stderr.log")
-                    return
-                with (Path(job) / "stream.ndjson").open("ab") as stream:
-                    stream.write(data)
-                buf += data
-                while b"\n" in buf:
-                    line, buf = buf.split(b"\n", 1)
-                    try:
-                        event = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    mon["seen"] = mon["seen"] or event.get("event") == "step_update"
-                    process(event, state, job, send, texts)
-            if (Path(job) / "interrupt").exists():
-                (Path(job) / "interrupt").unlink()
-                os.killpg(proc.pid, signal.SIGINT)
-                log(job, "interrupt_sent")
-            if (Path(job) / "stop").exists():
-                (Path(job) / "stop").unlink()
-                log(job, "stopped")
-                reason = "stopped"
-                os.killpg(proc.pid, signal.SIGTERM)
-                return
-            poll_steers(job, send, state=state, defer=True, turn_key="turnsSent")
-            burn_check(job, state, mon)
-            if state.get("turnsDone", 0) >= state.get("turnsSent", 0) and not list(
-                (Path(job) / "steer").glob("[0-9]*.md")
-            ):
-                proc.stdin.close()
-                proc.wait(timeout=60)
-                return
-    except Exception as exc:
-        reason = "error"
-        log(job, "error", message=str(exc))
-        raise
-    finally:
-        if proc.poll() is None:
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    log(job, "error", message="agy process group did not exit after SIGKILL")
-        state["activeTurnId"] = None
-        log(job, "runner_exit", reason=reason, turnsDone=state.get("turnsDone", 0))
-        runner_finished(state, path)
-        err.close()
+    return run_acp(job, state, path, prompt, resume=resume)
 
 
 def fallback(job, state, state_path):
