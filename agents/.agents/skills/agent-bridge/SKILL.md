@@ -33,6 +33,9 @@ These CLI guides own current defaults, group policies and exact flags.
   Delivery during a turn depends on the backend; check the backend guide. `--queue`
   avoids starting an idle worker; `resume` starts it. A live worker may consume
   queued messages. Retired jobs need `restore` first.
+- Before changing a worker's model or login (`cswap`, `codex-auth`, `agy-auth`), look
+  for `ctx=` on its `watch`/`status` line. It appears above 150k tokens of context; then
+  read `agent-bridge compact --help` first. Below that, change freely.
 - Verify worker findings and checks. Keep jobs useful for follow-ups and review;
   retire when their work is resolved and context is no longer needed. Purge is
   permanent; use the guide's retention/cleanup checks, not age alone.

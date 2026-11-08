@@ -377,7 +377,7 @@ def main():
     s.add_argument("--watch", **WATCH)
     s.add_argument("--group", type=groups.name, help="root-owned completion wake group")
     r = sub.add_parser(
-        "resume", help="continue the same job/session; queued steers take precedence",
+        "resume", help="continue the same job/session; queued steers take precedence; --model changes model",
         description=(
             "Continue the same job/session. Changing model: --model M [--effort E]. Above 150k tokens of "
             "context (ctx=… on watch and owners) a new model reads it all without a warm cache, so add "
@@ -437,7 +437,7 @@ def main():
         descriptions = {
             "interrupt": "request that the current turn end without stopping the job",
             "stop": "stop the job runner",
-            "compact": "compact idle worker history",
+            "compact": "compact idle worker history; run it before changing a login when ctx= is shown",
         }
         details = {
             "compact": (
