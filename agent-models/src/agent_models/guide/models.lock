@@ -1,6 +1,7 @@
-refreshed 2026-11-03
-guide models.md 5e88a02fe45a0baf0d3a3f77907cddf4516982ee188198db91e54bd63b1a316b
-guide subscriptions.md 0460cfb0799b2314215bd853b410fd31056e2ff7ca61407bbdf0e8cc36259eac
+refreshed 2026-11-08
+guide models.md 3cde87ba3f87d69660b0713df0e1b258c3a1bc34546b2350cb91bc8a833628b1
+guide subscriptions.md aa5e0d2c6234f783bad69428ffe1c74f48b420313b42a3052d27eea400fcbadf
+evidence 70cbd2d339961a1b60762ba8ef41d86fe6a61569d4595a2e8409a27a53585042
 agy claude-opus-4-6-thinking
 agy claude-sonnet-4-6
 agy gemini-3.8-flash-high
@@ -28,12 +29,46 @@ codex gpt-6-luna
 codex gpt-6-sol
 codex gpt-6.1-sol
 codex gpt-6.1-terra
+opencode opencode-go/beam-free
+opencode opencode-go/claude-haiku-5-5
+opencode opencode-go/crouton-alpha-free
+opencode opencode-go/deepseek-v4-pro
+opencode opencode-go/deepseek-v4.1-flash
+opencode opencode-go/gemini-4-argon
+opencode opencode-go/glm-5.2
+opencode opencode-go/glm-5.3
+opencode opencode-go/glm-5.3-flash
+opencode opencode-go/gpt-5.6-luna
+opencode opencode-go/gpt-6-luna
+opencode opencode-go/grok-4.7
+opencode opencode-go/hy3
+opencode opencode-go/hy4
+opencode opencode-go/hy4-preview
+opencode opencode-go/iceman-contributor-free
+opencode opencode-go/kimi-k2.7-code
+opencode opencode-go/kimi-k3
+opencode opencode-go/kimi-k3.1-pro
+opencode opencode-go/longcat-2.0
+opencode opencode-go/mimo-v2.5
+opencode opencode-go/mimo-v2.5-pro
+opencode opencode-go/mimo-v2.6-flash
+opencode opencode-go/mimo-v2.6-pro
+opencode opencode-go/minimax-m3
+opencode opencode-go/minimax-m3.1-flash
+opencode opencode-go/muse-spark-1.2-contributor
+opencode opencode-go/muse-spark-1.3-contributor
+opencode opencode-go/qwen3.7-plus
+opencode opencode-go/qwen3.8-flash
+opencode opencode-go/qwen3.8-max
+opencode opencode-go/step-5-preview
 opencode opencode/beam-free
 opencode opencode/big-pickle
+opencode opencode/crouton-alpha-free
 opencode opencode/deepseek-v4.1-flash-free
 opencode opencode/flint-40b-free
 opencode opencode/glm-5.3-flash-free
+opencode opencode/iceman-free
+opencode opencode/inkling-2-small-free
 opencode opencode/mimo-v2.6-flash-free
 opencode opencode/nemotron-3.5-lightning-free
 opencode opencode/nemotron-3.5-super-vl-free
-opencode opencode/pulse-alpha-free
