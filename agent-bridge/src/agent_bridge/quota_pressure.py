@@ -66,19 +66,36 @@ def codex(snapshots, model, now):
     return readings
 
 
+FAMILIES = ("gemini", "claude", "gpt")  # the model families AGY serves, as its /usage names its groups
+
+
+def agy_match(window, model):
+    """How a window applies to the worker's model: 'reported' by AGY, 'inferred' from its group name, or None.
+
+    AGY's /usage does not list a group's models, only a name ("Gemini Models", "Claude and GPT models").
+    A model whose family the group names is taken to be in it; any other model matches nothing."""
+    if window.model_ids is not None:
+        return "reported" if model in window.model_ids else None
+    family = next((name for name in FAMILIES if str(model).lower().startswith(name)), None)
+    return "inferred" if family and family in (window.group or "").lower() else None
+
+
 def agy(observation, model):
-    """Windows whose reported model set contains the worker's model; an unknown set proves nothing."""
+    """Windows of the worker's model, by AGY's reported model set or else by its group's name."""
     if observation is None or observation.freshness != "fresh" or not observation.observed_at:
         return []
     readings = []
     for window in observation.windows:
         remaining = (100 * window.remaining_fraction if window.remaining_fraction is not None
                      else window.remaining_percent)
-        covers = window.model_ids is not None and model in window.model_ids
-        if not covers or remaining is None or not window.resets:
+        how = agy_match(window, model)
+        if not how or remaining is None or not window.resets:
             continue
-        readings.append(Reading(f"agy:{window.pool_id or window.label}", window.limit or window.label,
-                                remaining, timestamp(window.resets), timestamp(observation.observed_at)))
+        note = (f"matched by the group name {window.group!r}; AGY does not list its models"
+                if how == "inferred" else "")
+        key = f"agy:{window.pool_id or window.label}"
+        readings.append(Reading(key, window.limit or window.label, remaining,
+                                timestamp(window.resets), timestamp(observation.observed_at), note))
     return readings
 
 
@@ -91,6 +108,7 @@ def advice(job, state, hit):
         "(the whole account's, other sessions included). "
         f"Worker model {state.get('model') or 'default'}"
         + (f", context about {round(context / 1000)}k tokens" if isinstance(context, int) else "")
+        + (f" ({hit.note})" if hit.note else "")
         + ". Once its turn ends (or after `agent-bridge interrupt "
         f"{name}`) the options, none of them the default, are: let it finish if it will; change model "
         f"on the same thread with `agent-bridge resume {name} --model M [--compact]` (the new model "
@@ -125,8 +143,8 @@ def sample_agy(job, state, monitor):
         return
     observation = providers.agy_observation(account, identity)
     feed(job, state, agy(observation, state.get("model")))
-    if observation is not None and not any(w.model_ids is not None for w in observation.windows):
-        return  # AGY did not report which models its windows cover, so no reading could apply
+    if observation is not None and not any(agy_match(w, state.get("model")) for w in observation.windows):
+        return  # no window of this observation covers the worker's model, so refreshing it cannot help
     refresh = monitor.get("refresh")
     if refresh is None or refresh.poll() is not None:  # agent-accounts holds the lock and cooldowns
         try:

@@ -126,6 +126,41 @@ def test_compaction_forgets_the_context_size_and_hostile_limits_never_stop_the_w
 
 
 def test_warning_says_when_the_choices_are_available(tmp_path):
-    hit = SimpleNamespace(label="5h", remaining=5, seconds_to_empty=600)
+    hit = SimpleNamespace(label="5h", remaining=5, seconds_to_empty=600, note="")
     text = quota_pressure.advice(tmp_path / "owner" / "worker", {"backend": "codex"}, hit)
     assert "agent-bridge interrupt owner/worker" in text and "Once its turn ends" in text
+
+
+def named_groups():
+    """The shape AGY's /usage really has: group names, no model sets."""
+    def window(group, pool):
+        return QuotaWindow(pool, 6, group, "weekly", "2027-01-15T10:00:00+00:00", pool_id=pool,
+                           model_ids=None, remaining_fraction=0.06)
+    return Quota("agy", "a1", None, False, (window("Gemini Models", "gemini-weekly"),
+                                            window("Claude and GPT models", "3p-weekly")),
+                 None, "2027-01-15T08:00:00+00:00", 0, "fresh")
+
+
+def test_agy_group_names_match_a_model_family_and_say_the_match_was_inferred():
+    [reading] = quota_pressure.agy(named_groups(), "gemini-3.8-flash")
+    assert reading.key == "agy:gemini-weekly" and "'Gemini Models'" in reading.note
+    assert [r.key for r in quota_pressure.agy(named_groups(), "claude-sonnet-4-6")] == ["agy:3p-weekly"]
+    assert quota_pressure.agy(named_groups(), "mystery-model") == []
+    assert quota_pressure.agy(named_groups(), None) == []
+
+
+def test_inferred_match_is_stated_in_the_warning_and_keeps_the_cache_fresh(tmp_path, monkeypatch):
+    note = "matched by the group name 'X'"
+    hit = SimpleNamespace(label="weekly", remaining=5, seconds_to_empty=600, note=note)
+    assert "(matched by the group name 'X')" in quota_pressure.advice(tmp_path / "o" / "w", {}, hit)
+    job = tmp_path / "owner" / "worker"
+    job.mkdir(parents=True)
+    spawned = []
+    monkeypatch.setattr(quota_pressure.providers, "agy_observation", lambda account, identity: named_groups())
+    monkeypatch.setattr(quota_pressure.subprocess, "Popen",
+                        lambda command, **_: spawned.append(command) or SimpleNamespace(poll=lambda: None))
+    state = {"backend": "agy", "account": "a1", "agyAuthId": "login", "model": "gemini-3.8-flash"}
+    quota_pressure.sample_agy(job, state, {})
+    assert len(spawned) == 1
+    quota_pressure.sample_agy(job, {**state, "model": "mystery-model"}, {})
+    assert len(spawned) == 1  # no window covers this model: refreshing cannot help

@@ -8,8 +8,11 @@ from urllib.error import HTTPError
 
 from . import benchmarks, coverage, specialists
 
-API = "https://artificialanalysis.ai/api/v2/data/llms/models"
+# The free tier's models list (https://artificialanalysis.ai/data-api/docs): page-numbered, 200 a page.
+# It replaced /api/v2/data/llms/models, which now answers 410; snapshots saved from that one still decode.
+API = "https://artificialanalysis.ai/api/v2/language/models/free"
 KEY = "ARTIFICIAL_ANALYSIS_API_KEY"
+MAX_PAGES = 10
 
 
 def speed(row, options):
@@ -22,10 +25,12 @@ def speed(row, options):
     parallel = options.get("parallel_queries")
     if parallel is not None:
         specialists.count(parallel)
+    # the current endpoint nests the medians under "performance"; the removed one put them on the model
+    figures = row["performance"] if type(row.get("performance")) is dict else row
     return {"median_output_tokens_per_second": specialists.numeric(
-                row.get("median_output_tokens_per_second")),
+                figures.get("median_output_tokens_per_second")),
             "median_time_to_first_token_seconds": specialists.numeric(
-                row.get("median_time_to_first_token_seconds")),
+                figures.get("median_time_to_first_token_seconds")),
             "provider": None, "methodology_version": "Unverified (legacy free API)",
             "workload": {"prompt_length": prompt, "parallel_queries": parallel}, "source": API,
             "scope": "Legacy API median speed; serving endpoint, TTFT/reasoning inclusion and "
@@ -53,10 +58,15 @@ def model_metadata(row):
 
 def records(raw):
     data = specialists.obj(raw)
-    if type(data["status"]) is not int or data["status"] != 200:
-        raise ValueError("Artificial Analysis API status is not 200")
+    if "status" in data:  # a snapshot saved from the removed /data/llms/models endpoint
+        if type(data["status"]) is not int or data["status"] != 200:
+            raise ValueError("Artificial Analysis API status is not 200")
+        options = specialists.obj(data.get("prompt_options", {}))
+    else:
+        specialists.text(data.get("tier"))
+        # performance fields default to the long prompt (prompt_type, documented); the response does not say
+        options = {"prompt_length": "long (documented default for the performance fields)"}
     ids = set()
-    options = specialists.obj(data.get("prompt_options", {}))
     for item in specialists.sequence(data["data"]):
         row = specialists.obj(item)
         identifier = specialists.text(row["id"])
@@ -78,7 +88,7 @@ def decode(raw):
         metadata = model_metadata(row)
         specialists.text(row["slug"])
         creator = specialists.obj(row["model_creator"])
-        for field in ("id", "name", "slug"):
+        for field in ("id", "name"):  # the free tier's creator has no slug
             specialists.text(creator[field])
         evaluations = specialists.obj(row["evaluations"])
         # API token prices are not a task-cost estimate or subscription allowance.
@@ -87,6 +97,8 @@ def decode(raw):
         performance = speed(row, options)
         for metric, value in evaluations.items():
             score = specialists.numeric(value)
+            if score is None:  # null is "not measured", not a result
+                continue
             measurement = asdict(specialists.Measurement(
                 label, label, coverage.setting(label), None, specialists.text(metric), score,
                 "published index" if metric.endswith("_index") else "published value (unit Unverified)",
@@ -108,10 +120,19 @@ def load():
         # Scheduled polling does not scrape AA: its website terms prohibit it.
         return benchmarks.webpage(benchmarks.SOURCE_URLS["Artificial Analysis"])
     try:
-        raw = benchmarks.fetch_bytes(API, {"x-api-key": key})
-        if key.encode() in raw:
-            raise ValueError("Artificial Analysis response refused")
-        data = benchmarks.loads(raw.decode("utf-8"))
+        pages, digest = [], hashlib.sha256()
+        for number in range(1, MAX_PAGES + 1):
+            raw = benchmarks.fetch_bytes(API if number == 1 else f"{API}?page={number}", {"x-api-key": key})
+            if key.encode() in raw:
+                raise ValueError("Artificial Analysis response refused")
+            digest.update(raw)
+            page = benchmarks.loads(raw.decode("utf-8"))
+            pages.append(page)
+            if not specialists.obj(page.get("pagination", {})).get("has_more"):
+                break
+        else:
+            raise ValueError("Artificial Analysis page limit exceeded")
+        data = {**pages[0], "data": [row for page in pages for row in specialists.sequence(page["data"])]}
         rows = decode(data)
     except HTTPError as error:
         raise ValueError(f"Artificial Analysis API unavailable (HTTP {error.code})") from None
@@ -119,8 +140,9 @@ def load():
         # Even mocked transports or malformed responses must not echo a credential.
         raise ValueError("Artificial Analysis API request or schema failed") from None
     return {"url": "https://artificialanalysis.ai/", "data_url": API,
-            "metadata": ["Free API; methodology version Unverified"], "raw": data,
-            "measurements": rows, "sha256": hashlib.sha256(raw).hexdigest(),
+            "metadata": [f"Free API; Intelligence Index version {data.get('intelligence_index_version')} "
+                         "as reported; methodology version otherwise Unverified"], "raw": data,
+            "measurements": rows, "sha256": digest.hexdigest(),
             "limits": "Attribution: Artificial Analysis (https://artificialanalysis.ai/). "
                       "Free API coverage differs from the website/commercial API; effort/configuration "
                       "coverage is not guaranteed. Token pricing is not task cost. No coding-agent "

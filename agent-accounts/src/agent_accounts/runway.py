@@ -26,6 +26,7 @@ class Reading:
     remaining: float  # percent of the window left
     resets: float  # epoch seconds
     observed: float  # epoch seconds the source measured it
+    note: str = ""  # how the window was matched to its worker, when that was inferred
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ class Depletion:
     remaining: float
     seconds_to_empty: float
     seconds_to_reset: float
+    note: str = ""
 
 
 class Runway:
@@ -71,7 +73,7 @@ class Runway:
             reset = reading.resets - now
             if empty <= LEAD and empty < reset:
                 notified[window] = reading.resets
-                due.append(Depletion(window, reading.label, last[1], max(0.0, empty), reset))
+                due.append(Depletion(window, reading.label, last[1], max(0.0, empty), reset, reading.note))
         for window in [w for w, rows in samples.items() if not rows or rows[-1][0] < now - LOOKBACK]:
             del samples[window]
         data["notified"] = {w: at for w, at in notified.items() if at > now}

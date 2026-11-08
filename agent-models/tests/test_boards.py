@@ -129,3 +129,50 @@ def test_cached_legacy_speed_uses_the_same_identity_and_status_validation(corrup
         raw["status"] = 200.0
     with pytest.raises(ValueError):
         artificial.with_speed(source)
+
+
+def free_record(name, slug, index=58.4):
+    return {"id": slug, "slug": slug, "name": name, "release_date": "2026-09-23",
+            "model_creator": {"id": "anthropic", "name": "Anthropic"},
+            "evaluations": {"artificial_analysis_intelligence_index": index,
+                            "artificial_analysis_coding_index": None},
+            "pricing": {"price_1m_input_tokens": 5, "price_1m_output_tokens": 25},
+            "performance": {"median_output_tokens_per_second": 100, "median_time_to_first_token_seconds": 1}}
+
+
+def test_free_endpoint_shape_nests_speed_skips_unmeasured_indexes_and_names_the_prompt_default():
+    raw = {"tier": "free", "intelligence_index_version": 5,
+           "data": [free_record("Claude Opus 5.5 (Max)", "claude-opus-5-5"),
+                    free_record("Unmeasured (High)", "unmeasured", index=None)]}
+    rows = artificial.decode(raw)
+    assert len(rows) == 1 and rows[0]["effort"] == "max"  # null is no result; the creator needs no slug
+    speed = rows[0]["speed"]
+    assert speed["median_output_tokens_per_second"] == 100
+    assert speed["median_time_to_first_token_seconds"] == 1
+    assert "long" in speed["workload"]["prompt_length"]
+    assert rows[0]["model_metadata"]["release_date"] == "2026-09-23"
+    with pytest.raises(ValueError):
+        artificial.decode({"data": raw["data"]})  # neither a tier nor a legacy status
+
+
+def test_aa_load_reads_every_page_of_the_free_endpoint_without_leaking_the_key(monkeypatch):
+    pages = {artificial.API: {"tier": "free", "intelligence_index_version": 5,
+                              "pagination": {"page": 1, "total_pages": 2, "has_more": True},
+                              "data": [free_record("Alpha (High)", "alpha")]},
+             artificial.API + "?page=2": {"tier": "free", "intelligence_index_version": 5,
+                                          "pagination": {"page": 2, "total_pages": 2, "has_more": False},
+                                          "data": [free_record("Beta (High)", "beta", index=40)]}}
+    seen = []
+
+    def fetch(url, headers=None):
+        seen.append((url, headers))
+        return json.dumps(pages[url]).encode()
+
+    monkeypatch.setenv(artificial.KEY, "fake-sensitive-value")
+    monkeypatch.setattr(artificial.benchmarks, "fetch_bytes", fetch)
+    source = artificial.load()
+    assert [url for url, _ in seen] == [artificial.API, artificial.API + "?page=2"]
+    assert all(headers == {"x-api-key": "fake-sensitive-value"} for _, headers in seen)
+    assert [row["score"] for row in source["measurements"]] == [58.4, 40]
+    assert source["coverage"]["captured_rows"] == 2 and "version 5" in source["metadata"][0]
+    assert "fake-sensitive-value" not in json.dumps(source)
