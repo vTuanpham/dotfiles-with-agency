@@ -8,6 +8,43 @@ import pytest
 from agent_bridge import opencode
 
 
+@pytest.mark.parametrize("outcome", ["session.compaction.ended", "session.compaction.failed"])
+def test_compact_waits_for_native_outcome(monkeypatch, tmp_path, outcome):
+    events = iter([
+        b'data: {"type":"session.compaction.ended","data":{"sessionID":"ses_other"}}\n',
+        json.dumps({"type": outcome, "data": {"sessionID": "ses_worker",
+                   "error": {"message": "Nothing to compact"}}}).encode().join([b"data: ", b"\n"]),
+    ])
+    calls = []
+
+    class Connection:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def request(self, method, path, **kwargs):
+            calls.append((method, path))
+
+        def getresponse(self):
+            return SimpleNamespace(status=200, getheader=lambda *args: "text/event-stream",
+                                   readline=lambda limit: next(events, b""))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(opencode.http.client, "HTTPConnection", Connection)
+    monkeypatch.setattr(opencode, "native_request", lambda *args: {
+        "sessionID": "ses_worker", "type": "compaction",
+    })
+    if outcome.endswith("failed"):
+        with pytest.raises(RuntimeError, match="Nothing to compact"):
+            opencode.compact_over_api(tmp_path, "ses_worker", "http://127.0.0.1:1234", "fixture")
+    else:
+        opencode.compact_over_api(tmp_path, "ses_worker", "http://127.0.0.1:1234", "fixture")
+    assert calls == [("GET", "/api/event")]
+    kinds = [json.loads(line)["kind"] for line in (tmp_path / "live.jsonl").read_text().splitlines()]
+    assert kinds == (["compact_started", "compacted"] if outcome.endswith("ended") else ["compact_started"])
+
+
 def test_effective_variant_requires_matching_native_message_and_model(monkeypatch):
     data = {"id": "msg_assistant", "type": "assistant", "model": {
         "providerID": "opencode", "id": "deepseek-v4.1-flash-free", "variant": "default"}}

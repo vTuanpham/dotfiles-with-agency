@@ -6,6 +6,7 @@
 - **Sandbox**: every turn requires `bwrap`; without it the runner fails closed. The filesystem is read-only except cwd and writable roots in workspace-write mode; OpenCode data is private to the job and goes with the job dir. Both modes read anywhere (OpenCode's outside-cwd check is opened; bwrap confines writes). Read-only also denies `edit`, `bash`, `webfetch` and `websearch`. A denial aborts the turn, is logged as urgent, and the worker is told to continue without it.
 - **Steers** use the worker's private OpenCode server and reach an active turn at its next safe step boundary. Bridge records delivery only after the message appears in native history. `--queue` keeps a message for the next turn. Interrupt signals the active turn's process group; stop ends the runner. An unconfirmed receipt is reconciled using the same message ID on resume.
 - **Sessions**: each turn owns a private server and client inside the same sandbox and resource scope. Later turns reuse the stored session ID.
+- **Compact**: `agent-bridge compact <job>` starts the native compaction API for an idle session and waits for its completion or failure event. It keeps queued steers for a later resume.
 
 ## Native chat verification
 

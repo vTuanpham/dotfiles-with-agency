@@ -1,15 +1,12 @@
 import json
-import os
 import shutil
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 from .core import (
     command_env,
     link,
     log,
-    save,
 )
 
 ACCOUNTS = Path.home() / ".agy-accounts"
@@ -143,104 +140,7 @@ def switch_account(job, state, account):
     state["account"] = account
 
 
-def run(job, state, path, prompt, resume=False):
+def run(job, state, path, prompt, resume=False, compact=False):
     from .agy_acp import run as run_acp
 
-    return run_acp(job, state, path, prompt, resume=resume)
-
-
-def fallback(job, state, state_path):
-    if os.environ.get("AGENT_BRIDGE_AGY_FALLBACK") == "0":
-        return
-    model = state.get("model")
-    cooldowns = state.get("agyFallbackCooldowns", {})
-
-    def quota_cache(account_dir):
-        from agent_accounts import providers
-        from agent_accounts.readers import agy_quota
-
-        try:
-            data = json.loads((account_dir / "quota.json").read_text())
-            cached = agy_quota(data, time.time())
-            if cached.freshness != "fresh" or cached.account != account_dir.name:
-                raise ValueError("stale quota")
-        except (OSError, ValueError, KeyError, TypeError):
-            providers.refresh(account_dir.name, root=ACCOUNTS, environ=account_env(account_dir.name))
-            data = json.loads((account_dir / "quota.json").read_text())
-            cached = agy_quota(data, time.time())
-            if cached.account != account_dir.name:
-                raise ValueError("quota account mismatch")
-        return [window for window in cached.windows if window.model_ids is not None
-                and model in window.model_ids]
-
-    while True:
-        completed = []
-        try:
-            for line in (Path(job) / "live.jsonl").read_text(encoding="utf-8").splitlines():
-                event = json.loads(line)
-                if event.get("kind") == "turn_completed":
-                    completed.append(event)
-        except (OSError, json.JSONDecodeError):
-            return
-        error = str(completed[-1].get("error", "")) if completed else ""
-        if (
-            "quota" not in error.casefold()
-            or "reach" not in error.casefold()
-            or state.get("agyFallbackEvent") == len(completed)
-        ):
-            return
-        state["agyFallbackEvent"] = len(completed)
-        save(state_path, state)
-        previous = state.get("account")
-        try:
-            current_rows = quota_cache(ACCOUNTS / str(previous))
-            if not current_rows:
-                log(job, "account_fallback_unavailable", level="urgent",
-                    message="Native exact model-to-quota-pool binding unavailable; account unchanged.")
-                return
-            current_row = min(current_rows, key=lambda row: row.resets or "")
-        except (OSError, ValueError, KeyError, TypeError):
-            log(job, "account_fallback_unavailable", level="urgent",
-                message="Native account/model quota binding unavailable; account unchanged.")
-            return
-        reset = current_row.resets if current_row and current_row.resets else error
-        cooldowns[previous] = reset
-        for account_dir in sorted(ACCOUNTS.iterdir()):
-            account = account_dir.name
-            if account == previous or not (account_dir / TOKEN).is_file():
-                continue
-            try:
-                rows = quota_cache(account_dir)
-            except Exception as exc:
-                log(job, "account_quota_unavailable", account=account, message=str(exc))
-                continue
-            until = cooldowns.get(account)
-            if until:
-                try:
-                    expires = datetime.fromisoformat(until)
-                    if expires.tzinfo is None or expires.astimezone(timezone.utc) > datetime.now(
-                        timezone.utc
-                    ):
-                        continue
-                except ValueError:
-                    continue
-            available = rows and all(
-                row.remaining_percent is not None
-                and (row.remaining_fraction > 0 if row.remaining_fraction is not None
-                     else row.remaining_percent > 0) for row in rows)
-            if available:
-                switch_account(job, state, account)
-                state["agyFallbackCooldowns"] = cooldowns
-                save(state_path, state)
-                log(
-                    job,
-                    "account_switched",
-                    level="urgent",
-                    **{"from": previous, "to": account, "reset": reset},
-                )
-                run(job, state, state_path, "Continue where you left off.", resume=True)
-                break
-        else:
-            state["agyFallbackCooldowns"] = cooldowns
-            save(state_path, state)
-            return
+    return run_acp(job, state, path, prompt, resume=resume, compact=compact)

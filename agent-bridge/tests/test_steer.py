@@ -16,7 +16,6 @@ def job(tmp_path, monkeypatch):
     monkeypatch.delenv(core.WORKER_FLAG, raising=False)
     monkeypatch.setattr(cli, "resolve_job", lambda _: job)
     monkeypatch.setattr(cli, "linger", lambda *args: None)
-    monkeypatch.setattr(cli.agy, "fallback", lambda *args: None)
     return job
 
 

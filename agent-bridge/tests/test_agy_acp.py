@@ -6,6 +6,56 @@ import pytest
 from agent_bridge import agy_acp, core
 
 
+@pytest.mark.parametrize("advertised,checkpoint", [(True, True), (True, False), (False, False)])
+def test_compact_requires_advertised_command_and_new_native_checkpoint(
+    tmp_path, monkeypatch, advertised, checkpoint
+):
+    job = tmp_path / "job"
+    job.mkdir()
+    session = "session"
+    transcript = agy_acp.agy.transcript_path(job, session).with_name("transcript_full.jsonl")
+    transcript.parent.mkdir(parents=True)
+    old = {"type": "CHECKPOINT", "source": "SYSTEM", "status": "DONE",
+           "step_index": 1, "created_at": "old"}
+    transcript.write_text(json.dumps(old) + "\n")
+    state = {"backend": "agy", "cwd": str(tmp_path), "conversationId": session}
+    path = job / "state.json"
+    core.save(path, state)
+    calls = []
+
+    class FakeRpc:
+        def __init__(self, *_):
+            commands = [{"name": "compact"}] if advertised else []
+            self.events = deque([{"method": "session/update", "params": {"sessionId": session,
+                "update": {"sessionUpdate": "available_commands_update", "availableCommands": commands}}}])
+
+        def call(self, method, params):
+            calls.append((method, params))
+            if method == "initialize":
+                return {"protocolVersion": 1}
+            if method == "session/resume":
+                return {}
+            assert method == "session/prompt" and params["prompt"][0]["text"] == "/compact"
+            if checkpoint:
+                with transcript.open("a") as stream:
+                    stream.write(json.dumps({**old, "step_index": 2, "created_at": "new"}) + "\n")
+            return {"stopReason": "end_turn"}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(agy_acp, "Rpc", FakeRpc)
+    if checkpoint:
+        agy_acp.run(job, state, path, "", resume=True, compact=True)
+        assert '"kind":"compacted"' in (job / "live.jsonl").read_text()
+    else:
+        with pytest.raises(RuntimeError, match="checkpoint|advertise"):
+            agy_acp.run(job, state, path, "", resume=True, compact=True)
+        log = job / "live.jsonl"
+        assert not log.exists() or '"kind":"compacted"' not in log.read_text()
+    assert any(method == "session/prompt" for method, _ in calls) == advertised
+
+
 def test_acp_process_keeps_sandbox_and_explicit_writable_roots(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(agy_acp, "capped", lambda command, state: command)

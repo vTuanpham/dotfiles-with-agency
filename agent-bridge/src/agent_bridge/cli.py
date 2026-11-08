@@ -193,8 +193,6 @@ def run_with_linger(
             if any(e.get("kind") in {"root_steer", "root_prompt"} for e in events(job, before)):
                 state["autoAnswers"] = 0
                 save(state_path, state)
-            if backend is agy:
-                agy.fallback(job, state, state_path)
             if not extra.get("compact"):
                 linger(job, state, state_path, backend)
             with steer_lock(job):
@@ -393,7 +391,7 @@ def main():
         descriptions = {
             "interrupt": "request that the current turn end without stopping the job",
             "stop": "stop the job runner",
-            "compact": "compact idle codex or claude history",
+            "compact": "compact idle worker history",
         }
         sub.add_parser(name, help=descriptions[name], description=descriptions[name]).add_argument(
             "job", help="job as <owner>/<name>"
@@ -700,8 +698,6 @@ def main():
             with owner_binding.access(job.parent, root_identity()):
                 (job / a.command).touch()
             return
-        if a.command == "compact" and load_state(job)["backend"] not in ("codex", "claude"):
-            raise RuntimeError("compact is supported only by codex and claude")
         if a.command in ROOT_COMMANDS or a.command == "compact":
             root_guard.enter_context(owner_binding.access(job.parent, root_identity(), start=True))
         if runner_fd is None:

@@ -57,6 +57,25 @@ def test_linger_does_not_restart_after_stop(monkeypatch, tmp_path):
     assert calls == ["start"]
 
 
+def test_agy_quota_error_does_not_switch_or_resume(monkeypatch, tmp_path):
+    (tmp_path / "steer").mkdir()
+    state = {"backend": "agy", "account": "a1"}
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps(state))
+    calls = []
+
+    def run(job, state, path, prompt, resume=False):
+        calls.append((state["account"], resume))
+        event(job, "turn_completed", error="quota reached")
+
+    monkeypatch.setattr(agy, "run", run)
+    monkeypatch.setattr(agy, "switch_account", lambda *args: pytest.fail("unexpected account switch"))
+    monkeypatch.setattr(cli, "linger", lambda *args: None)
+    cli.run_with_linger(tmp_path, state, path, agy, "start", False, {})
+    assert calls == [("a1", False)]
+    assert json.loads(path.read_text())["account"] == "a1"
+
+
 def test_worker_env_and_peer_discovery_rule():
     current = Path("/jobs/owner/one")
     assert worker_env(current)["AGENT_BRIDGE_JOB"] == "owner/one"
@@ -262,15 +281,8 @@ def test_compact_cli_routes_only_supported_backends(monkeypatch, tmp_path, capsy
     calls = []
     monkeypatch.setattr(cli.BACKENDS[backend], "run", lambda *a, **kw: calls.append(kw))
     monkeypatch.setattr(cli, "linger", lambda *a: pytest.fail("compaction must not resume queued steers"))
-    if backend in ("codex", "claude"):
-        cli.main()
-        assert calls == [{"resume": True, "compact": True}]
-    else:
-        with pytest.raises(SystemExit) as error:
-            cli.main()
-        assert error.value.code == 1
-        assert "compact is supported only by codex and claude" in capsys.readouterr().err
-        assert not calls
+    cli.main()
+    assert calls == [{"resume": True, "compact": True}]
 
 
 def test_retire_archives_report_and_keeps_job(tmp_path, monkeypatch, capsys):
@@ -299,85 +311,3 @@ def test_retire_archives_report_and_keeps_job(tmp_path, monkeypatch, capsys):
     state = json.loads((job / "state.json").read_text())
     assert state["retiredAt"] == row["retiredAt"]
     assert state["purgeAfter"] == row["purgeAfter"]
-
-
-def test_agy_fallback_uses_fresh_account_quota_and_resumes(monkeypatch, tmp_path):
-    accounts = tmp_path / "accounts"
-    for account in ("a1", "a2"):
-        directory = accounts / account
-        (directory / agy.TOKEN).parent.mkdir(parents=True)
-        (directory / agy.TOKEN).write_text("token")
-        (directory / "quota.json").write_text(
-            json.dumps(
-                {
-                    "account": account,
-                    "at": "2026-10-20T00:00:00+00:00",
-                    "schema_version": 2,
-                    "groups": [{"name": "provider pool", "buckets": [{"id": "native-pool",
-                        "name": "Weekly", "window": "weekly", "remaining_fraction": 0.5,
-                        "reset_time": "2099-01-01T00:00:00Z", "model_ids": ["gemini-pro"]}]}],
-                }
-            )
-        )
-    monkeypatch.setattr(agy, "ACCOUNTS", accounts)
-    monkeypatch.setattr(agy, "switch_account", lambda job, state, account: state.update(account=account))
-    now = datetime.now(timezone.utc).isoformat()
-    for account in ("a1", "a2"):
-        directory = accounts / account
-        (directory / "quota.json").write_text(
-            json.dumps(
-                {
-                    "account": account,
-                    "at": now,
-                    "schema_version": 2,
-                    "groups": [{"name": "provider pool", "buckets": [{"id": "native-pool",
-                        "name": "Weekly", "window": "weekly", "remaining_fraction": 0.5,
-                        "reset_time": "2099-01-01T00:00:00Z", "model_ids": ["gemini-pro"]}]}],
-                }
-            )
-        )
-    job = tmp_path / "owner" / "job"
-    job.mkdir(parents=True)
-    state = {"account": "a1", "model": "gemini-pro"}
-    path = job / "state.json"
-    path.write_text(json.dumps(state))
-    event(job, "turn_completed", error="quota reached")
-    resumed = []
-
-    def run(job, state, path, prompt, resume=False):
-        resumed.append((state["account"], prompt, resume))
-        event(job, "turn_completed", error=None)
-
-    monkeypatch.setattr(agy, "run", run)
-    agy.fallback(job, state, path)
-    assert resumed == [("a2", "Continue where you left off.", True)]
-    assert any(
-        json.loads(line)["kind"] == "account_switched"
-        for line in (job / "live.jsonl").read_text().splitlines()
-    )
-
-
-def test_agy_fallback_never_infers_membership_from_group_or_model_family(monkeypatch, tmp_path):
-    accounts = tmp_path / "accounts"
-    for name in ("a1", "a2"):
-        directory = accounts / name
-        (directory / agy.TOKEN).parent.mkdir(parents=True)
-        (directory / agy.TOKEN).write_text("synthetic")
-        (directory / "quota.json").write_text(json.dumps({"schema_version": 2, "account": name,
-            "at": datetime.now(timezone.utc).isoformat(), "groups": [
-                {"name": "Claude and GPT models", "buckets": [{"id": "3p-weekly", "name": "Weekly",
-                    "window": "weekly", "remaining_fraction": 1, "reset_time": "2099-01-01T00:00:00Z"}]}]}))
-    monkeypatch.setattr(agy, "ACCOUNTS", accounts)
-    monkeypatch.setattr(agy, "switch_account",
-                        lambda *a: pytest.fail("unknown model binding switched account"))
-    job = tmp_path / "job"
-    job.mkdir()
-    state = {"account": "a1", "model": "claude-sonnet-5.5"}
-    path = job / "state.json"
-    path.write_text(json.dumps(state))
-    event(job, "turn_completed", error="quota reached")
-    agy.fallback(job, state, path)
-    assert state["account"] == "a1"
-    events = [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()]
-    assert any(e["kind"] == "account_fallback_unavailable" and "binding unavailable" in e["message"]
-               for e in events)

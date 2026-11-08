@@ -383,7 +383,92 @@ def process(event, state, job, turn=None):
         )
 
 
-def run(job, state, path, prompt, resume=False):
+def compact_session(job, state, path):
+    session = state.get("sessionId")
+    if not isinstance(session, str) or not session.startswith("ses_") or not all(
+        c.isascii() and (c.isalnum() or c in "_-") for c in session
+    ):
+        raise RuntimeError("OpenCode session ID is missing or invalid")
+    if state.get("liveSteer") or state.get("inflight"):
+        raise RuntimeError("OpenCode delivery is uncertain; inspect the session before compacting")
+    cmd, env = command(state, job, "", resume=True, server_only=True)
+    password = secrets.token_urlsafe(32)
+    env["OPENCODE_PASSWORD"] = password
+    runner_started(state, path)
+    try:
+        with (Path(job) / "opencode.stderr.log").open("ab") as stderr:
+            proc = subprocess.Popen(capped(cmd, state), cwd=state["cwd"], env=env, stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, stderr=stderr, start_new_session=True)
+            try:
+                ready, _, _ = select.select([proc.stdout], [], [], 20)
+                if not ready:
+                    raise TimeoutError("OpenCode compaction server did not become ready")
+                line = proc.stdout.readline(65537)
+                if len(line) > 65536:
+                    raise ValueError("OpenCode server response too large")
+                info = json.loads(line)
+                if not isinstance(info, dict) or set(info) != {"bridge_server"}:
+                    raise ValueError("invalid OpenCode server announcement")
+                compact_over_api(job, session, info["bridge_server"], password)
+            finally:
+                try:
+                    proc.stdin.close()
+                except BrokenPipeError:
+                    pass
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    proc.wait(timeout=5)
+    finally:
+        runner_finished(state, path)
+
+
+def compact_over_api(job, session, url, password):
+    parsed = urlsplit(url)
+    if (parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not parsed.port
+            or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment):
+        raise ValueError("invalid OpenCode worker server address")
+    auth = base64.b64encode(("opencode:" + password).encode()).decode()
+    connection = http.client.HTTPConnection("127.0.0.1", parsed.port, timeout=300)
+    try:
+        connection.request("GET", "/api/event", headers={"Authorization": "Basic " + auth})
+        stream = connection.getresponse()
+        if stream.status != 200 or stream.getheader("Content-Type", "").split(";")[0] != "text/event-stream":
+            raise RuntimeError("OpenCode event subscription failed")
+        compact_path = "/api/session/" + quote(session, safe="") + "/compact"
+        data = native_request(url, password, "POST", compact_path, {})
+        if not isinstance(data, dict) or data.get("sessionID") != session or data.get("type") != "compaction":
+            raise ValueError("invalid OpenCode compaction receipt")
+        log(job, "compact_started")
+        while True:
+            line = stream.readline(1048577)
+            if not line or len(line) > 1048576:
+                raise RuntimeError("OpenCode compaction event stream ended")
+            if not line.startswith(b"data:"):
+                continue
+            event = json.loads(line[5:].strip())
+            if not isinstance(event, dict) or not isinstance(event.get("data"), dict):
+                continue
+            if event["data"].get("sessionID") != session:
+                continue
+            if event.get("type") == "session.compaction.ended":
+                log(job, "compacted")
+                print("compacted")
+                return
+            if event.get("type") == "session.compaction.failed":
+                error = event["data"].get("error") or {}
+                raise RuntimeError(f"OpenCode compaction failed: {error.get('message', 'unknown error')}")
+    finally:
+        connection.close()
+
+
+def run(job, state, path, prompt, resume=False, compact=False):
+    if compact:
+        return compact_session(job, state, path)
     if state.get("liveSteer"):
         recover_live_steer(job, state)
         if not prompt:

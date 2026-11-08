@@ -1,5 +1,6 @@
 """AGY's ACP worker transport, including native concurrent-prompt steering."""
 
+import json
 import subprocess
 import time
 from collections import deque
@@ -97,8 +98,71 @@ def flush_message(job, texts):
         route_to_peers(job, message)
 
 
-def run(job, state, path, prompt, resume=False):
+def checkpoints(job, session):
+    transcript = agy.transcript_path(job, session).with_name("transcript_full.jsonl")
+    try:
+        with transcript.open(encoding="utf-8") as stream:
+            rows = (json.loads(line) for line in stream if line.strip())
+            return {(row["step_index"], row["created_at"]) for row in rows
+                    if row.get("type") == "CHECKPOINT" and row.get("source") == "SYSTEM"
+                    and row.get("status") == "DONE"}
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise RuntimeError("AGY checkpoint history is unavailable; cannot confirm compaction") from error
+
+
+def compact_session(job, state, path):
+    session = state.get("conversationId")
+    if not session or state.get("inflight"):
+        raise RuntimeError("AGY compact requires an existing session with no uncertain delivery")
+    rpc = Rpc(job, state)
+    try:
+        runner_started(state, path)
+        init = rpc.call("initialize", {"protocolVersion": 1, "clientCapabilities": {
+            "fs": {"readTextFile": False, "writeTextFile": False}, "terminal": False,
+        }})
+        if init.get("protocolVersion") != 1:
+            raise RuntimeError("AGY ACP protocol version is unsupported")
+        result = rpc.call("session/resume", {"sessionId": session, "cwd": state["cwd"], "mcpServers": []})
+        configure(rpc, session, result, state)
+        save(path, state)
+        deadline = time.monotonic() + 3
+        advertised = False
+        while time.monotonic() < deadline:
+            event = rpc.events.popleft() if rpc.events else rpc.read(deadline - time.monotonic())
+            if not event:
+                break
+            if event.get("eof"):
+                raise RuntimeError("AGY ACP disconnected during command discovery")
+            params = event.get("params") or {}
+            update = params.get("update") or {}
+            if (event.get("method") == "session/update" and params.get("sessionId") == session
+                    and update.get("sessionUpdate") == "available_commands_update"):
+                advertised = any(item.get("name") == "compact" for item in update.get("availableCommands", [])
+                                 if isinstance(item, dict))
+                break
+        if not advertised:
+            raise RuntimeError("AGY ACP did not advertise compact")
+        previous = checkpoints(job, session)
+        log(job, "compact_started")
+        result = rpc.call("session/prompt", {"sessionId": session, "prompt": [
+            {"type": "text", "text": "/compact"}]})
+        if result.get("stopReason") != "end_turn":
+            raise RuntimeError("AGY compaction did not complete")
+        if not checkpoints(job, session) - previous:
+            raise RuntimeError("AGY did not confirm compaction with a new checkpoint")
+        log(job, "compacted")
+        print("compacted")
+    finally:
+        try:
+            rpc.close()
+        finally:
+            runner_finished(state, path)
+
+
+def run(job, state, path, prompt, resume=False, compact=False):
     job = Path(job)
+    if compact:
+        return compact_session(job, state, path)
     if "gpt-oss" in (state.get("model") or "").lower():
         raise RuntimeError("GPT-OSS models are excluded; pick a Gemini or Claude model")
     if resume and not state.get("conversationId"):

@@ -79,8 +79,6 @@ def test_restore_resume_preserves_native_session_and_home(world, monkeypatch, ca
         calls.append(state[key])
 
     monkeypatch.setattr(cli.BACKENDS[backend], "run", run)
-    if backend == "agy":
-        monkeypatch.setattr(cli.agy, "fallback", lambda *args: None)
     command(monkeypatch, "resume", "owner/job")
     assert calls == ["original-session"]
 
