@@ -70,6 +70,17 @@ def test_models_failure_reports_stderr(monkeypatch):
         inventory.show("opencode")
 
 
+def test_inventory_reports_sandbox_restrictions_without_exposing_native_stderr(monkeypatch):
+    stderr = "private path: read-only file system; socket: operation not permitted"
+    monkeypatch.setattr(inventory.subprocess, "run", lambda *a, **k: type(
+        "Result", (), {"stderr": stderr, "returncode": 1})())
+    with pytest.raises(RuntimeError) as error:
+        inventory.catalog("agy")
+    assert "could not write its state or logs" in str(error.value)
+    assert "could not open a local socket" in str(error.value)
+    assert "private path" not in str(error.value)
+
+
 @pytest.mark.parametrize("provider,model", [
     ("opencode-go", "deepseek-v4.1-flash"), ("opencode-go", "gpt-6-luna"),
     ("local", "model"), ("free-proxy", "model"),

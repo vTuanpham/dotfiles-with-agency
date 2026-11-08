@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from dataclasses import asdict
 from datetime import UTC, date, datetime
+from functools import lru_cache
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import HTTPError
@@ -493,6 +494,9 @@ def account_observation(backend, account, *, data=None):
         context["quotas"] = [row for row in context["quotas"]
                              if row["backend"] == backend and (account is None or row["account"] == account)]
         context["profiles"] = {key: value for key, value in context["profiles"].items() if key == backend}
+        context["errors"] = [error for error in context.get("errors", []) if not any(
+            error.casefold().startswith(name + " ") for name in ("codex", "claude", "agy", "opencode")
+            if name != backend)]
     return context
 
 
@@ -516,6 +520,7 @@ def search(domain, query="", limit=5, catalog=None, *, data=None, include_speed=
     for model in (native or {}).get("models", []):
         by_identity.setdefault(coverage.benchmark_key(model), []).append(model)
 
+    @lru_cache(maxsize=8192)
     def selected(label, effort=coverage.UNSPECIFIED):
         if native is None:
             return name_matches(query, label)
@@ -715,8 +720,9 @@ def search(domain, query="", limit=5, catalog=None, *, data=None, include_speed=
                                 "and service architecture are not directly measured."] if domain == "backend"
                                else ["Writing uses style-controlled text preference, not a dedicated "
                                      "writing-quality or factual-accuracy benchmark."] if domain == "writing"
-                               else ["GPU/kernel engineering only; separate operations/hardware/units, "
-                                     "not general CPU/server performance."] if domain == "performance"
+                               else ["KernelBench results include the operation, hardware and units "
+                                     "for each run."]
+                               if domain == "performance"
                                else ["Planted-bug discovery without a bug report in two repos, judge-graded; "
                                      "not production incident diagnosis."] if domain == "debugging"
                                else ["Vision measures perception/preferences; "

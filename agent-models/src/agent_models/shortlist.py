@@ -159,11 +159,11 @@ def brief(data):
     return "\n".join("".join(c for c in line if c.isprintable()) for line in lines)
 
 
-def account_lines(accounts, *, compact=False):
+def account_lines(accounts, *, compact=False, limit=2):
     lines = []
     if accounts:
         if compact:
-            for account in accounts["quotas"][:2]:
+            for account in accounts["quotas"][:limit]:
                 windows = "; ".join(w["label"] + "=" + (
                     "?" if w["remaining_percent"] is None else str(w["remaining_percent"]) + "%")
                     + (f"/{w['window_minutes']}m" if w.get("window_minutes") is not None else "")
@@ -175,8 +175,8 @@ def account_lines(accounts, *, compact=False):
                              f"{account['freshness']} {windows} (cached; session binding unverified)")
                 if len(account["windows"]) > 3:
                     lines.append(f"Allowance: +{len(account['windows']) - 3} source windows in --json")
-            if len(accounts["quotas"]) > 2:
-                lines.append(f"Allowance: +{len(accounts['quotas']) - 2} cached accounts in --json")
+            if len(accounts["quotas"]) > limit:
+                lines.append(f"Allowance: +{len(accounts['quotas']) - limit} cached accounts in --json")
             if not accounts["quotas"]:
                 lines.append("Allowance: no cached account observation; session binding unverified.")
             return lines

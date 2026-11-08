@@ -24,12 +24,13 @@ model-guide check --live           # explicitly query native inventories
 model-guide refresh --prepare      # public data + cost curves; no model worker
 model-guide benchmarks --backend claude --domain design --query sonnet --limit 5 --brief
 model-guide benchmarks --backend codex --domain backend --limit 3 --brief
-model-guide suggest --task "UI refactor" --domain design --domain coding
-model-guide suggest --task "Records disappear when writers run together" --domain debugging --domain backend
-model-guide suggest --task "Fix failing tests" --domain debugging --context /tmp/decision.json
+model-guide suggest --task "UI refactor"
+model-guide suggest --task "Records disappear when writers run together"
+model-guide suggest --task "Fix failing tests" --context /tmp/decision.json
 model-guide suggest --backend codex --task "Fix code" --domain coding --query luna --json
 model-guide suggest --help          # optional context JSON schema and exact admission rules
 model-guide preferences list         # private notes, including expiry and attribution
+model-guide usage                    # attributable local Bridge turn outcomes
 model-guide benchmarks --domain performance --query sol --brief
 model-guide benchmarks --domain debugging --query sonnet --brief
 model-guide read maintenance
@@ -56,14 +57,28 @@ State belongs to `$AGENT_MODELS_HOME` or
 `${XDG_STATE_HOME:-~/.local/state}/agent-models`; documents and review hashes live
 in `src/agent_models/guide/`. Reference edits remain uncommitted.
 
+`usage` summarizes unambiguously paired Bridge turns by the model, account and
+effort requested at turn start. It does not infer the actual model or account,
+task quality, quota consumption or token cost. Native effort observations are
+shown separately when available. Claude token totals cover the main agent's
+per-turn reported input and output, excluding cached input and helper calls;
+`token_turns` shows how many turns supplied those numbers. Older and overlapping turns that
+cannot be paired are counted as skipped. The source logs and conversation
+content stay local.
+
 Benchmark search returns bounded source evidence: release/retrieval dates, domain
 scores, effort, available cost/time and automatically read local account hints.
 Missing measurements stay unknown. The full local snapshot supports rechecks
 without loading an entire leaderboard into the agent's context.
 
-The calling agent chooses evidence areas with repeated `--domain` flags using
-its existing task understanding. `--task` keeps the full description and context;
-without a domain, the tool explicitly shows general evidence. Without `--backend`, native
+`--task` keeps the full description and combines lexical cues with local semantic
+suggestions to prioritize evidence. The suggestions are not filters: task queries
+retain evidence from all areas in `--json` and `--choice`, so an incomplete inference
+does not hide it. With no cached model, lexical matches work without downloading;
+otherwise the first semantic-only use downloads a pinned 22 MiB public embedding
+model and tokenizer. Task text never leaves the machine. Use repeated `--domain`
+flags to restrict evidence when needed. A task is optional for general lookup.
+Without `--backend`, native
 inventories are discovered independently across all four harnesses; partial
 failures remain visible. No provider model is prompted. Native catalogs are read
 fresh, evidence is indexed once per query, and account state is captured once.
@@ -89,17 +104,22 @@ the current session, distinct access/billing pools and source-scoped examples of
 quality, cost, time and intermediate tradeoffs. Equivalent underlying models share
 a comparison while their execution/billing routes stay distinct. Each example
 shows selected measured efforts with their paired score, cost and time, preserving
-missing prices and source/run scope. Different sample counts stay visible. Speed
-points likewise keep effort, tokens/s and first-token latency together. These are
+missing prices and source/run scope. Inclusion reasons describe the evidence or
+route shown; they do not recommend a winner. Native effort choices and account
+windows are shown separately; a window is attached to a route only when its
+native observation names that exact model. Different sample counts stay visible. Speed
+points keep effort, tokens/s, first-token latency and workload together; the brief includes
+a measured middle native effort when available as well as speed extremes. These are
 source measurements, not predictions of this job's cost or duration.
 Inspect `--choice ROUTE` for other settings and run scope;
-use flexible `--query` discovery or `--limit N --offset K` for explicitly labelled
-inventory-order pages. There is no winner shortlist, tier/newness bonus, combined
+use flexible `--query` discovery or `--limit N --offset K` to page the comparison
+(JSON pages native inventory order). There is no winner shortlist, tier/newness bonus, combined
 score or cheapest-first policy. Native aliases share a resolved model, while
 OpenCode provider/free variants remain separate execution routes.
 
 `--choice EXACT_NATIVE_ROUTE --effort LEVEL` preserves explicit choices and reports
-problems without substitution. Optional `--max-usd`/`--max-seconds` constrain each
+problems without substitution. Measurements at other efforts are shown separately,
+not treated as results at the selected effort. Optional `--max-usd`/`--max-seconds` constrain each
 published source observation; unknowns cannot establish a bound or prove actual
 route spend/latency. Reviewed model links transfer model evidence, not provider
 reliability, speed, price or entitlement. Account overrides are supported only by

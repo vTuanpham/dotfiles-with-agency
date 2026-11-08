@@ -177,7 +177,14 @@ def catalog(backend, account=None):
     except subprocess.SubprocessError as error:
         raise RuntimeError(f"{backend} model inventory failed") from error
     if result.returncode:
-        raise RuntimeError(f"{backend} model inventory failed (exit {result.returncode})")
+        details = result.stderr.casefold()
+        hints = []
+        if "read-only file system" in details or "erofs" in details:
+            hints.append("native CLI could not write its state or logs")
+        if "socket: operation not permitted" in details:
+            hints.append("native CLI could not open a local socket")
+        suffix = "; " + "; ".join(hints) if hints else ""
+        raise RuntimeError(f"{backend} model inventory failed (exit {result.returncode}{suffix})")
     if len(raw.encode()) > 8_000_000:
         raise ValueError("native model catalog exceeds size limit")
     if backend == "claude":

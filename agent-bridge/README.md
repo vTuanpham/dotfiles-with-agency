@@ -45,6 +45,10 @@ parent rather than guessing one. Workers cannot export other owners' inventory.
 In Claude Code, [Wake](../claude/README.md#crew-and-quota-rows) draws these jobs as crew, with
 worker/model/effort labels and an account quota row.
 
+Claude workers observe their main agent's effort through native PostToolUse and Stop hooks.
+Until a hook reports it, the effective effort is unknown; the requested effort remains separate.
+Hook values describe the setting observed at that event, which can precede a pending change taking effect.
+
 Every harness can use the same versioned object:
 
 ```sh
@@ -121,8 +125,9 @@ See `agent-bridge guide workflow` for the cursor format and watch lifecycle.
 A Claude worker that the runtime quietly served with a different model than the one it
 resolved to (a fallback; the stream still reports the requested model) raises one urgent
 `model_fallback` event per job and served model, naming both and saying the worker was not
-told. Bridge reads it from each turn's per-model usage: the model that wrote most of the
-output must differ from the resolved one, so a small helper model never counts.
+told. Bridge compares successive per-model usage totals to find the output for that turn;
+the model that wrote most of it must differ from the resolved one, so a small helper model
+never counts. The first result after a resume establishes a baseline and cannot identify a fallback.
 A sandboxed worker's `agent-bridge waiting` cannot take the job's state lock; it leaves
 its declaration in `out/.waiting.json` instead, which status reads (the newer of the two
 wins, and the next activity clears it), without widening what the worker may write.

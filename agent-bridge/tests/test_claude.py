@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 from collections import deque
 
 import pytest
@@ -65,11 +67,43 @@ def test_claude_settings_and_event_mapping(tmp_path, capsys):
     assert settings["permissions"]["allow"] == ["WebFetch(domain:*)"]
     assert settings["env"]["CLAUDE_CODE_PLUGIN_DIRS"] == ""
     assert settings["sandbox"]["failIfUnavailable"] is True
+    assert set(settings["hooks"]) == {"PostToolUse", "Stop"}
     state["sandbox"] = "read-only"
     cmd = claude.command(state, tmp_path)
     assert json.loads((tmp_path / "claude-settings.json").read_text())["permissions"] == {}
     assert cmd.count("--disallowedTools") == 1
     assert all(tool in cmd for tool in ("Agent", "Edit", "Write", "NotebookEdit"))
+
+
+def test_effort_hook_keeps_only_main_agent_native_observations(tmp_path):
+    output = tmp_path / "effort.jsonl"
+    script = claude.Path(claude.__file__).with_name("claude_effort_hook.py")
+    for event in [
+        {"session_id": "s", "effort": {"level": "high"}},
+        {"session_id": "s", "agent_id": "child", "effort": {"level": "max"}},
+        {"session_id": "s", "effort": {"level": "invented"}},
+    ]:
+        subprocess.run([sys.executable, str(script), str(output)], input=json.dumps(event),
+                       text=True, check=True)
+    assert [json.loads(line) for line in output.read_text().splitlines()] == [
+        {"session": "s", "effort": "high"},
+    ]
+
+
+def test_run_observes_only_current_claude_session_effort(monkeypatch, tmp_path):
+    state, path = make_state(tmp_path)
+    fake_stream(monkeypatch, [{"type": "system", "subtype": "init", "session_id": "sid"},
+                              {"type": "result", "subtype": "success"}])
+    original = claude.os.read
+    def read(*args):
+        result = original(*args)
+        if b'"subtype": "init"' in result:
+            (tmp_path / "claude-effort.jsonl").write_text(
+                '{"session":"other","effort":"max"}\n{"session":"sid","effort":"medium"}\n')
+        return result
+    monkeypatch.setattr(claude.os, "read", read)
+    claude.run(tmp_path, state, path, "start")
+    assert state["effectiveEffort"] == "medium"
 
 
 def used(**output):
@@ -82,22 +116,41 @@ def test_model_fallback_is_reported_once_from_usage_and_helpers_do_not_count(tmp
     (job / "state.json").write_text("{}")
     claude.process({"type": "system", "subtype": "init", "session_id": "s",
                     "model": "claude-opus-5-5"}, state, job)
+    baseline = {"previous": {}}
 
     def turn(usage):
         claude.process({"type": "result", "subtype": "success", "modelUsage": usage,
-                        "queued_turn_count": 0}, state, job)
+                        "queued_turn_count": 0}, state, job, baseline)
         return [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()
                 if "model_fallback" in line]
 
     # The requested model plus a small helper does not count as a fallback.
     assert turn(used(**{"claude-opus-5-5": 5000, "claude-haiku-5-5": 30})) == []
     # the shape of a real fallback turn: the asked-for model wrote nothing, another wrote it all
-    events = turn({"claude-opus-5-5": {"outputTokens": 0}, "claude-opus-4-8": {"outputTokens": 21258}})
+    events = turn({"claude-opus-5-5": {"outputTokens": 5000}, "claude-haiku-5-5": {"outputTokens": 30},
+                   "claude-opus-4-8": {"outputTokens": 21258}})
     assert [(e["requested"], e["served"], e["level"]) for e in events] == [
         ("claude-opus-5-5", "claude-opus-4-8", "urgent"),
     ]
-    assert len(turn(used(**{"claude-opus-4-8": 900}))) == 1  # the same fallback is not announced every turn
+    assert len(turn(used(**{"claude-opus-5-5": 5000, "claude-haiku-5-5": 30,
+                            "claude-opus-4-8": 22158}))) == 1
     assert core_urgent({"kind": "model_fallback"})
+
+
+def test_fallback_uses_turn_delta_and_waits_for_a_resume_baseline(tmp_path):
+    state = {"resolvedModel": "requested"}
+    (tmp_path / "state.json").write_text("{}")
+    baseline = {"previous": None}
+
+    def turn(**counts):
+        claude.process({"type": "result", "subtype": "success", "modelUsage": used(**counts)},
+                       state, tmp_path, baseline)
+        return [json.loads(line) for line in (tmp_path / "live.jsonl").read_text().splitlines()
+                if '"kind":"model_fallback"' in line]
+
+    assert turn(requested=0, other=10000) == []  # resumed history isn't this turn
+    assert turn(requested=1000, other=10000) == []  # cumulative history must not mask this turn
+    assert len(turn(requested=1000, other=11000)) == 1
 
 
 def core_urgent(event):

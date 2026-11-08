@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -19,6 +20,7 @@ from . import (
     refresh,
     selection,
     shortlist,
+    usage,
 )
 
 
@@ -46,6 +48,15 @@ def suggestions(args, context, routing):
                                       include_effort=True, complete=True, data=captured)
             result = selection.suggest(evidence, catalog, choice=args.choice, effort=args.effort,
                 context=context, task=args.task, max_usd=args.max_usd, max_seconds=args.max_seconds)
+            if "focus_domains" in routing:
+                focused = [evidence[d] for d in routing["focus_domains"] or ["overall"]]
+                result["display_notes"] = {
+                    "coverage_notes": [note for found in focused for note in found.get("coverage_notes", [])],
+                    "notes": [note for found in focused for note in found.get("warnings", [])] + [
+                        found["domain"] + "/" + name + ": source unavailable; model ability unknown."
+                        for found in focused for name, source in found["sources"].items()
+                        if source["status"] != "ok"],
+                }
             try:
                 result["account_observation"] = benchmarks.account_observation(
                     backend, args.account, data=observed_accounts)
@@ -79,6 +90,10 @@ def suggestions(args, context, routing):
             else:
                 results.append(result)
     result = selection.combine(results, failures, context=context, task=args.task, domains=domains)
+    if "focus_domains" in routing:
+        result["display_notes"] = {key: list(dict.fromkeys(
+            note for item in results for note in item["display_notes"][key]))
+            for key in ("notes", "coverage_notes")}
     if args.choice and result["options"]:
         result["problems"] = [p for p in result["problems"] if "unavailable/ambiguous" not in p]
     if args.backend and args.backend not in permitted:
@@ -87,7 +102,7 @@ def suggestions(args, context, routing):
     result["total_options"] = len(result["options"])
     result["comparison"] = comparison.portfolio(result)
     try:
-        result["preferences"] = preferences.applicable(args.backend)
+        result["preferences"] = preferences.applicable(args.backend, args.task)
     except (OSError, ValueError, TypeError) as error:
         result["preferences"] = []
         result["problems"].append("Preferences unavailable: " + str(error))
@@ -98,6 +113,8 @@ def suggestions(args, context, routing):
         result["notes"].append(routing["note"])
     if not result["options"]:
         result["problems"].append("No admitted routes; check caller restrictions and discovery failures.")
+        if args.query and not args.choice:
+            result["problems"].append("--query searches model names; use --task for the job description.")
     return result
 
 
@@ -105,6 +122,8 @@ def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(prog="model-guide", description="Shared model selection reference.")
     commands = parser.add_subparsers(dest="command", required=True)
+    history = commands.add_parser("usage", help="summarize attributable local Bridge turn outcomes")
+    history.add_argument("--backend", choices=decision_context.BACKENDS)
     pref = commands.add_parser("preferences", help="manage private, attributed model-selection notes")
     pref_commands = pref.add_subparsers(dest="action", required=True)
     pref_commands.add_parser("list", help="list all notes, including expired ones")
@@ -124,9 +143,9 @@ def main():
         epilog=decision_context.HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     for command in (compare, suggest):
         command.add_argument("--domain", choices=benchmarks.DOMAINS, action="append",
-                             help="evidence area chosen by the caller; repeat for multiple areas")
+                             help="override inferred evidence areas; repeat for multiple areas")
         command.add_argument("--task",
-                             help="full task context; use --domain for task-specific evidence")
+                             help="full task context; evidence areas are inferred from its wording")
         command.add_argument("--query", default="",
                              help="model words/prefixes or native alias; task prose uses --task")
         command.add_argument("--backend", choices=decision_context.BACKENDS,
@@ -140,7 +159,7 @@ def main():
     suggest.add_argument("--effort", help="explicit effort for --choice")
     suggest.add_argument("--context", metavar="PATH|-", help="ephemeral caller JSON; schema below")
     suggest.add_argument("--limit", type=int, choices=range(1, 101), metavar="1..100",
-                         help="page native inventory order, not a score-ranked shortlist")
+                         help="page the comparison (JSON pages native inventory order)")
     suggest.add_argument("--offset", type=int, default=0, help="page offset; requires --limit")
     suggest.add_argument("--max-usd", type=float, help="cap each source's published task/run cost")
     suggest.add_argument("--max-seconds", type=float,
@@ -169,6 +188,9 @@ def main():
     update.add_argument("--yes", action="store_true", help="confirm completed source review")
     args = parser.parse_args()
     try:
+        if args.command == "usage":
+            print(json.dumps(usage.summary(backend=args.backend), indent=2))
+            return 0
         if args.command == "preferences":
             if args.action == "list":
                 print(json.dumps(preferences.read(), indent=2, ensure_ascii=False))
@@ -186,8 +208,23 @@ def main():
                 parser.error("--account cannot establish native selectability here; use its native session")
             context = decision_context.read(args.context, sys.stdin) if args.command == "suggest" else {}
             routing = queries.resolve(args.domain, args.task)
+            if args.command == "suggest" and args.task and not args.domain:
+                focus = [] if routing["method"] == "overall reference" else routing["domains"]
+                routing["focus_domains"] = focus
+                routing["domains"] = list(dict.fromkeys([*focus, *benchmarks.DOMAINS]))
+                if focus:
+                    routing["note"] = ("Inferred focus is only a hint; evidence from other areas is also "
+                                       "available in --json and --choice.")
+                else:
+                    routing["note"] = ("Task focus is unclear; broad evidence is available in --json and "
+                                       "--choice.")
             domains = routing["domains"]
             if args.command == "suggest":
+                for name in ("max_usd", "max_seconds"):
+                    value = getattr(args, name)
+                    if value is not None and (not math.isfinite(value) or value < 0):
+                        raise ValueError("--" + name.replace("_", "-") +
+                                         " must be a finite nonnegative number")
                 if args.offset < 0 or (args.offset and args.limit is None):
                     raise ValueError("nonnegative --offset requires --limit")
                 if args.effort and not args.choice:
@@ -201,8 +238,8 @@ def main():
                         result["continuation"] = end if end < result["total_options"] else None
                     print(json.dumps(result, indent=2))
                 else:
-                    print(selection.brief(result, limit=args.limit, offset=args.offset)
-                          if args.choice or args.limit is not None else comparison.render(result))
+                    print(selection.brief(result, limit=args.limit, offset=args.offset) if args.choice else
+                          comparison.render(result, limit=args.limit, offset=args.offset))
                 return 0
             catalog = inventory.catalog(args.backend, args.account) if args.backend else None
             if args.command == "benchmarks" and args.coverage:

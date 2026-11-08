@@ -35,6 +35,19 @@ def test_preferences_reject_invalid_dates_and_malformed_data(tmp_path, monkeypat
         preferences.read()
 
 
+def test_task_relevance_orders_notes_without_hiding_or_overriding_user(tmp_path, monkeypatch):
+    monkeypatch.setattr(preferences.state, "HOME", tmp_path)
+    def record(source, task):
+        return preferences.add(SimpleNamespace(source=source, note="Context", backend=None, model=None,
+                                               account=None, task=task, reason=None, expires=None))
+    general = record("user", None)
+    other = record("agent", "database locking")
+    matching = record("agent", "visual interface")
+    assert [item["id"] for item in preferences.applicable(task="visual interface layout")] == [
+        general["id"], matching["id"], other["id"],
+    ]
+
+
 def test_cli_add_list_remove(tmp_path, monkeypatch, capsys):
     import json
     import sys

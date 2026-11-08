@@ -48,11 +48,16 @@ def read():
     return items
 
 
-def applicable(backend=None):
+def applicable(backend=None, task=None):
     today = date.today().isoformat()
     items = [item for item in read() if (not item["expires"] or item["expires"] >= today)
              and (not backend or not item["backend"] or item["backend"] == backend)]
-    return sorted(items, key=lambda item: (item["source"] != "user", item["created"]))
+    from .retrieval import lexical_rank
+
+    ranked = lexical_rank(task, [item["task"] or "" for item in items]) if task else []
+    positions = {items[index]["id"]: position for position, index in enumerate(ranked)}
+    return sorted(items, key=lambda item: (item["source"] != "user", positions.get(item["id"], len(items)),
+                                           item["created"]))
 
 
 def lines(items):

@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from agent_bridge import cli, core, retries, status, waiting
+from agent_bridge import claude, cli, core, retries, status, waiting
 from agent_bridge.acknowledgements import pending, urgent
 from agent_bridge.status_model import DeclaredWait
 
@@ -145,6 +145,29 @@ def test_non_retryable_failure_is_not_replayed(job):
     assert calls == ["work"]
     assert [event["kind"] for _, event in pending(job)] == ["turn_completed"]
     assert not any(event["kind"] == "root_prompt" for event in cli.events(job))
+
+
+@pytest.mark.parametrize("failure, expected_calls", [
+    ({"subtype": "error_during_execution", "is_error": True, "errors": ["server capacity"]}, 2),
+    ({"subtype": "error_max_budget_usd", "is_error": True, "errors": ["billing limit"]}, 1),
+])
+def test_claude_result_errors_drive_retry_without_claiming_success(job, failure, expected_calls):
+    job, state, path = job
+    calls = []
+
+    class Backend:
+        def run(self, job, state, path, prompt, resume=False):
+            calls.append(prompt)
+            result = failure if len(calls) == 1 else {"subtype": "success", "is_error": False}
+            claude.process({"type": "result", **result}, state, job)
+
+    result = retries.run(job, state, path, Backend(), "work", False, {}, root_prompt=True)
+    assert result is (expected_calls == 2)
+    assert len(calls) == expected_calls
+    events = cli.events(job)
+    failed = next(event for event in events if event.get("is_error"))
+    assert failed["status"] == "failed" and failed["error"] == failure["errors"]
+    assert not any(event["kind"] == "root_prompt" for event in events)
 
 
 def test_queued_steer_takes_precedence_over_retry_continue(job):

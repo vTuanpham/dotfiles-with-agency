@@ -20,6 +20,9 @@ def measured(model, effort="medium", score=80, cost=1, seconds=30, **extra):
 
 @pytest.fixture
 def setup(monkeypatch, no_policy_refresh):
+    from agent_models import semantic
+
+    monkeypatch.setattr(semantic, "domains", lambda task, **kwargs: [])
     catalog = {"backend": "codex", "observed": "2026-11-01T00:00:00Z", "models": [
         {"id": name, "model": name, "efforts": ["low", "medium", "high", "max"]}
         for name in ("gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna")]}
@@ -175,6 +178,26 @@ def test_exact_choices_do_not_substitute_or_invent_supported_effort(setup):
     assert result["options"][0]["admission"].startswith("excluded")
 
 
+def test_exact_effort_exposes_other_effort_evidence_with_its_scope(setup):
+    data, catalog = setup
+    data["sources"]["Bug Hunt"]["measurements"] = [measured("gpt-6-luna", "max")]
+    result = selection.suggest(found(catalog), catalog, choice="gpt-6-luna", effort="high")
+    option = result["options"][0]
+    assert option["coverage"] == {"debugging": 0} and not option["evidence"]
+    assert option["other_effort_evidence"][0]["effort"] == "max"
+    text = selection.brief(result)
+    assert "not a direct measurement at this effort" in text
+    assert "debugging/Bug Hunt" in text and "max=80" in text and "Codex CLI" in text
+
+
+def test_exact_effort_also_shows_tradeoffs_when_it_has_its_own_evidence(setup):
+    _, catalog = setup
+    result = selection.suggest(found(catalog), catalog, choice="gpt-6-luna", effort="high")
+    text = selection.brief(result)
+    assert "high=80" in text and "max=85" in text and "low=50" in text
+    assert "not a direct measurement at this effort" in text
+
+
 def test_unknown_or_excluded_measurements_cannot_establish_published_bounds(setup):
     data, catalog = setup
     catalog["models"].append({"id": "new-model", "model": "new-model", "efforts": ["low"]})
@@ -186,6 +209,13 @@ def test_unknown_or_excluded_measurements_cannot_establish_published_bounds(setu
     assert explicit["options"][0]["admission"].startswith("excluded")
     with pytest.raises(ValueError):
         selection.suggest(found(catalog), catalog, max_seconds=float("nan"))
+
+
+def test_cli_rejects_invalid_bound_before_inventory(setup, monkeypatch, capsys):
+    monkeypatch.setattr(cli.inventory, "catalog", lambda *args: pytest.fail("inventory should not run"))
+    monkeypatch.setattr(cli.sys, "argv", ["model-guide", "suggest", "--max-seconds", "-1"])
+    assert cli.main() == 1
+    assert "--max-seconds must be a finite nonnegative number" in capsys.readouterr().err
 
 
 def test_source_failure_does_not_remove_models_or_mark_quality_as_zero(setup):
@@ -243,12 +273,10 @@ def test_query_limits_unknowns_and_preserves_explicit_native_choice(setup):
     assert [o["id"] for o in result["options"]] == ["unknown-model"]
 
 
-def test_broad_facets_do_not_select_alphabetic_winners_and_have_honest_pages(setup):
+def test_inventory_pages_do_not_imply_model_ranking(setup):
     _, catalog = setup
     catalog["models"] += [{"id": f"new-{i}", "model": f"new-{i}", "efforts": None} for i in range(30)]
     result = selection.suggest(found(catalog), catalog)
-    text = selection.brief(result)
-    assert "33 routes" in text and "Broad inventory" in text and "- codex:" not in text
     page = selection.brief(result, limit=5, offset=4)
     assert page.count("- codex:") == 5 and "Continue: --limit 5 --offset 9" in page
 
@@ -335,14 +363,29 @@ def test_allowance_linkage_uses_exact_reported_membership_not_pool_name_or_equal
 
 
 def test_unknown_task_text_is_preserved_and_falls_back_to_broad_retrieval(setup, monkeypatch, capsys):
+    from agent_models import semantic
+
+    monkeypatch.setattr(semantic, "domains", lambda task, **kwargs: [])
     _, catalog = setup
     monkeypatch.setattr(cli.inventory, "catalog", lambda *a: catalog)
     task = "Straighten the explanation without changing its meaning"
     monkeypatch.setattr(cli.sys, "argv", ["model-guide", "suggest", "--backend", "codex", "--task", task])
     assert cli.main() == 0
     text = capsys.readouterr().out
-    assert task in text and "Evidence areas: overall" in text
+    assert task in text and "Inferred focus: unclear" in text
     assert queries.resolve(["coding"], task)["domains"] == ["coding"]
+
+
+def test_inferred_focus_never_hides_other_task_evidence(setup, monkeypatch, capsys):
+    _, catalog = setup
+    monkeypatch.setattr(cli.inventory, "catalog", lambda *args: catalog)
+    monkeypatch.setattr(cli.sys, "argv", ["model-guide", "suggest", "--backend", "codex",
+                                         "--task", "improve typography", "--json"])
+    assert cli.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["task_routing"]["focus_domains"] == ["design"]
+    assert "debugging" in result["domains"]
+    assert any(row["domain"] == "debugging" for row in result["options"][0]["evidence"])
 
 
 def test_multiple_cohorts_cannot_hide_requested_performance_or_browser_evidence(setup):
@@ -385,3 +428,13 @@ def test_cli_prefilters_before_queries_and_empty_backend_restriction_launches_no
 def test_vision_and_computer_use_domains_remain_distinct():
     routing = queries.resolve(["vision", "browser"], "Use screenshots to control the desktop GUI")
     assert routing["domains"] == ["vision", "browser"]
+
+
+def test_domain_limits_survive_even_when_other_warnings_are_long(setup):
+    _, catalog = setup
+    result = selection.suggest(found(catalog, domains=["debugging", "backend"]), catalog)
+    result["notes"] = [f"source {i} unavailable" for i in range(10)] + result["notes"]
+    text = selection.brief(result)
+    assert "not production incident diagnosis" in text
+    assert "database design, security and service architecture are not directly measured" in text
+    assert "more evidence warnings in --json" in text

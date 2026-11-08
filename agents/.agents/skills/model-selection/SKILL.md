@@ -14,11 +14,10 @@ or require a maintained per-model role table.
    competing work, required tools/modalities and existing session context. Use
    what is already known; distinguish constraints from assumptions. Continuing
    in the current session is an option when delegation adds no value.
-2. Run `model-guide suggest --task "TASK" --domain AREA`, repeating domains
-   for the relevant evidence (e.g. `design` and `coding` for UI implementation).
-   Infer these areas from the actual requested work, including exclusions;
-   `--task` preserves prose and does not classify intent. Omitted scopes show
-   general evidence. CLI help lists supported areas.
+2. For general model lookup use `model-guide suggest` or `--query MODEL`.
+   When task-specific evidence would change the choice, add `--task "TASK"`;
+   it suggests a focus and retains other evidence in `--json` and `--choice`.
+   Check its fit; use `--domain AREA` only to limit the evidence when needed.
    It compares harnesses by default; `--backend` restricts one.
    Supply known constraints and task/session facts
    with `--context PATH|-` JSON; `suggest --help` owns the format. The context is

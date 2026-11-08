@@ -485,6 +485,8 @@ def run(job, state, path, prompt, resume=False):
                                     if variant:
                                         state["effectiveEffort"] = variant
                                         save(path, state)
+                                        log(job, "effort_observed", turnId=state.get("activeTurnId"),
+                                            effort=variant, source="opencode_message")
                                 except (OSError, ValueError, KeyError, TypeError, RuntimeError):
                                     pass
                     if server_url and state.get("sessionId") and time.monotonic() >= retry_at:

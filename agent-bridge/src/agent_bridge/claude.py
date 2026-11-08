@@ -1,8 +1,10 @@
 import json
 import os
 import select
+import shlex
 import signal
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -57,6 +59,10 @@ def command(state, job, resume=False):
     # matching codex workspace-write's full network.
     permissions = {"allow": ["WebFetch(domain:*)"]} if write else {}
     settings = {"sandbox": sandbox, "permissions": permissions, "env": {"CLAUDE_CODE_PLUGIN_DIRS": ""}}
+    hook = " ".join(shlex.quote(str(value)) for value in (
+        sys.executable, Path(__file__).with_name("claude_effort_hook.py"), Path(job) / "claude-effort.jsonl"))
+    settings["hooks"] = {event: [{"hooks": [{"type": "command", "command": hook}]}]
+                         for event in ("PostToolUse", "Stop")}
     settings_path = Path(job) / "claude-settings.json"
     settings_path.write_text(json.dumps(settings), encoding="utf-8")
     cmd += ["--settings", str(settings_path)]
@@ -82,7 +88,7 @@ def fallback_served(resolved, usage):
     return served, tokens[served]
 
 
-def process(event, state, job):
+def process(event, state, job, usage_baseline=None):
     typ = event.get("type")
     if typ == "system" and event.get("subtype") == "init":
         state["sessionId"] = event.get("session_id", state.get("sessionId", ""))
@@ -136,11 +142,14 @@ def process(event, state, job):
                 confirm_steer(job, state)
     elif typ == "result":
         idle = event.get("queued_turn_count", 0) == 0
+        failed = event.get("is_error") is True or str(event.get("subtype", "")).startswith("error_")
         state["activeTurnId"] = None if idle else state.get("activeTurnId")
         save(Path(job) / "state.json", state)
         log(
             job,
             "turn_completed",
+            status="failed" if failed else "completed",
+            error=(event.get("errors") or event.get("result") or event.get("subtype")) if failed else None,
             subtype=event.get("subtype"),
             is_error=event.get("is_error"),
             usage=event.get("usage"),
@@ -154,7 +163,20 @@ def process(event, state, job):
         )
         for denial in event.get("permission_denials", []):
             log(job, "permission_denied", level="urgent", denial=denial)
-        served = fallback_served(state.get("resolvedModel"), event.get("modelUsage"))
+        usage = event.get("modelUsage")
+        totals = ({model: value["outputTokens"] for model, value in usage.items()
+                   if isinstance(model, str) and isinstance(value, dict)
+                   and type(value.get("outputTokens")) is int and value["outputTokens"] >= 0}
+                  if isinstance(usage, dict) else None)
+        previous = usage_baseline.get("previous") if usage_baseline is not None else None
+        delta = None
+        if (totals is not None and len(totals) == len(usage) and previous is not None
+                and all(model in totals and totals[model] >= count for model, count in previous.items())):
+            delta = {model: {"outputTokens": count - previous.get(model, 0)}
+                     for model, count in totals.items()}
+        if usage_baseline is not None:
+            usage_baseline["previous"] = totals if totals is not None and len(totals) == len(usage) else None
+        served = fallback_served(state.get("resolvedModel"), delta)
         if served and served[0] not in state.get("fallbackSeen", []):
             state["fallbackSeen"] = [*state.get("fallbackSeen", []), served[0]][-8:]
             save(Path(job) / "state.json", state)
@@ -195,6 +217,9 @@ def run(job, state, path, prompt, resume=False, compact=False):
         prompt = "/compact"
     if not prompt and not list((Path(job) / "steer").glob("[0-9]*.md")):
         return
+    effort_path = Path(job) / "claude-effort.jsonl"
+    effort_offset = effort_path.stat().st_size if effort_path.exists() else 0
+    state["effectiveEffort"] = None
     cmd = command(state, job, resume)
     proc = subprocess.Popen(
         capped(cmd, state),
@@ -211,6 +236,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
     idle = False
     message_id = 0
     compacted = False
+    usage_baseline = {"previous": None if resume else {}}
 
     def send(text):
         nonlocal idle, message_id
@@ -233,6 +259,28 @@ def run(job, state, path, prompt, resume=False, compact=False):
             if compact:
                 log(job, "compact_started")
         while True:
+            try:
+                fd = os.open(effort_path, os.O_RDONLY | os.O_NOFOLLOW)
+                with os.fdopen(fd, encoding="utf-8") as observations:
+                    observations.seek(effort_offset)
+                    while line := observations.readline():
+                        if not line.endswith("\n"):
+                            break
+                        effort_offset = observations.tell()
+                        try:
+                            observed = json.loads(line)
+                        except (ValueError, TypeError):
+                            continue
+                        if (isinstance(observed, dict) and observed.get("session") == state.get("sessionId")
+                                and isinstance(observed.get("effort"), str)
+                                and observed.get("effort") in {"low", "medium", "high", "xhigh", "max"}):
+                            if state.get("effectiveEffort") != observed["effort"]:
+                                state["effectiveEffort"] = observed["effort"]
+                                save(path, state)
+                                log(job, "effort_observed", turnId=state.get("activeTurnId"),
+                                    effort=observed["effort"], source="claude_hook")
+            except (OSError, UnicodeError):
+                pass
             ready, _, _ = select.select([proc.stdout], [], [], POLL)
             if ready:
                 data = os.read(proc.stdout.fileno(), 1 << 20)
@@ -249,7 +297,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
                     line, buf = buf.split(b"\n", 1)
                     try:
                         event = json.loads(line)
-                        status = process(event, state, job)
+                        status = process(event, state, job, usage_baseline)
                         if compact:
                             if event.get("type") == "system" and event.get("subtype") == "compact_boundary":
                                 compacted = True

@@ -50,6 +50,39 @@ def test_intermediate_tradeoff_and_free_route_survive_small_comparison():
     assert any("intermediate" in reason for reason in rows["balanced"]["reasons"])
     assert rows["other"]["routes"][0]["billing_route"] == "free"
     assert data["model_count"] == 4
+    rendered = comparison.render(result([option("cheap", 20, 1, 30),
+                                         option("strong", 90, 9, 60)]))
+    assert "Example observed quality" in rendered
+    assert "Native effort choices: codex:cheap=high" in rendered
+
+
+def test_compact_comparison_keeps_account_evidence_and_errors():
+    account = {"backend": "codex", "account": "01", "freshness": "fresh", "windows": [{
+        "label": "weekly", "remaining_percent": 15, "window_minutes": 10080,
+        "resets": "2026-11-15T00:00:00Z", "pool_id": "native-id", "model_ids": ["model"],
+    }]}
+    data = result([option("model")], backends={"codex": {"account_observation": {
+        "quotas": [account], "errors": ["one source unavailable"], "profiles": {}, "scope": "cached",
+    }}})
+    rendered = comparison.render(data)
+    assert "2026-11-15T00:00:00Z" in rendered and "pool=native-id models=model" in rendered
+    assert "one source unavailable" in rendered
+
+
+def test_route_gets_only_explicit_native_model_pool_binding():
+    item = option("model")
+    item["allowance_links"] = [{"account_index": 0, "window_indices": [0]}]
+    account = {"backend": "codex", "account": "01", "freshness": "fresh", "windows": [{
+        "label": "weekly", "remaining_percent": 15, "window_minutes": 10080,
+        "resets": "2026-11-15T00:00:00Z", "pool_id": "native-id", "model_ids": ["model"],
+    }]}
+    data = result([item], backends={"codex": {"account_observation": {
+        "quotas": [account], "errors": [], "profiles": {}, "scope": "cached",
+    }}})
+    text = comparison.render(data)
+    assert "codex:model · 01 weekly: 15% remaining" in text
+    item["allowance_links"] = []
+    assert "codex:model · 01 weekly: 15% remaining" not in comparison.render(data)
 
 
 def test_current_unmeasured_session_and_each_harness_are_visible():
@@ -86,6 +119,34 @@ def test_incomparable_runs_do_not_supply_intermediate_frontier():
     options[1]["evidence"][0]["harness"] = "another runner"
     data = comparison.portfolio(result(options))
     assert not any("intermediate" in reason for row in data["models"] for reason in row["reasons"])
+
+
+def test_single_model_cohort_is_evidence_not_a_comparative_winner():
+    item = option("only", 20, 1, 30)
+    row = comparison.portfolio(result([item]))["models"][0]
+    assert any("evidence" in reason for reason in row["reasons"])
+    assert not any("observed quality" in reason or "published cost" in reason for reason in row["reasons"])
+
+
+def test_hidden_unverified_provider_has_no_effort_control_in_compact_text():
+    native = option("shared", 20, 1, 10)
+    unknown = {**native, "backend": "opencode", "id": "provider/shared", "billing_route": "unverified",
+               "admission": "conditional: entitlement unknown"}
+    text = comparison.render(result([native, unknown]))
+    assert "codex:shared=high" in text
+    assert "provider/shared" not in text
+
+
+def test_caller_allowed_opencode_route_stays_visible_when_billing_is_unknown():
+    native = option("shared", 20, 1, 10)
+    allowed = {**native, "backend": "opencode", "id": "provider/shared", "billing_route": "unverified"}
+    text = comparison.render(result([native, allowed]))
+    assert "opencode:provider/shared" in text and "opencode:provider/shared=high" in text
+
+
+def test_inventory_failure_explains_comparison_is_incomplete():
+    data = result([option("model")], inventory_failures={"opencode": {"stage": "inventory"}})
+    assert "opencode: inventory unavailable; routes omitted (details in --json)" in comparison.render(data)
 
 
 def test_missing_speed_does_not_become_fast_or_zero_and_fallback_is_visible():
@@ -159,6 +220,20 @@ def test_speed_points_keep_effort_throughput_and_latency_together():
     assert "high: 100 tokens/s, 40 s TTFT" in text
 
 
+def test_speed_comparison_includes_measured_middle_effort_between_extremes():
+    item = option("a", 40, 4, 200)
+    item["efforts"] = ["low", "medium", "high", "max"]
+    item["evidence"] = [
+        {**item["evidence"][0], "effort": effort, "speed": {
+            "median_output_tokens_per_second": tps, "median_time_to_first_token_seconds": ttft}}
+        for effort, tps, ttft in (("low", 50, 1), ("medium", 80, 3), ("high", 90, 10), ("max", 100, 60))
+    ]
+    text = comparison.render(result([item]))
+    assert "low: 50 tokens/s, 1 s TTFT" in text
+    assert "medium: 80 tokens/s, 3 s TTFT" in text
+    assert "max: 100 tokens/s, 60 s TTFT" in text
+
+
 def test_cost_floor_is_labelled_and_does_not_become_a_cheapest_candidate():
     item = option("a", 40, 0.1, 200)
     item["evidence"][0]["cost_kind"] = "floor"
@@ -173,3 +248,55 @@ def test_run_counts_remain_visible_when_efforts_have_different_sample_sizes():
     text = comparison.render(result([item]))
     assert "high=40 / source $4 / 3.3m [n=3]" in text
     assert "low=10 / source $0.1 / 3.3m [n=1]" in text
+
+
+def test_pagination_preserves_comparison_and_shows_only_matching_bounded_runs():
+    item = option("a", 40, 4, 200)
+    item["evidence"][0]["meets_published_bounds"] = False
+    item["evidence"].append({**item["evidence"][0], "score": 10, "cost": 0.1,
+                             "seconds": 5, "effort": "low", "meets_published_bounds": True})
+    data = result([item, option("b", 30, 1, 10)])
+    text = comparison.render(data, limit=1)
+    assert "Compare for:" in text and "Continue comparison: --limit 1 --offset 1" in text
+    text = comparison.render(result([item]))
+    assert "low=10 / source $0.1 / 5s [within bounds]" in text
+    assert "high=40" not in text
+
+
+def test_account_errors_are_not_attributed_to_another_backend():
+    from agent_models import benchmarks
+
+    source = {"quotas": [], "profiles": {}, "errors": ["codex quota unavailable", "shared failure"]}
+    claude = benchmarks.account_observation("claude", None, data=source)
+    assert claude["errors"] == ["shared failure"]
+    assert benchmarks.account_observation("codex", None, data=source)["errors"] == source["errors"]
+
+
+def test_account_context_is_shown_with_each_matching_route():
+    item = option("shared")
+    item["account_context"] = {"allowance": "ample"}
+    other = {**item, "backend": "claude", "account_context": {"allowance": "scarce"}}
+    text = comparison.render(result([item, other]))
+    assert "codex:shared · caller account context: allowance=ample" in text
+    assert "claude:shared · caller account context: allowance=scarce" in text
+
+
+def test_broad_task_view_keeps_more_evidence_without_unrelated_warnings():
+    item = option("model", 40, 1, 10)
+    item["evidence"] = [{**item["evidence"][0], "domain": area, "score_metric": area} for area in
+                        ("overall", "reasoning", "backend", "coding")]
+    data = result([item], domains=["overall", "reasoning", "backend", "coding"],
+                  task_routing={"focus_domains": []},
+                  notes=["unrelated source unavailable"],
+                  display_notes={"notes": [], "coverage_notes": []})
+    text = comparison.render(data)
+    assert "Inferred focus: unclear" in text and "coding/Example" in text
+    assert "unrelated source unavailable" not in text
+
+
+def test_broad_view_does_not_repeat_one_measurement_under_two_domains():
+    item = option("model", 40, 1, 10)
+    item["evidence"] = [{**item["evidence"][0], "domain": area} for area in ("backend", "coding")]
+    text = comparison.render(result([item], domains=["backend", "coding"],
+                                    task_routing={"focus_domains": []}))
+    assert text.count("Example correct high=40") == 1

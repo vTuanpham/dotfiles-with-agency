@@ -107,7 +107,7 @@ def suggest(evidence, catalog, *, choice=None, effort=None, context=None, task=N
         raise ValueError("--effort requires an explicit --choice")
     backend = catalog["backend"]
     models = coverage.canonical_catalog(catalog, choice)["models"]
-    problems, notes, options, sources = [], [], [], {}
+    problems, notes, coverage_notes, options, sources = [], [], [], [], {}
     if choice:
         models = [m for m in models if decision_context.bound(m, choice, backend)]
         if len(models) != 1:
@@ -133,6 +133,7 @@ def suggest(evidence, catalog, *, choice=None, effort=None, context=None, task=N
     for domain, found in evidence.items():
         notes.extend(found.get("warnings", []))
         notes.extend(found.get("coverage_notes", []))
+        coverage_notes.extend(found.get("coverage_notes", []))
         for name, source in found["sources"].items():
             sources[domain + "/" + name] = {key: source.get(key) for key in
                 ("status", "url", "version", "release", "published", "retrieved", "limits", "error")}
@@ -149,7 +150,7 @@ def suggest(evidence, catalog, *, choice=None, effort=None, context=None, task=N
                   "aliases": model.get("aliases", []), "admission": model["admission"],
                   "effort_restriction": model["effort_restriction"], "requested_effort": effort,
                   "account_context": context.get("accounts", {}).get(backend, {}),
-                  "evidence": [], "problems": []}
+                  "evidence": [], "other_effort_evidence": [], "problems": []}
         if model["efforts"] == []:
             option["admission"] = "excluded: no permitted native effort"
         if effort and (model["efforts"] is None or effort not in model["efforts"]):
@@ -160,16 +161,17 @@ def suggest(evidence, catalog, *, choice=None, effort=None, context=None, task=N
         for row, item in indexed.get(coverage.benchmark_key(model), []):
             if coverage.supported(model, row["model"], row["effort"]) is False:
                 continue
-            if effort and coverage.setting(row["model"], row["effort"]) != effort.casefold():
-                continue
-            if item not in option["evidence"]:
-                option["evidence"].append(dict(item))
+            target = (option["other_effort_evidence"] if effort and
+                      coverage.setting(row["model"], row["effort"]) != effort.casefold()
+                      else option["evidence"])
+            if item not in target:
+                target.append(dict(item))
         option["coverage"] = {d: sum(r["domain"] == d and r["score"] is not None
                                     for r in option["evidence"]) for d in evidence}
         option["measured_efforts"] = list(dict.fromkeys(r["effort"] for r in option["evidence"]
                                                        if r["effort"] is not None))
         if max_usd is not None or max_seconds is not None:
-            for row in option["evidence"]:
+            for row in option["evidence"] + option["other_effort_evidence"]:
                 row["meets_published_bounds"] = meets(row, max_usd, max_seconds)
             if not any(r["meets_published_bounds"] for r in option["evidence"]):
                 excluded += 1
@@ -189,7 +191,8 @@ def suggest(evidence, catalog, *, choice=None, effort=None, context=None, task=N
             "decision_context": context, "choice": choice, "query": query,
             "constraints": {"max_usd": max_usd, "max_seconds": max_seconds},
             "domains": list(evidence), "retrieved": first["retrieved"], "review": first.get("review"),
-            "sources": sources, "problems": problems, "notes": list(dict.fromkeys(notes))}
+            "sources": sources, "problems": problems, "notes": list(dict.fromkeys(notes)),
+            "coverage_notes": list(dict.fromkeys(coverage_notes))}
 
 
 def combine(results, failures, *, context, task, domains):
@@ -200,6 +203,7 @@ def combine(results, failures, *, context, task, domains):
             "domains": domains, "retrieved": results[0]["retrieved"] if results else None,
             "review": results[0].get("review") if results else None,
             "notes": list(dict.fromkeys(n for r in results for n in r["notes"])),
+            "coverage_notes": list(dict.fromkeys(n for r in results for n in r["coverage_notes"])),
             "problems": [p for r in results for p in r["problems"]]}
 
 
@@ -218,8 +222,11 @@ def facets(options):
 
 def important_notes(result):
     markers = ("unavailable", "stale", "absent", "vision measures", "browser/osworld", "bounds apply")
-    return list(dict.fromkeys(n for n in result.get("notes", [])
-                             if any(word in n.casefold() for word in markers)))[:4]
+    coverage = result.get("coverage_notes", [])
+    warnings = list(dict.fromkeys(n for n in result.get("notes", []) if n not in coverage
+                                  and any(word in n.casefold() for word in markers)))
+    more = [f"{len(warnings) - 4} more evidence warnings in --json"] if len(warnings) > 4 else []
+    return list(dict.fromkeys([*coverage, *warnings[:4], *more]))
 
 
 def policy_lines(result):
@@ -256,6 +263,8 @@ def point(row):
         result += f" / source {'≥' if row.get('cost_kind') == 'floor' else ''}${row['cost']:.4g}"
     if row["seconds"] is not None and row["seconds"] > 0:
         result += " / " + human_duration(row["seconds"])
+    if "meets_published_bounds" in row:
+        result += " [within bounds]" if row["meets_published_bounds"] else " [outside or unknown bounds]"
     return result
 
 
@@ -358,8 +367,10 @@ def brief(result, *, limit=None, offset=0):
         lines.append(backend + ": " + error["stage"] + " unavailable (" + error["error"]
                      + "); access/ability unknown.")
     for backend, info in facets(options).items():
+        label = "with selected-effort observations" if any(o.get("requested_effort") for o in options) else (
+            "with task observations")
         lines.append(f"{backend}: {info['routes']} routes · {info['caller_allowed']} caller allowed · "
-                     f"{info['with_task_evidence']} with task observations · billing "
+                     f"{info['with_task_evidence']} {label} · billing "
                      + ", ".join(f"{k}:{v}" for k, v in info["billing"].items()))
     lines.append("Published runs do not estimate selected-route spend, latency, reliability "
                  "or subscription consumption.")
@@ -368,13 +379,8 @@ def brief(result, *, limit=None, offset=0):
         lines.append(f"Inventory-order page {offset}:{offset + len(visible)} of {len(options)}; no ranking.")
         if offset + len(visible) < len(options):
             lines.append(f"Continue: --limit {limit} --offset {offset + len(visible)}")
-    elif len(options) <= 24:
-        visible = options
     else:
-        known = [o for o in options if o["admission"] == "caller allowed"]
-        visible = known if len(known) <= 24 else []
-        lines.append("Broad inventory: narrow with --backend / --query WORDS, "
-                     "or page --limit 12 --offset 0; --json retains every candidate and observation.")
+        visible = options
     for option in visible:
         controls = ",".join(option["efforts"]) if option["efforts"] is not None else "unknown"
         lines.append(f"- {option['backend']}:{option['id']} · {option['admission']} "
@@ -396,7 +402,14 @@ def brief(result, *, limit=None, offset=0):
         lines.extend(evidence_lines(option))
         missing = [d for d, count in option["coverage"].items() if not count]
         if missing:
-            lines.append("  Task outcomes unknown: " + ", ".join(missing))
+            level = option.get("requested_effort")
+            lines.append("  Task outcomes" + (f" at {level} effort" if level else "")
+                         + " unknown: " + ", ".join(missing))
+        alternatives = [row for row in option.get("other_effort_evidence", []) if row["score"] is not None]
+        if alternatives:
+            lines.append("  Other or unspecified effort (useful context; "
+                         "not a direct measurement at this effort):")
+            lines.extend(evidence_lines({**option, "evidence": alternatives}))
         lines.extend("  " + p for p in option["problems"])
     for backend, state in result.get("backends", {}).items():
         lines.extend("Cached accounts / " + backend + ": " + line.removeprefix("Allowance: ")
