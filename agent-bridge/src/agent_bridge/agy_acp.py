@@ -6,7 +6,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-from . import agy
+from . import agy, quota_pressure
 from .codex import Rpc as CodexRpc
 from .core import (
     MESSAGING_RULE,
@@ -54,6 +54,12 @@ def config_value(result, identifier):
                  if isinstance(option, dict) and option.get("id") == identifier), None)
 
 
+def offered(result, identifier):
+    options = next((option.get("options") for option in result.get("configOptions", [])
+                    if isinstance(option, dict) and option.get("id") == identifier), None) or []
+    return [item.get("value") if isinstance(item, dict) else item for item in options]
+
+
 def configure(rpc, session, result, state):
     for key, option in (("model", "model"), ("effort", "thought_level")):
         requested = state.get(key)
@@ -62,7 +68,13 @@ def configure(rpc, session, result, state):
                 "sessionId": session, "configId": option, "value": requested,
             })
             if config_value(result, option) != requested:
-                raise RuntimeError(f"AGY did not confirm requested {key}")
+                # `agy models` lists CLI names with the level fused on (gemini-3.8-flash-low); an ACP
+                # session offers the base model and a separate thought level.
+                raise RuntimeError(
+                    f"AGY did not confirm requested {key} {requested!r}. This session offers models "
+                    f"{offered(result, 'model')} and thought levels {offered(result, 'thought_level')}: "
+                    "pass the base model with --effort, not a model name with the level attached."
+                )
     for key, option in (("model", "model"), ("effort", "thought_level")):
         if state.get(key) and config_value(result, option) != state[key]:
             raise RuntimeError(f"AGY changed requested {key} while configuring the session")
@@ -151,6 +163,7 @@ def compact_session(job, state, path):
         if not checkpoints(job, session) - previous:
             raise RuntimeError("AGY did not confirm compaction with a new checkpoint")
         log(job, "compacted")
+        state.pop("contextTokens", None)  # unknown until the next request reports it
         print("compacted")
     finally:
         try:
@@ -253,6 +266,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
             if not pending and not state.get("inflight") and not list(queue_dir.glob("[0-9]*.md")):
                 break
             agy.burn_check(job, state, monitor)
+            quota_pressure.sample_agy(job, state, monitor)
             event = rpc.events.popleft() if rpc.events else rpc.read(POLL)
             if event is None:
                 continue

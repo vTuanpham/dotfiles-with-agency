@@ -11,6 +11,7 @@ import uuid
 from collections import deque
 from pathlib import Path
 
+from . import quota_pressure
 from .core import (
     MESSAGING_RULE,
     POLL,
@@ -29,6 +30,7 @@ from .core import (
 )
 
 QUESTION_TIMEOUT = 120
+QUOTA_READ = 120  # seconds between account limit reads while a turn runs
 SHARED = ("AGENTS.md", "skills", "plugins", "rules", "hooks.json", "model-catalogs")
 
 
@@ -173,6 +175,16 @@ def active_account():
     return row[1] if len(row) > 1 else ""
 
 
+def read_quota(rpc, job, state):
+    """The account's current limits, as this worker's app-server sees them; advisory, never fatal."""
+    try:
+        result = rpc.call("account/rateLimits/read")
+    except (RuntimeError, TimeoutError):
+        return
+    snapshots = list((result.get("rateLimitsByLimitId") or {}).values()) or [result.get("rateLimits")]
+    quota_pressure.feed(job, state, quota_pressure.codex(snapshots, state.get("model"), time.time()))
+
+
 def reported_effort(response):
     value = response.get("reasoningEffort")
     return (value if isinstance(value, str) and value and value == value.strip() and value.isprintable()
@@ -184,6 +196,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
     thread = state.get("threadId", "")
     turn = state.get("activeTurnId")
     usage = {}
+    quota_read = time.monotonic()
     awaiting = False
     pending = {}
     known = None
@@ -279,6 +292,12 @@ def run(job, state, path, prompt, resume=False, compact=False):
                 item = p.get("item") or {}
                 if method == "thread/tokenUsage/updated":
                     usage[p.get("turnId")] = p.get("tokenUsage", {})
+                    context = ((p.get("tokenUsage") or {}).get("last") or {}).get("inputTokens")
+                    if type(context) is int and context >= 0:  # one request's prompt is the thread's context
+                        state["contextTokens"] = context
+                elif method == "account/rateLimits/updated":
+                    quota_pressure.feed(job, state, quota_pressure.codex(
+                        [p.get("rateLimits")], state.get("model"), time.time()))
                 elif method == "turn/started":
                     turn = (p.get("turn") or {}).get("id")
                     if turn:
@@ -310,6 +329,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
                     )
                 elif method == "item/completed" and item.get("type") == "contextCompaction":
                     log(job, "compacted", turnId=p.get("turnId"))
+                    state.pop("contextTokens", None)  # unknown until the next request reports it
                 elif method == "serverRequest/resolved":
                     pending.pop(str(p.get("requestId", "")), None)
                 elif method == "turn/completed":
@@ -323,6 +343,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
                         usage=usage.get(t.get("id")),
                     )
                     awaiting = False
+                    read_quota(rpc, job, state)
                     if turn == t.get("id"):
                         turn = None
                         persist()
@@ -395,6 +416,9 @@ def run(job, state, path, prompt, resume=False, compact=False):
                 if marker == "stop":
                     log(job, "stopped")
                     return
+            if turn and time.monotonic() - quota_read >= QUOTA_READ:
+                quota_read = time.monotonic()
+                read_quota(rpc, job, state)
             if not compact:
                 poll_steers(job, send, known, state)
                 known = None

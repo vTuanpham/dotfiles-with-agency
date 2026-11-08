@@ -10,11 +10,6 @@ from agent_bridge import status
 from agent_bridge import watch as watcher
 
 
-@pytest.fixture(autouse=True)
-def no_host_quota_reads(monkeypatch):
-    monkeypatch.setattr(watcher.quota_pressure, "quotas", lambda *_: ())
-
-
 def test_timeout_gives_up_while_a_runner_is_alive(monkeypatch, tmp_path, capsys):
     root, _ = setup_job(tmp_path)
     monkeypatch.setattr(watcher, "JOBS", root)

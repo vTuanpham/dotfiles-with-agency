@@ -179,9 +179,25 @@ def result_text(job, all_messages=False):
     return "\n\n".join(text for text in messages if text)
 
 
+def switch_note(state, switch, compact):
+    """What changing model on the same thread costs, worded the same whichever way it is made."""
+    model, current = switch.get("model"), state.get("model")
+    if not model or model == current:
+        return ""
+    if compact:
+        return (f"switch: compacting on {current or 'the current model'} first, then continuing on {model}; "
+                "the compaction spends the current model's quota and a summary replaces detail.")
+    context = state.get("contextTokens")
+    size = f" (about {round(context / 1000)}k tokens)" if isinstance(context, int) else ""
+    return (f"switch: {model} reads the whole context{size} without a warm cache. --compact shrinks it on "
+            "the current model first, at the cost of one compaction turn and lost detail.")
+
+
 def run_with_linger(
-    job, state, state_path, backend, prompt, resume, extra, runner_fd=None, *, root_prompt=False
+    job, state, state_path, backend, prompt, resume, extra, runner_fd=None, *,
+    root_prompt=False, then=None,
 ):
+    """`then` = (model/effort switch, prompt, root_prompt), applied only once the compaction here succeeds."""
     try:
         while True:
             live_path = job / "live.jsonl"
@@ -190,6 +206,14 @@ def run_with_linger(
                 job, state, state_path, backend, prompt, resume, extra, root_prompt=root_prompt
             ):
                 return
+            if then is not None and extra.get("compact"):
+                switch, prompt, root_prompt = then
+                state = load_state(job)
+                state.update(switch)
+                state.pop("effectiveEffort", None)
+                save(state_path, state)
+                extra, then = {}, None
+                continue
             if any(e.get("kind") in {"root_steer", "root_prompt"} for e in events(job, before)):
                 state["autoAnswers"] = 0
                 save(state_path, state)
@@ -345,6 +369,8 @@ def main():
     r.add_argument("job", help="job as <owner>/<name>")
     r.add_argument("--model", help="switch model starting on the next turn")
     r.add_argument("--effort", help="switch effort or variant starting on the next turn")
+    r.add_argument("--compact", action="store_true",
+                   help="compact on the current model first; --model/--effort apply once it succeeds")
     r.add_argument("--memory", help="memory cap for the next runner launch, such as 4G")
     r.add_argument("--cpu", help="CPU cap for the next runner launch, such as 400%%")
     r.add_argument("--prompt-file", help="read follow-up from PATH or '-' for stdin")
@@ -708,12 +734,17 @@ def main():
             state.pop("runnerPid", None)
             if a.command in ("resume", "steer"):
                 state["autoAnswers"] = 0
-            if a.command == "compact" and state.get("activeTurnId"):
+            compacting = a.command == "compact" or getattr(a, "compact", False)
+            if compacting and state.get("activeTurnId"):
                 raise RuntimeError("job has an active turn; stop it before compacting")
             module = BACKENDS[state["backend"]]
-            for key in ("model", "effort"):
-                if getattr(a, key, None):
-                    state[key] = getattr(a, key)
+            switch = {key: getattr(a, key) for key in ("model", "effort") if getattr(a, key, None)}
+            note = switch_note(state, switch, getattr(a, "compact", False))
+            if note:
+                print(note, flush=True)
+            if not getattr(a, "compact", False):  # with --compact the switch waits for the compaction
+                state.update(switch)
+                if switch:
                     state.pop("effectiveEffort", None)
         else:
             if state_path.exists():
@@ -786,7 +817,10 @@ def main():
             if group is not None:
                 groups.assign(job, group, new_turn=True)
         backend = module if resume else BACKENDS[a.backend]
-        extra = {"compact": True} if a.command == "compact" else {}
+        extra, then = ({"compact": True}, None) if a.command == "compact" else ({}, None)
+        if getattr(a, "compact", False):  # compact on the current model, then switch and deliver the prompt
+            extra, then = {"compact": True}, (switch, prompt, record_root_prompt)
+            prompt, record_root_prompt = "", False
         if a.command == "resume":
             count = len(list((job / "steer").glob("[0-9]*.md")))
             print(f"resume: delivering {count} queued steer(s)" if count else
@@ -845,7 +879,7 @@ def main():
                 fd, runner_fd = runner_fd, None
                 run_with_linger(
                     job, state, state_path, backend, prompt, resume, extra, fd,
-                    root_prompt=record_root_prompt,
+                    root_prompt=record_root_prompt, then=then,
                 )
             except Exception as exc:
                 print(f"agent-bridge: {exc}", file=sys.stderr, flush=True)
@@ -875,7 +909,7 @@ def main():
         fd, runner_fd = runner_fd, None
         run_with_linger(
             job, state, state_path, backend, prompt, resume, extra, fd,
-            root_prompt=record_root_prompt,
+            root_prompt=record_root_prompt, then=then,
         )
     except (OSError, ValueError, RuntimeError, KeyError) as exc:
         if runner_fd is not None:

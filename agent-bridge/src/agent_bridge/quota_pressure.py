@@ -1,67 +1,137 @@
-"""Turn observed account burn into conservative worker warnings."""
+"""Tell root when a worker's account window is on course to empty.
 
-import hashlib
-import json
+Claude and Codex report the quota of the account a worker is running on in
+their own streams, so those readings need no account lookup. AGY reports none;
+its worker reads the cached observation for its own login and asks agent-accounts
+for a refresh. Readings go to one Runway history per job.
+"""
+
+import subprocess
+import sys
+import time
 from pathlib import Path
 
-from agent_accounts.burn import Burn
+from agent_accounts import providers
+from agent_accounts.models import period, timestamp
+from agent_accounts.runway import Reading, Runway
 
-from .acknowledgements import event_lines
-from .core import load_state, log
-from .status_inputs import quotas
+from .core import log
+
+AGY_SAMPLE = 120  # seconds between reads of the AGY cache; refreshes are rate limited by agent-accounts
+REFRESH = (sys.executable, "-c", "from agent_accounts.cli import main; raise SystemExit(main())",
+           "refresh", "--backend", "agy", "--if-stale", "--account")
 
 
-class Pressure:
-    def __init__(self):
-        self.burn = Burn()
-        self.next_sample = 0.0
+def number(value):
+    return value if type(value) in (int, float) else None
 
-    def sample(self, jobs, now, emit):
-        if now < self.next_sample:
-            return
-        jobs = [job for job in jobs if job.running and job.backend in {"agy", "codex"} and job.account]
-        if not jobs:
-            return
-        self.next_sample = now + 60
-        observations = quotas(now, [])
-        for estimate in self.burn.observe(observations, now):
-            # A half-hour gives the coordinator a useful handoff window; this is
-            # a notification lead time, not a model or subscription burn rule.
-            if estimate.seconds_to_empty > 1800 or estimate.seconds_to_empty >= estimate.seconds_to_reset:
+
+def claude(event, now):
+    """Windows from a `rate_limit_event`: utilization is the used fraction of each named window."""
+    info = event.get("rate_limit_info")
+    if not isinstance(info, dict):
+        return []
+    windows = dict(info["unifiedWindows"]) if isinstance(info.get("unifiedWindows"), dict) else {}
+    if isinstance(info.get("rateLimitType"), str):
+        windows.setdefault(info["rateLimitType"], info)
+    readings = []
+    for name, window in windows.items():
+        if not isinstance(window, dict):
+            continue
+        used, resets = number(window.get("utilization")), number(window.get("resetsAt"))
+        if used is not None and 0 <= used <= 1 and resets:
+            readings.append(Reading(f"claude:{name}", name.replace("_", " "), 100 * (1 - used), resets, now))
+    return readings
+
+
+def codex(snapshots, model, now):
+    """Windows from app-server rate-limit snapshots; a model-specific limit counts only for that model."""
+    readings = []
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+        slug = snapshot.get("normalModelSlug")
+        if slug is not None and slug != model:
+            continue
+        for name in ("primary", "secondary"):
+            window = snapshot.get(name)
+            if not isinstance(window, dict):
                 continue
-            candidates = [job for job in jobs if job.backend == estimate.backend
-                          and job.account == estimate.account and
-                          (estimate.model_ids is None or job.model in estimate.model_ids)]
-            for job in candidates:
-                try:
-                    state = load_state(Path(job.directory))
-                    if estimate.backend == "agy":
-                        account_id = state.get("agyAuthId")
-                        identity = (hashlib.sha256(account_id.encode()).hexdigest()
-                                    if isinstance(account_id, str) else None)
-                    else:
-                        identity = state.get("accountKeyHash")
-                    if identity != estimate.account_key_hash:
-                        continue
-                except (OSError, ValueError, TypeError):
-                    continue
-                binding = "account usage may include other sessions"
-                identity = hashlib.sha256(json.dumps([
-                    estimate.backend, estimate.account_key_hash, estimate.pool_id, estimate.source_window,
-                    estimate.window, estimate.resets
-                ]).encode()).hexdigest()
-                path = Path(job.directory)
+            used, resets = number(window.get("usedPercent")), number(window.get("resetsAt"))
+            if used is not None and 0 <= used <= 100 and resets:
+                key = f"codex:{snapshot.get('limitId') or 'codex'}:{name}"
+                length = window.get("windowDurationMins")
+                label = period(length) if type(length) is int and length > 0 else name
+                readings.append(Reading(key, label, 100 - used, resets, now))
+    return readings
 
-                def record():
-                    if any(row.get("kind") == "quota_pressure" and row.get("noticeId") == identity
-                           for _, row in event_lines(path, 0)):
-                        return
-                    minutes = max(1, round(estimate.seconds_to_empty / 60))
-                    log(path, "quota_pressure", level="urgent", noticeId=identity,
-                        message=(f"{estimate.backend} account {estimate.account}, {estimate.window}: "
-                                 f"{estimate.remaining_percent:.1f}% remaining, approximately {minutes}m "
-                                 f"at the recent shared burn rate; {binding}. Worker model: "
-                                 f"{job.model or 'not reported'}. Consider account or model "
-                                 "change, with or without compacting."))
 
-                emit(path.parent, record)
+def agy(observation, model):
+    """Windows whose reported model set contains the worker's model; an unknown set proves nothing."""
+    if observation is None or observation.freshness != "fresh" or not observation.observed_at:
+        return []
+    readings = []
+    for window in observation.windows:
+        remaining = (100 * window.remaining_fraction if window.remaining_fraction is not None
+                     else window.remaining_percent)
+        covers = window.model_ids is not None and model in window.model_ids
+        if not covers or remaining is None or not window.resets:
+            continue
+        readings.append(Reading(f"agy:{window.pool_id or window.label}", window.limit or window.label,
+                                remaining, timestamp(window.resets), timestamp(observation.observed_at)))
+    return readings
+
+
+def advice(job, state, hit):
+    name = f"{Path(job).parent.name}/{Path(job).name}"
+    context = state.get("contextTokens")
+    return (
+        f"{state.get('backend')} {hit.label} window: {hit.remaining:.0f}% left, about "
+        f"{max(1, round(hit.seconds_to_empty / 60))} min at the recent rate of use "
+        "(the whole account's, other sessions included). "
+        f"Worker model {state.get('model') or 'default'}"
+        + (f", context about {round(context / 1000)}k tokens" if isinstance(context, int) else "")
+        + ". Once its turn ends (or after `agent-bridge interrupt "
+        f"{name}`) the options, none of them the default, are: let it finish if it will; change model "
+        f"on the same thread with `agent-bridge resume {name} --model M [--compact]` (the new model "
+        "prefills the whole context uncached; --compact first shrinks it on the current model, spending "
+        "this window and trading detail for a summary); or change account with "
+        f"`agent-bridge compact {name}`, the harness's auth CLI, then `agent-bridge resume {name}`, or "
+        "resume at once and prefill the whole context on a possibly cold cache. A restart ends "
+        "background commands."
+    )
+
+
+def feed(job, state, readings, now=None):
+    now = time.time() if now is None else now
+    if not readings:
+        return
+    try:
+        due = Runway(Path(job) / "quota-runway.json").observe(readings, now)
+        for hit in due:
+            log(job, "quota_pressure", level="urgent", noticeId=hit.id, message=advice(job, state, hit))
+    except (OSError, ValueError, TypeError, KeyError):
+        return  # a warning is advisory; the worker must not stop for it
+
+
+def sample_agy(job, state, monitor):
+    """Called from the AGY runner's poll loop: read this login's cache and keep it fresh."""
+    now = time.monotonic()
+    if now - monitor.get("quota_at", -AGY_SAMPLE) < AGY_SAMPLE:
+        return
+    monitor["quota_at"] = now
+    account, identity = state.get("account"), state.get("agyAuthId")
+    if not account or not identity:
+        return
+    observation = providers.agy_observation(account, identity)
+    feed(job, state, agy(observation, state.get("model")))
+    if observation is not None and not any(w.model_ids is not None for w in observation.windows):
+        return  # AGY did not report which models its windows cover, so no reading could apply
+    refresh = monitor.get("refresh")
+    if refresh is None or refresh.poll() is not None:  # agent-accounts holds the lock and cooldowns
+        try:
+            monitor["refresh"] = subprocess.Popen([*REFRESH, account], stdin=subprocess.DEVNULL,
+                                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                                  start_new_session=True)
+        except OSError:
+            pass

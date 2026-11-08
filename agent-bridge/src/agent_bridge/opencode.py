@@ -371,7 +371,14 @@ def process(event, state, job, turn=None):
         if error.get("type") == "aborted" and turn["denied"]:
             return
         turn["errors"].append(error)
-        log(job, "error", message=error.get("message") or json.dumps(error))
+        message = error.get("message") or json.dumps(error)
+        if error.get("type") == "provider.no-route":
+            message += (
+                ". The worker found no route to this provider. If its key comes from an environment "
+                "variable (see `opencode auth list`), Bridge drops secret-like names from workers: "
+                "opt that name in with AGENT_BRIDGE_PASS_ENV, or pick a model that needs no such key."
+            )
+        log(job, "error", message=message)
     elif kind == "step_finish":  # one per model step; the turn ends when the process exits
         turn["finished"] = True
         log(

@@ -135,3 +135,16 @@ test('quota rows remain visible without active Bridge work', async ($, on) => {
   const summary = await $.command.run({ command: 'wake', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } } as never)
   expect(summary.text).toContain('w17%')
 })
+
+test('while a Bridge worker runs, readings older than two minutes are due', async () => {
+  const w = quotaEngine()
+  w.values.set('chips', [chip('owner', true)])
+  await quotaTick(w.$)
+  expect(w.calls.filter(args => args[1] === 'refresh')).toEqual([['agent-accounts', 'refresh', '--backend', 'all', '--if-stale', '--max-age', '120']])
+})
+
+test('a finished account tool asks for its own backend, not the ten-minute freshness rule', async () => {
+  const w = quotaEngine()
+  await quotaTick(w.$, 'claude')
+  expect(w.calls.filter(args => args[1] === 'refresh')).toEqual([['agent-accounts', 'refresh', '--backend', 'claude']])
+})

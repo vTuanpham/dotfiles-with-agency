@@ -1,6 +1,6 @@
 # agy backend (Antigravity CLI)
 
-- Read `model-guide models --backend agy` for native IDs; use task evidence and actual account constraints for selection. Native inventory is distinct from Bridge's existing GPT-OSS policy exclusion.
+- Read `model-guide models --backend agy` for the models, but pass Bridge the base model and the level separately: `agy models` fuses the level into the name (`gemini-3.8-flash-low`) while an ACP session offers `gemini-3.8-flash` plus `--effort low|medium|high`, and rejects the fused name. A rejected model's error lists what the session offers; use task evidence and actual account constraints for selection. Native inventory is distinct from Bridge's existing GPT-OSS policy exclusion.
 - Quota observations retain native bucket IDs, window periods, reset times and reported model membership. A provider group name, equal percentages or matching resets do not establish shared membership or model access.
 - `agy-auth` owns account inventory and sign-in. A worker uses the current CLI account. Each worker receives its own private credential. Refreshed credentials return to the registry only if the original registry snapshot is unchanged.
 - Bridge reads the selected thinking level from the native ACP session configuration.
@@ -9,5 +9,5 @@
   - Network or more commands are opt-in through agy's allow rules; deny beats allow.
   - A denial is logged as urgent, and the worker is told once to continue without it.
 - Bridge uses AGY's [ACP steering](https://antigravity.google/docs/ide/extensions/acp/) to send a prompt during an active turn. `--queue` holds it for the next turn. The native echo confirms delivery; if the connection fails before confirmation, inspect the session before retrying. Interrupt ends the active turn. Conversation state is isolated per job and removed with the job.
-- Quota out: change the current account with `agy-auth` before resuming the worker.
+- Quota out: change the current account with `agy-auth` before resuming the worker. Before that, the runner reads its own login's cached quota every two minutes and asks `agent-accounts` to refresh it (at most about every ten), then raises `quota_pressure` for a window whose reported model set names the worker's model; a window with an unknown set is never assumed to apply. AGY's `/usage` currently names groups ("Gemini Models", "Claude and GPT models") without model sets, so no AGY warning fires today and the runner stops refreshing for it; watch `agent-bridge status` quota rows yourself until AGY reports membership.
 - Waiting costs quota: agy backgrounds long commands and repeated polling can spend model requests. The runner checks the native transcript when available and raises an urgent `quota_burn` after sustained requests without streamed activity. Briefs should keep agy workers off long benchmarks; the runner tells them to hand such a command to the coordinator and end the turn.

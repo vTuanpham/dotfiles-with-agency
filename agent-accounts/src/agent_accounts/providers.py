@@ -82,21 +82,37 @@ def snapshot(now=None, *, root=None, environ=None, claude_cache=None, opencode_c
         paths = sorted(root.glob("*/quota.json"))
     for path in paths:
         try:
-            if (path.is_symlink() or not path.resolve().is_relative_to(root.resolve())
-                    or path.stat().st_size > 1048576):
-                raise ValueError("unsafe quota cache")
-            data = loads(path.read_text())
-            if managed_agy and data.get("account_id") != inventory[path.parent.name]:
-                continue
-            observation = agy_quota(data, now)
-            if observation.account != path.parent.name:
-                raise ValueError("quota account mismatch")
-            result.append(observation)
+            observation = _agy_cached(path, root, inventory[path.parent.name] if managed_agy else None, now)
+            if observation is not None:
+                result.append(observation)
         except FileNotFoundError:
             pass
         except (OSError, ValueError, TypeError):
             errors.append("agy quota cache invalid")
     return tuple(result), errors
+
+
+def _agy_cached(path, root, account_id, now):
+    """One AGY account's cached observation; None when it was read for a different login."""
+    if (path.is_symlink() or not path.resolve().is_relative_to(root.resolve())
+            or path.stat().st_size > 1048576):
+        raise ValueError("unsafe quota cache")
+    data = loads(path.read_text())
+    if account_id is not None and data.get("account_id") != account_id:
+        return None
+    observation = agy_quota(data, now)
+    if observation.account != path.parent.name:
+        raise ValueError("quota account mismatch")
+    return observation
+
+
+def agy_observation(account, account_id, now=None):
+    """The cached reading for a worker's own AGY login, or None: absent, invalid or another login."""
+    try:
+        return _agy_cached(AGY_CACHE / account / "quota.json", AGY_CACHE, account_id,
+                           time.time() if now is None else now)
+    except (OSError, ValueError, TypeError):
+        return None
 
 
 def context():

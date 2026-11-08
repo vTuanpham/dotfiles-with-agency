@@ -24,6 +24,21 @@ def test_due_refresh_skips_fresh_sources_and_manual_refresh_is_explicit(monkeypa
     assert calls == ["claude"]
 
 
+def test_max_age_makes_a_recent_but_not_current_reading_due(monkeypatch):
+    row = replace(observation(), age_seconds=200)
+    monkeypatch.setattr(providers, "snapshot", lambda now=None: ([row], []))
+    calls = []
+    monkeypatch.setattr(providers, "refresh_claude", lambda: calls.append("claude") or [row])
+    refresh.run(["claude"], now=1000)  # fresh for ten minutes
+    refresh.run(["claude"], max_age=300, now=1000)  # still inside the tighter limit
+    assert calls == []
+    refresh.run(["claude"], max_age=120, now=1000)
+    assert calls == ["claude"]
+    with pytest.raises(SystemExit):  # a tighter limit than the provider cooldown only wastes queries
+        monkeypatch.setattr("sys.argv", ["agent-accounts", "refresh", "--if-stale", "--max-age", "5"])
+        cli.main()
+
+
 def test_reset_unknown_window_is_refreshed_and_failures_back_off(monkeypatch):
     row = observation(freshness="stale")
     monkeypatch.setattr(providers, "snapshot", lambda now=None: ([row], []))
@@ -144,7 +159,7 @@ def test_cli_snapshot_stays_offline_and_all_refresh_exposes_diagnostics(monkeypa
     assert json.loads(capsys.readouterr().out)["errors"] == ["agy: awaiting a fresh usage reading"]
     monkeypatch.setattr("sys.argv", ["agent-accounts", "refresh", "--backend", "all", "--if-stale"])
     assert cli.main() == 0
-    assert calls == [(refresh.BACKENDS, {"account": None, "if_stale": True})]
+    assert calls == [(refresh.BACKENDS, {"account": None, "if_stale": True, "max_age": None})]
 
 
 @pytest.mark.parametrize("data", [{"schema_version": 1, "attempts": {"claude": {"at": True, "ok": False}}},

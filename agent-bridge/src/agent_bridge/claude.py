@@ -5,9 +5,11 @@ import shlex
 import signal
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 
+from . import quota_pressure
 from .core import (
     MESSAGING_RULE,
     POLL,
@@ -101,8 +103,15 @@ def process(event, state, job, usage_baseline=None):
     elif typ == "system" and event.get("subtype") == "compact_boundary":
         metadata = event["compact_metadata"]
         log(job, "compacted", pre_tokens=metadata["pre_tokens"], trigger=metadata["trigger"])
+        state.pop("contextTokens", None)  # unknown until the next request reports it
     elif typ == "assistant":
         activity = False
+        usage = (event.get("message") or {}).get("usage")
+        if isinstance(usage, dict):  # one request's prompt is the session's context
+            parts = [usage.get(k) for k in ("input_tokens", "cache_read_input_tokens",
+                                            "cache_creation_input_tokens")]
+            if all(type(part) is int and part >= 0 for part in parts if part is not None):
+                state["contextTokens"] = sum(part or 0 for part in parts)
         for block in (event.get("message") or {}).get("content", []):
             if block.get("type") == "text":
                 text = block.get("text", "").strip()
@@ -190,6 +199,7 @@ def process(event, state, job, usage_baseline=None):
         log(job, event["subtype"], **{k: v for k, v in event.items() if k not in ("type", "subtype")})
     elif typ == "rate_limit_event":
         log(job, "rate_limit_event", **{k: v for k, v in event.items() if k != "type"})
+        quota_pressure.feed(job, state, quota_pressure.claude(event, time.time()))
     elif typ == "control_response":
         log(
             job,

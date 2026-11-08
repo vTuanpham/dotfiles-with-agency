@@ -58,6 +58,9 @@ def burn_check(job, state, mon):
     if not requests:
         mon["hidden"] = 0
         return
+    context = requests[-1]["input_tokens"]
+    if type(context) is int and context >= 0:  # a request's input includes its cached prefix
+        state["contextTokens"] = context
     keys = ("input_tokens", "cache_read_tokens", "output_tokens")
     totals = {key: sum(r.get(key) or 0 for r in requests) for key in keys}
     log(job, "model_requests", requests=len(requests), seconds=seconds, streamed=seen, **totals)

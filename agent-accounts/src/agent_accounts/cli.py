@@ -17,14 +17,18 @@ def main():
     refresh_parser.add_argument("--account", help="one signed-in AGY account; omitted means all accounts")
     refresh_parser.add_argument("--if-stale", action="store_true",
                                 help="refresh only due sources, coordinating concurrent readers")
+    refresh_parser.add_argument("--max-age", type=int, metavar="SECONDS",
+                                help="with --if-stale, older readings are due (default: ten minutes)")
     args = parser.parse_args()
     try:
         refresh_errors = []
         if args.command == "refresh":
             if args.account and args.backend != "agy":
                 parser.error("--account selects one AGY account; omit it for other backends")
+            if args.max_age is not None and (not args.if_stale or args.max_age < 30):
+                parser.error("--max-age needs --if-stale and at least 30 seconds")
             refresh_errors = refresh.run(refresh.BACKENDS if args.backend == "all" else [args.backend],
-                                         account=args.account, if_stale=args.if_stale)
+                                         account=args.account, if_stale=args.if_stale, max_age=args.max_age)
         quotas, errors = providers.snapshot()
         quotas = refresh.annotate(quotas)
         errors += refresh.diagnostics()

@@ -141,8 +141,8 @@ job purge; status reads never acknowledge or delete them.
   edges describe bounded waits without inferring a dependency from ordinary messages.
 - Durable timeline replay needs its own retention/cursor protocol; recent
   history and complete wake backlog cover current readers.
-- Per-job quota burn cannot be separated reliably from account cache changes
-  during concurrent workers and native retries.
+- Quota warnings use the whole account's rate of use; a per-job share cannot be separated from
+  concurrent workers and native retries.
 
 Runtime dependencies remain empty. The locked development-only `jsonschema`
 dependency validates actual collector/CLI snapshots against the shipped schema.

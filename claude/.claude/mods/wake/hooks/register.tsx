@@ -3,7 +3,7 @@ import type { EngineInterface, Register, RenderElement, Timer } from 'claude-cod
 
 import type { WakeAgent, WakeCall, WakeChip, WakeQuota, WakeResource, WakeDigest, WakeMood, WakeNeed, WakeNow, WakePreset, WakePulse, WakePulseKind, WakeRecap, WakeRecapLine, WakeSceneHit, WakeStep, WakeSurroundings, WakeTally } from '../types'
 import { ownedBy, ownersIn, scanCodex, withoutDetachedOwners, type CodexCursor } from './sources/codex'
-import { makerOf, modelTier, quotaDetails, scanQuotas } from './sources/accounts'
+import { accountToolBackend, applyMeasured, makerOf, modelTier, quotaDetails, scanQuotas } from './sources/accounts'
 import { extractCalls, writeRecap } from './sources/recap'
 import { scanTidy, tidyRequest } from './sources/tidy'
 import { type BandState, sceneInput } from './band'
@@ -29,7 +29,11 @@ import { resourceDetail, scanResources } from './sources/resources'
 const AWAY_MS = 10 * 60_000
 const ASK_AWAY_MS = 3 * 60_000
 const CODEX_POLL_MS = 15_000
-const QUOTA_POLL_MS = 60_000
+// Quota is pushed, not polled: this session's own windows arrive as events (session.measure), and a turn ending or an account tool
+// running asks for a look. The timer is only the safety net for what nothing announces.
+const QUOTA_POLL_MS = 5 * 60_000
+const QUOTA_NUDGE_MS = 10_000 // nudges closer together than this fold into one look
+const QUOTA_BUSY_AGE_S = 120 // while a Bridge worker runs, a reading older than this is due, not ten minutes
 const ANIMATE_MS = 400
 const PACKET_FRAME_MS = 120 // rows redraw this often only while a real message's packets are on their way
 const SCENE_MS = 50 // the diorama paints 20 a second: half steps of its frame, which motion paces at 10 a second
@@ -150,6 +154,8 @@ let codexPoll: Timer | null = null
 let quotaPoll: Timer | null = null
 let effortPoll: Timer | null = null
 let quotaInFlight = false
+let quotaNudgedAt = 0
+let quotaForced: WakeQuota['cli'] | undefined // an account tool ran during a refresh: look again for it afterwards
 let quotaScanRevision = 0
 let bridgeInFlight = false
 let agentsInFlight = false
@@ -385,7 +391,8 @@ export async function effortTick($: EngineInterface) {
     at: refreshed.every(Boolean) ? now : now - EFFORT_LEVELS_MS + EFFORT_RETRY_MS }))
 }
 
-export async function quotaTick($: EngineInterface) {
+/** Looks at the accounts now: the cached snapshot, then a bounded refresh. `forced` names a backend whose account tool just ran. */
+export async function quotaTick($: EngineInterface, forced?: WakeQuota['cli']) {
   const publish = async () => {
     const revision = ++quotaScanRevision
     const found = await scanQuotas($).catch(() => ({ quotas: [], errors: ['Account observations unavailable'] }))
@@ -393,12 +400,31 @@ export async function quotaTick($: EngineInterface) {
     if (JSON.stringify(found.quotas) !== JSON.stringify(await read($, quotas))) await update($, quotas, () => found.quotas)
   }
   await publish()
-  if (quotaInFlight) return
+  if (quotaInFlight) {
+    if (forced) quotaForced = forced
+    return
+  }
   quotaInFlight = true
   try {
-    await $.process.run(['agent-accounts', 'refresh', '--backend', 'all', '--if-stale'], { timeoutMs: 240_000 }).catch(() => undefined)
+    const busy = (await read($, chips)).some(job => job.running)
+    // A switched login is not in the cache until it is read again; otherwise only due sources are asked, sooner while workers use them.
+    const args = forced ? ['--backend', forced] : ['--backend', 'all', '--if-stale', ...(busy ? ['--max-age', String(QUOTA_BUSY_AGE_S)] : [])]
+    await $.process.run(['agent-accounts', 'refresh', ...args], { timeoutMs: 240_000 }).catch(() => undefined)
     await publish()
-  } finally { quotaInFlight = false }
+  } finally {
+    quotaInFlight = false
+    const again = quotaForced
+    quotaForced = undefined
+    if (again) void safely(() => quotaTick($, again))
+  }
+}
+
+/** Something that probably moved quota just happened: look soon, once for a burst. */
+async function nudgeQuota($: EngineInterface, forced?: WakeQuota['cli']) {
+  const now = await $.clock.now()
+  if (!forced && now - quotaNudgedAt < QUOTA_NUDGE_MS) return
+  quotaNudgedAt = now
+  void safely(() => quotaTick($, forced))
 }
 
 async function isAway($: EngineInterface, threshold: number) {
@@ -725,6 +751,9 @@ export const register: Register = on => {
           await update($, pulse, list => [...list, { kind: failed ? ('fail' as const) : act.kind, turn }].slice(-400))
         }
         if (e.tool === 'Bash') {
+          const tool = accountToolBackend(e.command)
+          if (tool) void nudgeQuota($, tool)
+          else if (/(?:^|[\s;&|(])agent-bridge\s+(?:start|resume|steer|compact)\b/.test(e.command)) void nudgeQuota($)
           const command = commandHead(e.command)
           if (isTestCommand(e.command)) {
             await update($, digest, d => ({ ...d, tests: [...d.tests, { command, ok: !failed }].slice(-20) }))
@@ -780,9 +809,23 @@ export const register: Register = on => {
     }
   }).catch(($, e, next) => next(e)) // observer only: never refuse, never run twice
 
+  // The engine pushes this session's own rate-limit windows when one moves a whole point: show them without asking anyone.
+  on('session.measure', async ($, e, next) => {
+    if (e.changed.includes('rateLimits')) {
+      await safely(async () => {
+        const now = new Date(await $.clock.now()).toISOString()
+        const current = await read($, quotas)
+        const measured = applyMeasured(current, e.rateLimits, now)
+        if (measured !== current) await update($, quotas, () => measured)
+      })
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
       animate($, false)
+      void nudgeQuota($) // the turn just spent some
       await safely(async () => {
         const now = await $.clock.now()
         const startedAt = await read($, turnStartedAt)

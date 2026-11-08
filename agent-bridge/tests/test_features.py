@@ -284,6 +284,53 @@ def test_compact_cli_routes_only_supported_backends(monkeypatch, tmp_path, capsy
     assert calls == [{"resume": True, "compact": True}]
 
 
+def resume_with_switch(monkeypatch, tmp_path, *flags, fail=False):
+    job = tmp_path / "owner/job"
+    job.mkdir(parents=True)
+    (job / "state.json").write_text(json.dumps({"backend": "codex", "model": "old", "effort": "low",
+                                                "contextTokens": 90_000}))
+    monkeypatch.delenv("AGENT_BRIDGE_WORKER", raising=False)
+    monkeypatch.setattr(cli, "resolve_job", lambda _: job)
+    monkeypatch.setattr(sys, "argv", ["agent-bridge", "resume", "owner/job", *flags])
+    calls = []
+
+    def run(job, state, path, prompt, resume=False, compact=False):
+        calls.append((compact, prompt, state["model"], state.get("effort")))
+        if compact and fail:
+            raise RuntimeError("compaction failed")
+
+    monkeypatch.setattr(cli.BACKENDS["codex"], "run", run)
+    monkeypatch.setattr(cli, "linger", lambda *a: None)
+    return job, calls
+
+
+def test_resume_compact_compacts_on_the_current_model_before_switching(monkeypatch, tmp_path, capsys):
+    job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "new", "--effort", "high", "--compact")
+    cli.main()
+    assert calls == [(True, "", "old", "low"), (False, "Continue.", "new", "high")]
+    assert json.loads((job / "state.json").read_text())["model"] == "new"
+    assert "compacting on old first, then continuing on new" in capsys.readouterr().out
+
+
+def test_failed_compaction_leaves_the_model_unchanged(monkeypatch, tmp_path):
+    job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "new", "--compact", fail=True)
+    with pytest.raises(SystemExit):
+        cli.main()
+    assert calls == [(True, "", "old", "low")]
+    assert json.loads((job / "state.json").read_text())["model"] == "old"
+
+
+def test_switching_model_without_compact_states_the_prefill_cost(monkeypatch, tmp_path, capsys):
+    job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "new")
+    cli.main()
+    assert calls == [(False, "Continue.", "new", "low")]
+    out = capsys.readouterr().out
+    assert "new reads the whole context (about 90k tokens) without a warm cache" in out and "--compact" in out
+    job, calls = resume_with_switch(monkeypatch, tmp_path / "again", "--effort", "high")
+    cli.main()
+    assert "switch:" not in capsys.readouterr().out
+
+
 def test_retire_archives_report_and_keeps_job(tmp_path, monkeypatch, capsys):
     jobs = tmp_path / "jobs"
     job = jobs / "owner" / "done"

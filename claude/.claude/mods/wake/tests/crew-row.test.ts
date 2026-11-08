@@ -280,6 +280,20 @@ test('idle accounts with the same numbers fold into one range, and the active on
   expect(lines[0]).not.toContain('03 ')
 })
 
+test('exhausted monthly accounts fold into one range however long ago each was read', () => {
+  const quota = (account: string, observedAt: string, freshness: 'fresh' | 'stale') => ({
+    cli: 'codex' as const, account, plan: 'Free', active: false, parts: [{ label: 'm', pct: 0, resets: null }], freshness, observedAt })
+  const lines = quotaLines([
+    { ...quota('01', '2026-11-08T11:50:00Z', 'fresh'), active: true, plan: 'Pro Lite', parts: [{ label: 'w', pct: 93, resets: null }] },
+    quota('02', '2026-11-08T11:30:00Z', 'stale'), quota('03', '2026-11-08T11:51:00Z', 'fresh'),
+    quota('04', '2026-11-08T06:20:00Z', 'stale'), quota('05', '2026-11-08T11:30:00Z', 'stale'),
+    quota('06', '2026-11-08T10:10:00Z', 'stale'),
+  ], 200)
+  expect(lines).toHaveLength(1)
+  expect(lines[0]).toContain('02–06~ m0%')
+  expect(lines[0]).toContain('01* w93%')
+})
+
 test('a message melts away over its fifteen minutes instead of stopping at a floor', () => {
   const strengths = [0, 150_000, 450_000, 800_000, 899_000].map(age => messageFade(age))
   expect(strengths.every((s, i) => i === 0 || s < strengths[i - 1]!)).toBe(true)

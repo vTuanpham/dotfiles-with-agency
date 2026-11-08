@@ -82,8 +82,11 @@ def annotate(quotas):
         return quotas
 
 
-def run(backends, *, account=None, if_stale=True, now=None):
-    """Snapshots stay read-only; callers opt into this bounded background refresh."""
+def run(backends, *, account=None, if_stale=True, max_age=None, now=None):
+    """Snapshots stay read-only; callers opt into this bounded background refresh.
+
+    `max_age` (seconds) tightens "fresh" for callers that know the account is in use; the per-source
+    cooldown below still bounds how often a provider is asked."""
     if any(backend not in BACKENDS for backend in backends):
         raise ValueError("unknown quota backend")
     now = time.time() if now is None else now
@@ -115,8 +118,10 @@ def run(backends, *, account=None, if_stale=True, now=None):
                     key += ":" + hashlib.sha256(str(Path.cwd().resolve()).encode()).hexdigest()
                 rows = [row for row in observations if row.backend == backend
                         and (selected is None or row.account == selected)]
-                if if_stale and rows and all(row.freshness == "fresh" or row.status == "disabled"
-                                            for row in rows):
+                if if_stale and rows and all(
+                        row.status == "disabled"
+                        or row.freshness == "fresh" and (max_age is None or (row.age_seconds or 0) <= max_age)
+                        for row in rows):
                     continue
                 previous = attempts.get(key)
                 cooldown = (60 if rows else 600) if previous and previous["ok"] else 300

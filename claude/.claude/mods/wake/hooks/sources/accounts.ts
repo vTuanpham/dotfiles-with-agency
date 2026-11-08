@@ -73,6 +73,30 @@ export function quotaGroups(quotas: WakeQuota[]): { cli: WakeQuota['cli']; accou
   return out
 }
 
+/**
+ * This session's own rate-limit windows, as the engine pushes them, applied to the active Claude account's row.
+ * The session runs on the active login, so no process or lookup is needed; a window the row does not show is left alone.
+ */
+export function applyMeasured(quotas: WakeQuota[], measured: readonly { kind: string; percentUsed: number; resetsAt?: string }[], now: string): WakeQuota[] {
+  const label: Record<string, string> = { five_hour: 'h', seven_day: 'w' }
+  const windows = measured.filter(m => label[m.kind] !== undefined && Number.isFinite(m.percentUsed))
+  if (!windows.length) return quotas
+  return quotas.map(q => {
+    if (q.cli !== 'claude' || !q.active || q.status !== undefined) return q
+    const parts = q.parts.map(p => {
+      const m = windows.find(w => label[w.kind] === p.label)
+      return m ? { ...p, pct: Math.floor(Math.max(0, 100 - m.percentUsed)), resets: m.resetsAt ?? p.resets } : p
+    })
+    return JSON.stringify(parts) === JSON.stringify(q.parts) ? q : { ...q, parts, freshness: 'fresh' as const, observedAt: now }
+  })
+}
+
+/** The account tool a shell command runs, if any: whatever it changes is not in the cached reading yet. */
+export function accountToolBackend(command: string): WakeQuota['cli'] | undefined {
+  const tool = /(?:^|[\s;&|(])(cswap|codex-auth|agy-auth)(?=\s|$)/.exec(command)?.[1]
+  return tool === 'cswap' ? 'claude' : tool === 'codex-auth' ? 'codex' : tool === 'agy-auth' ? 'agy' : undefined
+}
+
 export async function scanQuotas($: EngineInterface): Promise<{ quotas: WakeQuota[]; errors: string[] }> {
   const result = await $.process.run(['agent-accounts', 'snapshot'], { timeoutMs: 30_000 }).catch(() => undefined)
   const snapshot = result?.exitCode === 0 && !result.isStdoutTruncated ? readAccountSnapshot(result.stdout) : undefined

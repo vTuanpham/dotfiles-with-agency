@@ -274,8 +274,15 @@ proves the recipient read it. The root endpoint is the owner namespace across
 session handoffs. The native Claude `statusline.py` still renders
 Claude's own session/context/cost input; it has no separate Bridge parser.
 
-Wake shows quota rows for native sessions and Bridge jobs. It first reads the local
-account snapshot, then requests a bounded refresh when needed and reads it again.
+Wake shows quota rows for native sessions and Bridge jobs. It reads the local account
+snapshot, then requests a bounded refresh and reads it again, and it does this when something
+happened rather than on a fast timer: the engine pushes this session's own five-hour and weekly
+windows as they move a whole point, and those update the active Claude row at once; a finished
+turn, an `agent-bridge` start/resume/steer/compact, and `cswap`, `codex-auth` or `agy-auth`
+(which re-read their own backend, since a switched login is not in the cache) each ask for a look,
+bursts folded to one every ten seconds. While a Bridge worker runs, a reading older than two
+minutes is due instead of ten; a five-minute timer remains only as a safety net. Provider
+cooldowns in `agent-accounts` still bound how often anything is asked.
 The rows show remaining allowance by reported window, including OpenCode's current
 workspace budgets. `h` is five-hour, `w` weekly and `m` monthly when the source
 reports those durations; pool and model bindings stay as reported by the provider.
@@ -284,7 +291,9 @@ failures appear there; the JSON account snapshot retains source metadata. The
 active-account mark describes the current CLI profile, not every running conversation.
 
 `*` marks the active account; `?` means its quota is unknown, and `~` marks a
-stale reading or one without a known sample time.
+stale reading or one without a known sample time. Idle accounts of one CLI with the same
+numbers fold into a range (`02–06~ m0%`) however long ago each was read, because a window
+stays at its numbers until it resets; one stale reading marks the range.
 
 ### Use and check
 

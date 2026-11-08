@@ -378,16 +378,18 @@ function foldDead(quotas: WakeQuota[]): QuotaChunk[] {
   for (let i = 0; i < quotas.length; i++) {
     const quota = quotas[i]!
     let j = i
-    // neighbours that read the same fold into one: a dead state, or the same numbers on idle accounts (never the active one)
+    // neighbours that read the same fold into one: a dead state, or the same numbers on idle accounts (never the active one).
+    // When each was read does not matter: a window at its numbers stays there until it resets, and a stale one shows '~'.
     const same = (other: WakeQuota | undefined) => other?.cli === quota.cli && other.status === quota.status
-      && other.refreshStatus === quota.refreshStatus && other.observedAt === quota.observedAt
-      && (quota.status !== undefined || (!quota.active && !other.active && other.freshness === quota.freshness
+      && other.refreshStatus === quota.refreshStatus
+      && (quota.status !== undefined || (!quota.active && !other.active
         && JSON.stringify(other.parts.map(p => [p.label, p.pct === null ? null : Math.round(p.pct)])) === JSON.stringify(quota.parts.map(p => [p.label, p.pct === null ? null : Math.round(p.pct)]))))
     while (same(quotas[j + 1])) j++
     if (j === i) { parts.push({ text: quotaText(quota), quotas: [quota] }); continue }
     const group = quotas.slice(i, j + 1)
     const names = group.map(q => q.account)
-    parts.push({ text: quota.status ? `${quotaMark(quota)}${names[0]}–${names.at(-1)} ✕ ${quota.status}` : quotaText(quota, `${names[0]}–${names.at(-1)}`), quotas: group })
+    const shown = group.find(q => q.freshness !== 'fresh') ?? quota // one stale reading marks the range
+    parts.push({ text: quota.status ? `${quotaMark(quota)}${names[0]}–${names.at(-1)} ✕ ${quota.status}` : quotaText(shown, `${names[0]}–${names.at(-1)}`), quotas: group })
     i = j
   }
   return parts

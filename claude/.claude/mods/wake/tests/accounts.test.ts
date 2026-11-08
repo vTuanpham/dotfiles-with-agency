@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { EngineInterface } from 'claude-code'
-import { jobLabel, makerOf, modelTier, quotaDetails, quotaGroups, scanQuotas } from '../hooks/sources/accounts'
+import { accountToolBackend, applyMeasured, jobLabel, makerOf, modelTier, quotaDetails, quotaGroups, scanQuotas } from '../hooks/sources/accounts'
 import { readAccountSnapshot } from '../hooks/sources/account-observations'
 import { engine, job, snapshot } from './status-world'
 import { quotaLines, quotaText } from '../hooks/crew-row'
@@ -190,4 +190,31 @@ test('modelTier reads an OpenCode model by its size word; free never counts, unk
   expect(modelTier('opencode', 'openrouter/vendor/claude-fable-pro')).toBe(4)
   expect(modelTier('agy', 'openrouter/x/kimi-k3-pro')).toBe(3) // the id alone marks it, whichever backend
   expect(jobLabel('opencode', 'openrouter/google/gemma-4-31b-it:free', '')).toEqual({ model: 'gemma-4-31b-it', effort: '' })
+})
+
+test('the session\'s own windows update only the active Claude account, and only the windows it shows', () => {
+  const part = (label: string, pct: number) => ({ label, pct, resets: null })
+  const quotas = [
+    { cli: 'claude' as const, account: '01', plan: '', active: true, parts: [part('h', 90), part('w', 50)], freshness: 'stale' as const },
+    { cli: 'claude' as const, account: '02', plan: '', active: false, parts: [part('h', 10)] },
+    { cli: 'codex' as const, account: '01', plan: '', active: true, parts: [part('h', 70)] },
+  ]
+  const next = applyMeasured(quotas, [
+    { kind: 'five_hour', percentUsed: 23.5, resetsAt: '2026-11-08T14:00:00Z' },
+    { kind: 'spend_limit', percentUsed: 99 },
+  ], '2026-11-08T12:00:00.000Z')
+  expect(next[0]).toMatchObject({ freshness: 'fresh', observedAt: '2026-11-08T12:00:00.000Z' })
+  expect(next[0]!.parts).toEqual([{ label: 'h', pct: 76, resets: '2026-11-08T14:00:00Z' }, part('w', 50)])
+  expect(next[1]).toBe(quotas[1])
+  expect(next[2]).toBe(quotas[2])
+  expect(applyMeasured(quotas, [], 'x')).toBe(quotas)
+  expect(applyMeasured(quotas, [{ kind: 'five_hour', percentUsed: 10 }], 'x')[0]!.parts[0]!.pct).toBe(90)
+})
+
+test('only the account tools mark the cached reading as out of date', () => {
+  expect(accountToolBackend('cswap switch 2')).toBe('claude')
+  expect(accountToolBackend('codex-auth switch me && codex app-server daemon restart')).toBe('codex')
+  expect(accountToolBackend('echo hi; agy-auth list')).toBe('agy')
+  expect(accountToolBackend('git log --grep cswap-style')).toBeUndefined()
+  expect(accountToolBackend('agent-bridge start x')).toBeUndefined()
 })

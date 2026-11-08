@@ -17,6 +17,7 @@ agent-accounts refresh --account a1   # explicit agy allowance refresh
 agent-accounts refresh --backend claude # explicit cswap allowance refresh
 agent-accounts refresh --backend opencode # existing native service, current directory
 agent-accounts refresh --backend all --if-stale # refresh due sources for account displays
+agent-accounts refresh --backend all --if-stale --max-age 120 # while the accounts are in use, a reading older than 120 s is due
 ```
 
 Snapshot reads local Codex data through `codex-auth list --skip-api --json`,
@@ -98,6 +99,14 @@ private quota cache. It never switches the active account. Refresh without
 `--account` queries all accounts in `agy-auth`. Claude refresh reads the full
 managed inventory and does not accept `--account`. Errors do not include provider
 stderr or credential data.
+
+`agent_accounts.runway` turns repeated readings of one window into a depletion
+warning. The caller supplies the readings (Bridge takes them from each harness's
+own stream, or from this cache for AGY) and a history file, which keeps the rate
+across restarts. A window is flagged once when it would empty within 30 minutes
+and before it resets, measured over the last 30 minutes with at least two minutes
+and two percentage points of movement, because quota changes in whole-percent
+steps. The rate is the account's, not one session's.
 
 Inbox continues to read allowance from the selected native daemon; a machine-wide
 cache must not substitute for a conversation's account.
