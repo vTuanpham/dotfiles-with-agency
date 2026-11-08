@@ -499,6 +499,8 @@ class Collector:
                         waiting=declaration,
                         in_flight=flight,
                         native_observation=({"kind": native["kind"], "at": native["at"]} if native else None),
+                        context_tokens=(state["contextTokens"] if type(state.get("contextTokens")) is int
+                                        and state["contextTokens"] >= 0 else None),
                     )
                 )
             except (OSError, ValueError, TypeError, KeyError, RuntimeError, subprocess.SubprocessError):

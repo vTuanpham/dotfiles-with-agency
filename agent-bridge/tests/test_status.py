@@ -53,6 +53,22 @@ def test_status_prefers_native_reported_effort_without_changing_request(world):
     VALIDATE.validate(json.loads(json.dumps(snapshot.to_dict())))
 
 
+def test_a_large_context_is_marked_on_the_status_and_owner_lines_and_a_small_one_is_not(world):
+    big = job_at(world, contextTokens=210_000)
+    snapshot = status.Collector().collect()
+    assert snapshot.jobs[0].context_tokens == 210_000
+    VALIDATE.validate(json.loads(json.dumps(snapshot.to_dict())))
+    assert status_render.job_status(snapshot.jobs[0]).endswith(" ctx=210k")
+    assert "[memory=" in next(iter(status_render.owners(snapshot))) and "ctx=210k]" in next(
+        iter(status_render.owners(snapshot)))
+    core.save(big / "state.json", {**json.loads((big / "state.json").read_text()), "contextTokens": 90_000})
+    small = status.Collector().collect()
+    assert "ctx=" not in status_render.job_status(small.jobs[0])
+    assert "ctx=" not in next(iter(status_render.owners(small)))
+    core.save(big / "state.json", {**json.loads((big / "state.json").read_text()), "contextTokens": "many"})
+    assert status.Collector().collect().jobs[0].context_tokens is None
+
+
 def test_status_distinguishes_runner_from_native_observation(world):
     job = job_at(world, runnerPid=12)
     event(job, "thread_started")  # previous turn must not be mistaken for the new request

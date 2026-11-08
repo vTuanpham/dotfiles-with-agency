@@ -15,7 +15,7 @@ from agent_accounts import providers
 from agent_accounts.models import period, timestamp
 from agent_accounts.runway import Reading, Runway
 
-from .core import log
+from .core import LARGE_CONTEXT, log
 
 AGY_SAMPLE = 120  # seconds between reads of the AGY cache; refreshes are rate limited by agent-accounts
 REFRESH = (sys.executable, "-c", "from agent_accounts.cli import main; raise SystemExit(main())",
@@ -102,22 +102,37 @@ def agy(observation, model):
 def advice(job, state, hit):
     name = f"{Path(job).parent.name}/{Path(job).name}"
     context = state.get("contextTokens")
-    return (
+    large = isinstance(context, int) and context > LARGE_CONTEXT
+    head = (
         f"{state.get('backend')} {hit.label} window: {hit.remaining:.0f}% left, about "
-        f"{max(1, round(hit.seconds_to_empty / 60))} min at the recent rate of use "
-        "(the whole account's, other sessions included). "
+        f"{max(1, round(hit.seconds_to_empty / 60))} min at the recent rate of use (the whole account's). "
         f"Worker model {state.get('model') or 'default'}"
-        + (f", context about {round(context / 1000)}k tokens" if isinstance(context, int) else "")
+        + (f", context about {round(context / 1000)}k tokens" if large else "")
         + (f" ({hit.note})" if hit.note else "")
-        + ". Once its turn ends (or after `agent-bridge interrupt "
-        f"{name}`) the options, none of them the default, are: let it finish if it will; change model "
-        f"on the same thread with `agent-bridge resume {name} --model M [--compact]` (the new model "
-        "prefills the whole context uncached; --compact first shrinks it on the current model, spending "
-        "this window and trading detail for a summary); or change account with "
-        f"`agent-bridge compact {name}`, the harness's auth CLI, then `agent-bridge resume {name}`, or "
-        "resume at once and prefill the whole context on a possibly cold cache. A restart ends "
-        "background commands."
+        + f". When its turn ends (or after `agent-bridge interrupt {name}`): "
     )
+    if not large:
+        return (head + f"change model with `agent-bridge resume {name} --model M`; change account by "
+                f"switching the login, then `agent-bridge resume {name}`; or let it finish.")
+    return (head + f"change model with `agent-bridge resume {name} --model M --compact` (compacts on the "
+            "current model first, spending this window; a summary replaces detail) or --no-compact (full "
+            "prefill on a cold cache); change account by running "
+            f"`agent-bridge compact {name}` first, then switching the login, then "
+            f"`agent-bridge resume {name}`; or let it finish. A restart ends background commands. "
+            "Details: `agent-bridge compact --help`.")
+
+
+def out_of_quota(job, state):
+    """A worker's account just ran out: for a large context, say what to do (a small one needs no words)."""
+    context = state.get("contextTokens")
+    if not isinstance(context, int) or context <= LARGE_CONTEXT:
+        return
+    name = f"{Path(job).parent.name}/{Path(job).name}"
+    log(job, "quota_out", level="urgent", message=(
+        f"The account ran out (context about {round(context / 1000)}k tokens), so it cannot compact. "
+        f"Switch the login, then `agent-bridge resume {name} --no-compact` (the whole context is prefilled "
+        f"there, probably on a cold cache); or wait for the window to reset and run `agent-bridge compact "
+        f"{name}` first. A restart ends background commands. Details: `agent-bridge compact --help`."))
 
 
 def feed(job, state, readings, now=None):

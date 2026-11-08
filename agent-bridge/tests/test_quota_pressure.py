@@ -61,7 +61,7 @@ def test_depleting_window_warns_root_once_with_the_choices_and_survives_a_new_tu
     assert len(rows) == 1 and urgent(rows[0])
     message = rows[0]["message"]
     for part in ("five hour", "5% left", "fable", "180k tokens", "resume owner/worker --model M",
-                 "--compact", "compact owner/worker", "none of them the default"):
+                 "--compact", "compact owner/worker", "compact --help"):
         assert part in message
     assert json.loads((job / "quota-runway.json").read_text())["notified"]
 
@@ -125,10 +125,19 @@ def test_compaction_forgets_the_context_size_and_hostile_limits_never_stop_the_w
     quota_pressure.feed(job, {}, quota_pressure.codex([hostile], "gpt-x", time.time()))
 
 
-def test_warning_says_when_the_choices_are_available(tmp_path):
+def test_warning_weighs_costs_only_for_a_large_context(tmp_path):
     hit = SimpleNamespace(label="5h", remaining=5, seconds_to_empty=600, note="")
-    text = quota_pressure.advice(tmp_path / "owner" / "worker", {"backend": "codex"}, hit)
-    assert "agent-bridge interrupt owner/worker" in text and "Once its turn ends" in text
+    job = tmp_path / "owner" / "worker"
+    small = quota_pressure.advice(job, {"backend": "codex", "contextTokens": 90_000}, hit)
+    assert "agent-bridge interrupt owner/worker" in small and "resume owner/worker --model M" in small
+    for cost in ("--compact", "compact owner/worker", "context about"):
+        assert cost not in small
+    unknown = quota_pressure.advice(job, {"backend": "codex"}, hit)
+    assert "--compact" not in unknown
+    large = quota_pressure.advice(job, {"backend": "codex", "contextTokens": 200_000}, hit)
+    for part in ("When its turn ends", "context about 200k tokens", "--model M --compact",
+                 "compact owner/worker", "compact --help"):
+        assert part in large
 
 
 def named_groups():
@@ -164,3 +173,16 @@ def test_inferred_match_is_stated_in_the_warning_and_keeps_the_cache_fresh(tmp_p
     assert len(spawned) == 1
     quota_pressure.sample_agy(job, {**state, "model": "mystery-model"}, {})
     assert len(spawned) == 1  # no window covers this model: refreshing cannot help
+
+
+def test_running_out_of_quota_names_what_is_left_only_for_a_large_context(tmp_path):
+    job = tmp_path / "owner" / "worker"
+    job.mkdir(parents=True)
+    quota_pressure.out_of_quota(job, {"contextTokens": 90_000})
+    quota_pressure.out_of_quota(job, {})
+    assert not (job / "live.jsonl").exists()
+    quota_pressure.out_of_quota(job, {"contextTokens": 250_000})
+    [row] = [row for _, row in event_lines(job) if row.get("kind") == "quota_out"]
+    assert urgent(row) and "250k tokens" in row["message"]
+    for part in ("it cannot compact", "resume owner/worker --no-compact", "wait for the window to reset"):
+        assert part in row["message"]

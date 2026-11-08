@@ -14,6 +14,7 @@ from agent_resources import identity
 from . import retries
 
 POLL = 0.2
+LARGE_CONTEXT = 150_000  # tokens: above this a model or account change is worth a word, at or below it is not
 URGENT_KINDS = {
     "question",
     "question_timeout",

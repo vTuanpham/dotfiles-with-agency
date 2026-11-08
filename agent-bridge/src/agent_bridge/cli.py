@@ -14,6 +14,7 @@ from . import (
     claude,
     codex,
     groups,
+    login,
     opencode,
     owner_binding,
     retirement,
@@ -27,6 +28,7 @@ from .assessment import DEFAULT_DECLARED_WAIT_SECONDS, SILENCE_SECONDS
 from .core import (
     ARCHIVE,
     JOBS,
+    LARGE_CONTEXT,
     POLL,
     WORKER_FLAG,
     job_caps,
@@ -179,18 +181,27 @@ def result_text(job, all_messages=False):
     return "\n\n".join(text for text in messages if text)
 
 
-def switch_note(state, switch, compact):
-    """What changing model on the same thread costs, worded the same whichever way it is made."""
-    model, current = switch.get("model"), state.get("model")
-    if not model or model == current:
-        return ""
-    if compact:
-        return (f"switch: compacting on {current or 'the current model'} first, then continuing on {model}; "
-                "the compaction spends the current model's quota and a summary replaces detail.")
+def require_choice(state, switch, compact, acknowledged, login_changed, job):
+    """Stop a model or login change that needs a decision first. A small or unknown context needs none."""
+    model = switch.get("model")
     context = state.get("contextTokens")
-    size = f" (about {round(context / 1000)}k tokens)" if isinstance(context, int) else ""
-    return (f"switch: {model} reads the whole context{size} without a warm cache. --compact shrinks it on "
-            "the current model first, at the cost of one compaction turn and lost detail.")
+    if (compact or acknowledged or not isinstance(context, int) or context <= LARGE_CONTEXT
+            or not (login_changed or model and model != state.get("model"))):
+        return
+    size = f"about {round(context / 1000)}k tokens"
+    if login_changed:  # compacting on the new login reads everything there first: do it on the old one
+        raise RuntimeError(
+            f"The login changed and the context is {size}; the new login would read all of it without a "
+            f"warm cache. Switch back to the previous login, run `agent-bridge compact {job}` there, switch "
+            f"to the new login again, then `agent-bridge resume {job}` (compacting on the new login would "
+            "read it all there first). If the previous login is out of quota it cannot compact: add "
+            "--no-compact to continue on the new login. A restart ends background commands. "
+            "See `agent-bridge compact --help`.")
+    raise RuntimeError(
+        f"The context is {size}; the new model would read all of it without a warm cache. Add --compact "
+        f"to compact on {state.get('model') or 'the current model'} first (spends its quota, a summary "
+        "replaces detail; the switch applies only if that succeeds) or --no-compact to switch now (full "
+        "prefill). A restart ends background commands. See `agent-bridge resume --help`.")
 
 
 def run_with_linger(
@@ -365,12 +376,23 @@ def main():
     s.add_argument("--detach", action="store_true", help="run in the background and return the job path")
     s.add_argument("--watch", **WATCH)
     s.add_argument("--group", type=groups.name, help="root-owned completion wake group")
-    r = sub.add_parser("resume", help="continue the same job/session; queued steers take precedence")
+    r = sub.add_parser(
+        "resume", help="continue the same job/session; queued steers take precedence",
+        description=(
+            "Continue the same job/session. Changing model: --model M [--effort E]. Above 150k tokens of "
+            "context (ctx=… on watch and owners) a new model reads it all without a warm cache, so add "
+            "--compact (compacts on the current model first; M applies only if that succeeds) or "
+            "--no-compact (switch now, full prefill). Changing login (cswap, codex-auth, agy-auth): run "
+            "`compact` first; resume stops above 150k if the login differs from the job's last run, unless "
+            "--no-compact. At or below 150k neither needs a word."))
     r.add_argument("job", help="job as <owner>/<name>")
     r.add_argument("--model", help="switch model starting on the next turn")
     r.add_argument("--effort", help="switch effort or variant starting on the next turn")
-    r.add_argument("--compact", action="store_true",
-                   help="compact on the current model first; --model/--effort apply once it succeeds")
+    choice = r.add_mutually_exclusive_group()
+    choice.add_argument("--compact", action="store_true",
+                        help="compact on the current model first; --model/--effort apply once it succeeds")
+    choice.add_argument("--no-compact", action="store_true",
+                        help=f"switch without compacting; required above {LARGE_CONTEXT // 1000}k tokens")
     r.add_argument("--memory", help="memory cap for the next runner launch, such as 4G")
     r.add_argument("--cpu", help="CPU cap for the next runner launch, such as 400%%")
     r.add_argument("--prompt-file", help="read follow-up from PATH or '-' for stdin")
@@ -417,7 +439,17 @@ def main():
             "stop": "stop the job runner",
             "compact": "compact idle worker history",
         }
-        sub.add_parser(name, help=descriptions[name], description=descriptions[name]).add_argument(
+        details = {
+            "compact": (
+                "Compact idle worker history. For a job over 150k tokens of context (ctx=… on watch and "
+                "owners), run this BEFORE changing its login: if you already switched, switch back, "
+                "compact, then switch again and resume. Compacting after the switch reads the whole "
+                "context on the new login first. If the old login is out of quota it cannot compact: "
+                "resume with --no-compact. Compacting spends the current login's quota, a summary "
+                "replaces detail, and a restart ends background commands."),
+        }
+        text = details.get(name, descriptions[name])
+        sub.add_parser(name, help=descriptions[name], description=text).add_argument(
             "job", help="job as <owner>/<name>"
         )
     sub.add_parser("owners", help="list owners, running jobs and unanswered urgent events")
@@ -739,9 +771,12 @@ def main():
                 raise RuntimeError("job has an active turn; stop it before compacting")
             module = BACKENDS[state["backend"]]
             switch = {key: getattr(a, key) for key in ("model", "effort") if getattr(a, key, None)}
-            note = switch_note(state, switch, getattr(a, "compact", False))
-            if note:
-                print(note, flush=True)
+            key = login.current(state["backend"]) if a.command == "resume" else None
+            changed = key is not None and state.get("loginKey") not in (None, key)
+            compact, acknowledged = getattr(a, "compact", False), getattr(a, "no_compact", False)
+            require_choice(state, switch, compact, acknowledged, changed, a.job)
+            if key is not None:
+                state["loginKey"] = key
             if not getattr(a, "compact", False):  # with --compact the switch waits for the compaction
                 state.update(switch)
                 if switch:
@@ -770,6 +805,7 @@ def main():
                 "sandbox": a.sandbox,
                 "writableRoots": roots,
                 "activeTurnId": None,
+                "loginKey": login.current(a.backend),
                 "parent": root_identity(),
             }
             if a.backend == "codex":

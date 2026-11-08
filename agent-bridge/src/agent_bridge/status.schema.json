@@ -855,6 +855,9 @@
             }
           ]
         },
+        "context_tokens": {
+          "anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]
+        },
         "native_observation": {
           "anyOf": [
             {

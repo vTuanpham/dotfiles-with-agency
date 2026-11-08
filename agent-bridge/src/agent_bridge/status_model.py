@@ -186,6 +186,7 @@ class Job:
     waiting: DeclaredWait | None = None
     in_flight: InFlight | None = None
     native_observation: dict | None = None
+    context_tokens: int | None = None  # the last request's prompt, when the harness reported it
 
 
 @dataclass(frozen=True)

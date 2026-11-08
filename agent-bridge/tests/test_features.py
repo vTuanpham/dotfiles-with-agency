@@ -284,11 +284,16 @@ def test_compact_cli_routes_only_supported_backends(monkeypatch, tmp_path, capsy
     assert calls == [{"resume": True, "compact": True}]
 
 
-def resume_with_switch(monkeypatch, tmp_path, *flags, fail=False):
+def resume_with_switch(monkeypatch, tmp_path, *flags, fail=False, context=90_000, logins=(None, None)):
     job = tmp_path / "owner/job"
     job.mkdir(parents=True)
-    (job / "state.json").write_text(json.dumps({"backend": "codex", "model": "old", "effort": "low",
-                                                "contextTokens": 90_000}))
+    state = {"backend": "codex", "model": "old", "effort": "low"}
+    if context is not None:
+        state["contextTokens"] = context
+    if logins[0]:
+        state["loginKey"] = logins[0]
+    monkeypatch.setattr(cli.login, "current", lambda backend: logins[1])
+    (job / "state.json").write_text(json.dumps(state))
     monkeypatch.delenv("AGENT_BRIDGE_WORKER", raising=False)
     monkeypatch.setattr(cli, "resolve_job", lambda _: job)
     monkeypatch.setattr(sys, "argv", ["agent-bridge", "resume", "owner/job", *flags])
@@ -309,7 +314,14 @@ def test_resume_compact_compacts_on_the_current_model_before_switching(monkeypat
     cli.main()
     assert calls == [(True, "", "old", "low"), (False, "Continue.", "new", "high")]
     assert json.loads((job / "state.json").read_text())["model"] == "new"
-    assert "compacting on old first, then continuing on new" in capsys.readouterr().out
+    assert "switch:" not in capsys.readouterr().out  # a small context needs no words, compacting or not
+
+
+def test_choosing_to_compact_a_large_context_just_runs_in_order(monkeypatch, tmp_path, capsys):
+    job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "new", "--compact", context=200_000)
+    cli.main()
+    assert calls[0][0] is True and calls[0][2] == "old" and calls[1][2] == "new"
+    assert "switch:" not in capsys.readouterr().out
 
 
 def test_failed_compaction_leaves_the_model_unchanged(monkeypatch, tmp_path):
@@ -320,15 +332,38 @@ def test_failed_compaction_leaves_the_model_unchanged(monkeypatch, tmp_path):
     assert json.loads((job / "state.json").read_text())["model"] == "old"
 
 
-def test_switching_model_without_compact_states_the_prefill_cost(monkeypatch, tmp_path, capsys):
+def test_plain_switch_of_a_small_context_says_nothing(monkeypatch, tmp_path, capsys):
     job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "new")
     cli.main()
     assert calls == [(False, "Continue.", "new", "low")]
-    out = capsys.readouterr().out
-    assert "new reads the whole context (about 90k tokens) without a warm cache" in out and "--compact" in out
-    job, calls = resume_with_switch(monkeypatch, tmp_path / "again", "--effort", "high")
-    cli.main()
     assert "switch:" not in capsys.readouterr().out
+    job, calls = resume_with_switch(monkeypatch, tmp_path / "effort", "--effort", "high")
+    cli.main()
+    assert capsys.readouterr().out.count("switch:") == 0
+
+
+def test_plain_switch_of_a_large_context_asks_for_a_choice_first(monkeypatch, tmp_path, capsys):
+    big = 200_000
+    job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "new", context=big)
+    with pytest.raises(SystemExit):
+        cli.main()
+    err = capsys.readouterr().err
+    assert "about 200k tokens" in err and "--compact" in err and "--no-compact" in err
+    assert calls == [] and json.loads((job / "state.json").read_text())["model"] == "old"
+    for flags in (("--no-compact",), ("--compact",)):  # either answer is accepted
+        where = tmp_path / flags[0]
+        job, calls = resume_with_switch(monkeypatch, where, "--model", "new", *flags, context=big)
+        cli.main()
+        assert calls and json.loads((job / "state.json").read_text())["model"] == "new"
+
+
+def test_unchanged_model_or_unknown_context_needs_no_choice(monkeypatch, tmp_path):
+    job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "old", context=900_000)
+    cli.main()
+    assert calls == [(False, "Continue.", "old", "low")]
+    job, calls = resume_with_switch(monkeypatch, tmp_path / "unknown", "--model", "new", context=None)
+    cli.main()
+    assert calls == [(False, "Continue.", "new", "low")]
 
 
 def test_retire_archives_report_and_keeps_job(tmp_path, monkeypatch, capsys):
@@ -357,3 +392,30 @@ def test_retire_archives_report_and_keeps_job(tmp_path, monkeypatch, capsys):
     state = json.loads((job / "state.json").read_text())
     assert state["retiredAt"] == row["retiredAt"]
     assert state["purgeAfter"] == row["purgeAfter"]
+
+
+def test_a_changed_login_is_noted_like_a_model_change_for_a_large_context_only(monkeypatch, tmp_path, capsys):
+    job, calls = resume_with_switch(monkeypatch, tmp_path / "small", logins=("a", "b"))
+    cli.main()
+    assert calls and "switch:" not in capsys.readouterr().out  # a small context moves quietly
+    assert json.loads((job / "state.json").read_text())["loginKey"] == "b"
+
+    job, calls = resume_with_switch(monkeypatch, tmp_path / "large", context=200_000, logins=("a", "b"))
+    with pytest.raises(SystemExit):
+        cli.main()
+    err = capsys.readouterr().err
+    assert "The login changed" in err and "about 200k tokens" in err and "out of quota" in err
+    assert "agent-bridge compact owner/job" in err and "Switch back to the previous login" in err
+    assert "--no-compact" in err and "--compact (" not in err and calls == []
+    assert json.loads((job / "state.json").read_text())["loginKey"] == "a"  # nothing recorded before a choice
+
+    where = tmp_path / "ack"
+    job, calls = resume_with_switch(monkeypatch, where, "--no-compact", context=200_000, logins=("a", "b"))
+    cli.main()
+    assert calls and json.loads((job / "state.json").read_text())["loginKey"] == "b"
+
+    job, calls = resume_with_switch(monkeypatch, tmp_path / "same", context=200_000, logins=("a", "a"))
+    cli.main()  # the same login, or one never recorded, asks for nothing
+    job, calls = resume_with_switch(monkeypatch, tmp_path / "new", context=200_000, logins=(None, "b"))
+    cli.main()
+    assert calls

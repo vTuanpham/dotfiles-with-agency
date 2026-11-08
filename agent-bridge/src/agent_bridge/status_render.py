@@ -4,7 +4,7 @@ from pathlib import PurePath
 
 from agent_resources.resources import MIB
 
-from .core import human
+from .core import LARGE_CONTEXT, human
 
 
 def pressure(host, queue):
@@ -46,7 +46,7 @@ def pressure(host, queue):
 def owners(snapshot):
     for owner in snapshot.owners:
         jobs = [j for j in snapshot.jobs if j.owner == owner.id and not j.retired_at]
-        caps = ",".join(f"{j.name}[memory={j.memory_cap},cpu={j.cpu_cap}]" for j in jobs)
+        caps = ",".join(f"{j.name}[{job_marks(j)}]" for j in jobs)
         size = human(owner.size_bytes) if owner.size_bytes is not None else "unknown"
         yield (
             f"{owner.id}: jobs={owner.jobs} running={owner.running} "
@@ -105,7 +105,22 @@ def label(job):
     return f"{job.name} ({job.title})" if job.title else job.name
 
 
+def context_mark(job):
+    """'ctx=210k' for a job whose context is worth a thought before its login or model changes."""
+    tokens = job.context_tokens
+    return f"ctx={round(tokens / 1000)}k" if tokens is not None and tokens > LARGE_CONTEXT else ""
+
+
+def job_marks(job):
+    return ",".join(filter(None, (f"memory={job.memory_cap}", f"cpu={job.cpu_cap}", context_mark(job))))
+
+
 def job_status(job):
+    text, mark = status_line(job), context_mark(job)
+    return f"{text} {mark}" if mark else text
+
+
+def status_line(job):
     name = label(job)
     if not job.running:
         return f"status: {name} {job.state} memory={job.memory_cap} cpu={job.cpu_cap}"

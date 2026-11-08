@@ -15,7 +15,7 @@ def urgent(event, include_info=False):
                 | INFORMATIONAL_ONLY_KINDS):
         return False
     if kind in {"turn_completed", "turn_failed", "question", "question_timeout", "error", "quota_pressure",
-                "auth_detached",
+                "quota_out", "auth_detached",
                 "approval_declined", "permission_denied", "peer_unknown", "model_fallback"}:
         return True
     if kind == "message":

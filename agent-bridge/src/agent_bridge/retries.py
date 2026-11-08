@@ -17,10 +17,16 @@ def failed(event):
             and (bool(event.get("error")) or status == "failed" or status.startswith("error")))
 
 
+QUOTA_OUT = r"insufficient[_ -]?quota|billing|usage limit|daily quota|quota (?:reached|exceeded)"
+
+
+def text_of(error):
+    return json.dumps(error, ensure_ascii=False) if isinstance(error, (dict, list)) else str(error)
+
+
 def retryable(error):
-    text = json.dumps(error, ensure_ascii=False) if isinstance(error, (dict, list)) else str(error)
-    if re.search(r"insufficient[_ -]?quota|billing|usage limit|daily quota|quota (?:reached|exceeded)|"
-                 r"invalid[_ -]?(?:api[_ -]?)?key|unauthorized|authentication|permission denied|"
+    text = text_of(error)
+    if re.search(QUOTA_OUT + r"|invalid[_ -]?(?:api[_ -]?)?key|unauthorized|authentication|permission denied|"
                  r"context[_ -]?(?:length|window)|model.*(?:not[_ -]?found|does not exist)", text, re.I):
         return False
     return bool(re.search(r"\boverloaded(?:[_ -]?error)?\b|\bat capacity\b|"
@@ -35,6 +41,7 @@ def delay(attempt):
 
 
 def run(job, state, path, backend, prompt, resume, extra, *, root_prompt=False):
+    from . import quota_pressure
     from .core import POLL, load_state, log, runner_started, save, stamp
 
     for count in range(MAX_RETRIES + 1):
@@ -76,6 +83,8 @@ def run(job, state, path, backend, prompt, resume, extra, *, root_prompt=False):
                     **{key: value for key, value in failure.items() if key not in {"at", "kind", "level"}})
             elif error is not None:
                 log(job, "error", message=str(error))
+            if re.search(QUOTA_OUT, text_of(reason), re.I):
+                quota_pressure.out_of_quota(job, state)
             if error is not None:
                 raise error
             return False
