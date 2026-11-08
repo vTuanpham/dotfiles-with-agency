@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from . import groups, owner_binding, root_wake, status, status_render, waiting
+from . import groups, owner_binding, quota_pressure, root_wake, status, status_render, waiting
 from .acknowledgements import INFORMATIONAL_ONLY_KINDS, displayed
 from .assessment import SILENCE_SECONDS
 from .core import JOBS, load_state, log
@@ -158,6 +158,7 @@ def follow(owners, until_event=False, stall_min=SILENCE_SECONDS // 60, timeout=N
     idle_ticks = 0
     host_printed, host_warned, oom_seen = None, False, {}
     shown_groups = set()
+    pressure = quota_pressure.Pressure()
     while True:
         active_owners = owner_binding.filter_owners(
             owners, JOBS, wake.identity if wake is not None else None
@@ -198,6 +199,8 @@ def follow(owners, until_event=False, stall_min=SILENCE_SECONDS // 60, timeout=N
                     )
                 oom_seen[group.id] = group.oom_kill
         jobs = {j.id: j for j in snapshot.jobs if not j.retired_at}
+        pressure.sample(jobs.values(), now, lambda owner, callback: observed(
+            owner, wake.identity if wake else None, callback))
         awaiting_batch = any(g.held_completions and g.policy.wake != "quiet" for g in snapshot.groups)
         awaiting_reminder = any(g.next_reminder_at is not None for g in snapshot.groups)
         if wake is not None:

@@ -14,7 +14,8 @@ def urgent(event, include_info=False):
     if kind in ({"heavy_wait", "retry_wait", "retryable_error", "attempt_failed", "peer_sent"}
                 | INFORMATIONAL_ONLY_KINDS):
         return False
-    if kind in {"turn_completed", "turn_failed", "question", "question_timeout", "error",
+    if kind in {"turn_completed", "turn_failed", "question", "question_timeout", "error", "quota_pressure",
+                "auth_detached",
                 "approval_declined", "permission_denied", "peer_unknown", "model_fallback"}:
         return True
     if kind == "message":

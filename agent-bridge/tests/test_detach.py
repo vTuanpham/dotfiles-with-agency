@@ -50,6 +50,23 @@ def test_detach_runner_pid_handshake(monkeypatch, tmp_path, capsys):
     assert capsys.readouterr().out.strip() == str(job)
 
 
+def test_agy_start_uses_current_account(monkeypatch, tmp_path):
+    job = tmp_path / "job"
+    args(monkeypatch, job)
+    argv = list(sys.argv)
+    argv[argv.index("claude")] = "agy"
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setattr(cli.agy.agy_auth, "current", lambda: "current-fixture")
+    def spawn():
+        state = json.loads((job / "state.json").read_text())
+        assert state["account"] == "current-fixture"
+        state["runnerPid"] = cli.os.getpid()
+        (job / "state.json").write_text(json.dumps(state))
+        return cli.os.getpid()
+    monkeypatch.setattr(cli.os, "fork", spawn)
+    cli.main()
+
+
 @pytest.mark.parametrize("quiet, code", [(True, None), (False, 124)])
 def test_watch_flag_follows_the_detached_job_from_before_launch(monkeypatch, tmp_path, capsys, quiet, code):
     job = tmp_path / "job"
@@ -203,41 +220,6 @@ def test_codex_start_records_active_account_number(monkeypatch, tmp_path):
     state = json.loads((job / "state.json").read_text())
     assert state["account"] == "3"
     assert state["title"] == "Fix Codex auth"
-
-
-def test_resume_switches_agy_account_and_rejects_other_backends(monkeypatch, tmp_path, capsys):
-    monkeypatch.delenv("AGENT_BRIDGE_WORKER", raising=False)
-    job = tmp_path / "job"
-    home = job / "home"
-    home.mkdir(parents=True)
-    (job / "state.json").write_text(json.dumps({"backend": "agy", "account": "a1"}))
-    (job / "prompt.md").write_text("continue")
-    accounts = tmp_path / "accounts"
-    token = accounts / "a2" / cli.agy.TOKEN
-    token.parent.mkdir(parents=True)
-    token.write_text("token")
-    old_token = accounts / "a1" / cli.agy.TOKEN
-    old_token.parent.mkdir(parents=True)
-    old_token.write_text("old")
-    (home / cli.agy.TOKEN).parent.mkdir(parents=True)
-    (home / cli.agy.TOKEN).symlink_to(old_token)
-    monkeypatch.setattr(cli.agy, "ACCOUNTS", accounts)
-    monkeypatch.setattr(cli, "resolve_job", lambda _: job)
-    monkeypatch.setattr(cli.agy, "run", lambda *args, **kwargs: None)
-    monkeypatch.setattr(sys, "argv", ["agent-bridge", "resume", "owner/job", "--account", "a2"])
-
-    cli.main()
-
-    state = json.loads((job / "state.json").read_text())
-    assert state["account"] == "a2"
-    assert (home / cli.agy.TOKEN).resolve() == token
-
-    state["backend"] = "codex"
-    (job / "state.json").write_text(json.dumps(state))
-    with pytest.raises(SystemExit) as error:
-        cli.main()
-    assert error.value.code == 1
-    assert "only for agy resumes" in capsys.readouterr().err
 
 
 def test_start_rejects_invalid_human_titles(monkeypatch, tmp_path, capsys):

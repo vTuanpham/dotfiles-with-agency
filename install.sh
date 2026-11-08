@@ -90,7 +90,7 @@ step_npm() {
   if ! have npm; then say "  npm is missing: install Node 24 with nvm (see README), then rerun this step"; return 0; fi
   local installed missing=() pkg
   installed=$(npm ls -g --depth=0 2>/dev/null || true)
-  for pkg in @anthropic-ai/claude-code @openai/codex @loongphy/codex-auth; do
+  for pkg in @anthropic-ai/claude-code @openai/codex @loongphy/codex-auth @fikrilal/agy-auth; do
     grep -qF "$pkg@" <<<"$installed" || missing+=("$pkg")
   done
   if ((${#missing[@]})); then act npm install -g "${missing[@]}"; else say "  all present"; fi

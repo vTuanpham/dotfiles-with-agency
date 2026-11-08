@@ -1,5 +1,6 @@
 """Native AGY read-only /usage command payload; pool names never imply model membership."""
 
+import hashlib
 import math
 import re
 from decimal import Decimal
@@ -83,6 +84,10 @@ def quota(data, now):
                 window_minutes=length, source_window=window, pool_id=identity, model_ids=models,
                 scope_kind="reported model set" if models is not None else "model membership unknown",
                 remaining_fraction=None if elapsed else fraction))
+    account_id = data.get("account_id")
+    if account_id is not None:
+        account_id = text(account_id)
     return Quota("agy", data["account"], None, False, tuple(windows),
                  None if windows else "usage unknown", data["at"], age, freshness,
-                 source="agy -p=/usage structured command.data", source_version=None)
+                 source="agy -p=/usage structured command.data", source_version=None,
+                 account_key_hash=hashlib.sha256(account_id.encode()).hexdigest() if account_id else None)

@@ -1,15 +1,17 @@
 import json
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
+from agent_accounts import agy_auth
+
 from .core import (
-    command_env,
     link,
     log,
+    save,
 )
 
-ACCOUNTS = Path.home() / ".agy-accounts"
 TOKEN = Path(".gemini/antigravity-cli/antigravity-oauth-token")
 READ_ALL = ["read_file(/)"]  # a directory target is recursive: reads anywhere, like a codex sandbox
 BURN_WINDOW = 60  # seconds per transcript sample
@@ -73,21 +75,8 @@ def burn_check(job, state, mon):
         )
 
 
-def account_env(account):
-    home = ACCOUNTS / account
-    if not (home / TOKEN).is_file():
-        raise RuntimeError(f"account {account!r} has no login: run `HOME={home} agy` in a terminal")
-    return command_env(HOME=str(home))
-
-
 def build_home(job, state):
     real, home = Path.home(), Path(job) / "home"
-    token = ACCOUNTS / state["account"] / TOKEN
-    if not token.is_file():
-        raise RuntimeError(
-            f"account {state['account']!r} has no login: run `HOME={ACCOUNTS / state['account']} agy` "
-            "in a terminal"
-        )
     gem, cli = home / ".gemini", home / ".gemini" / "antigravity-cli"
     cli.mkdir(parents=True, exist_ok=True)
     home.chmod(0o700)
@@ -104,7 +93,7 @@ def build_home(job, state):
             shutil.copytree(entry, gem / "config" / entry.name, dirs_exist_ok=True)
         else:
             link(entry, gem / "config" / entry.name)
-    link(token, cli / TOKEN.name)
+    set_auth(job, state, state["account"])
     roots = state["writableRoots"]
     perms = (
         {
@@ -128,19 +117,41 @@ def build_home(job, state):
     return home
 
 
-def switch_account(job, state, account):
-    token = ACCOUNTS / account / TOKEN
-    if not token.is_file():
-        raise RuntimeError(
-            f"account {account!r} has no login: run `HOME={ACCOUNTS / account} agy` in a terminal"
-        )
-    link = Path(job) / "home" / TOKEN
-    link.unlink(missing_ok=True)
-    link.symlink_to(token)
+def set_auth(job, state, account):
+    token = Path(job) / "home" / TOKEN
+    identity = agy_auth.export(account, token)
+    state["agyAuthId"] = identity
+    state["agyAuthDigest"] = agy_auth.digest(token)
     state["account"] = account
+
+
+def sync_auth(job, state):
+    identity, baseline = state.get("agyAuthId"), state.get("agyAuthDigest")
+    token = Path(job) / "home" / TOKEN
+    if not identity or not baseline:
+        return True
+    if not agy_auth.sync(state["account"], token, identity, baseline):
+        return False
+    state["agyAuthDigest"] = agy_auth.digest(token)
+    return True
 
 
 def run(job, state, path, prompt, resume=False, compact=False):
     from .agy_acp import run as run_acp
 
-    return run_acp(job, state, path, prompt, resume=resume, compact=compact)
+    if resume:
+        if state.get("agyAuthId") and not sync_auth(job, state):
+            raise RuntimeError("AGY worker credentials changed elsewhere; inspect before resuming")
+        set_auth(job, state, agy_auth.current())
+        save(path, state)
+    try:
+        return run_acp(job, state, path, prompt, resume=resume, compact=compact)
+    finally:
+        try:
+            if not sync_auth(job, state):
+                log(job, "auth_detached", level="urgent",
+                    message="AGY account credentials changed elsewhere; this worker keeps its own login.")
+            save(path, state)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            log(job, "auth_detached", level="urgent",
+                message="AGY worker login could not be synchronized with agy-auth.")

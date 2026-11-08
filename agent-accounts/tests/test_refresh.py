@@ -52,6 +52,7 @@ def test_failed_provider_and_agy_account_do_not_starve_others(tmp_path, monkeypa
         token.parent.mkdir(parents=True)
         token.touch()
     monkeypatch.setattr(providers, "snapshot", lambda now=None: ([], []))
+    monkeypatch.setattr(refresh.agy_auth, "accounts", lambda: ["a1", "a2"])
     calls = []
 
     def agy(account):
@@ -70,6 +71,15 @@ def test_failed_provider_and_agy_account_do_not_starve_others(tmp_path, monkeypa
     assert set(errors) == {"codex: awaiting a fresh usage reading", "agy: awaiting a fresh usage reading"}
     assert set(calls) == {"agy:a1", "agy:a2", "claude", "opencode"}
     assert len(refresh.read_state(refresh.state_path())) == 5
+
+
+def test_unavailable_agy_inventory_does_not_block_claude(monkeypatch):
+    monkeypatch.setattr(providers, "snapshot", lambda now=None: ([], []))
+    def unavailable():
+        raise RuntimeError("unavailable")
+    monkeypatch.setattr(refresh.agy_auth, "accounts", unavailable)
+    monkeypatch.setattr(providers, "refresh_claude", lambda: [observation()])
+    assert refresh.run(["agy", "claude"], now=1000) == ["agy: awaiting a fresh usage reading"]
 
 
 def test_overlapping_reader_does_not_refresh_twice(monkeypatch):

@@ -20,7 +20,7 @@ agent-accounts refresh --backend all --if-stale # refresh due sources for accoun
 ```
 
 Snapshot reads local Codex data through `codex-auth list --skip-api --json`,
-`~/.agy-accounts/*/quota.json`, and the last explicit Claude refresh under
+managed AGY quota caches, and the last explicit Claude refresh under
 `${XDG_STATE_HOME:-$HOME/.local/state}/agent-accounts/claude.json`.
 Codex uses the versioned JSON v1 contract: source snapshot update time, refresh
 status, actual `window_minutes` and Unix reset times. No plan label creates a
@@ -48,7 +48,8 @@ Named Claude scopes remain dynamic. The current cswap projection exposes a displ
 name but drops raw scope ID/kind/model IDs; the shared view does not invent exact
 membership or duration for those scopes. Missing five-hour windows stay absent.
 
-AGY refresh reads the native read-only `/usage` structured command payload,
+AGY accounts come from `agy-auth`. Refresh exports the selected credential to a
+private temporary home and reads the native read-only `/usage` structured command payload,
 preserving bucket IDs, period enums, fractions and ISO reset times. Rounded text
 rows are not decoded. Distinct buckets remain distinct even when readings match.
 Legacy text caches remain labelled as such until refreshed, with binding unknown.
@@ -56,8 +57,8 @@ An empty structured response cannot establish account availability, so it leaves
 the previous cache intact and reports a refresh failure.
 The observed native `/model` payload exposes the selected ID/effort, but neither
 it nor `/usage` supplies exact pool members. Native pool names do not establish
-model access. Bridge refuses automatic account rotation when that binding is
-unavailable; it never guesses a pool or cost tier from a model name.
+model access. Bridge does not automatically rotate accounts or infer a pool or
+cost tier from a model name.
 
 OpenCode refresh uses the documented native `GET /api/experimental/usage/limits`
 for the current directory, with a 30-second deadline and 1 MiB response limit.
@@ -92,11 +93,11 @@ usage cache. Failed refreshes leave valid cached windows visible. Last-attempt
 status is recorded separately and attached by stable account-key hash, so a failed
 account never adds a warning to another account or follows a reused row number.
 
-Refresh uses the selected account's existing file login and validates the result
-before atomically replacing its private quota cache. It never signs in, switches
-accounts or creates an auth store. Refresh without --account queries all existing
-signed-in agy accounts. Claude refresh reads the full managed inventory and does
-not accept `--account`. Errors do not include provider stderr or credential data.
+Refresh validates the selected account's result before atomically replacing its
+private quota cache. It never switches the active account. Refresh without
+`--account` queries all accounts in `agy-auth`. Claude refresh reads the full
+managed inventory and does not accept `--account`. Errors do not include provider
+stderr or credential data.
 
 Inbox continues to read allowance from the selected native daemon; a machine-wide
 cache must not substitute for a conversation's account.

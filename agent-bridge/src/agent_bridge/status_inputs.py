@@ -7,7 +7,6 @@ from datetime import datetime
 from agent_accounts import providers
 from agent_resources import resources
 
-from . import agy
 from .acknowledgements import INFORMATIONAL_ONLY_KINDS, event_lines, urgent
 from .core import command_env, load_state, tree_size
 from .status_model import MESSAGE_PREVIEW_LIMIT, Event, TidyItem
@@ -181,7 +180,7 @@ def unanswered(job, evs):
 
 
 def quotas(now, errors):
-    result, failures = providers.snapshot(now, root=agy.ACCOUNTS, environ=command_env())
+    result, failures = providers.snapshot(now, environ=command_env())
     errors.extend(failures)
     return result
 

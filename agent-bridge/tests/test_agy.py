@@ -3,6 +3,20 @@ import json
 from agent_bridge import agy
 
 
+def test_resume_uses_current_cli_account(tmp_path, monkeypatch):
+    from agent_bridge import agy_acp
+
+    state = {"account": "previous", "agyAuthId": "old", "agyAuthDigest": "old"}
+    path = tmp_path / "state.json"
+    selected = []
+    monkeypatch.setattr(agy, "sync_auth", lambda *args: True)
+    monkeypatch.setattr(agy.agy_auth, "current", lambda: "current")
+    monkeypatch.setattr(agy, "set_auth", lambda job, state, account: selected.append(account))
+    monkeypatch.setattr(agy_acp, "run", lambda *args, **kwargs: None)
+    agy.run(tmp_path, state, path, "continue", resume=True)
+    assert selected == ["current"]
+
+
 def test_build_home_never_touches_real_agy_store(tmp_path, monkeypatch):
     real, acct, job = tmp_path / "real", tmp_path / "acct", tmp_path / "job"
     store = real / ".gemini" / "antigravity-cli"
@@ -16,8 +30,11 @@ def test_build_home_never_touches_real_agy_store(tmp_path, monkeypatch):
     (acct / agy.TOKEN).parent.mkdir(parents=True)
     (acct / agy.TOKEN).write_text("tok")
     monkeypatch.setattr(agy.Path, "home", staticmethod(lambda: real))
-    monkeypatch.setattr(agy, "ACCOUNTS", tmp_path / "accts")
-    (tmp_path / "accts").symlink_to(tmp_path)
+    def export(account, destination):
+        assert account == "acct"
+        destination.write_text((acct / agy.TOKEN).read_text())
+        return "fixture-account"
+    monkeypatch.setattr(agy.agy_auth, "export", export)
     job.mkdir()
     state = {"account": "acct", "cwd": "/w", "writableRoots": [], "sandbox": "read-only"}
     home = agy.build_home(job, state)

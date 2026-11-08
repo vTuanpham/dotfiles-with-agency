@@ -73,3 +73,56 @@ def test_explicit_refresh_atomically_writes_private_validated_observation(tmp_pa
     assert observation.freshness == "fresh" and observation.account == "a1"
     assert json.loads(cache.read_text())["groups"][0]["buckets"][0]["remaining_fraction"] == 0.9
     assert cache.stat().st_mode & 0o777 == 0o600
+
+
+def test_managed_agy_refresh_uses_registry_and_native_usage_without_active_switch(tmp_path, monkeypatch):
+    monkeypatch.setattr(providers, "AGY_CACHE", tmp_path / "cache")
+    monkeypatch.setattr(providers.agy_auth, "accounts", lambda: ["a1"])
+    monkeypatch.setattr(providers.agy_auth, "sync", lambda *args: True)
+    def export(account, token, **kwargs):
+        assert account == "a1"
+        token.parent.mkdir(parents=True)
+        token.write_text("synthetic")
+        return "acct_fixture"
+    monkeypatch.setattr(providers.agy_auth, "export", export)
+    def run(command, **kwargs):
+        assert command == ["agy", "--output-format", "json", "-p=/usage"]
+        return subprocess.CompletedProcess(command, 0, json.dumps({"num_turns": 0, "command": {
+            "name": "usage", "data": {"groups": [{"name": "Native", "buckets": [{
+                "id": "pool", "name": "Weekly", "window": "weekly", "remaining_fraction": 0.9,
+                "reset_time": "2099-01-01T00:00:00Z"}]}]}}}), "")
+    monkeypatch.setattr(providers.subprocess, "run", run)
+    observation = providers.refresh("a1")
+    assert observation.account == "a1" and observation.account_key_hash
+    assert (tmp_path / "cache/a1/quota.json").is_file()
+
+
+def test_snapshot_ignores_removed_managed_accounts(tmp_path, monkeypatch, codex_data):
+    monkeypatch.setattr(providers, "AGY_CACHE", tmp_path / "cache")
+    monkeypatch.setattr(providers.agy_auth, "inventory", lambda: {})
+    monkeypatch.setattr(providers.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
+        a, 0, json.dumps(codex_data), ""))
+    stale = tmp_path / "cache/removed/quota.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("{}")
+    rows, errors = providers.snapshot()
+    assert not any(row.backend == "agy" for row in rows)
+    assert "agy quota cache invalid" not in errors
+
+
+def test_managed_agy_refresh_retains_unsynchronized_credential(tmp_path, monkeypatch):
+    monkeypatch.setattr(providers, "AGY_CACHE", tmp_path / "cache")
+    monkeypatch.setattr(providers.agy_auth, "accounts", lambda: ["a1"])
+    monkeypatch.setattr(providers.agy_auth, "sync", lambda *args: False)
+    def export(account, token, **kwargs):
+        token.parent.mkdir(parents=True)
+        token.write_text("synthetic")
+        return "acct_fixture"
+    monkeypatch.setattr(providers.agy_auth, "export", export)
+    monkeypatch.setattr(providers.subprocess, "run", lambda *a, **k:
+                        subprocess.CompletedProcess(a, 0, "{}", ""))
+    with pytest.raises(RuntimeError, match="retained for recovery"):
+        providers.refresh("a1")
+    retained = list((tmp_path / "recovery").iterdir())
+    assert len(retained) == 1 and retained[0].read_text() == "synthetic"
+    assert retained[0].stat().st_mode & 0o777 == 0o600

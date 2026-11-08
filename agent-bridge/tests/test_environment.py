@@ -93,7 +93,11 @@ def test_backend_spawn_keeps_auth_and_controller_without_root_identity(
     for auth in auths:
         auth.parent.mkdir(parents=True, exist_ok=True)
         auth.write_text("{}")
-    monkeypatch.setattr(agy, "ACCOUNTS", home / ".agy-accounts")
+    def export_account(account, destination, **kwargs):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text("{}")
+        return "fixture-account"
+    monkeypatch.setattr(agy.agy_auth, "export", export_account)
     monkeypatch.setattr(core.shutil, "which", lambda name: "/usr/bin/" + name)
     job = tmp_path / "owner/job"
     job.mkdir(parents=True)
@@ -144,18 +148,6 @@ def test_native_codex_child_keeps_root_controller_but_not_native_session_environ
     env = core.worker_env()
     assert env["AGENT_RESOURCES_OWNER"] == "codex:fixture-root"
     assert not set(agent_session.VARIABLES) & env.keys()
-
-
-def test_agy_account_queries_use_filtered_environment_and_existing_login(parent_env, monkeypatch):
-    account = Path(parent_env["HOME"]) / ".agy-accounts/a1"
-    auth = account / agy.TOKEN
-    auth.parent.mkdir(parents=True)
-    auth.write_text("{}")
-    monkeypatch.setattr(agy, "ACCOUNTS", account.parent)
-    parent_env["UNRELATED_API_KEY"] = "fixture"
-    env = agy.account_env("a1")
-    assert "UNRELATED_API_KEY" not in env
-    assert (Path(env["HOME"]) / agy.TOKEN).is_file()
 
 
 @pytest.mark.parametrize("passed", [False, True])

@@ -69,7 +69,6 @@ def test_agy_quota_error_does_not_switch_or_resume(monkeypatch, tmp_path):
         event(job, "turn_completed", error="quota reached")
 
     monkeypatch.setattr(agy, "run", run)
-    monkeypatch.setattr(agy, "switch_account", lambda *args: pytest.fail("unexpected account switch"))
     monkeypatch.setattr(cli, "linger", lambda *args: None)
     cli.run_with_linger(tmp_path, state, path, agy, "start", False, {})
     assert calls == [("a1", False)]

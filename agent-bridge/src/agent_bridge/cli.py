@@ -331,7 +331,6 @@ def main():
             '(e.g. web_search="live"); repeatable'
         ),
     )
-    s.add_argument("--account", help="agy account name")
     s.add_argument(
         "--allow",
         action="append",
@@ -348,7 +347,6 @@ def main():
     r.add_argument("--effort", help="switch effort or variant starting on the next turn")
     r.add_argument("--memory", help="memory cap for the next runner launch, such as 4G")
     r.add_argument("--cpu", help="CPU cap for the next runner launch, such as 400%%")
-    r.add_argument("--account", help="switch agy account")
     r.add_argument("--prompt-file", help="read follow-up from PATH or '-' for stdin")
     r.add_argument("--detach", action="store_true", help="run in the background and return the job path")
     r.add_argument("--watch", **WATCH)
@@ -713,10 +711,6 @@ def main():
             if a.command == "compact" and state.get("activeTurnId"):
                 raise RuntimeError("job has an active turn; stop it before compacting")
             module = BACKENDS[state["backend"]]
-            if getattr(a, "account", None):
-                if state["backend"] != "agy":
-                    raise RuntimeError("--account is supported only for agy resumes")
-                agy.switch_account(job, state, a.account)
             for key in ("model", "effort"):
                 if getattr(a, key, None):
                     state[key] = getattr(a, key)
@@ -735,7 +729,7 @@ def main():
                 "backend": a.backend,
                 "title": a.title,
                 "cwd": cwd,
-                "account": (a.account or "a1")
+                "account": agy.agy_auth.current()
                 if a.backend == "agy"
                 else codex.active_account()
                 if a.backend == "codex"

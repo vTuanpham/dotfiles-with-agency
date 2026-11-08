@@ -13,7 +13,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import providers
+from . import agy_auth, providers
 from .models import loads, timestamp
 
 BACKENDS = ("codex", "claude", "agy", "opencode")
@@ -101,12 +101,14 @@ def run(backends, *, account=None, if_stale=True, now=None):
         except BlockingIOError:
             return []
         observations, _ = providers.snapshot(now)
-        attempts, jobs = read_state(cache), []
+        attempts, jobs, inventory_errors = read_state(cache), [], []
         for backend in dict.fromkeys(backends):
-            accounts = ([account] if account else [
-                path.name for path in sorted(providers.ACCOUNTS.glob("*"))
-                if path.is_dir() and (path / providers.TOKEN).is_file()
-            ]) if backend == "agy" else [None]
+            try:
+                accounts = ([account] if account else agy_auth.accounts()) if backend == "agy" else [None]
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                attempts["agy"] = {"at": now, "ok": False}
+                inventory_errors.append("agy: awaiting a fresh usage reading")
+                continue
             for selected in accounts:
                 key = backend + (":" + selected if selected else "")
                 if backend == "opencode":
@@ -123,7 +125,9 @@ def run(backends, *, account=None, if_stale=True, now=None):
                 jobs.append((key, backend, selected))
                 attempts[key] = {"at": now, "ok": False, "pending": True}
         if not jobs:
-            return []
+            if inventory_errors:
+                providers.write_cache(cache, {"schema_version": 1, "attempts": attempts})
+            return inventory_errors
         providers.write_cache(cache, {"schema_version": 1, "attempts": attempts})
 
         def query(job):
@@ -150,5 +154,5 @@ def run(backends, *, account=None, if_stale=True, now=None):
                 if results is not None:
                     attempts[key]["accounts"] = results
                 providers.write_cache(cache, {"schema_version": 1, "attempts": attempts})
-        return [backend + ": awaiting a fresh usage reading" for key, backend, _ in jobs
-                if not attempts[key]["ok"]]
+        return inventory_errors + [backend + ": awaiting a fresh usage reading" for key, backend, _ in jobs
+                                   if not attempts[key]["ok"]]

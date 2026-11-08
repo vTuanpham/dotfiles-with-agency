@@ -11,7 +11,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import agy, codex, opencode
+from . import agy, agy_auth, codex, opencode
 from .models import loads
 from .readers import agy_quota, claude_quotas
 
@@ -21,6 +21,7 @@ _STATE = Path(os.environ.get("XDG_STATE_HOME", ""))  # XDG: an empty or relative
 CLAUDE_CACHE = ((_STATE if _STATE.is_absolute() else Path.home() / ".local/state")
                 / "agent-accounts/claude.json")
 OPENCODE_CACHE = CLAUDE_CACHE.with_name("opencode.json")
+AGY_CACHE = CLAUDE_CACHE.parent / "agy"
 
 
 def account_env(account, root=None, *, environ=None):
@@ -38,7 +39,8 @@ def account_env(account, root=None, *, environ=None):
 
 def snapshot(now=None, *, root=None, environ=None, claude_cache=None, opencode_cache=None):
     now = time.time() if now is None else now
-    root = root or ACCOUNTS
+    managed_agy = root is None
+    root = root if root is not None else AGY_CACHE
     result, errors = [], []
     try:
         run = subprocess.run(["codex-auth", "list", "--skip-api", "--json"], capture_output=True, text=True,
@@ -69,15 +71,29 @@ def snapshot(now=None, *, root=None, environ=None, claude_cache=None, opencode_c
         pass
     except (OSError, ValueError, TypeError, OverflowError):
         errors.append("opencode quota cache invalid")
-    for path in sorted(root.glob("*/quota.json")):
+    if managed_agy:
+        try:
+            inventory = agy_auth.inventory()
+            paths = [root / account / "quota.json" for account in inventory]
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            paths = []
+            errors.append("agy account inventory unavailable")
+    else:
+        paths = sorted(root.glob("*/quota.json"))
+    for path in paths:
         try:
             if (path.is_symlink() or not path.resolve().is_relative_to(root.resolve())
                     or path.stat().st_size > 1048576):
                 raise ValueError("unsafe quota cache")
-            observation = agy_quota(loads(path.read_text()), now)
+            data = loads(path.read_text())
+            if managed_agy and data.get("account_id") != inventory[path.parent.name]:
+                continue
+            observation = agy_quota(data, now)
             if observation.account != path.parent.name:
                 raise ValueError("quota account mismatch")
             result.append(observation)
+        except FileNotFoundError:
+            pass
         except (OSError, ValueError, TypeError):
             errors.append("agy quota cache invalid")
     return tuple(result), errors
@@ -187,7 +203,8 @@ def refresh_opencode(*, cache=None):
 
 
 def refresh(account, *, root=None, environ=None):
-    root = root or ACCOUNTS
+    if root is None:
+        return refresh_managed_agy(account, environ=environ)
     env = account_env(account, root, environ=environ)
     directory = root / account
     if directory.is_symlink() or not (directory / TOKEN).is_file():
@@ -210,3 +227,42 @@ def refresh(account, *, root=None, environ=None):
     finally:
         Path(name).unlink(missing_ok=True)
     return observation
+
+
+def refresh_managed_agy(account, *, environ=None):
+    if account not in agy_auth.accounts():
+        raise ValueError("AGY account must already be registered")
+    with tempfile.TemporaryDirectory(prefix="agy-quota-") as temp:
+        home = Path(temp)
+        token = home / TOKEN
+        identity = agy_auth.export(account, token, environ=environ)
+        baseline = agy_auth.digest(token)
+        env = agy_auth.environment(environ)
+        env["HOME"] = str(home)
+        result = subprocess.run(["agy", "--output-format", "json", "-p=/usage"], env=env,
+                                capture_output=True, text=True, timeout=120, cwd=str(home))
+        try:
+            synchronized = agy_auth.sync(account, token, identity, baseline)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+            synchronized = False
+        if not synchronized:
+            recovery = AGY_CACHE.parent / "recovery"
+            recovery.mkdir(mode=0o700, parents=True, exist_ok=True)
+            descriptor, name = tempfile.mkstemp(prefix="agy-", dir=recovery)
+            os.close(descriptor)
+            token_descriptor = os.open(token, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                os.fchmod(token_descriptor, 0o600)
+            finally:
+                os.close(token_descriptor)
+            os.replace(token, name)
+            raise RuntimeError("AGY quota login changed elsewhere; credential retained for recovery")
+        if result.returncode or len(result.stdout.encode()) > 1048576:
+            raise RuntimeError("AGY usage query failed")
+        data = agy.decode(loads(result.stdout), account, datetime.now(timezone.utc).isoformat())
+        data["account_id"] = identity
+        observation = agy_quota(data, time.time())
+        if not observation.windows:
+            raise ValueError("AGY usage response has no quota windows")
+        write_cache(AGY_CACHE / account / "quota.json", data)
+        return observation
