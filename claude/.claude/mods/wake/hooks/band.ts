@@ -1,4 +1,4 @@
-import type { WakeChip, WakeMood, WakePulse, WakeStep, WakeSurroundings, WakeTally, WakeWeather } from '../types'
+import type { WakeChip, WakeMood, WakeNativeMessage, WakePulse, WakeStep, WakeSurroundings, WakeTally, WakeWeather } from '../types'
 import { PACKET_RUN_MS, TURN_LEAD_MS, activityFlash, messageFade, packetWindow } from './crew-row'
 import type { Season } from './landscapes/kit'
 import { seedOf } from './pixels'
@@ -23,6 +23,8 @@ export type BandState = {
   /** Which character stands in Mochi's place (`/wake mochi`). */
   character?: CharacterId
   chips: WakeChip[]
+  /** The latest messages between the main conversation and its native subagents (the engine's `session.send`). */
+  messages?: WakeNativeMessage[]
   subagents: { id: string; name?: string; description: string; type: string; model?: string; tier: 1 | 2 | 3 | 4; since: number; leftAt?: number; interrupted?: boolean }[]
 }
 
@@ -152,6 +154,36 @@ const gaitClock = new PhaseClock()
 const routeClock = new PhaseClock()
 const gaitOf = (id: string, pace: number, now: number, rate = 1) => ({ pace, phase: gaitClock.advance(id, pace, now), route: routeClock.advance(id, pace, now, rate) })
 
+/**
+ * Messages between the main conversation and native subagents, as scene edges: the same trail, packets, calls and replies as a
+ * Bridge job's. Only a message to or from a subagent that is on the crew now is drawn. `root` is Mochi's place.
+ */
+function nativeEdges(state: BandState, now: number) {
+  const live = new Set(state.subagents.filter(a => a.leftAt === undefined).map(a => a.id))
+  return (state.messages ?? []).filter(m => now >= m.at && now - m.at <= 900_000 && (m.from === 'root' || live.has(m.from)) && (m.to === 'root' || live.has(m.to))).map(m => {
+    const toRoot = m.to === 'root', fromRoot = m.from === 'root', lead = toRoot ? TURN_LEAD_MS : 0, since = now - m.at
+    return {
+      source: fromRoot ? 'mochi' : m.from,
+      target: toRoot ? 'mochi' : m.to,
+      strength: since < 2_000 ? 0.65 + 0.35 * (Math.floor(since / 400) % 2) : messageFade(since),
+      preview: m.preview,
+      messageState: toRoot || fromRoot ? 'sent' as const : undefined,
+      count: 1,
+      arriving: since <= packetWindow(1) + lead + (toRoot || fromRoot ? TURN_LEAD_MS : 0) ? since : undefined,
+      lead: lead || undefined,
+      fresh: 1,
+      family: 'claude' as const,
+    }
+  })
+}
+
+/** How fast a native subagent's route runs just now: it hovers to talk to the root just as a Bridge worker does (routeFor). */
+const agentRouteFor = (id: string, messages: readonly WakeNativeMessage[] | undefined, now: number): number => {
+  const m = [...(messages ?? [])].filter(x => (x.from === id && x.to === 'root') || (x.to === id && x.from === 'root')).sort((a, b) => b.at - a.at)[0]
+  if (!m || now < m.at) return 1
+  return routeRate(now - m.at, packetWindow(1) + (m.from === id ? TURN_LEAD_MS : 0), TURN_LEAD_MS)
+}
+
 /** How fast this worker's route runs just now: it brakes, hovers while it turns to the root, sends and turns back, then sets off again (routeRate). */
 const routeFor = (job: WakeChip, now: number): number => {
   const message = [...(job.peers ?? [])].filter(p => p.target === 'root' && p.observedAt !== undefined && now >= p.observedAt).sort((a, b) => b.observedAt! - a.observedAt!)[0]
@@ -207,7 +239,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
           fresh: peer.fresh,
           family: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const),
         }
-      })), ...tethers(state, now)],
+      })), ...tethers(state, now), ...nativeEdges(state, now)],
     jobs: state.chips.filter(job => job.running || leavingFor(job, now) !== undefined).map(job => {
       const peer = [...(job.peers ?? [])].filter(p => now - p.lastAt <= 900_000 && now >= p.lastAt).sort((a, b) => b.lastAt - a.lastAt)[0]
       return {
@@ -231,7 +263,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
       } : undefined,
     }}),
     agents: state.subagents.filter(agent => agent.leftAt === undefined || now - agent.leftAt < EXIT_MS).map(agent => ({
-      id: agent.id, seed: seedOf(agent.id), tier: agent.tier, ...gaitOf(agent.id, agent.leftAt === undefined ? 0.75 : 0.3, now),
+      id: agent.id, seed: seedOf(agent.id), tier: agent.tier, ...gaitOf(agent.id, agent.leftAt === undefined ? 0.75 : 0.3, now, agentRouteFor(agent.id, state.messages, now)),
       leaving: agent.leftAt !== undefined && now >= agent.leftAt ? now - agent.leftAt : undefined,
       struck: agent.interrupted || undefined,
       arriving: agent.leftAt === undefined && now >= agent.since && now - agent.since < ARRIVE_MS ? now - agent.since : undefined,

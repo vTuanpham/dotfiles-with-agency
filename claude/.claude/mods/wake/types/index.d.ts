@@ -75,6 +75,9 @@ export type WakeAgent = {
   interrupted?: boolean
 }
 
+/** One SendMessage seen leaving a native conversation (the engine's `session.send`): `from` and `to` are a subagent's id, or `root` for the main conversation (Mochi's place). */
+export type WakeNativeMessage = { from: string; to: string; at: number; preview: string }
+
 export type WakeResource = {
   id: string; agentId: string; command: string; state: 'running' | 'queued' | 'cancelling'; running: boolean; needBytes: number
   position: number | null; queueLength: number; reason: string | null
@@ -149,6 +152,7 @@ declare module 'claude-code' {
       parentEffort: string // the session's effort level, what a subagent inherits
       agentEfforts: Record<string, string> // subagent id -> the effort its tool calls reported
       interruptedAgents: Record<string, true> // subagent id -> its turn was interrupted
+      nativeMessages: WakeNativeMessage[] // the latest messages between the main conversation and its subagents
       effortLevels: { at: number; levels: Record<string, Record<string, string[]>> } // backend -> model -> levels it offers
       surroundings: WakeSurroundings | null
       crewPage: number

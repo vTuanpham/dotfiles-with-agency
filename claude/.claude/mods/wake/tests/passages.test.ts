@@ -77,3 +77,22 @@ test('every family\'s strike ends clean and shows something on the way', () => {
     expect(clean(kind, 1).painted, `${kind} leaves nothing at the end`).toBe(false)
   }
 })
+
+test('a native subagent that messages the root, or is messaged by her, shows a trail and hovers to talk, like a Bridge worker', () => {
+  const agent = { id: 'a1', name: 'reviewer', description: 'Review', type: 'general', tier: 2 as const, since: T - 60_000 }
+  const withMessage = (from: string, to: string): BandState => ({ ...state({}), chips: [], subagents: [agent], messages: [{ from, to, at: T, preview: 'Found two issues' }] })
+  for (const [from, to, sends] of [['a1', 'root', true], ['root', 'a1', false]] as const) {
+    const scene = sceneInput(withMessage(from, to), 120, 0, null, T + 600)
+    const edge = scene.peerEdges!.find(e => e.preview === 'Found two issues')!
+    expect(edge.source).toBe(sends ? 'a1' : 'mochi') // the worker's id and Mochi's place are the two ends
+    expect(edge.target).toBe(sends ? 'mochi' : 'a1')
+    expect(edge.arriving).toBe(600)
+    expect(edge.lead !== undefined).toBe(sends) // only a sender turns to her before it speaks
+    // 600 ms in it has braked to a hover: its route clock has all but stopped while its animation clock goes on
+    const early = sceneInput(withMessage(from, to), 120, 0, null, T + 100).agents[0]!
+    const later = sceneInput(withMessage(from, to), 120, 0, null, T + 600).agents[0]!
+    expect(later.phase! - early.phase!).toBeGreaterThan(0)
+  }
+  // a message to a subagent that is no longer on the crew draws nothing
+  expect(sceneInput({ ...withMessage('a1', 'root'), subagents: [] }, 120, 0, null, T + 600).peerEdges!.some(e => e.preview === 'Found two issues')).toBe(false)
+})

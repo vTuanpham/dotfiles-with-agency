@@ -40,7 +40,7 @@ export const EFFECT_FRAMES: Record<SceneEffect['kind'], number> = { fireworks: 4
 export type SceneWeather = { cloud: number; rain: 0 | 1 | 2 | 3; snow: 0 | 1 | 2 | 3; fog: boolean; thunder: boolean; wind: number }
 
 /** A running subagent as its place's creature: its id's seed (who it is: its lane and pace come from it) and its model's class. */
-export type SceneAgent = { id?: string; seed: number; tier: 1 | 2 | 3 | 4; hit?: WakeSceneHit; leaving?: number; arriving?: number; struck?: boolean; pace?: number; phase?: number }
+export type SceneAgent = { id?: string; seed: number; tier: 1 | 2 | 3 | 4; hit?: WakeSceneHit; leaving?: number; arriving?: number; struck?: boolean; pace?: number; phase?: number; route?: number }
 
 export type SceneHitMap = { columns: number; rows: number; owners: number[]; targets: WakeSceneHit[] }
 export type SceneSelection = { target: WakeSceneHit; x: number; y: number }
@@ -619,7 +619,7 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   }
   const jobs = input.jobs.map(job => ({ ...job, hitOwner: registerHit(job.hit) || undefined }))
   const agents = input.agents.map(agent => ({
-    isStale: false, seed: agent.seed, tier: agent.tier, kind: 'claude' as const, pace: agent.pace, phase: agent.phase, lane: undefined as Job['lane'],
+    isStale: false, seed: agent.seed, tier: agent.tier, kind: 'claude' as const, pace: agent.pace, phase: agent.phase, route: agent.route, lane: undefined as Job['lane'], talk: undefined as Job['talk'],
     hit: agent.hit, hitOwner: registerHit(agent.hit) || undefined,
   }))
   const skyOwner = registerHit({ id: 'sky', title: 'Sky', details: [look.isDay ? 'Daytime' : 'Nighttime', input.weather ? `Cloud cover: ${Math.round(input.weather.cloud * 100)}%` : 'Weather unavailable'] })
@@ -777,7 +777,7 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   for (const [member, lane] of lanes([...jobs, ...agents], right)) member.lane = lane // each flyer owns a stretch of the whole sky
   for (const edge of input.peerEdges ?? []) { // a message to or from the root turns a worker toward Mochi, and a sender shouts it at her
     if (edge.arriving === undefined || (edge.source !== 'mochi' && edge.target !== 'mochi')) continue
-    const sending = edge.target === 'mochi', worker = jobs.find(job => job.hit?.id === (sending ? edge.source : edge.target))
+    const sending = edge.target === 'mochi', worker = [...jobs, ...agents].find(job => job.hit?.id === (sending ? edge.source : edge.target)) // (a Bridge job or a native subagent)
     // after the message is done the worker is still facing her: it turns back to its own course before going on
     const done = edge.arriving - (packetWindow(edge.fresh ?? 1) + (edge.lead ?? 0))
     if (worker) worker.talk = { ms: edge.arriving, sending, ...(done >= 0 ? { over: done } : {}) }

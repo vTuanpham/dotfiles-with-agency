@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement, Timer } from 'claude-code'
 
-import type { WakeAgent, WakeCall, WakeChip, WakeQuota, WakeResource, WakeDigest, WakeMood, WakeNeed, WakeNow, WakePreset, WakePulse, WakePulseKind, WakeRecap, WakeRecapLine, WakeSceneHit, WakeStep, WakeSurroundings, WakeTally } from '../types'
+import type { WakeAgent, WakeCall, WakeChip, WakeNativeMessage, WakeQuota, WakeResource, WakeDigest, WakeMood, WakeNeed, WakeNow, WakePreset, WakePulse, WakePulseKind, WakeRecap, WakeRecapLine, WakeSceneHit, WakeStep, WakeSurroundings, WakeTally } from '../types'
 import { ownedBy, ownersIn, scanCodex, withoutDetachedOwners, type CodexCursor } from './sources/codex'
 import { accountToolBackend, applyMeasured, makerOf, modelTier, quotaDetails, scanQuotas } from './sources/accounts'
 import { extractCalls, writeRecap } from './sources/recap'
@@ -135,6 +135,7 @@ const parentModel = atom({ plugin: 'wake', key: 'parentModel' } as const, '')
 const characterAtom = atom({ plugin: 'wake', key: 'character' } as const, 'mochi' as CharacterId) // who stands in Mochi's place (/wake mochi)
 const parentEffort = atom({ plugin: 'wake', key: 'parentEffort' } as const, '') // the session's effort level, what a subagent inherits
 const agentEfforts = atom({ plugin: 'wake', key: 'agentEfforts' } as const, {} as Record<string, string>) // subagent id -> the effort its tool calls reported
+const nativeMessages = atom({ plugin: 'wake', key: 'nativeMessages' } as const, [] as WakeNativeMessage[]) // the latest SendMessages between the main conversation and its subagents
 const interruptedAgents = atom({ plugin: 'wake', key: 'interruptedAgents' } as const, {} as Record<string, true>) // subagent id -> its turn was interrupted (the exit becomes a strike)
 const surroundings = atom({ plugin: 'wake', key: 'surroundings' } as const, null as WakeSurroundings | null)
 const crewPageIndex = atom({ plugin: 'wake', key: 'crewPage' } as const, 0)
@@ -284,6 +285,7 @@ async function bandState($: EngineInterface): Promise<BandState> {
     plan: await read($, plan),
     mood: await read($, mood),
     chips: await read($, chips),
+    messages: await read($, nativeMessages),
     character: await read($, characterAtom),
     subagents: crew.map(a => ({ id: a.id, name: a.name, description: a.description, type: a.type, model: a.model, tier: modelTier('claude', a.model || parent), since: a.since, leftAt: a.leftAt })),
   }
@@ -876,6 +878,21 @@ export const register: Register = on => {
     }
     return next(e)
   })
+
+  // a SendMessage between the main conversation and a subagent (or two subagents) is a message on the scene: its trail, its call,
+  // the sender hovering to speak. `agentId` names the sending loop; absent, it is the main conversation (the root, Mochi's place).
+  on('session.send', async ($, e, next) => {
+    const out = await next(e)
+    await safely(async () => {
+      const agents = await $.agent.list().catch(() => [])
+      const idOf = (who: string | undefined) => who === undefined ? 'root' : agents.find(a => a.id === who || a.name === who)?.id ?? 'root'
+      const now = await $.clock.now()
+      const from = idOf(e.agentId), to = idOf(e.to)
+      if (from === to) return // a message to oneself, or to someone Wake cannot place
+      await update($, nativeMessages, m => [...m.filter(old => now - old.at < 60_000), { from, to, at: now, preview: e.text.slice(0, 400) }].slice(-12))
+    })
+    return out
+  }).catch(($, e, next) => next(e))
 
   // learn what each subagent runs on; $.agent.list() does not say
   on('agent.spawn', async ($, e, next) => {
