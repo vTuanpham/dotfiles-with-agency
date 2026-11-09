@@ -98,6 +98,12 @@ reading, searching and running commands.
 - Fit waits to expected duration and harness limits. Yield long-running commands
   and keep working; when idle use longer event-driven waits, not short polling.
   A wait window is not a runtime limit; set actual timeouts separately.
+- Run background work the harness must track (a watcher, a long job, anything whose
+  completion or output you must act on) through the harness's own background
+  facility (a background shell/task, a native job or terminal handle), never a
+  bare `&`, `nohup` or detached subshell: an untracked job is invisible to the
+  user and the harness, notifies nobody when it ends, and cannot be stopped or
+  read through a handle. Re-arm a watcher the same way every time.
 - Stop/wait for owned processes through native job or terminal handles; otherwise
   verify an explicit PID or exact process name. Full-command `pgrep`/`pkill`
   matching can select the invoking shell or waiter; use verified ancestor
