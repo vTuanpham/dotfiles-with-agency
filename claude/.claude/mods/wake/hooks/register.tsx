@@ -317,7 +317,7 @@ async function scanAgents($: EngineInterface) {
   const models = await read($, agentModels)
   const efforts = await read($, agentEfforts)
   const inherited = await read($, parentEffort)
-  const running: WakeAgent[] = live.map(agent => ({ id: agent.id, type: agent.type, description: agent.description, name: agent.name, status: agent.status as WakeAgent['status'], since: prior.find(p => p.id === agent.id)?.since ?? now, model: models[agent.id], effort: efforts[agent.id] ?? (inherited || undefined) }))
+  const running: WakeAgent[] = live.map(agent => ({ id: agent.id, type: agent.type, description: agent.description, name: agent.name, status: agent.status as WakeAgent['status'], since: (old => (old && old.leftAt === undefined ? old.since : now))(prior.find(p => p.id === agent.id)), model: models[agent.id], effort: efforts[agent.id] ?? (inherited || undefined) }))
   // one that has just finished stays, marked, while its exit plays; the scene draws it and nothing else counts it
   const struck = await read($, interruptedAgents)
   const leaving = prior.filter(agent => !live.some(l => l.id === agent.id)).map(agent => ({ ...agent, leftAt: agent.leftAt ?? now, ...(struck[agent.id] ? { interrupted: true } : {}) })).filter(agent => now - agent.leftAt < EXIT_MS)
@@ -956,7 +956,10 @@ export const register: Register = on => {
       || activityFlash(job.activitySeenAt, now) > 0.02)) ? 'packets' : null)
     const width = e.props.bodyColumns
     const rowWidth = Math.max(0, width - 2) // extras has one cell of padding on either side
-    const currentJobs = crewJobs(jobs, now)
+    // A worker's links point only at the root or at another worker on this crew: a message to a job that is not shown (finished,
+    // retired, idle, another owner) leaves no arrow and no name beside the row, since nothing here is what it points at.
+    const crewNow = crewJobs(jobs, now), crewIds = new Set(crewNow.flatMap(job => (job.id ? [job.id] : [])))
+    const currentJobs = crewNow.map(job => ({ ...job, peers: (job.peers ?? []).filter(peer => peer.target === 'root' || crewIds.has(peer.target)) }))
     const inUse = new Set(currentJobs.map(job => job.backend))
     const urgentRowsNeeded = open.length + allCalls.length * (width < 60 ? 2 : 1)
     const pageDigits = String(Math.max(1, currentJobs.length + crewAgents.length + accounts.length)).length
@@ -1087,7 +1090,8 @@ export const register: Register = on => {
         const scope = `${prefix}-${cards.length}`
         cards.push(<Box position="absolute" bottom={1} {...(align === 'right' ? { right: 0 } : { left: 0 })} display="none" hover={{ scope, display: 'flex' }} flexDirection="column" width={Math.max(1, Math.min(56, width))} overflow="hidden" backgroundColor="#11111b" paddingX={1}>
           <Box flexDirection="row">{maker ? logo(maker, maker === 'codex' ? 'OpenAI' : 'Anthropic') : ''}<Text color={COLOR.text} weight="bold" wrap="wrap">{title}</Text></Box>
-          {details.map((detail, index) => <Text key={`detail-${index}`} color={COLOR.subtext} wrap="wrap">{detail}</Text>)}
+          {/* a card is a glance, never a page: at most twelve lines, none longer than three wrapped rows (a message can be a whole report) */}
+          {details.slice(0, 12).map((detail, index) => <Text key={`detail-${index}`} color={COLOR.subtext} wrap="wrap">{detail.length > 150 ? `${detail.slice(0, 149).trimEnd()}…` : detail}</Text>)}
         </Box>)
         return { scope }
       } }
@@ -1175,7 +1179,8 @@ export const register: Register = on => {
     for (const [index, agent] of crewAgents.entries()) rows.push(renderNative(agent, index, rootCells[index]))
     const renderBridgeRow = (job: WakeChip, index: number, row: ReturnType<typeof crewRows>[number], cell?: RootCell) => {
       const popups = hoverCards(`wake-bridge-${index}`, rowBox)
-      const peerDetails = (job.peers ?? []).filter(peer => now - peer.lastAt <= 900_000).flatMap(peer => [
+      // (the three latest conversations at most, each three short lines: a card never grows to cover the screen)
+      const peerDetails = [...(job.peers ?? [])].filter(peer => now - peer.lastAt <= 900_000).sort((a, b) => b.lastAt - a.lastAt).slice(0, 3).flatMap(peer => [
         `${peer.outgoing ? 'To' : 'From'}: ${peer.target}`,
         messageStatus(peer.messageState),
         messagePreview(peer.preview),

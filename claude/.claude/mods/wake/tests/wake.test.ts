@@ -498,7 +498,7 @@ test('every hover card has a keyed Box or a native hover scope', async ($, on) =
 test('metric and quota hover cards stay inside their full row at small and large widths', async ($, on) => {
   engine(on)
   const job: WakeChip = { id: 'owner/review', name: 'review', title: 'Review', backend: 'codex', account: '01', model: 'gpt-6.1-sol', effort: 'high', running: true, isStale: false, since: 1, lastEventAt: 995_000, memoryBytes: 1.4 * 1024 ** 3, memoryCap: '3G',
-    peers: [{ target: 'owner/build', outgoing: true, count: 1, lastAt: 995_000, preview: null }] }
+    peers: [{ target: 'root', outgoing: true, count: 1, lastAt: 995_000, preview: null, messageState: 'observed' }] }
   const quotas = [{ cli: 'claude', account: '01', plan: '', active: true, parts: [{ label: 'w', pct: 21, resets: null }] }]
   on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: [job], version: 1 } }))
   on('state.get', { plugin: 'wake', key: 'quotas' }, () => ({ value: { value: quotas, version: 1 } }))

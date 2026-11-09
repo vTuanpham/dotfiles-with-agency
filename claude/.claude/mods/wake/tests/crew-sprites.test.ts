@@ -328,3 +328,13 @@ test('failed initial placements leave no invisible hit owners', () => {
   airJobs(c, state, jobs, 20)
   expect(c.px.every((color, i) => color !== 0 || c.hitOwners![i] === 0)).toBe(true)
 })
+
+test('after a message the worker turns back to its own course (a coil), instead of being slid round in one frame', () => {
+  const job: Job = { kind: 'codex', tier: 4, seed: 0, isStale: false }
+  const at = (over?: number) => render({ ...job, talk: over === undefined ? undefined : { ms: 3000, sending: true, over } }, 0)
+  const facingHer = at(0), turning = at(450), home = at(1000)
+  expect(turning).not.toEqual(facingHer) // mid-turn it is coiled up, neither facing her nor facing home
+  expect(turning).not.toEqual(home)
+  expect(home).not.toEqual(facingHer) // and it ends facing its own way
+  expect(home).toEqual(at(undefined)) // exactly as if it had never turned
+})

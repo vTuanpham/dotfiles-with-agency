@@ -191,7 +191,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
           messageState: rootMessage ? peer.messageState : undefined,
           count: peer.count,
           // packets run only for messages arriving in view right now, one per new message
-          arriving: peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1) + lead
+          arriving: peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1) + lead + (rootMessage ? TURN_LEAD_MS : 0) // (a root message adds the turn back to its own course)
             ? now - peer.observedAt : undefined,
           lead: lead || undefined,
           fresh: peer.fresh,

@@ -196,7 +196,7 @@ export type Aura = {
   /** The sprite is mirrored (it is flying to the right): its nose, tail and sides, and anything thrown behind it, turn with it. */
   flip?: boolean
   /** A message to or from the root is in flight (ms since it arrived in view; sending, or being sent to). */
-  talk?: { ms: number; sending: boolean }
+  talk?: { ms: number; sending: boolean; over?: number }
   /** ms since it began rolling round to face the other way, while it is turning. */
   turn?: number
   /** Local nose relative to the sprite centre, before mirroring. Codex derives it from the visible generated frame. */
@@ -263,7 +263,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
       const stroke = machine ? pose(0).force : s.beats ? 0.2 + 0.8 * Math.max(...s.beats.map(b => Math.max(0, Math.cos((beat - b) * Math.PI / 4)) ** 6)) : 1
       emit(c, a.flip ? mirrored(s.emitter) : s.emitter, { at: origin, t, seed: a.seed * 31 + i, strength: strength * stroke, wind })
     }
-    if (a.talk?.sending) for (const [i, s] of (cell.talking ?? []).entries()) { // shouting a message at the root: a burst on the message's own clock
+    if (a.talk?.sending && a.talk.over === undefined) for (const [i, s] of (cell.talking ?? []).entries()) { // shouting a message at the root: a burst on the message's own clock
       if (s.tiers && !s.tiers.includes(a.tier)) continue
       const [ox, oy] = anchorOf(a, s.at, s.dx, s.dy)
       // Every sender finishes turning to face the root before it speaks, on the same clock as the packet leaving (scene.ts).

@@ -1,9 +1,16 @@
 type PeerMessage = { messageId?: string }
 type PeerJob = { id: string; owner: string; peers: PeerMessage[] }
 
-/** Null is an intentionally omitted source preview; absent means no matching message metadata. */
-export const messagePreview = (preview: string | null | undefined): string =>
-  preview === null ? 'Preview withheld by Bridge' : preview || 'Message preview unavailable'
+/** The most a preview shows anywhere (a hover card, a row): a message can be a whole report, and a card must never grow to fill the screen. */
+export const PREVIEW_MAX = 120
+
+/** Null is an intentionally omitted source preview; absent means no matching message metadata. A long preview is cut to one short line, with an ellipsis. */
+export const messagePreview = (preview: string | null | undefined): string => {
+  if (preview === null) return 'Preview withheld by Bridge'
+  const text = (preview ?? '').replace(/\s+/g, ' ').trim()
+  if (!text) return 'Message preview unavailable'
+  return text.length <= PREVIEW_MAX ? text : `${text.slice(0, PREVIEW_MAX - 1).trimEnd()}…`
+}
 
 /** Describe the observed stage; Bridge does not issue reader acknowledgements. */
 export const messageStatus = (state: 'observed' | 'sent' | undefined): string =>

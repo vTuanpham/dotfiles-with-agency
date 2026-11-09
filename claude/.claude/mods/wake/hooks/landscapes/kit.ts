@@ -56,6 +56,10 @@ export type Look = {
   crewZones?: { x: number; y: number; w: number; h: number }[]
   crewAnchors?: number[]
   crewSpriteZones?: { x: number; y: number; w: number; h: number }[]
+  /** The sprite zones that are hard boundaries (Mochi and her laptop); every other zone in `crewSpriteZones` is crew, a soft one. */
+  crewHard?: { x: number; y: number; w: number; h: number }[]
+  /** Where this pass's own anchors begin in `crewAnchors` (it is shared across a scene's passes), so overlapping crew still keep an anchor each (placeFly). */
+  crewAnchorsFrom?: number
   crewGround?: number
   /** false draws bare sprites: no wind, trails, lights or particles (a switch for tests, and for a terminal that wants it quiet). */
   effects?: boolean
@@ -77,7 +81,7 @@ export type Building = {
 /** A crew member: the seed is who it is (its place, lane and motion come from it, never from its place in the list); the harness picks
  *  the family (kind), the model the class, and a maker with its own family (Claude inside agy) lends one mark its colour. */
 /** lift: 0..1, how high the sprite hops right now, only from real events (it did something, sent or received a message). */
-export type Job = { isStale: boolean; seed: number; kind?: 'codex' | 'agy' | 'claude' | 'opencode'; tier?: 1 | 2 | 3 | 4; maker?: 'claude'; signal?: boolean; /** the stretch of sky this flyer owns and roams, from `lanes` in crew.ts: its centre column and how far it may go each way */ lane?: { x: number; roam: number }; /** a message to or from the root is in flight: ms since it arrived in view, and whether this worker is the one sending it (scene.ts) */ talk?: { ms: number; sending: boolean }; lift?: number; /** 0..1, how busy the worker is: from its real events and state (band.ts); calm hovers, busy roams and flaps faster */ pace?: number; /** the gait's own clock, in frames: it runs faster the busier the worker is, so a change of pace never jumps the sprite (band.ts) */ phase?: number; /** ms since it finished, while it plays its exit; ms since it started, while it arrives (exits.ts) */ leaving?: number; arriving?: number; /** its last turn was interrupted, so its exit is a strike (exit-styles.ts `struck`) */ struck?: boolean; hit?: WakeSceneHit; hitOwner?: number }
+export type Job = { isStale: boolean; seed: number; kind?: 'codex' | 'agy' | 'claude' | 'opencode'; tier?: 1 | 2 | 3 | 4; maker?: 'claude'; signal?: boolean; /** the stretch of sky this flyer owns and roams, from `lanes` in crew.ts: its centre column and how far it may go each way */ lane?: { x: number; roam: number }; /** a message to or from the root is in flight: ms since it arrived in view, and whether this worker is the one sending it (scene.ts) */ talk?: { ms: number; sending: boolean; /** ms since the message was done, while the worker turns back to its own course (crew.ts `orient`) */ over?: number }; lift?: number; /** 0..1, how busy the worker is: from its real events and state (band.ts); calm hovers, busy roams and flaps faster */ pace?: number; /** the gait's own clock, in frames: it runs faster the busier the worker is, so a change of pace never jumps the sprite (band.ts) */ phase?: number; /** ms since it finished, while it plays its exit; ms since it started, while it arrives (exits.ts) */ leaving?: number; arriving?: number; /** its last turn was interrupted, so its exit is a strike (exit-styles.ts `struck`) */ struck?: boolean; hit?: WakeSceneHit; hitOwner?: number }
 
 /** Each backend keeps a distinct accent; agy's mauve reads on day and night skies, unlike blue; OpenCode's green, unlike the sky's own blues. */
 export const jobAccent = (job: Job, codex: number): number => (job.kind === 'agy' ? P.mauve : job.kind === 'claude' ? P.pink : job.kind === 'opencode' ? P.green : codex)

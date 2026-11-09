@@ -673,13 +673,16 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   look.crewZones = []
   look.crewGround = ground
   look.crewAnchors = crewAnchors
+  look.crewAnchorsFrom = crewAnchors.length
   const catZone = { x: catX - 4, y: 0, w: CAT_COLUMNS + 4, h: H }
   look.crewZones.push(catZone)
   look.crewSpriteZones = [catZone]
+  look.crewHard = [catZone] // what no flyer may cross: Mochi and her laptop (the rest of the crew is a soft boundary, see placeFly)
   if (input.mood === 'work') {
     const laptop = { x: catX - 4, y: ground - 3, w: 4, h: 4 }
     look.crewZones.push(laptop)
     look.crewSpriteZones.push(laptop)
+    look.crewHard.push(laptop)
   }
   if ((input.weather?.cloud ?? 0) < 0.85) {
     const { rise, set } = input.sun
@@ -775,7 +778,9 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   for (const edge of input.peerEdges ?? []) { // a message to or from the root turns a worker toward Mochi, and a sender shouts it at her
     if (edge.arriving === undefined || (edge.source !== 'mochi' && edge.target !== 'mochi')) continue
     const sending = edge.target === 'mochi', worker = jobs.find(job => job.hit?.id === (sending ? edge.source : edge.target))
-    if (worker) worker.talk = { ms: edge.arriving, sending }
+    // after the message is done the worker is still facing her: it turns back to its own course before going on
+    const done = edge.arriving - (packetWindow(edge.fresh ?? 1) + (edge.lead ?? 0))
+    if (worker) worker.talk = { ms: edge.arriving, sending, ...(done >= 0 ? { over: done } : {}) }
   }
   windLayer(c, look) // gusts and what the wind carries here: over the scenery, under the crew
   land.jobs(c, look, jobs, right)

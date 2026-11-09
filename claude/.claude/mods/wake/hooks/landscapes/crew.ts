@@ -129,7 +129,7 @@ const TURN = TURN_LEAD_MS / 1000 // (a sender sends only after this: crew-row.ts
  * when coiled or edge-on. It faces where it is going, judged over the half second round that moment, and (with a message for the root)
  * Mochi, who is at the right edge. `since` is how long ago the roll began, in ms, while one is under way.
  */
-function orient(path: (ago: number) => Vec, drawn: 'left' | 'right', ago: number, talk?: { ms: number }): { mirror: 1 | -1; roll?: number; since?: number } {
+function orient(path: (ago: number) => Vec, drawn: 'left' | 'right', ago: number, talk?: { ms: number; over?: number }): { mirror: 1 | -1; roll?: number; since?: number } {
   const side = (heading: 'left' | 'right'): 1 | -1 => (heading === drawn ? 1 : -1)
   const heading = (back: number): 'left' | 'right' => {
     const x = path(back)[0]
@@ -142,6 +142,10 @@ function orient(path: (ago: number) => Vec, drawn: 'left' | 'right', ago: number
   const turn = (from: 1 | -1, to: 1 | -1, elapsed: number): { mirror: 1 | -1; roll?: number; since?: number } => elapsed >= TURN
     ? { mirror: to }
     : { mirror: elapsed / TURN < 0.5 ? from : to, roll: elapsed / TURN, since: elapsed * 1000 }
+  if (talk?.over !== undefined) { // the message is done: it turns back to its own course before going on (not slid round in one frame)
+    const from = side('right'), to = side(heading(ago))
+    return from === to ? { mirror: to } : turn(from, to, talk.over / 1000)
+  }
   if (talk) {
     const seconds = talk.ms / 1000, from = side(heading(ago + seconds)), to = side('right')
     return from === to ? { mirror: to } : turn(from, to, seconds) // already facing her: no turn
@@ -282,8 +286,13 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
     // What a flyer must not cross: Mochi, her laptop and the other crew (their roaming boxes: every worker stays visible and
     // hoverable), each with a ring of one cell. Scenery is only a preference (`soft`): a flyer is nearer than the buildings, so
     // it may pass in front of them and hide a few, though it settles in clear sky when there is any.
-    const padded = new Uint8Array(c.W * c.H), soft = new Uint8Array(c.W * c.H)
-    for (const z of sprites) for (let py = Math.max(0, z.y - 1); py < Math.min(c.H, z.y + z.h + 1); py++) for (let px = Math.max(0, z.x - 1); px < Math.min(c.W, z.x + z.w + 1); px++) padded[py * c.W + px] = 1
+    // Only Mochi and her laptop are hard (`crewHard`). The rest of the crew is a soft boundary like the scenery: a flyer prefers
+    // clear sky but may pass through another worker when the sky is crowded, so nobody is ever pushed out of the scene.
+    const padded = new Uint8Array(c.W * c.H), soft = new Uint8Array(c.W * c.H), crowd = new Uint8Array(c.W * c.H)
+    const hard = look.crewHard ?? []
+    const skyFloor = (look.crewGround ?? c.H) - 6 // workers may overlap one another only in the open sky, never down among the street and the foreground
+    for (const z of hard) for (let py = Math.max(0, z.y - 1); py < Math.min(c.H, z.y + z.h + 1); py++) for (let px = Math.max(0, z.x - 1); px < Math.min(c.W, z.x + z.w + 1); px++) padded[py * c.W + px] = 1
+    for (const z of sprites) if (!hard.includes(z)) for (let py = Math.max(0, z.y); py < Math.min(c.H, z.y + z.h); py++) for (let px = Math.max(0, z.x); px < Math.min(c.W, z.x + z.w); px++) crowd[py * c.W + px] = 1
     for (const z of zones) for (let py = Math.max(0, z.y); py < Math.min(c.H, z.y + z.h); py++) for (let px = Math.max(0, z.x); px < Math.min(c.W, z.x + z.w); px++) soft[py * c.W + px] = 1
     const candidates: { x: number; y: number; distance: number }[] = []
     for (let cy = (h >> 1) - formation.top; cy <= (look.crewGround ?? c.H) - formation.bottom + (h >> 1); cy++) {
@@ -299,14 +308,16 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       if (Math.abs(k.x - x) > 16 || Math.abs(k.y - y) > 4) continue
       const zx = k.x - (w >> 1), zy = k.y - (h >> 1)
       if (!pixels.every(([dx, dy]) => !padded[(zy + dy) * c.W + zx + dx])) continue
-      let hidden = 0
-      for (const [dx, dy] of pixels) hidden += soft[(zy + dy) * c.W + zx + dx]!
+      if (zy + h > skyFloor && pixels.some(([dx, dy]) => crowd[(zy + dy) * c.W + zx + dx])) continue
+      let hidden = 0 // the cost of this spot: scenery it hides, and (a little more) other workers it would overlap
+      for (const [dx, dy] of pixels) hidden += soft[(zy + dy) * c.W + zx + dx]! + 3 * crowd[(zy + dy) * c.W + zx + dx]!
       if (!best || hidden < best.hidden) best = { k, hidden }
       if (hidden === 0) break
     }
     for (const candidate of best ? [best.k, ...candidates] : candidates) {
       const zone = { x: candidate.x - (art[0]!.length >> 1), y: candidate.y - (art.length >> 1), w, h }
       if (pixels.some(([dx, dy]) => padded[(zone.y + dy) * c.W + zone.x + dx])) continue
+      if (zone.y + h > skyFloor && pixels.some(([dx, dy]) => crowd[(zone.y + dy) * c.W + zone.x + dx])) continue
       // The room it may roam: around home, as wide as its share of the free sky (crewRoam) and a few rows high, stopping only
       // at Mochi and the other crew. The whole box is reserved, so no other flyer crosses a roaming worker; scenery does not
       // limit it (it passes in front of buildings).
@@ -333,7 +344,11 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       const pace = job.pace ?? 0.6
       const { u, v } = gait(gaitKind(job, look), job.tier ?? 1, job.seed, job.phase ?? look.frame, rx)
       const share = roamShare(pace)
-      const drift = Math.round(rx * share * u), offset = -Math.round(share * (v > 0 ? v * up : v * down)) - hop
+      const offset = -Math.round(share * (v > 0 ? v * up : v * down)) - hop
+      let drift = Math.round(rx * share * u)
+      // Crew may overlap (a soft boundary), but every worker keeps an anchor of its own, so a message wire finds only one of them.
+      // (only this pass's anchors count: the array is shared across the passes of one scene)
+      for (let tries = 0; tries < 8 && anchors.indexOf((candidate.y + offset) * c.W + candidate.x + drift, look.crewAnchorsFrom ?? 0) >= 0; tries++) drift += tries % 2 ? -tries : tries + 1
       const reserved = { x: zone.x + formation.left - rx, y: zone.y + formation.top - up - hopRoom, w: formation.right - formation.left + 2 * rx, h: formation.bottom - formation.top + up + down + hopRoom }
       zones.push(reserved)
       sprites.push(reserved)
