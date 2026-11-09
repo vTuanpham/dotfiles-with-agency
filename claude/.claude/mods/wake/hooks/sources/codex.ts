@@ -24,6 +24,7 @@ export type CodexJob = {
   finishedAt?: number
   urgent: { id: string; at: number; text: string }[] // urgent events new since the cursor (turn_completed excluded), text <= 300
   completedNow: boolean // a turn_completed arrived since the cursor
+  interrupted: boolean // its latest turn ended because the root interrupted it (agent-bridge interrupt)
   state: string
   reason: string
   eventKnown: boolean
@@ -150,6 +151,7 @@ export async function scanCodex(
       urgent: fresh.filter(e => e.wakes && e.kind !== 'turn_completed')
         .map(e => ({ id: e.id, at: e.at ? Date.parse(e.at) : now, text: (e.text || e.kind).slice(0, 300) })),
       completedNow: fresh.some(e => e.kind === 'turn_completed'),
+      interrupted: events.filter(e => e.kind === 'turn_completed').at(-1)?.status === 'interrupted',
       state: job.state, reason: job.stall.state === 'stalled' ? job.stall.reason : job.reason,
       eventKnown: job.last_event_at !== null, memoryBytes: job.memory_bytes, memoryCap: job.memory_cap,
       waitingPeer: job.waiting?.peer && ['peer', 'dependency'].includes(job.waiting.kind) ? { target: job.waiting.peer, declaredAt: Date.parse(job.waiting.declared_at) } : undefined,

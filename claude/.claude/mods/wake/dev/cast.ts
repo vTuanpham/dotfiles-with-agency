@@ -14,7 +14,7 @@ const places = want === 'all' ? PLACES : [want as (typeof PLACES)[number]]
 const kinds = ['codex', 'claude', 'agy', 'opencode'] as const
 const SLOT = 23, W = SLOT * 16, H = 16
 const rows: { name: string; px: number[] }[] = []
-for (const place of places) for (const [time, night] of [['day', 0], ['night', 1]] as const) for (const frame of [0, 12]) {
+for (const place of places) for (const [time, night] of [['day', 0], ['night', 1]] as const) for (const frame of [0, 5]) {
   const c = canvas(W, H)
   const top = mix(P.blue, P.ink, night * 0.9), horizon = mix(P.sky, P.base, night * 0.85)
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) c.set(x, y, mix(top, horizon, y / H))
@@ -23,7 +23,9 @@ for (const place of places) for (const [time, night] of [['day', 0], ['night', 1
   const look = { W, H, frame, night, isDay: !night, place, top, horizon, crewGround: ground, crewZones: [], crewSpriteZones: [] } as unknown as Look
   kinds.forEach((kind, k) => ([1, 2, 3, 4] as const).forEach((tier, t) => {
     const job: Job = { kind, tier, seed: 3 + k, isStale: false }
-    fly(c, look, (k * 4 + t) * SLOT + (SLOT >> 1), 7, job, kind)
+    const cx = (k * 4 + t) * SLOT + (SLOT >> 1)
+    // A cast slot shows one silhouette; the scene sheets reserve room for its whole escort formation.
+    fly(c, look, cx, 7, job, kind, false, () => [cx, 7], [])
   }))
   rows.push({ name: `${place} ${time} · frame ${frame} · codex | claude | agy | opencode, classes 1-4 each`, px: Array.from(c.px) })
 }

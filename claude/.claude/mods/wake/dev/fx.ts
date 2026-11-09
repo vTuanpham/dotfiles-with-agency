@@ -1,5 +1,5 @@
 // bun dev/fx.ts <place> [out.png] [pace] [wind] [hour]: the four families at work in one landscape, every 0.8 s of their own clock, with
-// the wind blowing: soft trails along their paths, wind gusts and what the place carries, rotor wash, a searchlight, feathers, sparks and flames.
+// the wind blowing: soft trails along their paths, wind gusts and what the place carries, booster jets, data packets, feathers, sparks and flames.
 import { scenePixels, type SceneInput } from '../hooks/scene.ts'
 import { SCENE_H } from '../hooks/landscapes/kit.ts'
 import { clockRate } from '../hooks/landscapes/gait.ts'

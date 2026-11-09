@@ -53,7 +53,8 @@ const weathers: SceneInput['weather'][] = [
 ]
 
 test('a real message edge connects visible workers and exposes its preview', () => {
-  const input: SceneInput = { ...base, width: 120, turns: [], live: null, plan: null, agents: [], jobs: [
+  // (bare scenes: the crew's effects are soft light, which blends with whatever is under it, a message trail included)
+  const input: SceneInput = { ...base, effects: false, width: 120, turns: [], live: null, plan: null, agents: [], jobs: [
     { isStale: false, seed: 1, hit: { id: 'a', title: 'A', details: [] } },
     { isStale: false, seed: 2, hit: { id: 'b', title: 'B', details: [] } },
   ], peerEdges: [{ source: 'a', target: 'b', strength: 1, preview: 'Review tests' }] }
@@ -69,6 +70,7 @@ test('a real message edge connects visible workers and exposes its preview', () 
   for (let cell = 0; cell < noMessage.hits.owners.length; cell++) {
     const owner = noMessage.hits.owners[cell]!
     if (!owner || noMessage.hits.targets[owner - 1]!.id.startsWith('peer:') || noMessage.hits.targets[owner - 1]!.id === 'sky') continue
+    if (frame.hits.owners[cell] === edge) continue // the message arc is drawn over whatever it crosses, the sun included
     const x = cell % input.width, y = Math.floor(cell / input.width) * 2
     expect(graphPixels[y * input.width + x]).toBe(plainPixels[y * input.width + x])
     expect(graphPixels[(y + 1) * input.width + x]).toBe(plainPixels[(y + 1) * input.width + x])
@@ -248,13 +250,15 @@ test('a Claude subagent arrives and leaves like any worker, in every place', () 
 test('crowded workers preserve the pre-existing scene hit pixels', () => {
   const jobs = Array.from({ length: 30 }, (_, i) => ({ isStale: false, seed: hash(i + 100), kind: 'codex' as const }))
   for (const preset of Object.keys(LANDSCAPES) as SceneInput['preset'][]) for (const width of [24, 80]) {
-    const input: SceneInput = { ...base, preset, width, jobs, agents: [], weather: null, effect: null }
+    // (bare sprites: the air effects are soft light, which blends with whatever it crosses, scenery and sun included)
+    const input: SceneInput = { ...base, preset, width, jobs, agents: [], weather: null, effect: null, effects: false }
     const empty = { ...input, jobs: [] }
     const frame = sceneFrame(empty)
     const background = scenePixels(empty)
     const crowded = scenePixels(input)
     for (let cell = 0; cell < frame.hits.owners.length; cell++) {
-      if (!frame.hits.owners[cell] || ['sky', 'scenery'].includes(frame.hits.targets[frame.hits.owners[cell]! - 1]!.id)) continue
+      // (the sky, scenery and the sun and moon sit behind the crew: a flyer may cross them, which is the soft placement rule)
+      if (!frame.hits.owners[cell] || ['sky', 'scenery', 'sun', 'moon'].includes(frame.hits.targets[frame.hits.owners[cell]! - 1]!.id)) continue
       const x = cell % width, y = Math.floor(cell / width) * 2
       if (crowded[y * width + x] !== background[y * width + x] || crowded[(y + 1) * width + x] !== background[(y + 1) * width + x]) throw new Error(`${preset} width ${width} cell ${x},${y} owner ${frame.hits.targets[frame.hits.owners[cell]! - 1]!.id}`)
       expect(crowded[y * width + x]).toBe(background[y * width + x])

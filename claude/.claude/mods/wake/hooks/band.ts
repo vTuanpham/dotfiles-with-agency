@@ -1,5 +1,5 @@
 import type { WakeChip, WakeMood, WakePulse, WakeStep, WakeSurroundings, WakeTally, WakeWeather } from '../types'
-import { PACKET_RUN_MS, activityFlash, messageFade, packetWindow } from './crew-row'
+import { PACKET_RUN_MS, TURN_LEAD_MS, activityFlash, messageFade, packetWindow } from './crew-row'
 import type { Season } from './landscapes/kit'
 import { seedOf } from './pixels'
 import { PhaseClock, paceOf } from './landscapes/gait'
@@ -23,7 +23,7 @@ export type BandState = {
   /** Which character stands in Mochi's place (`/wake mochi`). */
   character?: CharacterId
   chips: WakeChip[]
-  subagents: { id: string; name?: string; description: string; type: string; model?: string; tier: 1 | 2 | 3 | 4; since: number; leftAt?: number }[]
+  subagents: { id: string; name?: string; description: string; type: string; model?: string; tier: 1 | 2 | 3 | 4; since: number; leftAt?: number; interrupted?: boolean }[]
 }
 
 const SYNODIC_DAYS = 29.530588853
@@ -182,6 +182,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
         const age = now - peer.lastAt
         const pulse = peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt < 2_000
         const rootMessage = peer.target === 'root'
+        const lead = rootMessage && peer.outgoing ? TURN_LEAD_MS : 0 // a worker turns to face the root before it sends to her
         return {
           source: rootMessage && !peer.outgoing ? 'mochi' : job.id!,
           target: rootMessage ? peer.outgoing ? 'mochi' : job.id! : peer.target,
@@ -190,8 +191,9 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
           messageState: rootMessage ? peer.messageState : undefined,
           count: peer.count,
           // packets run only for messages arriving in view right now, one per new message
-          arriving: peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1)
+          arriving: peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1) + lead
             ? now - peer.observedAt : undefined,
+          lead: lead || undefined,
           fresh: peer.fresh,
           family: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const),
         }
@@ -200,6 +202,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
       const peer = [...(job.peers ?? [])].filter(p => now - p.lastAt <= 900_000 && now >= p.lastAt).sort((a, b) => b.lastAt - a.lastAt)[0]
       return {
       leaving: leavingFor(job, now),
+      struck: job.interrupted || undefined, // its last turn was cut off: it leaves by being struck down
       arriving: arrivingFor(job, now),
       lift: job.id ? lifts.get(job.id) : undefined,
       ...gaitOf(job.id ?? `${job.owner}/${job.name}`, job.running ? paceOf(job, now) : 0.3, now),
@@ -220,6 +223,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
     agents: state.subagents.filter(agent => agent.leftAt === undefined || now - agent.leftAt < EXIT_MS).map(agent => ({
       id: agent.id, seed: seedOf(agent.id), tier: agent.tier, ...gaitOf(agent.id, agent.leftAt === undefined ? 0.75 : 0.3, now),
       leaving: agent.leftAt !== undefined && now >= agent.leftAt ? now - agent.leftAt : undefined,
+      struck: agent.interrupted || undefined,
       arriving: agent.leftAt === undefined && now >= agent.since && now - agent.since < ARRIVE_MS ? now - agent.since : undefined,
       hit: {
         id: agent.id, title: agent.name ?? agent.description,

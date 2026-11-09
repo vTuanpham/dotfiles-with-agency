@@ -24,6 +24,8 @@ export type WakeChip = {
   arrivedAt?: number
   /** when this view first saw the worker stop; its exit plays from here */
   leftAt?: number
+  /** its last turn was cut off by the root (an interrupt), so its exit is a strike, not a farewell */
+  interrupted?: boolean
   /** the effort levels this model offers, weakest first, from the native inventory; absent when unknown */
   effortLevels?: string[]
   awaitingRoot?: boolean; waitingForRoot?: boolean; maker?: 'claude'; state?: string; reason?: string
@@ -69,6 +71,8 @@ export type WakeAgent = {
   unavailable?: boolean
   /** When Wake saw it finish; it stays in the list only while its exit plays (hooks/exits.ts), and nothing else counts it. */
   leftAt?: number
+  /** Its last turn was interrupted (turn.complete, isAborted), so its exit is a strike. */
+  interrupted?: boolean
 }
 
 export type WakeResource = {
@@ -144,6 +148,7 @@ declare module 'claude-code' {
       parentModel: string
       parentEffort: string // the session's effort level, what a subagent inherits
       agentEfforts: Record<string, string> // subagent id -> the effort its tool calls reported
+      interruptedAgents: Record<string, true> // subagent id -> its turn was interrupted
       effortLevels: { at: number; levels: Record<string, Record<string, string[]>> } // backend -> model -> levels it offers
       surroundings: WakeSurroundings | null
       crewPage: number

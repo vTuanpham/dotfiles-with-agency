@@ -1,8 +1,7 @@
 import { type Canvas, hash, mix } from '../pixels'
 
-// The one way Wake makes an effect. Anything that moves, drifts, bursts, trails or glows in the scene (wind, a helicopter's
-// rotor wash, feathers, sparks, flames, a message leaving or landing, a craft arriving) is a DATA description for the two
-// primitives below, never a hand-written loop of pixels:
+// The crew's ambient air: wind, rotor wash, feathers, sparks, flames and mechanical thrust. Emitters and lights are data;
+// thrustPuff is the small crescent primitive. Passages and send/receive reactions keep their own handcrafted pixels.
 //
 //   Emitter  a swarm of particles: how many, how long they live, how fast and which way they leave, what pulls them
 //            (gravity, drag, swirl, the wind) and what they look like along their life (a colour ramp and an alpha envelope).
@@ -19,6 +18,21 @@ import { type Canvas, hash, mix } from '../pixels'
 // write a spec there. Add to this file only a new kind of motion or light. All output is soft light (`Canvas.glow`).
 
 export type Vec = readonly [number, number]
+
+/**
+ * A downward shock arc: the air a bend pushes down. A bowl (lowest in the middle, its ends rising) that drops three rows and
+ * widens from three cells to seven in four crisp steps, a near-white aqua heart with teal then cyan shoulders, each step dimmer.
+ * Hard-edged steps, not a blur, so it reads as a shock even at one pixel per cell. No retained particle state.
+ */
+export function thrustPuff(c: Pick<Canvas, 'glow'>, x: number, y: number, age: number, wind: number): void {
+  const life = 0.42, step = Math.floor((age / life) * 4)
+  if (age < 0 || step >= 4) return
+  const cx = x + Math.round(wind * 0.12 * age), cy = y + 1 + Math.round(step * 1.25), reach = 1 + step, alpha = 0.95 - 0.2 * step
+  for (let side = -reach; side <= reach; side++) {
+    const edge = Math.abs(side), colour = edge === 0 ? 0xe4eeff : edge === 1 ? 0x89b4fa : 0x74a0f0 // blue, so it reads apart from the teal body
+    c.glow(cx + side, cy - Math.floor(edge / 2), colour, alpha * (edge > 1 ? 0.75 : 1))
+  }
+}
 
 export type Emitter = {
   /** A stream: this many alive at once, born steadily for as long as it runs. A burst: this many, all born at the start. */

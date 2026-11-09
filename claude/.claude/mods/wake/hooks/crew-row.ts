@@ -78,6 +78,8 @@ export type CrewRow = { title: string; family: string; state: string; glyph: str
 export const PACKET_RUN_MS = 1_400
 export const PACKET_STAGGER_MS = 350
 export const MAX_PACKETS = 5
+/** A worker with a message for the root turns to face her first (a turn takes this long, crew.ts) and only then sends it: the packet and the roar leave after it. */
+export const TURN_LEAD_MS = 900
 /** How long the packets for `fresh` new messages take to arrive, after which nothing moves. */
 export const packetWindow = (fresh: number) => PACKET_RUN_MS + PACKET_STAGGER_MS * (Math.min(MAX_PACKETS, Math.max(1, fresh)) - 1)
 /** A worker's state mark lights when this view sees it do something, then settles: real activity, never a metronome. */

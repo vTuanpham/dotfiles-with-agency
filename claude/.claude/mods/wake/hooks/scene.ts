@@ -1,7 +1,6 @@
 import type { WakeMood, WakePreset, WakePulseKind, WakeSceneHit } from '../types'
 import { lanes, placeFly, roamOf, stations } from './landscapes/crew'
 import { windLayer } from './landscapes/fx'
-import { type Emitter, emit } from './landscapes/particles'
 import { type DayPhase, type Job, jobAccent, type Landscape, type Look, P, SCENE_H, type SceneEvent, type Season } from './landscapes/kit'
 import { LANDSCAPES } from './landscapes'
 import { type Canvas, canvas, hash, mix, sprite } from './pixels'
@@ -41,7 +40,7 @@ export const EFFECT_FRAMES: Record<SceneEffect['kind'], number> = { fireworks: 4
 export type SceneWeather = { cloud: number; rain: 0 | 1 | 2 | 3; snow: 0 | 1 | 2 | 3; fog: boolean; thunder: boolean; wind: number }
 
 /** A running subagent as its place's creature: its id's seed (who it is: its lane and pace come from it) and its model's class. */
-export type SceneAgent = { id?: string; seed: number; tier: 1 | 2 | 3 | 4; hit?: WakeSceneHit; leaving?: number; arriving?: number; pace?: number; phase?: number }
+export type SceneAgent = { id?: string; seed: number; tier: 1 | 2 | 3 | 4; hit?: WakeSceneHit; leaving?: number; arriving?: number; struck?: boolean; pace?: number; phase?: number }
 
 export type SceneHitMap = { columns: number; rows: number; owners: number[]; targets: WakeSceneHit[] }
 export type SceneSelection = { target: WakeSceneHit; x: number; y: number }
@@ -103,7 +102,7 @@ export type SceneInput = {
   jobs: Job[]
   /** A message in flight: who to whom, how fresh (strength), how many (count, as the crew rows' ─ ━ ═ weights) and whose colour it carries. */
   /** arriving: ms since the edge's newest message reached this view, only while its packets run; fresh: one packet each */
-  peerEdges?: { source: string; target: string; strength: number; preview?: string | null; messageState?: 'observed' | 'sent'; relationship?: boolean; count?: number; family?: NonNullable<Job['kind']>; arriving?: number; fresh?: number }[]
+  peerEdges?: { source: string; target: string; strength: number; preview?: string | null; messageState?: 'observed' | 'sent'; relationship?: boolean; count?: number; family?: NonNullable<Job['kind']>; arriving?: number; /** ms the sender spends turning to face the root before the message leaves (it sends after that) */ lead?: number; fresh?: number }[]
   /** A message to (in) or from (out) the root is passing: Mochi shows an envelope. */
   mail?: 'in' | 'out'
   /** Who stands in Mochi's place (see mochi.ts); the default is Mochi herself. */
@@ -112,6 +111,7 @@ export type SceneInput = {
   plan: { done: number; total: number } | null
   effect: SceneEffect | null
   forceEvent?: string // previews: play this event now
+  effects?: boolean // false: bare sprites and scenery, no wind, trails, lights or particles (for tests that compare pixels, and for a quiet terminal)
 }
 
 export { CAT_COLUMNS }
@@ -212,7 +212,7 @@ function drawSky(c: Canvas, look: Look, input: SceneInput, celestialOwner = 0) {
   }
   // clouds: count and greyness from the cloud cover, drifting with the wind
   // The clouds fill the whole sky, not only its top: high ones small and slow, low ones nearer, longer and quicker.
-  const n = Math.round((c.W / 30) * (0.2 + cloud * 1.6) * 1.5)
+  const n = Math.round((c.W / 30) * (0.2 + cloud * 1.6) * 1.1)
   const speed = 0.03 + (input.weather?.wind ?? 8) * 0.004
   const tone = mix(mix(P.overlay1, P.surface1, grey), top, look.night * 0.65)
   for (let k = 0; k < n; k++) {
@@ -414,26 +414,28 @@ function drawEffect(c: Canvas, look: Look, fx: SceneEffect, ground: number, righ
   if (fx.kind === 'fireworks') {
     const { inks: sparks, fall, echo, mirror } = FIREWORK_STYLE[preset]
     for (let b = 0; b < 4; b++) {
-      const age = fx.age - b * 6
+      const age = fx.age - b * 7
       if (age < 0 || age > 20) continue
       const seed = hash(b * 101 + 7)
       const cx = Math.round(right * (0.15 + 0.23 * b) + (seed % 9))
-      const cy = 3 + (seed % Math.round(H * 0.35)) // shells burst at different heights across the whole sky
+      const cy = 2 + (seed % Math.round(H * 0.3)) // shells burst at different heights
       const color = sparks[(seed + b) % sparks.length]!
       if (age < 5) {
         c.set(cx, ground - 1 - age * 2, P.white)
         c.glow(cx, ground - age * 2, P.yellow, 0.5)
         continue
       }
-      // The shell is a particle burst: sparks thrown out in every direction that slow in the air and sink under gravity (more
-      // slowly in a place where `fall` is large), leaving short streaks; a flash at the heart of it; the ridge's echo and the
-      // water's reflection are the same burst again, fainter.
-      const burst: Emitter = { count: 30, life: 1.4, burst: true, spawn: { ring: 0.5 }, speed: [4, 9], angle: [0, Math.PI * 2], drag: 1.2, gravity: 8 / fall, colors: [P.white, color, color], alpha: 1, envelope: 'fade', streak: 2, size: 2 }
-      const source = { at: (): readonly [number, number] => [cx, cy], t: (age - 5) / 10, seed: seed + b, strength: 1, wind: look.wind }
-      emit(c, burst, source)
-      emit(c, { ...burst, count: 14, speed: [1, 3], colors: [P.white], life: 0.5, streak: 0 }, source) // the flash
-      if (echo) emit(c, { ...burst, count: 18, speed: [2, 5], alpha: 0.45, size: 1 }, source)
-      if (mirror) emit(c, { ...burst, gravity: -(8 / fall), alpha: 0.35, size: 1 }, { ...source, at: () => [cx, Math.min(H - 1, ground + 1 + Math.max(0, ground - cy) / 2)] })
+      const r = Math.min(5, age - 4)
+      const fade = age > 13 ? (age - 13) / 8 : 0
+      const sink = age > 10 ? Math.floor((age - 10) / fall) : 0
+      for (let a = 0; a < 12; a++) {
+        const ang = (a / 12) * Math.PI * 2
+        const x = cx + Math.round(Math.cos(ang) * r * 1.4), y = cy + Math.round(Math.sin(ang) * r * 0.8) + sink
+        c.glow(x, y, a % 2 ? color : P.white, 1 - fade)
+        if (mirror) c.glow(x, Math.min(H - 1, ground + 1 + Math.floor(Math.max(0, ground - y) / 2)), color, 0.35 * (1 - fade)) // its reflection in the water
+        if (echo && r > 2) c.glow(cx + Math.round(Math.cos(ang) * (r - 2) * 1.4), cy + Math.round(Math.sin(ang) * (r - 2) * 0.8) + sink, color, 0.45 * (1 - fade)) // the ridge answers
+      }
+      if (age < 8) c.glow(cx, cy, P.white, 0.9)
     }
   } else if (fx.kind === 'storm') {
     const local = STORM[preset]
@@ -566,6 +568,7 @@ export function lookOf(input: SceneInput): Look {
     wind: w?.wind ?? 8,
     seed: input.seed,
     working: input.mood === 'work',
+    effects: input.effects,
   }
 }
 
@@ -769,6 +772,11 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   // Subagents and jobs share the same exclusion zones, and the same sky: each roams its share of what is free.
   look.crewRoam = roamOf([...jobs, ...agents], right)
   for (const [member, lane] of lanes([...jobs, ...agents], right)) member.lane = lane // each flyer owns a stretch of the whole sky
+  for (const edge of input.peerEdges ?? []) { // a message to or from the root turns a worker toward Mochi, and a sender shouts it at her
+    if (edge.arriving === undefined || (edge.source !== 'mochi' && edge.target !== 'mochi')) continue
+    const sending = edge.target === 'mochi', worker = jobs.find(job => job.hit?.id === (sending ? edge.source : edge.target))
+    if (worker) worker.talk = { ms: edge.arriving, sending }
+  }
   windLayer(c, look) // gusts and what the wind carries here: over the scenery, under the crew
   land.jobs(c, look, jobs, right)
   for (const [bird, j] of stations(agents, 5)) {
@@ -814,11 +822,11 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   const kindOf = (id: string): ReactionKind => id === 'mochi' ? asCharacter(input.character) : input.jobs.find(job => job.hit?.id === id)?.kind ?? (input.agents.some(agent => agent.hit?.id === id) ? 'claude' : 'codex')
   // the root's gadget stands on her body, wherever the marks above her happen to be
   const rootBox = { x0: catX, x1: catX + 8, y0: ground - MOCHI_ROWS, y1: ground - 1 }
-  if (localHits) react(c, localHits.targets, reactions, kindOf, { mochi: rootBox }, input.preset)
+  if (localHits) react(c, localHits.targets, reactions, kindOf, { mochi: rootBox })
   // a worker that has just started arrives, and one that has just finished leaves, each in its craft's own way (exits.ts)
   const coming = [...input.jobs.map(job => ({ ...job, kind: job.kind ?? 'codex' as const })), ...input.agents.map(agent => ({ ...agent, kind: 'claude' as const }))]
     .flatMap(job => job.hit && (job.arriving ?? job.leaving) !== undefined
-      ? [{ id: job.hit.id, kind: job.kind, place: input.preset, seed: job.seed, tier: job.tier ?? 1, age: job.arriving ?? job.leaving!, arriving: job.arriving !== undefined }] : [])
+      ? [{ id: job.hit.id, kind: job.kind, place: input.preset, seed: job.seed, age: job.arriving ?? job.leaving!, arriving: job.arriving !== undefined, struck: job.struck }] : [])
   if (localHits && coming.length && !plan.collect) passages(c, localHits.targets, coming)
   return finish()
 }
@@ -861,13 +869,13 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
     let landing = 0
     if (edge.arriving !== undefined) {
       for (let k = 0; k < Math.min(MAX_PACKETS, Math.max(1, edge.fresh ?? 1)); k++) {
-        const t = edge.arriving - k * PACKET_STAGGER_MS
+        const t = edge.arriving - (edge.lead ?? 0) - k * PACKET_STAGGER_MS // (a sender sends only once it has turned to face the root)
         if (t < 0 || t > PACKET_RUN_MS) continue
         const head = (t / PACKET_RUN_MS) * (length + 4 * tail) // the head runs on past the end so the tail finishes crossing
         // the sender pulses as the comet leaves; the receiver as its head reaches the end
-        reactions.push({ id: edge.source, role: 'send', v: Math.exp(-t / 320), t: edge.arriving })
+        reactions.push({ id: edge.source, role: 'send', v: Math.exp(-t / 320), t: edge.arriving - (edge.lead ?? 0) })
         const landsAt = (PACKET_RUN_MS * (length - 1)) / (length + 4 * tail)
-        if (t >= landsAt) reactions.push({ id: edge.target, role: 'land', v: Math.exp(-(t - landsAt) / 420), t: edge.arriving })
+        if (t >= landsAt) reactions.push({ id: edge.target, role: 'land', v: Math.exp(-(t - landsAt) / 420), t: edge.arriving - (edge.lead ?? 0) })
         for (let at = 0; at < length; at++) if (at <= head) light[at] = Math.max(light[at]!, Math.exp(-(head - at) / tail))
         if (head > length - 1) landing = Math.max(landing, Math.exp(-(head - (length - 1)) / tail))
       }

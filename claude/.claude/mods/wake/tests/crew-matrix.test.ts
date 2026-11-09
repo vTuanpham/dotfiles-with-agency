@@ -1,42 +1,70 @@
 import { expect, test } from 'claude-code/testing'
 
 import { type WakePreset } from '../types'
-import { BURSTS, SCENE } from '../hooks/reactions'
 import { styleFor } from '../hooks/exit-styles'
 import { ALL_CRAFT } from '../hooks/landscapes/craft'
 import { ALL_CREATURES } from '../hooks/landscapes/creatures'
 import { CARRIED, CREW } from '../hooks/landscapes/fx'
 import { LANDSCAPES } from '../hooks/landscapes'
+import { DESIGNS } from '../hooks/landscapes/design'
+import { P } from '../hooks/landscapes/kit'
 
-// The crew is a matrix: four families by eight places. Each cell has a sprite, effects in the air, a passage, and a way to send
-// and to receive. A cell left out is a family that looks, moves or leaves the same everywhere: these tests fail when one is missing,
-// so whoever adds a place or a family is told where to add its row (see landscapes/CREW.md).
+// The crew is a matrix: four families by eight places. Each cell has a sprite, effects in the air and a passage. A cell left out is a
+// family that looks, moves or leaves the same everywhere: these tests fail when one is missing, so whoever adds a place or a family
+// is told where to add its row (see landscapes/CREW.md).
 
 const places = Object.keys(LANDSCAPES) as WakePreset[]
 const families = ['codex', 'claude', 'agy', 'opencode'] as const
 
-test('every place has what each family needs: a craft or a boat for Codex, a creature for Claude, wind and a scene accent', () => {
+test('non-city Codex air stays sparse and separate in tone from the mechanical body', () => {
   for (const place of places) {
-    expect(ALL_CREATURES[place], `${place} creature`).toBeDefined()
-    expect(CARRIED[place], `${place} wind-borne`).toBeDefined()
-    expect(SCENE[place], `${place} scene accent`).toBeDefined()
-    if (!['harbor', 'beach'].includes(place)) expect(ALL_CRAFT[place], `${place} craft`).toBeDefined() // (the harbor and the beach float boats)
+    if (place === 'city') continue
+    for (const stream of [...(CREW.codex[place]?.streams ?? []), ...(CREW.codex[place]?.talking ?? [])]) {
+      expect(stream.emitter.count, `${place} air must stay subordinate`).toBeLessThanOrEqual(3)
+      expect(stream.emitter.colors, `${place} air is not a cloud of body-coloured pixels`).not.toContain(P.teal)
+    }
   }
 })
 
-test('every family has air effects for all places, and a send and a receive of its own', () => {
-  for (const kind of families) {
-    expect(CREW[kind].any, `${kind} family-wide effects`).toBeDefined()
-    expect(BURSTS[kind].send.length, `${kind} send`).toBeGreaterThan(0)
-    expect(BURSTS[kind].land.length, `${kind} receive`).toBeGreaterThan(0)
-    // a receive is not a send played backwards: it gathers in and then lands (a reversed or a delayed burst)
-    expect(BURSTS[kind].land.some(e => e.reverse || e.delay), `${kind} receive has a gathering or an impact`).toBe(true)
-    expect(JSON.stringify(BURSTS[kind].send), kind).not.toEqual(JSON.stringify(BURSTS[kind].land))
+test('every place has what each family needs: a Codex machine, a Claude creature and wind', () => {
+  for (const place of places) {
+    expect(ALL_CREATURES[place], `${place} creature`).toBeDefined()
+    expect(CARRIED[place], `${place} wind-borne`).toBeDefined()
+    expect(ALL_CRAFT[place], `${place} craft`).toBeDefined()
   }
-  const sends = families.map(kind => JSON.stringify(BURSTS[kind].send))
-  expect(new Set(sends).size).toBe(families.length) // each crew sends in its own way
-  const lands = families.map(kind => JSON.stringify(BURSTS[kind].land))
-  expect(new Set(lands).size).toBe(families.length)
+})
+
+test('every family/place has a complete motion design with an explicit front, cruise and turn', () => {
+  for (const kind of families) for (const place of places) {
+    const d = DESIGNS[kind][place]
+    expect(d, `${kind}.${place}`).toBeDefined()
+    expect([null, 'left', 'right']).toContain(d.facing)
+    expect(typeof d.cruise).toBe('boolean')
+    expect(['coil', 'bank', 'none']).toContain(d.turn)
+    if (d.facing === null) expect(d.turn, `${kind}.${place} is symmetric`).toBe('none')
+    expect(d.escorts).toBeDefined()
+  }
+  expect(DESIGNS.codex.city.turn).toBe('coil')
+  for (const place of ['beach', 'tundra'] as const) expect(DESIGNS.codex[place].turn, `${place} is a rigid plane`).toBe('bank')
+})
+
+test('escort formations reference existing smaller classes and finite path offsets', () => {
+  for (const kind of families) for (const place of places) for (const [leader, escorts] of Object.entries(DESIGNS[kind][place].escorts)) {
+    expect([1, 2, 3, 4]).toContain(Number(leader))
+    for (const e of escorts ?? []) {
+      expect([1, 2, 3, 4]).toContain(e.tier)
+      expect(e.tier).toBeLessThan(Number(leader))
+      expect(Number.isFinite(e.lag) && e.lag > 0, `${kind}.${place} lag`).toBe(true)
+      expect(Number.isFinite(e.dy), `${kind}.${place} offset`).toBe(true)
+      expect(Number.isFinite(e.dx ?? 0), `${kind}.${place} horizontal offset`).toBe(true)
+      if (kind === 'codex') expect(ALL_CRAFT[place][e.tier]).toBeDefined()
+      if (kind === 'claude') expect(ALL_CREATURES[place][e.tier]).toBeDefined()
+    }
+  }
+})
+
+test('every family has air effects for all places', () => {
+  for (const kind of families) expect(CREW[kind].any, `${kind} family-wide effects`).toBeDefined()
 })
 
 test('every family leaves every place in a style of its own', () => {
@@ -51,4 +79,11 @@ test('effect tables name only anchors, tiers and places that exist', () => {
       for (const tier of s.tiers ?? []) expect([1, 2, 3, 4]).toContain(tier)
     }
   }
+})
+
+test('a light is only on a design that has a reason for it: no searchlight cones, and navigation lights only on aeroplanes', () => {
+  for (const kind of families) for (const [place, cell] of Object.entries(CREW[kind])) for (const l of cell?.lights ?? []) expect(l.light.shape, `${kind}.${place}`).not.toBe('cone')
+  const lit = (place: WakePreset) => (CREW.codex[place]?.lights ?? []).some(l => l.light.color === 0xf38ba8 || l.light.color === 0xa6e3a1)
+  for (const place of ['beach', 'countryside', 'tundra'] as const) expect(lit(place), `${place} has aeroplanes`).toBe(true)
+  for (const place of ['mountains', 'forest', 'desert'] as const) expect(lit(place), `${place} has no aeroplanes`).toBe(false)
 })

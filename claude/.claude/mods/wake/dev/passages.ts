@@ -24,7 +24,7 @@ const base: SceneInput = {
 const rows = moments.map(([name, phase], i) => {
   const px = new Array<number>(W * families.length * SCENE_H)
   families.forEach((kind, f) => {
-    const job = { isStale: false, seed: 6, kind, tier, hit: { id: 'j', title: 'j', details: [] }, ...phase }
+    const job = { isStale: false, seed: 6, kind, tier, hit: { id: 'j', title: 'j', details: [] }, ...phase, ...(process.env.STRUCK ? { struck: true } : {}) } // STRUCK=1: its exit is an interrupt
     const one = scenePixels({ ...base, frame: 37 + i * 3, jobs: [job] })
     for (let y = 0; y < SCENE_H; y++) for (let x = 0; x < W; x++) px[y * W * families.length + f * W + x] = one[y * W + x]!
   })

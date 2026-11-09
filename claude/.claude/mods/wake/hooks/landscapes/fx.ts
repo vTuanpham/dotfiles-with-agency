@@ -1,12 +1,16 @@
 import type { WakePreset } from '../../types'
 import { type Canvas } from '../pixels'
-import { type Emitter, type Light, type Vec, coneEnd, emit, shine } from './particles'
+import { type Emitter, type Light, type Vec, coneEnd, emit, shine, thrustPuff } from './particles'
+import { craftLamp, craftNose, craftPush, dragonCrests } from './craft'
+import { TURN_LEAD_MS } from '../crew-row'
+import { clockRate } from './gait'
+import type { Tier } from './design'
 import { type Look, P } from './kit'
 
 // What the air is doing, as data for the engine in particles.ts: the wind, and what each member of the crew stirs up and lights.
 //
 //   CREW[family].any       every member of the family, wherever it flies
-//   CREW[family][place]    added for that family in that place (a helicopter's rotor wash, an owl's eyeshine, a kite's string)
+//   CREW[family][place]    added for that family in that place (an autogyro's rotor wash, an owl's eyeshine, a kite's string)
 //
 // A stream or light may be limited to some classes (`tiers`) and to the dusk and dark (`from`); it hangs on an anchor of the sprite
 // (`at`, nudged by `dx`/`dy`) and, with `follow`, leaves from where the sprite WAS when each particle was born, so a trail is its
@@ -14,11 +18,12 @@ import { type Look, P } from './kit'
 // add a row. To give a place or a family its own, add a key. Write a new loop only for a motion or a light the engine lacks.
 
 type Kind = 'codex' | 'agy' | 'claude' | 'opencode'
-type Anchor = 'centre' | 'above' | 'below' | 'left' | 'right' | 'nose' | 'tail' | 'eyeL' | 'eyeR' | 'ground'
+type Anchor = 'centre' | 'above' | 'below' | 'left' | 'right' | 'nose' | 'tail' | 'ground'
 
-export type Stream = { at: Anchor; dx?: number; dy?: number; emitter: Emitter; follow?: boolean; tiers?: readonly number[]; from?: number }
+export type Stream = { at: Anchor; dx?: number; dy?: number; emitter: Emitter; follow?: boolean; tiers?: readonly number[]; from?: number; /** Eight-beat mechanical stroke(s) that drive the effect. */ beats?: readonly number[] }
 export type LightAt = { at: Anchor; dx?: number; dy?: number; light: Light; tiers?: readonly number[]; /** a pool of light where a cone lands */ lands?: Light; /** a column or cone that runs down to the ground */ toGround?: boolean; /** shown whatever the hour (true), or in proportion to daylight ('day'): a shadow, not a lamp */ always?: boolean | 'day' }
-export type Cell = { streams?: readonly Stream[]; lights?: readonly LightAt[] }
+/** `talking` streams are bursts shown while the worker is sending a message to the root; written facing left, the way a sprite is drawn. */
+export type Cell = { streams?: readonly Stream[]; lights?: readonly LightAt[]; talking?: readonly Stream[] }
 
 const TAU = Math.PI * 2
 const UP = -Math.PI / 2, DOWN = Math.PI / 2
@@ -26,77 +31,88 @@ const clamp = (v: number, lo = 0, hi = 1) => (Number.isFinite(v) ? Math.max(lo, 
 
 // ── the crew ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/**
- * What a low machine's downdraught does to the ground under it: a column of streaks from the craft, then dust and litter kicked
- * up and swept outward along the ground both ways, with a few larger pieces thrown high that fall back. `colors` is the place's
- * ground (dust, leaves, hay, sand, snow).
- */
-const BLOWN = (colors: readonly number[], reach: number, alpha = 0.55): readonly Stream[] => [
-  { at: 'below', emitter: { count: 14, life: 0.5, spawn: { w: 2 }, speed: [10, 16], angle: [DOWN - 0.12, DOWN + 0.12], colors: [P.white, P.sky], alpha: alpha * 0.55, envelope: 'fade', streak: 3 } }, // the downdraught itself
-  { at: 'ground', emitter: { count: 24, life: 1.1, spawn: { w: 3 }, speed: [4, reach], angle: [-0.35, 0.12], gravity: 3, drag: 1.1, swirl: 0.6, colors, alpha, envelope: 'fade' } }, // swept out to the right
-  { at: 'ground', emitter: { count: 24, life: 1.1, spawn: { w: 3 }, speed: [4, reach], angle: [Math.PI - 0.12, Math.PI + 0.35], gravity: 3, drag: 1.1, swirl: 0.6, colors, alpha, envelope: 'fade' } }, // and to the left
-  { at: 'ground', emitter: { count: 9, life: 1.3, spawn: { w: 2 }, speed: [3, 8], angle: [UP - 1.1, UP + 1.1], gravity: 15, drag: 0.4, swirl: 0.5, colors: [...colors, P.white], alpha: alpha + 0.2, envelope: 'fade', size: 2 } }, // litter flung up that falls back
-]
 
 /** Whatever flies throws a soft shadow on the ground beneath it by day, wider the bigger it is. */
 const SHADOW: readonly LightAt[] = [1, 2, 3, 4].map(tier => ({
   at: 'ground', tiers: [tier], always: 'day',
-  light: { shape: 'pool', color: P.ink, alpha: 0.3, reach: [1, 2, 4, 7][tier - 1]!, from: 0 },
+  light: { shape: 'pool', color: P.ink, alpha: 0.24, reach: [1, 2, 4, 7][tier - 1]!, from: 0 },
 }))
 
-/** A Codex machine's lights, on every one: red to port, green to starboard and a strobe on top. */
-const NAVIGATION: readonly LightAt[] = [
-  { at: 'left', light: { shape: 'halo', color: P.red, alpha: 0.7, reach: 1 } },
-  { at: 'right', light: { shape: 'halo', color: P.green, alpha: 0.7, reach: 1 } },
-  { at: 'above', dy: -1, light: { shape: 'halo', color: P.white, alpha: 0.9, reach: 1, modulate: 'strobe' } },
+
+/** A brief signal from the machine's eye/cowling, directed at Mochi after it turns. */
+const SIGNAL = (at: Anchor, dx = 0, dy = 0, extra: Partial<Emitter> = {}): readonly Stream[] => [{
+  at, dx, dy, emitter: { count: 2, life: 0.6, burst: true, delay: 0.25, speed: [8, 12], angle: [Math.PI - 0.08, Math.PI + 0.08], colors: [P.white, P.sky], alpha: 0.45, envelope: 'fade', ...extra },
+}]
+
+/** Prop-wash at the ground: one soft fan of local material, rather than a column of light or a cloud of confetti. */
+const WASH = (colors: readonly number[]): Stream => ({ at: 'ground', beats: [0, 4], emitter: { count: 3, life: 0.55, spawn: { w: 2 }, speed: [1, 3], angle: [UP - 0.8, UP + 0.8], gravity: 7, wind: 0.5, colors, alpha: 0.18, envelope: 'fade' } })
+const BOOST: Stream = { at: 'tail', beats: [0, 4], emitter: { count: 2, life: 0.3, speed: [2, 4], angle: [-0.12, 0.12], colors: [P.white, P.sky], alpha: 0.18, envelope: 'fade' } }
+
+/** Side-on wingtip and cockpit lamps: measured on the generator, never attached to the rectangle's banner or empty corner. */
+const PLANE_LIGHTS: readonly LightAt[] = [
+  { at: 'centre', light: { shape: 'halo', color: P.red, alpha: 0.25, reach: 0 } }, // actual wingtip comes from the generated pose
+  { at: 'nose', light: { shape: 'halo', color: P.white, alpha: 0.2, reach: 0, modulate: 'strobe' } },
 ]
 
-/** What a Codex machine leaves in its wake, in the air of the place that built it. */
-const EXHAUST = (colors: readonly number[], alpha: number, extra: Partial<Emitter> = {}): Stream => ({
-  at: 'tail', follow: true,
-  emitter: { count: 10, life: 1.1, spawn: { h: 0.6 }, speed: [0.3, 1.2], angle: [0, TAU], wind: 0.7, colors, alpha, envelope: 'fade', ...extra },
-})
-
+/** The eye and pulse are in the art; additional lights belong only to actual lamps. */
 const CODEX: Partial<Record<WakePreset | 'any', Cell>> = {
-  any: { lights: [...NAVIGATION, ...SHADOW] },
+  any: { lights: SHADOW },
   city: {
+    // The dragon's roar, when it turns to Mochi with a message: a cone of sound rings from its jaws, and the message itself
+    // shouted after it as bright packets (written facing left, so the nose is on the left and "forward" is towards 180 degrees).
+    talking: [
+      { at: 'nose', tiers: [1, 2], emitter: { count: 4, life: 0.5, burst: true, speed: [7, 10], angle: [Math.PI - 0.5, Math.PI + 0.5], drag: 1.1, colors: [P.white, P.sky], alpha: 0.6, envelope: 'fade' } },
+      { at: 'nose', tiers: [3, 4], emitter: { count: 7, life: 0.5, burst: true, speed: [7, 10], angle: [Math.PI - 0.5, Math.PI + 0.5], drag: 1.1, colors: [P.white, P.sky], alpha: 0.6, envelope: 'fade' } },
+      { at: 'nose', emitter: { count: 3, life: 0.35, burst: true, delay: 0.1, speed: [10, 14], angle: [Math.PI - 0.12, Math.PI + 0.12], colors: [P.yellow, P.white], alpha: 0.75, envelope: 'fade', streak: 1 } },
+    ],
+    // A dragon's effects are its own: data packets shed from its tail as it flies, the glow of its head, a booster at its tail, and
+    // the light of its plates on whatever is below at night.
     streams: [
-      { at: 'below', follow: true, tiers: [1, 2], emitter: { count: 8, life: 0.6, speed: [0.5, 1.5], angle: [DOWN - 0.5, DOWN + 0.5], colors: [P.teal, P.sky], alpha: 0.5, envelope: 'fade' } }, // a drone's thrust
-      ...BLOWN([P.overlay2, P.overlay1, P.sand], 10).map(stream => ({ ...stream, tiers: [3] })), // the helicopter's rotor blows the street up: dust and litter swept out along it
-      { at: 'tail', follow: true, tiers: [4], emitter: { count: 16, life: 2.2, speed: [0, 0.4], angle: [0, TAU], wind: 0.6, colors: [P.white, P.sky], alpha: 0.2, envelope: 'fade' } }, // a blimp's long, pale contrail
+      { at: 'tail', follow: true, emitter: { count: 9, life: 1.3, spawn: { h: 0.6 }, speed: [0.3, 1], angle: [0, TAU], wind: 0.5, colors: [P.teal, P.sky, P.white], alpha: 0.55, envelope: 'twinkle' } }, // data packets shed in its wake
+      { at: 'tail', dx: 1, emitter: { count: 7, life: 0.35, spawn: { h: 0.3 }, speed: [3, 6], angle: [-0.2, 0.2], colors: [P.white, P.sky, P.teal], alpha: 0.8, envelope: 'fade', streak: 2 } }, // the booster at its tail: a short bright jet streaming back
     ],
     lights: [
-      { at: 'nose', dx: 1, dy: 1, tiers: [3], light: { shape: 'cone', color: P.yellow, alpha: 0.55, reach: 12, angle: 2.2, spread: 0.4, modulate: 'sweep', swing: 0.75 }, lands: { shape: 'pool', color: P.yellow, alpha: 0.55, reach: 3 } }, // the helicopter's searchlight, swinging over the roofs and the street
-      { at: 'below', tiers: [4], light: { shape: 'pool', color: P.yellow, alpha: 0.3, reach: 6 } }, // light from the blimp's banner and gondola, pooled below
-      { at: 'centre', tiers: [4], light: { shape: 'halo', color: P.yellow, alpha: 0.18, reach: 2, modulate: 'pulse' } },
+      { at: 'left', light: { shape: 'halo', color: P.teal, alpha: 0.5, reach: 1, modulate: 'pulse', from: 0.05 } }, // the head's eyes
+      { at: 'below', tiers: [3, 4], light: { shape: 'pool', color: P.teal, alpha: 0.22, reach: 6, modulate: 'pulse', from: 0.05 } }, // the pods' light, on whatever is below
     ],
   },
-  harbor: { streams: [{ at: 'below', follow: true, emitter: { count: 8, life: 0.9, speed: [0.5, 2], angle: [DOWN - 0.9, DOWN + 0.9], gravity: 3, colors: [P.white, P.sky], alpha: 0.5, envelope: 'fade' } }] },
-  beach: { streams: [{ at: 'below', follow: true, emitter: { count: 8, life: 0.9, speed: [0.5, 2], angle: [DOWN - 0.9, DOWN + 0.9], gravity: 3, colors: [P.white, P.sky], alpha: 0.5, envelope: 'fade' } }] },
+  harbor: {
+    streams: [{ at: 'tail', dy: 1, follow: true, beats: [0, 2, 4, 6], emitter: { count: 3, life: 0.7, speed: [1, 2], angle: [-0.08, 0.08], drag: 0.6, colors: [P.white, P.sky], alpha: 0.24, envelope: 'fade' } }],
+    talking: SIGNAL('nose', 0, 0, { angle: [Math.PI - 0.3, Math.PI + 0.3], speed: [5, 9] }), // the wheelhouse's horn
+  },
+  beach: {
+    // Cowling slipstream, before the tether: the banner is fabric, not an engine.
+    streams: [BOOST], lights: PLANE_LIGHTS, talking: SIGNAL('nose'),
+  },
   mountains: {
-    streams: [EXHAUST([P.white, P.sky], 0.3, { count: 8, life: 1.4 }), ...BLOWN([P.snow, P.white], 6, 0.45).slice(1, 3)], // a paraglider's thin contrail, and the powder its passing lifts off the slope
-    lights: [{ at: 'nose', dy: 1, light: { shape: 'cone', color: P.yellow, alpha: 0.3, reach: 7, angle: 2.5, spread: 0.3 } }],
+    streams: [{ ...BOOST, at: 'below', emitter: { ...BOOST.emitter, angle: [DOWN - 0.2, DOWN + 0.2] } }], // the swinging rider's lift pod
+    talking: SIGNAL('nose', 0, 0, { speed: [6, 10] }),
   },
   countryside: {
     streams: [
-      EXHAUST([P.overlay2, P.overlay0], 0.42, { count: 14, life: 1.5, spawn: { h: 0.4 }, speed: [0.4, 1.4], angle: [UP - 0.5, UP + 0.5], swirl: 0.5 }), // a crop duster's smoke
-      ...BLOWN([P.yellow, P.sand, P.green], 9, 0.55), // the prop-wash flattens the crop and throws up chaff and dust
+      WASH([P.sand, P.white]),
     ],
-    lights: [{ at: 'nose', dy: 1, light: { shape: 'cone', color: P.yellow, alpha: 0.32, reach: 8, angle: 2.6, spread: 0.3 } }],
+    lights: PLANE_LIGHTS, talking: SIGNAL('nose'),
   },
-  forest: { streams: [
-    { at: 'below', follow: true, emitter: { count: 8, life: 1.6, spawn: { w: 2 }, speed: [0.2, 0.9], angle: [UP - 1, UP + 1], swirl: 1.1, colors: [P.yellow, P.peach], alpha: 0.7, envelope: 'twinkle' } }, // embers off the lantern
-    ...BLOWN([P.green, P.teal, P.leaf], 8, 0.6), // the autogyro's rotor whirls the forest floor's leaves up
-  ] },
-  desert: { streams: [
-    EXHAUST([P.sand, P.peach], 0.45, { count: 12, life: 1, speed: [1, 3], angle: [UP - 0.7, UP + 0.7], gravity: 4 }), // sand kicked up behind
-    ...BLOWN([P.sand, P.peach], 12, 0.6), // and thrown off the dune under it
-  ] },
+  forest: {
+    streams: [WASH([P.leaf, P.overlay1])], // the generated hub anchors leaves directly under the rotor
+    talking: SIGNAL('nose', 0, 0, { angle: [Math.PI - 0.2, Math.PI + 0.2] }),
+  },
+  desert: {
+    streams: [
+      { ...WASH([P.sand, P.overlay1]), beats: [2, 6] },
+    ],
+    talking: SIGNAL('nose', 0, 0, { speed: [6, 9] }),
+  },
   tundra: {
-    streams: [EXHAUST([P.white, P.snow], 0.5, { count: 12, life: 1, speed: [1, 3], angle: [UP - 0.8, UP + 0.8], gravity: 3 }), ...BLOWN([P.white, P.snow], 11, 0.6)], // snow thrown off the skis, and the drift the prop-wash stirs
-    lights: [{ at: 'nose', dy: 1, light: { shape: 'cone', color: P.yellow, alpha: 0.32, reach: 8, angle: 2.6, spread: 0.3 } }],
+    streams: [{ ...WASH([P.white, P.snow]), beats: [2, 6] }], // the alternating low strokes of the two runners
+    lights: PLANE_LIGHTS, talking: SIGNAL('nose', 0, 0, { speed: [10, 12] }),
   },
 }
+
+/** An owl's eyes catch the light: where its two yellow cells are in each class's sprite (creatures.ts). */
+const OWL_EYES: readonly LightAt[] = ([[2, 1], [3, 2], [4, 3]] as const).flatMap(([tier, dx]) =>
+  [-dx, dx].map((x): LightAt => ({ at: 'centre', dx: x, dy: -1, tiers: [tier], light: { shape: 'halo', color: P.yellow, alpha: 0.6, reach: 1 } })))
 
 const CLAUDE: Partial<Record<WakePreset | 'any', Cell>> = {
   any: {
@@ -117,13 +133,12 @@ const CLAUDE: Partial<Record<WakePreset | 'any', Cell>> = {
   },
   mountains: { lights: [{ at: 'above', light: { shape: 'pool', color: P.sapphire, alpha: 0.28, reach: 3 } }] }, // moonlight on the wings
   countryside: { streams: [{ at: 'centre', from: 0.2, emitter: { count: 7, life: 1.3, spawn: { w: 4, h: 2 }, speed: [0, 0.5], angle: [0, TAU], swirl: 1, colors: [P.yellow, P.pink], alpha: 0.85, envelope: 'twinkle', size: 2 } }] }, // luminous wing dust
-  forest: { lights: [{ at: 'eyeL', tiers: [2, 3, 4], light: { shape: 'halo', color: P.yellow, alpha: 0.6, reach: 1 } }, { at: 'eyeR', tiers: [2, 3, 4], light: { shape: 'halo', color: P.yellow, alpha: 0.6, reach: 1 } }] }, // an owl's eyeshine
+  forest: { lights: OWL_EYES }, // an owl's eyeshine
   desert: { streams: [{ at: 'centre', from: 0.2, emitter: { count: 6, life: 0.8, spawn: { w: 4, h: 1 }, speed: [0, 0.3], angle: [0, TAU], colors: [P.sky, P.mauve], alpha: 0.7, envelope: 'twinkle' } }] }, // glints off glassy wings
   tundra: {
     lights: [
       { at: 'above', light: { shape: 'pool', color: P.green, alpha: 0.26, reach: 3 } }, // the aurora on white feathers
-      { at: 'eyeL', tiers: [2, 3, 4], light: { shape: 'halo', color: P.yellow, alpha: 0.6, reach: 1 } },
-      { at: 'eyeR', tiers: [2, 3, 4], light: { shape: 'halo', color: P.yellow, alpha: 0.6, reach: 1 } },
+      ...OWL_EYES,
     ],
   },
 }
@@ -137,8 +152,7 @@ const AGY: Partial<Record<WakePreset | 'any', Cell>> = {
     lights: [
       { at: 'centre', light: { shape: 'halo', color: P.mauve, alpha: 0.32, reach: 2, modulate: 'pulse' } },
       { at: 'centre', light: { shape: 'halo', color: P.white, alpha: 0.6, reach: 0 } },
-      { at: 'ground', light: { shape: 'pool', color: P.mauve, alpha: 0.28, reach: 5, modulate: 'pulse' } }, // the star lights the ground beneath it
-      ...SHADOW,
+      { at: 'ground', light: { shape: 'pool', color: P.mauve, alpha: 0.28, reach: 5, modulate: 'pulse' } }, // the star lights the ground beneath it (and, being light, casts no shadow)
     ],
   },
   city: { streams: [{ at: 'centre', follow: true, emitter: { count: 8, life: 0.8, spawn: { h: 1 }, speed: [0, 0.8], angle: [0, TAU], colors: [P.pink, P.sky], alpha: 0.5, envelope: 'twinkle' } }] }, // neon
@@ -179,15 +193,29 @@ export type Aura = {
   lift: number
   /** The row of the ground the sprite is flying over: what its downdraught reaches. */
   ground: number
+  /** The sprite is mirrored (it is flying to the right): its nose, tail and sides, and anything thrown behind it, turn with it. */
+  flip?: boolean
+  /** A message to or from the root is in flight (ms since it arrived in view; sending, or being sent to). */
+  talk?: { ms: number; sending: boolean }
+  /** ms since it began rolling round to face the other way, while it is turning. */
+  turn?: number
+  /** Local nose relative to the sprite centre, before mirroring. Codex derives it from the visible generated frame. */
+  nose?: Vec
 }
+
+/** The sparks thrown off as a craft rolls round: a ring that spins out from it and fades. */
+const ROLL: Emitter = { count: 12, life: 0.5, burst: true, spawn: { ring: 2 }, speed: [3, 6], angle: [0, TAU], drag: 1.5, colors: [P.white, P.sky, P.teal], alpha: 0.8, envelope: 'fade', streak: 2 }
 
 const anchorOf = (a: Aura, at: Anchor, dx = 0, dy = 0): Vec => {
   const w = a.w / 2, h = a.h / 2
   const [ox, oy]: Vec = at === 'above' ? [0, -h - 0.5] : at === 'below' ? [0, h + 0.5] : at === 'left' ? [-w + 0.5, 0] : at === 'right' ? [w - 0.5, 0]
-    : at === 'nose' ? [-w, 0] : at === 'tail' ? [w, 0] : at === 'eyeL' ? [-1, -h + 1] : at === 'eyeR' ? [1, -h + 1]
+    : at === 'nose' ? a.nose ?? [-w, 0] : at === 'tail' ? [w, 0]
       : at === 'ground' ? [0, a.ground - a.cy - 1] : [0, 0]
-  return [ox + dx, oy + dy]
+  return a.flip ? [-(ox + dx), oy + dy] : [ox + dx, oy + dy]
 }
+
+/** An emitter as seen in a mirror: a direction that went right goes left, so what trails a craft trails it whichever way it flies. */
+const mirrored = (e: Emitter): Emitter => ({ ...e, angle: [Math.PI - e.angle[1], Math.PI - e.angle[0]] })
 
 
 /** The cells that apply to one sprite: the family's, then the place's. */
@@ -197,19 +225,57 @@ const cellsFor = (kind: Kind, place: WakePreset) => [CREW[kind].any, CREW[kind][
 export function crewFx(c: Canvas, look: Look, a: Aura): void {
   if (look.effects === false) return
   const place = look.place ?? 'city', wind = clamp(look.wind, 0, 60)
+  if (a.kind === 'codex') {
+    const beat = ((Math.floor(a.phase / 1.5) + a.seed) % 8 + 8) % 8
+    const [x, y] = craftNose(place, a.tier as Tier, beat)
+    a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
+  }
   const dark = clamp(look.night + (look.blend?.dusk ?? 0) * 0.6 + (look.blend?.dawn ?? 0) * 0.4) // dusk and dawn count as half dark
   const strength = 0.35 + 0.65 * a.pace + 0.5 * a.lift
   const t = a.phase / 10
+  if (a.kind === 'codex' && place === 'city' && a.turn === undefined) {
+    for (const crest of dragonCrests(a.tier as Tier)) {
+      const delta = ((a.phase / 1.5 + a.seed - crest.beat) % 8 + 8) % 8, age = delta * 0.15
+      if (age >= 0.42) continue
+      const ago = age / clockRate(a.pace), [px, py] = a.path(ago), earlier = a.path(ago + 0.6)[0]
+      const right = a.talk ? a.flip : px > earlier + 0.5 ? true : px < earlier - 0.5 ? false : a.flip
+      const dx = crest.x - (a.w >> 1), x = px + (right ? -dx : dx), y = py + crest.y - (a.h >> 1)
+      thrustPuff(c, x, y, age, wind)
+    }
+  }
+  if (a.turn !== undefined) emit(c, ROLL, { at: () => [a.cx, a.cy], t: a.turn / 1000, seed: a.seed * 13, strength: 1, wind })
   for (const cell of cellsFor(a.kind, place)) {
     for (const [i, s] of (cell.streams ?? []).entries()) {
       if ((s.tiers && !s.tiers.includes(a.tier)) || (s.from !== undefined && dark < s.from)) continue
       const [ox, oy] = anchorOf(a, s.at, s.dx, s.dy)
-      const origin = (ago: number): Vec => { const [px, py] = s.follow ? a.path(ago) : [a.cx, a.cy]; return [px + ox, py + oy] }
-      emit(c, s.emitter, { at: origin, t, seed: a.seed * 31 + i, strength, wind })
+      const machine = a.kind === 'codex' && place !== 'city' ? place : undefined
+      const pose = (ago: number) => craftPush(machine!, a.tier as Tier, Math.floor((a.phase - ago * 10) / 1.5) + a.seed)
+      const origin = (ago: number): Vec => {
+        if (machine) {
+          const push = pose(s.follow ? ago : 0), dx = push.x - (a.w >> 1)
+          const [px, py] = s.follow ? a.path(ago / clockRate(a.pace)) : [a.cx, a.cy]
+          return [px + (a.flip ? -dx : dx), s.at === 'ground' ? a.ground - 1 : py + push.y - (a.h >> 1) + 1]
+        }
+        const [px, py] = s.follow ? a.path(ago) : [a.cx, a.cy]
+        return [px + ox, py + oy]
+      }
+      const beat = (a.phase / 1.5 + a.seed) % 8
+      const stroke = machine ? pose(0).force : s.beats ? 0.2 + 0.8 * Math.max(...s.beats.map(b => Math.max(0, Math.cos((beat - b) * Math.PI / 4)) ** 6)) : 1
+      emit(c, a.flip ? mirrored(s.emitter) : s.emitter, { at: origin, t, seed: a.seed * 31 + i, strength: strength * stroke, wind })
+    }
+    if (a.talk?.sending) for (const [i, s] of (cell.talking ?? []).entries()) { // shouting a message at the root: a burst on the message's own clock
+      if (s.tiers && !s.tiers.includes(a.tier)) continue
+      const [ox, oy] = anchorOf(a, s.at, s.dx, s.dy)
+      // Every sender finishes turning to face the root before it speaks, on the same clock as the packet leaving (scene.ts).
+      const spoken = a.talk.ms / 1000 - TURN_LEAD_MS / 1000
+      emit(c, a.flip ? mirrored(s.emitter) : s.emitter, { at: () => [a.cx + ox, a.cy + oy], t: spoken, seed: a.seed * 17 + i, strength: 1, wind })
     }
     for (const l of cell.lights ?? []) {
       if (l.tiers && !l.tiers.includes(a.tier)) continue
-      const [ox, oy] = anchorOf(a, l.at, l.dx, l.dy), x = a.cx + ox, y = a.cy + oy
+      const lamp = a.kind === 'codex' && place !== 'city' && l.light.color === P.red
+        ? craftLamp(place, a.tier as Tier, ((Math.floor(a.phase / 1.5) + a.seed) % 8 + 8) % 8) : undefined
+      const [ox, oy] = lamp ? [a.flip ? (a.w >> 1) - lamp[0] : lamp[0] - (a.w >> 1), lamp[1] - (a.h >> 1)] : anchorOf(a, l.at, l.dx, l.dy)
+      const x = a.cx + ox, y = a.cy + oy
       const light = l.toGround ? { ...l.light, reach: Math.max(1, (look.crewGround ?? c.H) - Math.round(y)) } : l.light
       const level = l.always === 'day' ? 1 - look.night : l.always || l.toGround ? 1 : dark
       shine(c, light, x, y, t, level, a.seed)
@@ -220,23 +286,12 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
 
 // ── boats ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** What a Codex boat stirs on the water, by what it is: foam trailing from the stern, spray at the bow, ripples round the hull, and a funnel's smoke. */
-const BOAT: readonly (Stream & { tiers?: readonly number[] })[] = [
-  { at: 'tail', dy: 0, emitter: { count: 14, life: 1.8, spawn: { h: 0.4 }, speed: [0.8, 2.5], angle: [-0.12, 0.12], drag: 0.8, colors: [P.white, P.sky], alpha: 0.5, envelope: 'fade', streak: 2 } }, // the wake, spreading astern
-  { at: 'nose', emitter: { count: 8, life: 0.7, spawn: { h: 0.4 }, speed: [1.5, 4], angle: [UP - 0.9, UP + 0.2], gravity: 11, colors: [P.white, P.sky], alpha: 0.7, envelope: 'fade' } }, // spray thrown off the bow
-  { at: 'centre', dy: 2, emitter: { count: 6, life: 2, spawn: { ring: 3 }, speed: [0.2, 0.7], angle: [0, TAU], colors: [P.sky, P.white], alpha: 0.35, envelope: 'pulse' } }, // ripples widening round the hull
-  { at: 'above', dy: -1, tiers: [2, 3, 4], emitter: { count: 10, life: 1.8, spawn: { w: 0.6 }, speed: [0.8, 1.8], angle: [UP - 0.25, UP + 0.25], wind: 0.9, swirl: 0.6, colors: [P.overlay2, P.overlay0], alpha: 0.5, envelope: 'pulse' } }, // smoke from the funnel, streaming downwind
-]
-
-/** The effects of one boat: its box on the water, and how busy its worker is. */
-export function boatFx(c: Canvas, look: Look, b: { x: number; y: number; w: number; h: number; tier: number; seed: number; pace: number }): void {
-  if (look.effects === false) return
-  const t = look.frame / 10, wind = clamp(look.wind, 0, 60)
-  const aura: Aura = { x0: b.x, y0: b.y, w: b.w, h: b.h, cx: b.x + b.w / 2, cy: b.y + b.h / 2, kind: 'codex', tier: b.tier, seed: b.seed, pace: b.pace, phase: look.frame, path: () => [b.x + b.w / 2, b.y + b.h / 2], lift: 0, ground: b.y + b.h }
-  BOAT.forEach((s, i) => {
-    if (s.tiers && !s.tiers.includes(b.tier)) return
-    const [ox, oy] = anchorOf(aura, s.at, s.dx, s.dy)
-    emit(c, s.emitter, { at: () => [aura.cx + ox, aura.cy + oy], t, seed: b.seed * 17 + i, strength: 0.4 + 0.6 * b.pace, wind })
+/** A boat uses the harbor cell too: one water wake and its wheelhouse's send signal, anchored on the actual hull. */
+export function boatFx(c: Canvas, look: Look, b: { x: number; y: number; w: number; h: number; tier: number; seed: number; pace: number; phase: number; flip: boolean; talk?: Aura['talk'] }): void {
+  const cx = b.x + (b.w >> 1), cy = b.y + (b.h >> 1)
+  crewFx(c, { ...look, place: 'harbor' }, {
+    x0: b.x, y0: b.y, w: b.w, h: b.h, cx, cy, kind: 'codex', tier: b.tier, seed: b.seed, pace: b.pace, phase: b.phase,
+    path: () => [cx, cy], lift: 0, ground: b.y + b.h, flip: b.flip, talk: b.talk,
   })
 }
 

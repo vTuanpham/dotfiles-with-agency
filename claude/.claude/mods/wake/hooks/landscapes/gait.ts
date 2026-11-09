@@ -28,7 +28,7 @@ export function gait(kind: Kind, tier: number, seed: number, time: number, reach
   const t = time / Math.max(1, reach / 18)
   switch (kind) {
     case 'codex': {
-      const slow = tier >= 4 ? 1.8 : tier === 3 ? 1.15 : 1 // a blimp changes course least often, a helicopter a little less than a drone
+      const slow = tier >= 4 ? 1.8 : tier === 3 ? 1.15 : 1 // the biggest craft changes course least often
       return { u: leg(seed, t, 42 * slow), v: leg(seed + 3, t, 55 * slow) }
     }
     case 'claude': {

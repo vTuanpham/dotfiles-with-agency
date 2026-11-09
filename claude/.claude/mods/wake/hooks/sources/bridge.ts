@@ -2,7 +2,7 @@ import type { EngineInterface } from 'claude-code'
 import { validQuota, type Quota } from './account-observations'
 import { rfc3339 } from './wire'
 
-type Event = { id: string; job: string; offset: number; kind: string; at: string | null; text: string; wakes: boolean }
+type Event = { id: string; job: string; offset: number; kind: string; at: string | null; text: string; wakes: boolean; /** how a `turn_completed` ended: `interrupted` when the root cut it off */ status?: string }
 type Job = {
   id: string; owner: string; name: string; title: string; directory: string
   backend: string | null; account: string | null; model: string | null; effort: string | null; cwd: string | null

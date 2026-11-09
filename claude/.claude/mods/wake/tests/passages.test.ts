@@ -3,6 +3,8 @@ import { expect, test } from 'claude-code/testing'
 import type { WakeChip } from '../types'
 import { type BandState, passageStamps, sceneInput } from '../hooks/band'
 import { ARRIVE_MS, EXIT_MS } from '../hooks/exits'
+import { styleFor } from '../hooks/exit-styles'
+import { canvas } from '../hooks/pixels'
 
 // A worker's arrival and exit run on Wake's own clock. Bridge is read every few seconds, and its own start and finish
 // times are already old by then; a passage measured from them would be over before the scan that finds it.
@@ -55,4 +57,23 @@ test('the scene keeps a finished worker for EXIT_MS after it was seen to stop, t
 test('a worker with no stamp neither arrives nor leaves', () => {
   expect(job({}, T)!.arriving).toBeUndefined()
   expect(job({ running: false, since: T - 1_000 }, T)).toBeUndefined()
+})
+
+test('a worker whose last turn was interrupted leaves struck down; any other leaves as its place does', () => {
+  const left = { running: false, leftAt: T, since: T - 12_000 }
+  expect(job({ ...left, interrupted: true }, T + 500)!.struck).toBe(true)
+  expect(job(left, T + 500)!.struck).toBeUndefined()
+})
+
+test('every family\'s strike ends clean and shows something on the way', () => {
+  const clean = (kind: 'codex' | 'claude' | 'agy' | 'opencode', p: number) => {
+    const c = canvas(40, 16)
+    let marks = 0
+    styleFor(kind, 'city', true)({ c, p, seed: 3, arriving: false, cx: 20, cy: 8, x0: 17, x1: 23, y0: 6, y1: 9, sprite: () => { marks++ }, lit: (x, y, color, alpha) => { if (alpha > 0) c.set(x, y, color) }, behind: () => p, flip: 1 })
+    return { painted: c.px.some(px => px !== 0), marks }
+  }
+  for (const kind of ['codex', 'claude', 'agy', 'opencode'] as const) {
+    expect(clean(kind, 0.3).painted, `${kind} sheds debris mid-fall`).toBe(true)
+    expect(clean(kind, 1).painted, `${kind} leaves nothing at the end`).toBe(false)
+  }
 })

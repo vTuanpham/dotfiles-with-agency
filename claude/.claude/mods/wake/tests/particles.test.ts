@@ -1,12 +1,22 @@
 import { expect, test } from 'claude-code/testing'
 
-import { type Emitter, type Light, coneEnd, emit, shine } from '../hooks/landscapes/particles'
+import { type Emitter, type Light, coneEnd, emit, shine, thrustPuff } from '../hooks/landscapes/particles'
 import { PhaseClock, clockRate, gait, paceOf } from '../hooks/landscapes/gait'
 import { canvas } from '../hooks/pixels'
 
 const SPEC: Emitter = { count: 12, life: 1, speed: [2, 6], angle: [0, 6.28], gravity: 4, drag: 0.5, swirl: 0.5, colors: [0xffffff, 0x88aaff], alpha: 0.9, envelope: 'fade', streak: 2 }
 const source = (t: number, at: (ago: number) => readonly [number, number] = () => [20, 10]) => ({ at, t, seed: 3, strength: 1, wind: 20 })
 const draw = (e: Emitter, s: ReturnType<typeof source>) => { const c = canvas(40, 20); emit(c, e, s); return Array.from(c.px) }
+
+test('a thrust crescent is stateless, falls a few cells, spreads and ends cleanly', () => {
+  const puff = (age: number) => { const c = canvas(40, 20); thrustPuff(c, 20, 5, age, 0); return Array.from(c.px) }
+  expect(puff(0.2)).toEqual(puff(0.2))
+  expect(puff(0.2)).not.toEqual(puff(0))
+  const points = (age: number) => puff(age).flatMap((v, i) => v ? [[i % 40, Math.floor(i / 40)]] : [])
+  expect(Math.max(...points(0.3).map(p => p[1]!))).toBeGreaterThan(Math.max(...points(0).map(p => p[1]!)))
+  expect(puff(-0.1).every(v => v === 0)).toBe(true)
+  expect(puff(0.42).every(v => v === 0)).toBe(true)
+})
 
 test('an emitter is a pure function of its clock: the same inputs draw the same picture, and a stream keeps going', () => {
   expect(draw(SPEC, source(2.3))).toEqual(draw(SPEC, source(2.3)))
