@@ -107,6 +107,8 @@ class InstallTests(unittest.TestCase):
             install(home, "--apply", "hooks")
             result = json.loads(live.read_text())
             commands = [h["command"] for g in result["hooks"]["PreToolUse"] for h in g["hooks"]]
+            self.assertNotIn("AskUserQuestion", [g.get("matcher") for g in result["hooks"]["PreToolUse"]])
+            self.assertNotIn("agent-inbox claude-question", commands)
             self.assertEqual(result["model"], "mine")
             self.assertIn("mine", commands)
             self.assertEqual(commands.count("agent-baton guard"), 2)  # the Bash group and the browser-tool group
