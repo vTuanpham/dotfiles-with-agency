@@ -65,15 +65,29 @@ export function paceOf(job: { state?: string; isStale: boolean; waitingForRoot?:
   return Math.max(0.35, 1 - Math.max(0, now - last) / BUSY_MS) // a running worker is never idle
 }
 
+/**
+ * How fast a worker's ROUTE runs while it has a message for, or from, the root (0..1). It does not fly backward to say it: at the
+ * message it brakes to a hover (the wings go on beating), turns to face her, sends, turns back to its own course and only then
+ * eases up to speed again. `since` is ms since the message arrived in view, `window` how long it is held facing her, `back` the
+ * time it takes to turn round and get going.
+ */
+export function routeRate(since: number, window: number, back: number): number {
+  const ease = (x: number) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t) }
+  if (since < 0 || since > window + back) return 1
+  if (since < window) return 1 - ease(since / 400) // brakes over the first 0.4 s, then hovers
+  return ease((since - window) / back) // turned back to its course: accelerates away
+}
+
 /** Each worker's gait clock, advanced by real time at its own pace. Held by the scene's caller, one per view. */
 export class PhaseClock {
   private readonly at = new Map<string, { t: number; phase: number }>()
 
-  advance(id: string, pace: number, now: number): number {
+  /** `rate` scales how fast it runs, 0..1: a worker that hovers (a clock at rate 0 stands still, and eases back in as the rate rises). */
+  advance(id: string, pace: number, now: number, rate = 1): number {
     const before = this.at.get(id)
     // a pause (a hidden terminal, a long redraw) must not jump the sprite: at most half a second of motion is owed
     const owed = before ? Math.min(Math.max(0, now - before.t), 500) : 0
-    const phase = (before?.phase ?? hash(id.length * 31 + id.charCodeAt(0)) % 1000) + (owed / 100) * clockRate(pace)
+    const phase = (before?.phase ?? hash(id.length * 31 + id.charCodeAt(0)) % 1000) + (owed / 100) * clockRate(pace) * rate
     this.at.set(id, { t: now, phase })
     if (this.at.size > 256) for (const key of [...this.at.keys()].slice(0, 64)) this.at.delete(key)
     return phase

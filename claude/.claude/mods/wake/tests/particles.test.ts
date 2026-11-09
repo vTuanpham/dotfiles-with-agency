@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { type Emitter, type Light, coneEnd, emit, shine, thrustPuff } from '../hooks/landscapes/particles'
-import { PhaseClock, clockRate, gait, paceOf } from '../hooks/landscapes/gait'
+import { PhaseClock, clockRate, gait, paceOf, routeRate } from '../hooks/landscapes/gait'
 import { canvas } from '../hooks/pixels'
 
 const SPEC: Emitter = { count: 12, life: 1, speed: [2, 6], angle: [0, 6.28], gravity: 4, drag: 0.5, swirl: 0.5, colors: [0xffffff, 0x88aaff], alpha: 0.9, envelope: 'fade', streak: 2 }
@@ -85,4 +85,25 @@ test('every family\'s gait stays inside its unit square and keeps moving', () =>
     for (const { u, v } of samples) { expect(Math.abs(u)).toBeLessThanOrEqual(1.0001); expect(Math.abs(v)).toBeLessThanOrEqual(1.0001) }
     expect(Math.max(...samples.map(s => s.u)) - Math.min(...samples.map(s => s.u)), `${kind} ${tier}`).toBeGreaterThan(0.8)
   }
+})
+
+test('a worker with a message for the root brakes to a hover, stays still while it talks, turns back, then eases up to speed (it never flies backward to speak)', () => {
+  const window = 2_300, back = 900
+  expect(routeRate(-10, window, back)).toBe(1) // before the message
+  expect(routeRate(0, window, back)).toBe(1) // the instant it arrives it is still at speed ...
+  expect(routeRate(200, window, back)).toBeLessThan(1) // ... then brakes ...
+  expect(routeRate(400, window, back)).toBe(0) // ... to a stop
+  expect(routeRate(window - 1, window, back)).toBe(0) // hovering, facing her, until the message is done
+  expect(routeRate(window + 450, window, back)).toBeGreaterThan(0) // then it turns back and accelerates
+  expect(routeRate(window + 450, window, back)).toBeLessThan(1)
+  expect(routeRate(window + back + 1, window, back)).toBe(1) // and is on its way again
+  const rates = Array.from({ length: 360 }, (_, i) => routeRate(i * 10, window, back)) // never jumps from one moment to the next
+  for (let i = 1; i < rates.length; i++) expect(Math.abs(rates[i]! - rates[i - 1]!)).toBeLessThan(0.1)
+  // the route clock stands still at rate 0, the animation clock beside it does not
+  const route = new PhaseClock(), beats = new PhaseClock()
+  route.advance('w', 0.6, 0, 1); beats.advance('w', 0.6, 0)
+  const r0 = route.advance('w', 0.6, 100, 0), b0 = beats.advance('w', 0.6, 100)
+  const r1 = route.advance('w', 0.6, 200, 0), b1 = beats.advance('w', 0.6, 200)
+  expect(r1).toBe(r0)
+  expect(b1).toBeGreaterThan(b0)
 })

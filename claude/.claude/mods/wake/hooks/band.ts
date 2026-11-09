@@ -2,7 +2,7 @@ import type { WakeChip, WakeMood, WakePulse, WakeStep, WakeSurroundings, WakeTal
 import { PACKET_RUN_MS, TURN_LEAD_MS, activityFlash, messageFade, packetWindow } from './crew-row'
 import type { Season } from './landscapes/kit'
 import { seedOf } from './pixels'
-import { PhaseClock, paceOf } from './landscapes/gait'
+import { PhaseClock, paceOf, routeRate } from './landscapes/gait'
 import { ARRIVE_MS, EXIT_MS } from './exits'
 import type { CharacterId } from './mochi'
 import type { SceneEffect, SceneInput, SceneTurn, SceneWeather } from './scene'
@@ -148,7 +148,17 @@ const arrivingFor = (job: WakeChip, now: number) => (job.running ? sinceIn(job.a
 
 /** Each worker's gait clock: it runs on from one paint to the next, faster when the worker is busier (see gait.ts). */
 const gaitClock = new PhaseClock()
-const gaitOf = (id: string, pace: number, now: number) => ({ pace, phase: gaitClock.advance(id, pace, now) })
+/** The clock of where a worker is on its route: the same as its gait clock, except that it stands still while the worker hovers to talk to the root. */
+const routeClock = new PhaseClock()
+const gaitOf = (id: string, pace: number, now: number, rate = 1) => ({ pace, phase: gaitClock.advance(id, pace, now), route: routeClock.advance(id, pace, now, rate) })
+
+/** How fast this worker's route runs just now: it brakes, hovers while it turns to the root, sends and turns back, then sets off again (routeRate). */
+const routeFor = (job: WakeChip, now: number): number => {
+  const message = [...(job.peers ?? [])].filter(p => p.target === 'root' && p.observedAt !== undefined && now >= p.observedAt).sort((a, b) => b.observedAt! - a.observedAt!)[0]
+  if (!message) return 1
+  const window = packetWindow(message.fresh ?? 1) + (message.outgoing ? TURN_LEAD_MS : 0)
+  return routeRate(now - message.observedAt!, window, TURN_LEAD_MS)
+}
 
 export function sceneInput(state: BandState, width: number, frame: number, effect: SceneEffect | null, now: number): SceneInput {
   const lifts = crewLifts(state.chips, now)
@@ -205,7 +215,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
       struck: job.interrupted || undefined, // its last turn was cut off: it leaves by being struck down
       arriving: arrivingFor(job, now),
       lift: job.id ? lifts.get(job.id) : undefined,
-      ...gaitOf(job.id ?? `${job.owner}/${job.name}`, job.running ? paceOf(job, now) : 0.3, now),
+      ...gaitOf(job.id ?? `${job.owner}/${job.name}`, job.running ? paceOf(job, now) : 0.3, now, routeFor(job, now)),
       isStale: job.isStale, seed: seedOf(job.name), tier: modelTier(job.backend ?? 'codex', job.model),
       kind: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const), maker: job.maker,
       signal: !!peer && peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt < 2_000 && Math.floor((now - peer.observedAt) / 400) % 2 === 1,

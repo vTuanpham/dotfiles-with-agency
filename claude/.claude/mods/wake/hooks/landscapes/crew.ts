@@ -112,8 +112,13 @@ function orient(path: (ago: number) => Vec, drawn: 'left' | 'right', ago: number
   const turn = (from: 1 | -1, to: 1 | -1, elapsed: number): { mirror: 1 | -1; roll?: number; since?: number } => elapsed >= TURN
     ? { mirror: to }
     : { mirror: elapsed / TURN < 0.5 ? from : to, roll: elapsed / TURN, since: elapsed * 1000 }
-  if (talk?.over !== undefined) { // the message is done: it turns back to its own course before going on (not slid round in one frame)
-    const from = side('right'), to = side(heading(ago))
+  if (talk?.over !== undefined) { // the message is done: it turns back to the course it is about to fly, then sets off (never slid round in one frame)
+    const ahead = (): 'left' | 'right' => {
+      const x = path(ago)[0]
+      for (const span of [0.6, 1.2, 2.4]) { const later = path(ago - span)[0]; if (Math.abs(later - x) > 0.03) return later > x ? 'right' : 'left' }
+      return drawn
+    }
+    const from = side('right'), to = side(ahead())
     return from === to ? { mirror: to } : turn(from, to, talk.over / 1000)
   }
   if (talk) {
@@ -323,7 +328,7 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       const hop = Math.round(hopRoom * Math.min(1, job.lift ?? 0))
       // Where in the box it is now: its family's gait, over the room that its activity earns it (a calm worker hovers near home).
       const pace = job.pace ?? 0.6
-      const { u, v } = gait(gaitKind(job, look), job.tier ?? 1, job.seed, job.phase ?? look.frame, rx)
+      const { u, v } = gait(gaitKind(job, look), job.tier ?? 1, job.seed, job.route ?? job.phase ?? look.frame, rx) // (the route clock stands still while it hovers to talk to the root)
       const share = roamShare(pace)
       const offset = -Math.round(share * (v > 0 ? v * up : v * down)) - hop
       let drift = Math.round(rx * share * u)
@@ -335,7 +340,7 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       sprites.push(reserved)
       anchors.push((candidate.y + offset) * c.W + candidate.x + drift)
       // where it was a moment ago: the same gait at earlier times, so its trail is exactly its own path
-      const kind = job.kind ?? 'codex', now = job.phase ?? look.frame
+      const kind = job.kind ?? 'codex', now = job.route ?? job.phase ?? look.frame
       const path = (ago: number): Vec => { // the same gait at the time `ago` seconds back: a trail follows this
         const g = gait(gaitKind(job, look), job.tier ?? 1, job.seed, now - ago * 10 * clockRate(pace), rx)
         // Keep the path continuous for heading and effects; rasterising it here makes slow craft turn at every pixel step.
