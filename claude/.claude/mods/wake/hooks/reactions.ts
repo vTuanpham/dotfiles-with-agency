@@ -174,7 +174,8 @@ export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[]
     const box = fixed[reaction.id] ?? scanned
     const kind = kindOf(reaction.id), accent = ACCENT[kind]
     const v = reaction.v * (reaction.role === 'send' ? SOFTER_SEND : 1)
-    for (let y = scanned.y0; y <= scanned.y1; y++) for (let x = scanned.x0; x <= scanned.x1; x++) {
+    // only the worker's own sprite glows (its box): not the escorts, trail and air painted under the same hit owner
+    for (let y = Math.max(scanned.y0, box.y0); y <= Math.min(scanned.y1, box.y1); y++) for (let x = Math.max(scanned.x0, box.x0); x <= Math.min(scanned.x1, box.x1); x++) {
       if (c.hitOwners[y * c.W + x] === owner) c.px[y * c.W + x] = mix(c.px[y * c.W + x]!, mix(accent, P.white, 0.7), v * SPRITE_GLOW)
     }
     EFFECTS[kind]((x, y, strength, color) => lit(Math.round(x), Math.round(y), color ?? accent, strength), box, v, reaction.t, reaction.role)

@@ -827,7 +827,7 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   const kindOf = (id: string): ReactionKind => id === 'mochi' ? asCharacter(input.character) : input.jobs.find(job => job.hit?.id === id)?.kind ?? (input.agents.some(agent => agent.hit?.id === id) ? 'claude' : 'codex')
   // the root's gadget stands on her body, wherever the marks above her happen to be
   const rootBox = { x0: catX, x1: catX + 8, y0: ground - MOCHI_ROWS, y1: ground - 1 }
-  if (localHits) react(c, localHits.targets, reactions, kindOf, { mochi: rootBox })
+  if (localHits) react(c, localHits.targets, reactions, kindOf, { ...look.crewBoxes, mochi: rootBox }) // (a worker's own sprite box, not everything painted under its hit id)
   // a worker that has just started arrives, and one that has just finished leaves, each in its craft's own way (exits.ts)
   const coming = [...input.jobs.map(job => ({ ...job, kind: job.kind ?? 'codex' as const })), ...input.agents.map(agent => ({ ...agent, kind: 'claude' as const }))]
     .flatMap(job => job.hit && (job.arriving ?? job.leaving) !== undefined

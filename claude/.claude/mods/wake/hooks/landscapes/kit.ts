@@ -58,6 +58,8 @@ export type Look = {
   crewSpriteZones?: { x: number; y: number; w: number; h: number }[]
   /** The sprite zones that are hard boundaries (Mochi and her laptop); every other zone in `crewSpriteZones` is crew, a soft one. */
   crewHard?: { x: number; y: number; w: number; h: number }[]
+  /** Each worker's own sprite box this pass, by its hit id (crew.ts `fly`): where a send pulse or a receive ring is centred. */
+  crewBoxes?: Record<string, { x0: number; y0: number; x1: number; y1: number }>
   /** Where this pass's own anchors begin in `crewAnchors` (it is shared across a scene's passes), so overlapping crew still keep an anchor each (placeFly). */
   crewAnchorsFrom?: number
   crewGround?: number

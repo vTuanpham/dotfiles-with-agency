@@ -204,6 +204,9 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   }
   const pal = paint({ ...job, kind }, look)
   const x0 = cx - (art[0]!.length >> 1), y0 = cy - (art.length >> 1)
+  // The worker's own sprite, for what happens ON it (the send pulse, the receive ring): not its escorts, nor the trail and air it
+  // leaves, which are painted under the same hit owner and would stretch its box across half the screen.
+  if (job.hit && !compact) (look.crewBoxes ??= {})[job.hit.id] = { x0, y0, x1: x0 + art[0]!.length - 1, y1: y0 + art.length - 1 }
   const quietMachine = kind === 'agy' || kind === 'claude' || kind === 'opencode' || kind === 'codex' && look.place !== undefined && look.place !== 'city'
   const coreY = kind === 'agy' ? art.findIndex(row => row.includes('M')) : -1
   const nose: Vec | undefined = coreY < 0 ? undefined : [(art[coreY]!.indexOf('M') - (art[0]!.length >> 1)) * (facingRight ? -1 : 1), coreY - (art.length >> 1)]
