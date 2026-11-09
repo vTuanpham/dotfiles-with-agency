@@ -197,6 +197,56 @@ hour = time.localtime(NOW).tm_hour
 clock = f" {ICON_SUN if 6 <= hour < 18 else ICON_MOON} {time.strftime('%H:%M', time.localtime(NOW))} "
 badges.append((CARD, on(CARD, FLAMINGO, clock)))
 
+def prompt_cache():
+    """(seconds left, ttl seconds) of this session's prompt cache, or None when there is nothing to read.
+
+    Every request that reads or writes the cache refreshes it, so the last main-conversation assistant message in the transcript
+    marks the refresh; its usage says which lifetime the cache was written with (5 minutes or 1 hour), else the setting, else 1 hour.
+    """
+    path = d.get("transcript_path")
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 262144))
+            tail = f.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return None
+    last, ttl = None, None
+    for line in reversed(tail):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        if last is None and (stamp := entry.get("timestamp")):
+            try:
+                from datetime import datetime
+                last = datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                continue
+        written = ((entry.get("message") or {}).get("usage") or {}).get("cache_creation") or {}
+        if ttl is None and (written.get("ephemeral_1h_input_tokens") or written.get("ephemeral_5m_input_tokens")):
+            ttl = 3600 if written.get("ephemeral_1h_input_tokens") else 300
+        if last is not None and ttl is not None:
+            break
+    if last is None:
+        return None
+    if ttl is None:  # nothing written lately: what the settings say, else an hour
+        setting = os.environ.get("CLAUDE_CODE_PROMPT_CACHE_TTL")
+        if not setting:
+            try:
+                with open(os.path.expanduser("~/.claude/settings.json")) as f:
+                    setting = json.load(f).get("promptCacheTtl")
+            except (OSError, ValueError):
+                setting = None
+        ttl = 300 if setting == "5m" else 3600
+    return max(0.0, last + ttl - NOW), ttl
+
+
 # ── line 2: one continuous gauge pill on the card colour ─────────────────
 divider = on(CARD, SURFACE2, " │ ")
 gauges = []
@@ -216,6 +266,14 @@ if used is not None:
             on(CARD, ramp(v / 100), SPARK[round((v - lo) / (hi - lo) * 7)]) for v in hist
         )
     gauges.append(seg)
+
+if (cache := prompt_cache()) is not None:  # how long this session's prompt cache stays warm; a turn refreshes it
+    left, ttl = cache
+    if left > 0:
+        used_up = 100 * (1 - left / ttl)
+        gauges.append(on(CARD, SUBTLE, "cache ") + bar(used_up, 6) + on(CARD, ramp(used_up / 100), f" {span(left)}", bold=True))
+    else:
+        gauges.append(on(CARD, SUBTLE, "cache ") + on(CARD, RED, "cold", bold=True))
 
 for key, label in (("five_hour", "5h"), ("seven_day", "7d"), ("spend_limit", "$")):
     pct = g("rate_limits", key, "used_percentage")

@@ -12,6 +12,11 @@ Claude Code configuration under `~/.claude`. Each part has its own kind:
 | [Root stop safety net](.claude/hooks/README.md) | Script is a live link; entries merge into settings | `install.sh --apply links`, then `install.sh --apply hooks` |
 | [Wake mod](#wake-mod-live) | Live link; reloads as its files change | `install.sh --apply links` |
 
+The status line's second row shows context use, then **how long this session's prompt cache stays warm** (`cache ▰▰▱ 47m`,
+`cache cold` once it has lapsed), then the rate limits and cost. A turn refreshes the cache, so the countdown restarts at each
+response. `statusline.py` reads the last main-conversation response in the transcript and takes the lifetime (5 minutes or 1 hour)
+from how that cache was written, else from `promptCacheTtl` or `CLAUDE_CODE_PROMPT_CACHE_TTL`, else an hour.
+
 ## Accounts
 
 [claude-swap](https://github.com/realiti4/claude-swap) (`cswap`) owns native Claude
