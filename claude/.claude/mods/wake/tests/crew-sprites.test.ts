@@ -1,7 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
 import { ALL_CREATURES } from '../hooks/landscapes/creatures'
-import { ALL_BALLOONS } from '../hooks/landscapes/balloon'
 import { CAT_COLUMNS, CHARACTERS, MOCHI_ROWS } from '../hooks/mochi'
 
 test('every place-bound creature has animated rectangular classes inside the craft budget and differs per place', () => {
@@ -43,12 +42,6 @@ const look = { frame: 0, night: 1, effects: false } as Look // bare sprites: the
 const kinds = ['codex', 'agy', 'claude', 'opencode'] as const
 const tiers = [1, 2, 3, 4] as const
 
-test('only narrow OpenCode balloons may use the nine-row footprint', () => {
-  for (const classes of Object.values(ALL_BALLOONS)) for (const tier of tiers) for (const art of classes[tier]) {
-    expect(art[0]!.length).toBeLessThanOrEqual(13)
-    expect(art.length).toBeLessThanOrEqual(9)
-  }
-})
 
 function render(job: Job, frame: number, water = false) {
   const c = canvas(40, 20)

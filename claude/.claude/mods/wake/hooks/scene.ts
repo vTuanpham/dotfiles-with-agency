@@ -19,7 +19,7 @@ import { messagePreview, messageStatus } from './peer-messages'
 //   street lamps   plan progress (lit steps done)
 //   crew           bridge jobs and subagents, one family per harness, bigger with the model's class (amber: stale):
 //                  Codex drones, airship, boats; agy sparks, comets, constellations; Claude sparrows, gulls, eagles;
-//                  OpenCode hot-air balloons, small to striped to banded
+//                  OpenCode paper lanterns, single shades to ribbon garlands
 //   creatures      running subagents (Claude's family): the winged thing of the place (landscapes/creatures.ts)
 //   Mochi          the mood: laptop while working, ! when something needs you,
 //                  a cloud when a command failed, asleep while you're away
@@ -230,7 +230,7 @@ function drawSky(c: Canvas, look: Look, input: SceneInput, celestialOwner = 0) {
 }
 
 // ── shared ambient events ──────────────────────────────────────────────────
-// (no hot-air balloon among them: balloons are OpenCode's crew, and a crew sprite always stands for a real job)
+// (no paper lantern among them: lantern garlands are OpenCode's crew, and a crew sprite always stands for a real job)
 
 const SHARED_EVENTS: SceneEvent[] = [
   {

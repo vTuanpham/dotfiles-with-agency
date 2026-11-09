@@ -3,11 +3,10 @@
 ## The standard
 
 1. One design per family and place, grown through four classes by parameters, never four unrelated pictures.
-2. Small and slim: every sprite rectangle fits `CRAFT_MAX` (19×7); each class grows in area. OpenCode's narrow balloons alone
-   may use 13×9 (`BALLOON_MAX`): classes are 7×8, 9×9, 11×9 and 13×9, growing sideways.
+2. Small and slim: every sprite rectangle fits `CRAFT_MAX` (19×7); each class grows in area.
 3. Detailed: at least three tones, structure (plates, seams, ribs, spars or rigging) and a highlight. One connected silhouette,
    with a few intentional joints instead of scattered texture. No outline or backing.
-4. Smooth: eight or more beats for Codex. The structure itself moves: bending plates, billowing surfaces, pitching fuselage,
+4. Smooth: eight or more beats for every family. The structure itself moves: bending plates, billowing surfaces, pitching fuselage,
    heaving hull, tilting rotor or flexing runners. A rigid body with a blinking accent does not qualify.
 5. Travel and face the direction of travel. Flag a front with `facing`; symmetric designs never turn.
 6. One tasteful real effect that belongs to the body: thrust, wash, wake, spray or flap shimmer. Effects stay subordinate,
@@ -22,7 +21,7 @@
 12. **An interrupt is a strike.** When a worker's turn is cut off by the root (a native subagent's `turn.complete` with
     `isAborted`; a Bridge job's `turn_completed` with status `interrupted`) its exit is not the place's farewell but
     `exit-styles.ts` `struck`: a bolt drops on it, it flashes white, shudders, turns red and falls dissolving, shedding its
-    family's debris (machine smoke and sparks, feathers, embers, confetti and hissing air). It applies to every family and
+    family's debris (machine smoke and sparks, feathers, embers, paper scraps and sparks). It applies to every family and
     landscape and to native subagents and Bridge workers alike (`WakeChip.interrupted`, `WakeAgent.interrupted` -> `struck`).
     When you add a family, give it debris in `struck`. Preview with `STRUCK=1 bun dev/passages.ts <place> [class]`.
 13. Every behaviour above is part of the standard for each design: when adding a design, check its facing and turn, its
@@ -30,7 +29,7 @@
 
 Family identities: **Codex** builds slim plated machines with an eye, seams, gear teeth and a travelling pulse;
 **Claude** is a living winged creature native to the place; **agy** is celestial light with an intelligible physical rhythm;
-**OpenCode** is an airborne festival with fabric, rigging and warm light.
+**OpenCode** is a sky-lantern festival with filled paper shades, ribbon, tassels and warm flame windows.
 
 ## Codex concepts
 
@@ -77,7 +76,7 @@ place, a family or an effect means adding a row, not writing a new loop. `tests/
 
 | Part | Owner | What a row is |
 | --- | --- | --- |
-| Sprite | `craft.ts` (all Codex machines, including boats), `creatures.ts` (Claude), `agy.ts` (agy), `balloon.ts` (OpenCode) | rectangular frames of letters; every family's designs are generated from class parameters |
+| Sprite | `craft.ts` (all Codex machines, including boats), `creatures.ts` (Claude), `agy.ts` (agy), `lantern.ts` (OpenCode) | rectangular frames of letters; every family's designs are generated from class parameters |
 | Design | `design.ts` `DESIGNS[family][place]` | drawing's front, cruise, turn style and escort formation |
 | Air effects | `fx.ts` `CREW[family][place]` | emitters and lights hung on anchors of the sprite |
 | Passage (arrive, leave) | `exit-styles.ts` (look) and `exits.ts` (timing) | one small function per family and place, handcrafted pixels; every style ends clean at p = 1 |
@@ -89,13 +88,18 @@ shockwave on a send read far better than a swarm of dots did. Particles are for 
 
 ## Effects: how they are made
 
-OpenCode's `balloon.ts` cuts a local fabric envelope for each place: city ticker, harbor sail/pennant, beach globe/streamers,
-mountain quilted pear, country hay-stack/garland, forest leaf lantern, desert sun-disc/tassels and tundra ribbed lantern.
-Eight cached poses share a pressure clock: the fabric expands, a ripple travels down its gores, the bunting hem waves and the
-basket swings behind the pulse. `balloonPose` exposes the visible burner and external heat/ember anchors from that same pose.
-`balloonNose` is the burner voice, since drifting balloons have no heading. Large classes have smaller sister balloons; the
-seed's `balloonInk` remains their envelope colour. Effects paint before the solid cloth, with sparse pale heat and two embers;
-a sending burner flares with a pale hiss ring after the shared turn lead. The nine-row exception belongs only to this family.
+OpenCode's `lantern.ts` generates paper lantern garlands: ticker shades, hulls with pennants, shades with side streamers,
+stepped pagodas, harvest shades with a garland, slanted leaves, tasselled sun-discs and crowned crystal prisms. Classes contain 1/2/3/5
+lanterns in 5×7, 9×7, 13×7 and 19×7 rectangles. Each shade is filled with the worker's paper colour, one small lighter rib,
+a dark cap/underside and a warm yellow flame window (2×2 cells from class 2);
+there are no baskets or long suspension stems. Eight cached poses move the paper corners, bob each shade out of phase,
+travel a wave along the ribbon and swing short tassels behind it. `lanternPose` returns every window and its flicker force;
+the brightest shade supplies an external rising-heat anchor. `lanternNose` is the rightmost visible flame for the call.
+A send flares that window and rings a pale warm halo after the shared lead; torn paper and sparks mark an interrupt.
+Large classes have smaller drifting companions, and `lanternInk(seed)` preserves each worker's original paper hue.
+Paper loses its pastel's neutral component and deepens by day to hold its shape against bright sky, grass and snow; the window stays brightest.
+Effects paint before the solid paper and retain their birth strength as the flicker travels to the next lantern;
+each window has a restrained warm halo only from dusk onward.
 
 Every effect is **data for the engine in `particles.ts`**, never a hand-written loop of pixels.
 
@@ -107,10 +111,10 @@ Every effect is **data for the engine in `particles.ts`**, never a hand-written 
   the origin *was*, so a trail is exactly the sprite's own path and leans with the wind.
 - Things **touch their place**: the city dragon has a booster jet at its tail and data packets trailing behind it, an autogyro
   whirls the forest floor's leaves, a duster throws chaff, a skiff sand, a ski plane snow; paddle launches leave a wake;
-  everything that flies throws a shadow by day; stars, balloons and burners light the ground at night; owls have eyeshine,
+  everything that flies throws a shadow by day; stars and paper lanterns light the ground at night; owls have eyeshine,
   the kite a lantern on its string. When you add a thing, ask what it would disturb and what it would light.
 - **Dusk and night** change the crew, not only the sky, **but only where the design motivates a light**: the dragon's head glows and
-  a pulse of light runs down its plates, planes show navigation lights, a balloon is lit from inside, an owl's eyes shine. Never
+  a pulse of light runs down its plates, planes show navigation lights, paper lanterns are lit from inside, an owl's eyes shine. Never
   copy one design's light onto another (a searchlight belongs on a helicopter, not on a dragon). Use `from` and the family's `lights`.
 - **Wind** is real (`look.wind`): gusts cross the whole sky, each place blows its own things about (`CARRIED`: dust, spray,
   sand, snow, petals, leaves), trails and smoke lean downwind.

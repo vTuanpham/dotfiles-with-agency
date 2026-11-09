@@ -22,8 +22,8 @@ const flock: Design['escorts'] = {
   4: [{ tier: 1, lag: 0.12, dx: -19, dy: -1 }, { tier: 1, lag: 0.18, dx: 19, dy: 1 }],
 }
 const sisters: Design['escorts'] = {
-  3: [{ tier: 1, lag: 0.15, dx: -12, dy: 1 }],
-  4: [{ tier: 1, lag: 0.15, dx: -13, dy: 1 }, { tier: 1, lag: 0.2, dx: 13, dy: -1 }],
+  3: [{ tier: 1, lag: 0.15, dx: -14, dy: 1 }],
+  4: [{ tier: 1, lag: 0.15, dx: -16, dy: 1 }, { tier: 1, lag: 0.2, dx: 16, dy: -1 }],
 }
 
 /** The motion contract of every family/place design. Sprite and effect owners plug into this table, never family checks. */
@@ -59,7 +59,7 @@ export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
     desert: { facing: null, cruise: false, turn: 'none', escorts: wingmen },
     tundra: { facing: 'left', cruise: true, turn: 'coil', escorts: wingmen },
   },
-  // Even the sail-cut balloon drifts with the air: flags do not give a balloon a heading.
+  // Paper garlands drift with the air; pennants and tassels do not give them a heading.
   opencode: {
     city: { facing: null, cruise: false, turn: 'none', escorts: sisters },
     harbor: { facing: null, cruise: false, turn: 'none', escorts: sisters },

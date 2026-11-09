@@ -6,9 +6,10 @@
 //   Codex     the machine its place builds (a dragon, a boat, a paraglider, a biplane, an autogyro, a skiff, a ski plane)
 //   Claude    the place's creature in flight (soar, skim, loop, spiral, swoop, flit, thermal, ghost)
 //   agy       how its sparks end (ring, ripple, glints, snow, fireflies, blink, dust devil, aurora ribbon)
-//   OpenCode  where its balloon goes (pops to confetti, bubbles, petals, spores or flurry; drifts, mists or shimmers away)
+//   OpenCode  where its lantern goes (pops to confetti, bubbles, petals, spores or flurry; drifts, mists or shimmers away)
 // To add or change one, write a function here and name it in the family's table.
 import { P } from './landscapes/kit'
+import { lanternInk } from './landscapes/lantern'
 import { type Canvas, hash, mix } from './pixels'
 
 export type Dot = { x: number; y: number; color: number }
@@ -210,23 +211,23 @@ const spark = (place: string): Style => k => {
   if (q < 0.25) for (const [dx, dy] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]] as const) k.lit(k.cx + dx, k.cy + dy, P.white, 1 - q * 4)
 }
 
-// ── OpenCode: where the balloon goes, by place ───────────────────────────────────────────────────────────────────────────────
+// ── OpenCode: where the lantern goes, by place ───────────────────────────────────────────────────────────────────────────────
 
-/** How the balloon ends. `fade` styles keep the balloon and let it dissolve; the rest hide it at the top and release a burst. */
+/** How the lantern ends. `fade` styles keep the lantern and let it dissolve; the rest hide it at the top and release a burst. */
 type Ending = { wind: number; fade?: (k: Ctx, r: number) => void; burst?: { colors: number[]; gravity: number; spread: number; sway?: number; ring?: number } }
 
 const ENDING: Record<string, Ending> = {
-  city: { wind: 0, burst: { colors: [P.pink, P.yellow, P.teal, P.mauve, P.green, P.peach, P.red, P.blue], gravity: 9, spread: 8, ring: P.white } }, // pops into confetti
+  city: { wind: 0, burst: { colors: [P.green, P.yellow, P.red, P.blue, P.lavender, P.white], gravity: 9, spread: 8, ring: P.white } }, // pops into confetti
   harbor: { wind: 14, fade: () => undefined }, // drifts out to sea on the wind, fading
-  beach: { wind: 3, burst: { colors: [P.white, P.sky, P.sapphire, P.teal], gravity: 1.5, spread: 6, sway: 1.5, ring: P.sky } }, // bubbles that hang and wobble
+  beach: { wind: 3, burst: { colors: [P.white, P.sky, P.sapphire, P.blue], gravity: 1.5, spread: 6, sway: 1.5, ring: P.sky } }, // bubbles that hang and wobble
   mountains: { wind: 2, fade: (k, r) => { for (let i = 0; i < 8; i++) k.lit(k.cx + Math.sin(2) * 1.5 + spot(k, i, 5, 5) * r, 2 + spot(k, i, 7, 2) * r, P.white, 0.7 * (1 - r)) } }, // lost in the clouds
-  countryside: { wind: 0, burst: { colors: [P.pink, P.yellow, P.flamingo, P.rosewater], gravity: 7, spread: 6, sway: 2.5 } }, // petals flutter down
-  forest: { wind: 0, burst: { colors: [P.green, P.teal, P.yellow, P.green], gravity: 6, spread: 7, sway: 2 } }, // leaves and spores
+  countryside: { wind: 0, burst: { colors: [P.green, P.yellow, P.white, P.lavender], gravity: 7, spread: 6, sway: 2.5 } }, // petals flutter down
+  forest: { wind: 0, burst: { colors: [P.green, P.white, P.yellow, P.green], gravity: 6, spread: 7, sway: 2 } }, // leaves and spores
   desert: { wind: 0, fade: (k, r) => { for (let i = 0; i < 6; i++) k.lit(k.cx + Math.sin(2) * 1.5 + Math.sin(r * 18 + i) * 2, 3 - r * 6 - i, P.peach, 0.6 * (1 - r)) } }, // evaporates in the heat
   tundra: { wind: 0, burst: { colors: [P.white, P.snow, P.sky, P.white], gravity: 8, spread: 7, sway: 1.5 } }, // bursts into a flurry
 }
 
-const balloon = (place: string): Style => k => {
+const lantern = (place: string): Style => k => {
   const { p, cx, cy } = k
   const end = ENDING[place] ?? ENDING.city!
   const top = 2, rise = Math.max(0, cy - top), dir = dirOf(k)
@@ -251,7 +252,7 @@ const balloon = (place: string): Style => k => {
 /**
  * A worker whose turn was interrupted does not take its bow. A jagged bolt drops out of the sky onto it and flashes it white,
  * then it is knocked out of the air: it shudders, goes red, and falls and drifts away dissolving, shedding what it is made of
- * (a machine smoke and sparks, a creature feathers, agy's star a scatter of embers, a balloon confetti and hissing air).
+ * (a machine smoke and sparks, a creature feathers, agy's star a scatter of embers, a lantern paper scraps and sparks).
  * The same fall for every landscape, since what interrupted it is not from the place; only the debris is the family's.
  */
 const struck = (kind: 'codex' | 'agy' | 'claude' | 'opencode'): Style => k => {
@@ -271,11 +272,14 @@ const struck = (kind: 'codex' | 'agy' | 'claude' | 'opencode'): Style => k => {
     k.lit(fx + (i % 2 ? 1 : -1), fy - 1, P.pink, 0.4 * left)
   }
   if (kind === 'agy') for (let i = 0; i < 10; i++) k.lit(x + Math.cos(i * 0.63 + k.seed) * q * 12, y + Math.sin(i * 0.63 + k.seed) * q * 6 + q * 4, i % 2 ? P.white : P.mauve, left) // embers
-  if (kind === 'opencode') for (let i = 0; i < 8; i++) { // confetti, and air hissing out sideways
-    k.lit(x + spot(k, i, 5, 3) * (1 + q), y + q * 10 + (i % 3), [P.green, P.yellow, P.red, P.blue, P.lavender][i % 5]!, left)
-    if (i < 4) k.lit(x + (i % 2 ? 1 : -1) * (2 + q * 6) + i, y - i * 0.7, P.white, 0.7 * left)
+  if (kind === 'opencode') for (let i = 0; i < 4; i++) { // torn paper scraps flutter down while the exposed flames shed sparks
+    const px = x + spot(k, i, 5, 5) * (0.6 + q) + Math.sin(q * 12 + i), py = y + q * 7 + (i % 3)
+    const paper = lanternInk(k.seed)
+    k.lit(px, py, mix(paper, P.white, 0.55), 0.8 * left)
+    k.lit(px + (i % 2 ? 1 : -1), py + 1, paper, 0.4 * left)
+    if (i < 2) k.lit(x + spot(k, i, 7, 3) + q * 2, y - q * 6 - i, P.yellow, 0.75 * left)
   }
 }
 
 export const styleFor = (kind: 'codex' | 'agy' | 'claude' | 'opencode', place: string, interrupted = false): Style =>
-  interrupted ? struck(kind) : kind === 'codex' ? CODEX[place] ?? hyperdrive : kind === 'claude' ? flight(place) : kind === 'agy' ? spark(place) : balloon(place)
+  interrupted ? struck(kind) : kind === 'codex' ? CODEX[place] ?? hyperdrive : kind === 'claude' ? flight(place) : kind === 'agy' ? spark(place) : lantern(place)

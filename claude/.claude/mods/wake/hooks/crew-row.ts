@@ -60,7 +60,7 @@ function memoryLines(job: WakeChip, fraction: number | undefined): string[] {
 const MARK: Record<string, string> = { codex: '◈', agy: '✦', claude: '◆', opencode: '○' }
 /** Model class as a circle that fills with size (quarter to full), so a bigger model reads as more. */
 export const CLASS_GLYPH = ['◔', '◑', '◕', '◉'] as const
-/** A running worker's own spinner, one motion per harness like Claude's diamond: Codex orbits, agy twinkles, OpenCode's balloon rises and falls. */
+/** A running worker's own spinner, one motion per harness like Claude's diamond: Codex orbits, agy twinkles, OpenCode's lantern rises and falls. */
 export const HARNESS_SPIN: Record<string, string> = { codex: '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏', agy: '✦✧⋆·⋆✧', claude: '◆◇◈◇', opencode: '⠠⠐⠈⠁⠈⠐' }
 export const harnessSpin = (backend: string, frame: number) => { const set = [...(HARNESS_SPIN[backend] ?? HARNESS_SPIN.codex!)]; return set[frame % set.length]! }
 /** Reasoning effort as a five-step signal meter: lit steps rise, unlit steps are dots; full means max or ultra. */

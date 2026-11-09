@@ -2,7 +2,7 @@ import { TURN_LEAD_MS } from '../crew-row'
 import { type Canvas, hash, mix } from '../pixels'
 import { craftFrames } from './craft'
 import { agyFrames } from './agy'
-import { balloonFlare, balloonFrames } from './balloon'
+import { lanternFlare, lanternFrames, lanternInk, lanternPaper } from './lantern'
 import { designFor, type Design, type Tier, type Turn } from './design'
 import { creatureFrames } from './creatures'
 import { boatFx, crewFx } from './fx'
@@ -14,7 +14,7 @@ import { type Job, jobAccent, type Look, P } from './kit'
 //   codex     mechanical  what each place builds (craft.ts): in the city a clockwork dragon, whelp -> Astra
 //   agy       celestial   spark -> comet -> constellation
 //   claude    living      sparrow -> gull -> eagle (also the subagents' birds)
-//   opencode  festival    hot-air balloons, free to drift: hopper -> striped balloon -> big balloon with a bunting band
+//   opencode  festival    sky lantern garlands: one paper lantern -> five linked lanterns on a waving ribbon
 // Sprite keys: a body, W highlight, l light stripe, d shade or rope, s lamp, beak or flame, p bunting, k smoke, h hull or basket,
 // m / M the maker's mark (a body / highlight pixel that takes the maker's colour when another family made the model).
 // Where each one flies comes from who it is (its seed), never from its place in the list: see stations.
@@ -30,7 +30,7 @@ const LANE: Record<Kind, readonly string[]> = {
   codex: ['.a.', 'aWa', '.a.'],
   agy: ['.W.', 'WaW', '.W.'],
   claude: ['a.a', '.a.', '.d.'],
-  opencode: ['aWa', 'aaa', '.h.'],
+  opencode: ['.l.', 'asd', '.p.'],
 }
 
 const ROAD: Record<1 | 2 | 3 | 4, readonly string[]> = {
@@ -40,29 +40,24 @@ const ROAD: Record<1 | 2 | 3 | 4, readonly string[]> = {
   4: ['...WW.WW.WW..', '.aaaaaaaaaaaa', '.dd.......dd.'],
 }
 
-/** OpenCode's festival: a handful of existing inks no other family owns (Codex teal, agy mauve, Claude pink, stale
- *  peach all stay out), each bright enough to read on a day or night sky. A balloon keeps the colours it drew here. */
-const BALLOON_INKS = [P.green, P.yellow, P.red, P.blue, P.lavender] as const
-
-/** A balloon's envelope colour from its stable identity: one of the palette, never another family's accent. */
-export const balloonInk = (seed: number) => BALLOON_INKS[hash(seed ^ 0x5bf03635) % BALLOON_INKS.length]!
-
 /** The family's palette; a stale job stays amber. */
 function paint(job: Job, look: Look) {
-  const family = job.isStale ? P.peach : job.kind === 'opencode' ? balloonInk(job.seed) : jobAccent(job, P.teal)
+  const family = job.isStale ? P.peach : job.kind === 'opencode' ? lanternInk(job.seed) : jobAccent(job, P.teal)
   const base = job.signal ? mix(family, P.white, 0.65) : family
   const mark = job.maker && job.maker !== job.kind && !job.isStale ? jobAccent({ ...job, kind: job.maker }, P.teal) : undefined
-  const a = base
+  const paper = job.kind === 'opencode'
+  const a = paper ? lanternPaper(base, look.night) : base
   const W = job.isStale ? P.yellow : mix(base, P.white, 0.7)
   return {
     a,
     W,
     m: mark ?? a,
     M: mark === undefined ? W : mix(mark, P.white, 0.45),
-    l: mix(base, P.white, 0.5),
-    d: mix(base, P.ink, 0.45),
+    l: mix(a, P.white, paper ? 0.08 : 0.5),
+    d: mix(a, P.ink, 0.45),
     s: P.yellow,
-    p: job.isStale ? P.woodDark : P.yellow,
+    f: mix(P.yellow, P.white, 0.65), // a flaring paper-lantern window stays warm
+    p: paper ? mix(a, P.ink, 0.2) : job.isStale ? P.woodDark : P.yellow,
     k: P.surface2,
     r: job.isStale ? P.peach : P.red, // a beacon, a tail fin
     g: job.isStale ? mix(P.peach, P.white, 0.4) : mix(P.sapphire, P.white, 0.35), // glass
@@ -83,9 +78,9 @@ function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly strin
 
 /** A flyer's frames: a Codex machine is the craft its place builds (a glider over the mountains, a biplane over the fields),
  * a Claude worker is its place's living winged creature, agy's luminous bodies are generated per place, and OpenCode sews a local
- * festival balloon: every family has a generator for each place. */
+ * festival lantern: every family has a generator for each place. */
 const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames =>
-  kind === 'codex' ? craftFrames(look.place, tier) : kind === 'claude' ? creatureFrames(look.place, tier) : kind === 'agy' ? agyFrames(look.place, tier) : balloonFrames(look.place, tier)
+  kind === 'codex' ? craftFrames(look.place, tier) : kind === 'claude' ? creatureFrames(look.place, tier) : kind === 'agy' ? agyFrames(look.place, tier) : lanternFrames(look.place, tier)
 
 /** The gait a flyer moves by: its family's, except that craft which cruise (a dragon, a banner plane) fly the continuous loop. */
 const gaitKind = (job: Job, look: Look) => designFor(job.kind ?? 'codex', look.place).cruise ? 'claude' : job.kind ?? 'codex'
@@ -187,8 +182,8 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   const turning: { mirror: 1 | -1; roll?: number; since?: number } = drawn ? orient(path, drawn, 0, job.talk) : { mirror: 1 }
   const facingRight = !drawn ? false : drawn === 'right' ? turning.mirror > 0 : turning.mirror < 0 // effects are written facing left
   const beat = (Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length
-  const blast = kind === 'opencode' && !compact && job.talk?.sending && job.talk.ms >= TURN_LEAD_MS && job.talk.ms < TURN_LEAD_MS + 300
-  const frame = blast ? balloonFlare(look.place ?? 'city', job.tier ?? 1, beat) : frames[beat]!
+  const blast = kind === 'opencode' && !compact && job.talk?.sending && job.talk.over === undefined && job.talk.ms >= TURN_LEAD_MS && job.talk.ms < TURN_LEAD_MS + 300
+  const frame = blast ? lanternFlare(look.place ?? 'city', job.tier ?? 1, beat) : frames[beat]!
   const art = drawn ? shape(frame, turning.mirror, turning.roll, design.turn) : [...frame]
   if (kind === 'agy' && drawn && turning.roll !== undefined) {
     // Projection can merge cells; keep the core in its own projected cell rather than losing it behind a filament.

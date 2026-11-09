@@ -2,10 +2,11 @@
 //   grid  the family's four classes beside a mid-class sprite of each other family, then agy running Opus, Sonnet and Argon
 //         (Claude's pink mark inside agy), over a few landscapes by day and night; seeds picked so the lineup reads left to right
 //   busy  a crowded sky of mixed families, classes, a stale job and subagent birds, seeded from job names as the band does
-//   opencode also saves dev/balloons.png: six balloons of mixed classes (their palette colours and one stale row) by day and night
+//   opencode also saves dev/lanterns.png: six lanterns of mixed classes (their palette colours and one stale row) by day and night
 import { type SceneInput, scenePixels } from '../hooks/scene.ts'
 import { SCENE_H } from '../hooks/landscapes/kit.ts'
-import { airSlots, balloonInk } from '../hooks/landscapes/crew.ts'
+import { airSlots } from '../hooks/landscapes/crew.ts'
+import { lanternInk } from '../hooks/landscapes/lantern.ts'
 import { type Job, P } from '../hooks/landscapes/kit.ts'
 import { hash, seedOf } from '../hooks/pixels.ts'
 type Kind = NonNullable<Job['kind']>
@@ -13,10 +14,10 @@ const family = (process.argv[2] ?? 'opencode') as Kind
 const W = 260
 const right = W - 10 - 1 - 5 // as scene.ts: left of Mochi's laptop
 const count = airSlots(right)
-/** The first seed at `slot` whose balloon ink is `want` (when given), so the sheet lines up in order with a chosen colour. */
+/** The first seed at `slot` whose lantern ink is `want` (when given), so the sheet lines up in order with a chosen colour. */
 const at = (slot: number, kind: Kind, tier: 1 | 2 | 3 | 4, maker?: 'claude', want?: number): Job => {
   let seed = slot * 1000
-  while (hash(seed) % count !== slot || (want !== undefined && balloonInk(seed) !== want)) seed++
+  while (hash(seed) % count !== slot || (want !== undefined && lanternInk(seed) !== want)) seed++
   return { kind, tier, seed, isStale: false, maker }
 }
 const others = (['codex', 'agy', 'claude', 'opencode'] as const).filter(k => k !== family)
@@ -49,14 +50,14 @@ const sheets: [string, [string, Partial<SceneInput>][]][] = [
   ]],
   [`${family}-mixed`, (['city', 'harbor', 'beach', 'mountains', 'countryside', 'forest', 'desert', 'tundra'] as const).map(preset => [preset, { preset, hour: 13, jobs: mixed }] as [string, Partial<SceneInput>])],
 ]
-// the balloon festival: six OpenCode jobs of mixed classes, their envelope colours spanning the palette, then all stale
+// the lantern festival: six OpenCode jobs of mixed classes, their paper colours spanning the palette, then all stale
 if (family === 'opencode') {
   const flight = [
     at(0, family, 1, undefined, P.red), at(1, family, 2, undefined, P.green), at(2, family, 3, undefined, P.blue),
     at(3, family, 1, undefined, P.yellow), at(4, family, 2, undefined, P.lavender), at(5, family, 3, undefined, P.green),
   ]
-  sheets.push(['balloons', [
-    ...places.map(([name, s]): [string, Partial<SceneInput>] => [`${name} · six balloons, classes 1-3 twice`, { ...s, jobs: flight }]),
+  sheets.push(['lanterns', [
+    ...places.map(([name, s]): [string, Partial<SceneInput>] => [`${name} · six lanterns, classes 1-3 twice`, { ...s, jobs: flight }]),
     ['city night · all stale (amber, dims on the off beat)', { ...places[0]![1], jobs: flight.map(j => ({ ...j, isStale: true })), frame: 46 }],
   ]])
 }
