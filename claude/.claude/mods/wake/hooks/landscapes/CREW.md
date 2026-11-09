@@ -57,7 +57,7 @@ place, a family or an effect means adding a row, not writing a new loop. `tests/
 
 | Part | Owner | What a row is |
 | --- | --- | --- |
-| Sprite | `craft.ts` (all Codex machines, including boats), `creatures.ts` (Claude), `AIR` in `crew.ts` (agy, OpenCode) | rectangular frames of letters; each Codex design is generated from class parameters |
+| Sprite | `craft.ts` (Codex), `creatures.ts` (Claude), `agy.ts` (agy), `AIR` in `crew.ts` (OpenCode) | rectangular frames of letters; Codex and agy designs are generated from class parameters |
 | Design | `design.ts` `DESIGNS[family][place]` | drawing's front, cruise, turn style and escort formation |
 | Air effects | `fx.ts` `CREW[family][place]` | emitters and lights hung on anchors of the sprite |
 | Passage (arrive, leave) | `exit-styles.ts` (look) and `exits.ts` (timing) | one small function per family and place, handcrafted pixels; every style ends clean at p = 1 |

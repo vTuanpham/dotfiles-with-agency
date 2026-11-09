@@ -1,6 +1,7 @@
 import { TURN_LEAD_MS } from '../crew-row'
 import { type Canvas, hash, mix } from '../pixels'
 import { craftFrames } from './craft'
+import { agyFrames } from './agy'
 import { designFor, type Design, type Tier, type Turn } from './design'
 import { creatureFrames } from './creatures'
 import { boatFx, crewFx } from './fx'
@@ -38,18 +39,9 @@ const ROAD: Record<1 | 2 | 3 | 4, readonly string[]> = {
   4: ['...WW.WW.WW..', '.aaaaaaaaaaaa', '.dd.......dd.'],
 }
 
-/** The sprites no place changes (agy's sparks and OpenCode's balloons) and the generic Claude bird; Codex's machines are
+/** OpenCode's balloons and the generic Claude bird; agy's lights live in agy.ts. Codex's machines are
  *  craft.ts's and Claude's creatures creatures.ts's, one for each place. */
-const AIR: Record<Exclude<Kind, 'codex'>, Record<1 | 2 | 3 | 4, Frames>> = {
-  agy: {
-    1: [['.W.', 'WmW', '.W.'], ['W.W', '.m.', 'W.W']],
-    2: [['.......mm.', 'd.dd.ddmWm', '.......mm.'], ['.......mm.', '.d.dd.dmWm', '.......mm.']],
-    3: [
-      ['.........M...', '...W....d.d..', '....d..d...d.', '.....dW.....W'],
-      ['.........m...', '...a....d.d..', '....d..d...d.', '.....dW.....a'],
-    ],
-    4: [['..W.......M......', '...d....d.d..W...', '....d..d...dd....', '.....dW.....W....', '....d........d...'], ['..a.......m......', '...d....d.d..a...', '....d..d...dd....', '.....dW.....W....', '....d........d...']],
-  },
+const AIR: Record<Exclude<Kind, 'codex' | 'agy'>, Record<1 | 2 | 3 | 4, Frames>> = {
   claude: {
     1: [['a.a', '.a.'], ['.a.', 'a.a']],
     2: [['a.....a', '.aa.aa.', '...d...'], ['...a...', 'aaadaaa', '.a...a.']],
@@ -113,9 +105,9 @@ function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly strin
 
 /** A flyer's frames: a Codex machine is the craft its place builds (a glider over the mountains, a biplane over the fields),
  * and the generic drone and airship only where the place has none; a Claude worker is the winged creature of its place (a
- * kite on the beach, a butterfly in the fields); agy and OpenCode look the same everywhere. */
+ * kite on the beach, a butterfly in the fields); agy's luminous bodies are generated per place. */
 const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames =>
-  kind === 'codex' ? craftFrames(look.place, tier) : (kind === 'claude' && creatureFrames(look.place, tier)) || AIR[kind][tier]
+  kind === 'codex' ? craftFrames(look.place, tier) : kind === 'agy' ? agyFrames(look.place, tier) : (kind === 'claude' && creatureFrames(look.place, tier)) || AIR[kind][tier]
 
 /** The gait a flyer moves by: its family's, except that craft which cruise (a dragon, a banner plane) fly the continuous loop. */
 const gaitKind = (job: Job, look: Look) => designFor(job.kind ?? 'codex', look.place).cruise ? 'claude' : job.kind ?? 'codex'
@@ -217,12 +209,21 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   const turning: { mirror: 1 | -1; roll?: number; since?: number } = drawn ? orient(path, drawn, 0, job.talk) : { mirror: 1 }
   const facingRight = !drawn ? false : drawn === 'right' ? turning.mirror > 0 : turning.mirror < 0 // effects are written facing left
   const frame = frames[(Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length]!
-  const art = drawn ? shape(frame, turning.mirror, turning.roll, design.turn) : frame
+  const art = drawn ? shape(frame, turning.mirror, turning.roll, design.turn) : [...frame]
+  if (kind === 'agy' && drawn && turning.roll !== undefined) {
+    // Projection can merge cells; keep the core in its own projected cell rather than losing it behind a filament.
+    shape(frame.map(row => row.replace(/[^M]/g, '.')), turning.mirror, turning.roll, design.turn).forEach((row, y) => {
+      const x = row.indexOf('M')
+      if (x >= 0) art[y] = art[y]!.slice(0, x) + 'M' + art[y]!.slice(x + 1)
+    })
+  }
   const pal = paint({ ...job, kind }, look)
   const x0 = cx - (art[0]!.length >> 1), y0 = cy - (art.length >> 1)
-  const quietMachine = kind === 'codex' && look.place !== undefined && look.place !== 'city'
+  const quietMachine = kind === 'agy' || kind === 'codex' && look.place !== undefined && look.place !== 'city'
+  const coreY = kind === 'agy' ? art.findIndex(row => row.includes('M')) : -1
+  const nose: Vec | undefined = coreY < 0 ? undefined : [(art[coreY]!.indexOf('M') - (art[0]!.length >> 1)) * (facingRight ? -1 : 1), coreY - (art.length >> 1)]
   const air = () => {
-    if (!compact) crewFx(c, look, { x0, y0, w: art[0]!.length, h: art.length, cx, cy, kind, tier: job.tier ?? 1, seed: job.seed, pace: job.pace ?? 0.6, phase: job.phase ?? look.frame, path, lift: job.lift ?? 0, ground: look.crewGround ?? c.H, flip: facingRight, talk: job.talk, turn: design.turn === 'coil' ? turning.since : undefined })
+    if (!compact) crewFx(c, look, { x0, y0, w: art[0]!.length, h: art.length, cx, cy, kind, tier: job.tier ?? 1, seed: job.seed, pace: job.pace ?? 0.6, phase: job.phase ?? look.frame, path, lift: job.lift ?? 0, ground: look.crewGround ?? c.H, flip: facingRight, talk: job.talk, turn: design.turn === 'coil' ? turning.since : undefined, nose })
   }
   // Air stays behind the solid machine: no particle can repaint one of its body cells.
   if (quietMachine) air()

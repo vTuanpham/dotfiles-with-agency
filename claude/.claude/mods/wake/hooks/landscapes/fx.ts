@@ -2,6 +2,7 @@ import type { WakePreset } from '../../types'
 import { type Canvas } from '../pixels'
 import { type Emitter, type Light, type Vec, coneEnd, emit, shine, thrustPuff } from './particles'
 import { craftLamp, craftNose, craftPush, dragonCrests } from './craft'
+import { agyCore, agyOrbit, agyPulse } from './agy'
 import { TURN_LEAD_MS } from '../crew-row'
 import { clockRate } from './gait'
 import type { Tier } from './design'
@@ -143,23 +144,27 @@ const CLAUDE: Partial<Record<WakePreset | 'any', Cell>> = {
   },
 }
 
+/** A pale echo sheds at the moving filament's low stroke. The solid light stays in agy.ts. */
+const LIGHT_ECHO = (angle: number, colors: readonly number[], gravity = 0, voice: Partial<Emitter> = {}): Cell => ({
+  streams: [{ at: 'tail', follow: true, emitter: { count: 2, life: 0.45, speed: [1, 2], angle: [angle - 0.2, angle + 0.2], gravity, wind: 0.25, colors, alpha: 0.2, envelope: 'fade' } }],
+  talking: [{ at: 'nose', emitter: { count: 3, life: 0.55, burst: true, spawn: { ring: 1 }, speed: [4, 5], angle: [0, TAU], colors: [P.white, P.lavender], alpha: 0.38, envelope: 'fade', ...voice } }],
+})
 const AGY: Partial<Record<WakePreset | 'any', Cell>> = {
   any: {
-    streams: [
-      { at: 'centre', follow: true, emitter: { count: 16, life: 0.9, speed: [0, 0.6], angle: [0, TAU], wind: 0.5, colors: [P.white, P.mauve, P.mauve], alpha: 0.8, envelope: 'twinkle', size: 2 } }, // a trail of sparks that twinkle out
-      { at: 'centre', emitter: { count: 6, life: 0.5, spawn: { w: 3, h: 2 }, speed: [0, 0], angle: [0, TAU], colors: [P.white], alpha: 0.9, envelope: 'twinkle', size: 2 } }, // glints about the star
-    ],
+    streams: [0, 1].map(() => ({ at: 'centre', emitter: { count: 1, life: 1.2, speed: [0, 0], angle: [0, 0], colors: [P.white], alpha: 0.27, envelope: 'pulse' } })),
     lights: [
-      { at: 'centre', light: { shape: 'halo', color: P.mauve, alpha: 0.32, reach: 2, modulate: 'pulse' } },
-      { at: 'centre', light: { shape: 'halo', color: P.white, alpha: 0.6, reach: 0 } },
-      { at: 'ground', light: { shape: 'pool', color: P.mauve, alpha: 0.28, reach: 5, modulate: 'pulse' } }, // the star lights the ground beneath it (and, being light, casts no shadow)
+      { at: 'nose', light: { shape: 'halo', color: P.mauve, alpha: 0.2, reach: 2 } },
+      { at: 'ground', light: { shape: 'pool', color: P.lavender, alpha: 0.12, reach: 3, modulate: 'pulse' } },
     ],
   },
-  city: { streams: [{ at: 'centre', follow: true, emitter: { count: 8, life: 0.8, spawn: { h: 1 }, speed: [0, 0.8], angle: [0, TAU], colors: [P.pink, P.sky], alpha: 0.5, envelope: 'twinkle' } }] }, // neon
-  forest: { streams: [{ at: 'centre', emitter: { count: 6, life: 2, spawn: { w: 6, h: 3 }, speed: [0.2, 0.7], angle: [0, TAU], swirl: 1.6, colors: [P.yellow], alpha: 0.7, envelope: 'twinkle' } }] }, // fireflies
-  desert: { streams: [{ at: 'below', follow: true, emitter: { count: 8, life: 1.2, spawn: { w: 2 }, speed: [0.3, 1], angle: [UP - 0.6, UP + 0.6], gravity: -1, colors: [P.sand, P.peach], alpha: 0.45, envelope: 'fade' } }] }, // heat rising
-  tundra: { streams: [{ at: 'above', emitter: { count: 10, life: 2.2, spawn: { w: 2 }, speed: [0.6, 1.4], angle: [UP - 0.4, UP + 0.4], swirl: 1.4, colors: [P.green, P.teal], alpha: 0.5, envelope: 'pulse' } }] }, // an aurora ribbon rising
-  mountains: { streams: [{ at: 'centre', emitter: { count: 8, life: 1.4, spawn: { w: 4, h: 2 }, speed: [0, 0.5], angle: [0, TAU], gravity: 0.6, colors: [P.snow, P.white], alpha: 0.6, envelope: 'twinkle' } }] }, // ice glints
+  city: LIGHT_ECHO(DOWN, [P.white, P.lavender]),
+  harbor: { ...LIGHT_ECHO(0, [P.white, P.sky], 0, { angle: [0, Math.PI], speed: [3, 4] }), lights: [{ at: 'ground', light: { shape: 'pool', color: P.lavender, alpha: 0.2, reach: 4, modulate: 'pulse' } }] },
+  beach: LIGHT_ECHO(DOWN, [P.white, P.sand], 0, { spawn: { ring: 2 } }),
+  mountains: LIGHT_ECHO(DOWN, [P.white, P.snow], 0, { angle: [DOWN - 0.7, DOWN + 0.7] }),
+  countryside: LIGHT_ECHO(DOWN, [P.white, P.yellow], 1, { count: 2, delay: 0.1, speed: [3, 3] }),
+  forest: LIGHT_ECHO(DOWN, [P.white, P.overlay1], 2, { angle: [DOWN - 0.9, DOWN + 0.9], gravity: 2 }),
+  desert: LIGHT_ECHO(UP, [P.white, P.sand], -2, { spawn: { ring: 2 }, speed: [2, 3], swirl: 0.3 }),
+  tundra: LIGHT_ECHO(UP, [P.white, P.snow], 0, { angle: [UP - 0.9, UP + 0.9] }),
 }
 
 const OPENCODE: Partial<Record<WakePreset | 'any', Cell>> = {
@@ -230,6 +235,10 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
     const [x, y] = craftNose(place, a.tier as Tier, beat)
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
   }
+  if (a.kind === 'agy' && !a.nose) {
+    const [x, y] = agyCore(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed)
+    a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
+  }
   const dark = clamp(look.night + (look.blend?.dusk ?? 0) * 0.6 + (look.blend?.dawn ?? 0) * 0.4) // dusk and dawn count as half dark
   const strength = 0.35 + 0.65 * a.pace + 0.5 * a.lift
   const t = a.phase / 10
@@ -243,7 +252,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
       thrustPuff(c, x, y, age, wind)
     }
   }
-  if (a.turn !== undefined) emit(c, ROLL, { at: () => [a.cx, a.cy], t: a.turn / 1000, seed: a.seed * 13, strength: 1, wind })
+  if (a.turn !== undefined && a.kind !== 'agy') emit(c, ROLL, { at: () => [a.cx, a.cy], t: a.turn / 1000, seed: a.seed * 13, strength: 1, wind })
   for (const cell of cellsFor(a.kind, place)) {
     for (const [i, s] of (cell.streams ?? []).entries()) {
       if ((s.tiers && !s.tiers.includes(a.tier)) || (s.from !== undefined && dark < s.from)) continue
@@ -251,6 +260,15 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
       const machine = a.kind === 'codex' && place !== 'city' ? place : undefined
       const pose = (ago: number) => craftPush(machine!, a.tier as Tier, Math.floor((a.phase - ago * 10) / 1.5) + a.seed)
       const origin = (ago: number): Vec => {
+        if (a.kind === 'agy') {
+          const beat = a.phase / 1.5 + a.seed
+          const point = s.at === 'centre' ? agyOrbit(place, a.tier as Tier, beat, i * Math.PI) : (() => {
+            const pulse = agyPulse(place, a.tier as Tier, Math.floor(beat - ago * 10 / 1.5))
+            return [pulse.x, pulse.y + (place === 'desert' || place === 'tundra' ? -1 : 1)] as const
+          })()
+          const dx = point[0] - (a.w >> 1), [px, py] = s.follow ? a.path(ago / clockRate(a.pace)) : [a.cx, a.cy]
+          return [px + (a.flip ? -dx : dx), py + point[1] - (a.h >> 1)]
+        }
         if (machine) {
           const push = pose(s.follow ? ago : 0), dx = push.x - (a.w >> 1)
           const [px, py] = s.follow ? a.path(ago / clockRate(a.pace)) : [a.cx, a.cy]
@@ -260,7 +278,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
         return [px + ox, py + oy]
       }
       const beat = (a.phase / 1.5 + a.seed) % 8
-      const stroke = machine ? pose(0).force : s.beats ? 0.2 + 0.8 * Math.max(...s.beats.map(b => Math.max(0, Math.cos((beat - b) * Math.PI / 4)) ** 6)) : 1
+      const stroke = a.kind === 'agy' && s.at === 'tail' ? agyPulse(place, a.tier as Tier, Math.floor(beat)).force : machine ? pose(0).force : s.beats ? 0.2 + 0.8 * Math.max(...s.beats.map(b => Math.max(0, Math.cos((beat - b) * Math.PI / 4)) ** 6)) : 1
       emit(c, a.flip ? mirrored(s.emitter) : s.emitter, { at: origin, t, seed: a.seed * 31 + i, strength: strength * stroke, wind })
     }
     if (a.talk?.sending && a.talk.over === undefined) for (const [i, s] of (cell.talking ?? []).entries()) { // shouting a message at the root: a burst on the message's own clock
