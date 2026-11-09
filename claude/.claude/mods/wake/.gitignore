@@ -5,3 +5,5 @@ dev/codex-*-beats.json
 dev/codex-*-ascii.txt
 dev/agy-*.json
 dev/agy-*-ascii.txt
+dev/claude-*-beats.json
+dev/claude-*-ascii.txt

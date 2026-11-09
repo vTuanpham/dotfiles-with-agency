@@ -3,6 +3,7 @@ import { type Canvas } from '../pixels'
 import { type Emitter, type Light, type Vec, coneEnd, emit, shine, thrustPuff } from './particles'
 import { craftLamp, craftNose, craftPush, dragonCrests } from './craft'
 import { agyCore, agyOrbit, agyPulse } from './agy'
+import { creatureNose, creatureStroke } from './creatures'
 import { TURN_LEAD_MS } from '../crew-row'
 import { clockRate } from './gait'
 import type { Tier } from './design'
@@ -111,37 +112,22 @@ const CODEX: Partial<Record<WakePreset | 'any', Cell>> = {
   },
 }
 
-/** An owl's eyes catch the light: where its two yellow cells are in each class's sprite (creatures.ts). */
-const OWL_EYES: readonly LightAt[] = ([[2, 1], [3, 2], [4, 3]] as const).flatMap(([tier, dx]) =>
-  [-dx, dx].map((x): LightAt => ({ at: 'centre', dx: x, dy: -1, tiers: [tier], light: { shape: 'halo', color: P.yellow, alpha: 0.6, reach: 1 } })))
-
+/** Small cries, chirps and hoots: paired sound arcs from the generated beak after the bird faces Mochi. */
+const CALL = (speed: number, delay = 0): readonly Stream[] => [{
+  at: 'nose', dx: -1, emitter: { count: 2, life: 0.55, burst: true, delay, speed: [speed, speed + 4], angle: [Math.PI - 0.12, Math.PI + 0.12], colors: [P.white, P.snow], alpha: 0.55, envelope: 'fade', arc: true },
+}]
+const FEATHER: Stream = { at: 'below', follow: true, emitter: { count: 2, life: 0.65, speed: [0.4, 1.2], angle: [DOWN - 0.35, DOWN + 0.35], gravity: 2, swirl: 0.4, wind: 0.6, colors: [P.white, P.snow], alpha: 0.26, envelope: 'fade' } }
+const BIRD_WASH = (color: number): readonly Stream[] => [{ at: 'ground', emitter: { count: 1, life: 0.4, speed: [1, 2], angle: [UP - 0.5, UP + 0.5], gravity: 5, wind: 0.6, colors: [color, P.white], alpha: 0.14, envelope: 'fade' } }]
 const CLAUDE: Partial<Record<WakePreset | 'any', Cell>> = {
-  any: {
-    lights: SHADOW,
-    streams: [
-      { at: 'left', emitter: { count: 6, life: 1.1, spawn: { w: 1 }, speed: [0.4, 1.8], angle: [DOWN - 0.6, DOWN + 0.6], gravity: 1.2, drag: 0.5, swirl: 0.8, wind: 0.8, colors: [P.pink, P.white], alpha: 0.55, envelope: 'fade' } }, // feathers shaken loose off each wing
-      { at: 'right', emitter: { count: 6, life: 1.1, spawn: { w: 1 }, speed: [0.4, 1.8], angle: [DOWN - 0.6, DOWN + 0.6], gravity: 1.2, drag: 0.5, swirl: 0.8, wind: 0.8, colors: [P.pink, P.white], alpha: 0.55, envelope: 'fade' } },
-      { at: 'centre', follow: true, emitter: { count: 9, life: 1, speed: [0, 0.5], angle: [0, TAU], wind: 0.8, colors: [P.pink, P.white], alpha: 0.4, envelope: 'twinkle' } }, // a faint wake of motes
-    ],
-  },
-  city: { lights: [{ at: 'below', light: { shape: 'pool', color: P.yellow, alpha: 0.25, reach: 3 } }] }, // street lights catch its belly
-  harbor: { lights: [{ at: 'below', light: { shape: 'pool', color: P.sky, alpha: 0.25, reach: 3 } }] },
-  beach: {
-    lights: [
-      { at: 'below', toGround: true, light: { shape: 'column', color: P.text, alpha: 0.5, reach: 12, from: 0 } }, // the kite's string, down to the sand
-      { at: 'below', dy: 4, light: { shape: 'halo', color: P.yellow, alpha: 0.8, reach: 1, modulate: 'pulse' } }, // a lantern hung on it at night
-    ],
-  },
-  mountains: { lights: [{ at: 'above', light: { shape: 'pool', color: P.sapphire, alpha: 0.28, reach: 3 } }] }, // moonlight on the wings
-  countryside: { streams: [{ at: 'centre', from: 0.2, emitter: { count: 7, life: 1.3, spawn: { w: 4, h: 2 }, speed: [0, 0.5], angle: [0, TAU], swirl: 1, colors: [P.yellow, P.pink], alpha: 0.85, envelope: 'twinkle', size: 2 } }] }, // luminous wing dust
-  forest: { lights: OWL_EYES }, // an owl's eyeshine
-  desert: { streams: [{ at: 'centre', from: 0.2, emitter: { count: 6, life: 0.8, spawn: { w: 4, h: 1 }, speed: [0, 0.3], angle: [0, TAU], colors: [P.sky, P.mauve], alpha: 0.7, envelope: 'twinkle' } }] }, // glints off glassy wings
-  tundra: {
-    lights: [
-      { at: 'above', light: { shape: 'pool', color: P.green, alpha: 0.26, reach: 3 } }, // the aurora on white feathers
-      ...OWL_EYES,
-    ],
-  },
+  any: { lights: SHADOW, streams: [FEATHER] },
+  city: { talking: CALL(11), streams: BIRD_WASH(P.overlay1) },
+  harbor: { talking: CALL(8), streams: BIRD_WASH(P.sky) },
+  beach: { talking: CALL(9, 0.06), streams: BIRD_WASH(P.sand) },
+  mountains: { talking: CALL(6, 0.08), streams: BIRD_WASH(P.snow) },
+  countryside: { talking: CALL(12), streams: BIRD_WASH(P.yellow) },
+  forest: { talking: CALL(4, 0.12), streams: BIRD_WASH(P.leaf), lights: [{ at: 'nose', dx: 2, dy: -1, light: { shape: 'halo', color: P.yellow, alpha: 0.18, reach: 0 } }] },
+  desert: { talking: CALL(5, 0.1), streams: BIRD_WASH(P.sand) },
+  tundra: { talking: CALL(7, 0.06), streams: BIRD_WASH(P.snow) },
 }
 
 /** A pale echo sheds at the moving filament's low stroke. The solid light stays in agy.ts. */
@@ -239,6 +225,10 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
     const [x, y] = agyCore(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed)
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
   }
+  if (a.kind === 'claude') {
+    const [x, y] = creatureNose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed)
+    a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
+  }
   const dark = clamp(look.night + (look.blend?.dusk ?? 0) * 0.6 + (look.blend?.dawn ?? 0) * 0.4) // dusk and dawn count as half dark
   const strength = 0.35 + 0.65 * a.pace + 0.5 * a.lift
   const t = a.phase / 10
@@ -258,7 +248,11 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
       if ((s.tiers && !s.tiers.includes(a.tier)) || (s.from !== undefined && dark < s.from)) continue
       const [ox, oy] = anchorOf(a, s.at, s.dx, s.dy)
       const machine = a.kind === 'codex' && place !== 'city' ? place : undefined
-      const pose = (ago: number) => craftPush(machine!, a.tier as Tier, Math.floor((a.phase - ago * 10) / 1.5) + a.seed)
+      const creature = a.kind === 'claude'
+      if (creature && s.at === 'ground' && a.cy + a.h / 2 < a.ground - 4) continue
+      const pose = (ago: number) => creature
+        ? creatureStroke(place, a.tier as Tier, Math.floor((a.phase - ago * 10) / 1.5) + a.seed)
+        : craftPush(machine!, a.tier as Tier, Math.floor((a.phase - ago * 10) / 1.5) + a.seed)
       const origin = (ago: number): Vec => {
         if (a.kind === 'agy') {
           const beat = a.phase / 1.5 + a.seed
@@ -269,7 +263,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
           const dx = point[0] - (a.w >> 1), [px, py] = s.follow ? a.path(ago / clockRate(a.pace)) : [a.cx, a.cy]
           return [px + (a.flip ? -dx : dx), py + point[1] - (a.h >> 1)]
         }
-        if (machine) {
+        if (machine || creature) {
           const push = pose(s.follow ? ago : 0), dx = push.x - (a.w >> 1)
           const [px, py] = s.follow ? a.path(ago / clockRate(a.pace)) : [a.cx, a.cy]
           return [px + (a.flip ? -dx : dx), s.at === 'ground' ? a.ground - 1 : py + push.y - (a.h >> 1) + 1]
@@ -279,7 +273,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
       }
       const beat = (a.phase / 1.5 + a.seed) % 8
       const stroke = a.kind === 'agy' && s.at === 'tail' ? agyPulse(place, a.tier as Tier, Math.floor(beat)).force : machine ? pose(0).force : s.beats ? 0.2 + 0.8 * Math.max(...s.beats.map(b => Math.max(0, Math.cos((beat - b) * Math.PI / 4)) ** 6)) : 1
-      emit(c, a.flip ? mirrored(s.emitter) : s.emitter, { at: origin, t, seed: a.seed * 31 + i, strength: strength * stroke, wind })
+      emit(c, a.flip ? mirrored(s.emitter) : s.emitter, { at: origin, t, seed: a.seed * 31 + i, strength: strength * stroke, ...(creature ? { strengthAtBirth: (ago: number) => pose(ago).force } : {}), wind })
     }
     if (a.talk?.sending && a.talk.over === undefined) for (const [i, s] of (cell.talking ?? []).entries()) { // shouting a message at the root: a burst on the message's own clock
       if (s.tiers && !s.tiers.includes(a.tier)) continue

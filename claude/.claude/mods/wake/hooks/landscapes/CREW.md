@@ -49,6 +49,25 @@ feature. Bigger classes mostly get longer; moving accents use the seven-row ceil
 in occupied cells (at least 8/14/20/26 through the four classes, ignoring every colour change). The non-city machines paint their air first and their solid pixels last; their eyes/plates are bright pixels without a
 halo that would turn the silhouette into a teal cloud.
 
+## Claude concepts
+
+Rose-plumaged living creatures share a forward yellow eye, ivory beak, light covert band, dark primaries and a trimming tail.
+`creatures.ts` generates twelve poses per class and caches the art together with `creatureNose` (the visible beak) and
+`creatureStroke` (a feather edge and downstroke force). The shoulder leads the elbow and tips; the torso bobs against the stroke.
+The swift's sickle, tern's crooked wing, frigate's open scissor tail, vulture's fingered primaries, swallow's streamers,
+moth-owl's rounded fans and tufts, hoopoe's folding crest and barred fans, and ptarmigan's scalloped plumage remain local traits
+through all four classes. Odd-width grids grow from 7×5 to 19×7, so mirrored beak/feather anchors stay on the same cell;
+slow soaring species flex less.
+
+All have fronts, bank through turns and take a mate/flock at classes 3/4; the owl hovers while the others cruise.
+Pale loose feathers drift from the generated downstroke edge, retaining the force of their birth rather than blinking off
+on the upstroke (`Source.strengthAtBirth`). Low passes disturb a single fleck of local material and daylight casts a shadow.
+Calls are paired small sound arcs (`Emitter.arc`) anchored at the current beak after `TURN_LEAD_MS`; only the owl has eyeshine.
+Interrupts shed pale quills with pink barbs. Air is painted before the solid bird so it never recolours the plumage.
+`tests/claude-crew.test.ts` checks connectivity, tones, growing footprints, moving silhouettes, anchors and unobscured body cells.
+`bun dev/claude.ts <review-name>` writes day/night scenes at native scale and enlarged, a twelve-pose ASCII sheet and bare
+plumage/silhouette contact sheets; `--art` skips scenes while revising anatomy.
+
 ## Owners
 
 The crew is a matrix, **four families (Codex, Claude, agy, OpenCode) by eight places** (city, harbor, beach, mountains,

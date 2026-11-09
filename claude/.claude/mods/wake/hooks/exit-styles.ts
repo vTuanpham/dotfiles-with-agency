@@ -265,7 +265,11 @@ const struck = (kind: 'codex' | 'agy' | 'claude' | 'opencode'): Style => k => {
     k.lit(x + spot(k, i, 3, 2), y - i * 1.6 - q * 4, P.surface2, 0.7 * left)
     if (i < 5) k.lit(x + spot(k, i, 7, 3), y + q * 10 + i, i % 2 ? P.peach : P.red, 0.9 * left)
   }
-  if (kind === 'claude') for (let i = 0; i < 6; i++) k.lit(x + spot(k, i, 5, 4) * (0.5 + q * 1.5), y + q * 8 + (i % 3), P.pink, 0.9 * left) // feathers
+  if (kind === 'claude') for (let i = 0; i < 4; i++) {
+    const fx = x + spot(k, i, 5, 4) * (0.5 + q * 1.5) + Math.sin(q * 11 + i), fy = y + q * 8 + (i % 3)
+    k.lit(fx, fy, mix(P.pink, P.white, 0.7), 0.7 * left) // pale quill with a trailing rose barb
+    k.lit(fx + (i % 2 ? 1 : -1), fy - 1, P.pink, 0.4 * left)
+  }
   if (kind === 'agy') for (let i = 0; i < 10; i++) k.lit(x + Math.cos(i * 0.63 + k.seed) * q * 12, y + Math.sin(i * 0.63 + k.seed) * q * 6 + q * 4, i % 2 ? P.white : P.mauve, left) // embers
   if (kind === 'opencode') for (let i = 0; i < 8; i++) { // confetti, and air hissing out sideways
     k.lit(x + spot(k, i, 5, 3) * (1 + q), y + q * 10 + (i % 3), [P.green, P.yellow, P.red, P.blue, P.lavender][i % 5]!, left)
