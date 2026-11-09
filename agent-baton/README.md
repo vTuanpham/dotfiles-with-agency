@@ -159,7 +159,7 @@ No native-question cancellation hook or background watcher is installed here.
 | Harness | Supported path |
 | --- | --- |
 | Codex | Use the asynchronous native question tool when available. Background hook output cannot control an already-running operation or start an idle turn. [OpenAI hooks reference](https://learn.chatgpt.com/docs/hooks#run-hooks-in-the-background). |
-| Claude Code | [Inbox's native hook](../agent-inbox/README.md#connect-a-harness) can collect new `AskUserQuestion` answers. Already-open prompts use Remote Control and mobile input-needed alerts; the [configuration snapshot](../claude/README.md#remote-questions-and-notifications) enables both. `dialogExpiry` applies to other dialogs. [Remote Control reference](https://code.claude.com/docs/en/remote-control#limitations). |
+| Claude Code | Use Remote Control and mobile input-needed alerts for native questions; the [configuration snapshot](../claude/README.md#remote-questions-and-notifications) enables both. Inbox cannot answer them. `dialogExpiry` applies to other dialogs. [Remote Control reference](https://code.claude.com/docs/en/remote-control#limitations). |
 | OpenCode | Its native `question` pauses execution. The v2 API can list and cancel pending forms with feedback, but this requires a dedicated adapter with root-session filtering and answer/cancellation race handling. [Tools](https://opencode.ai/v2/docs/tools/), [API](https://opencode.ai/v2/docs/api). |
 | Antigravity | Hooks can intercept `ask_question` before execution. The documented hook contract provides no cancellation of an already-open question. Use the native prompt or supported remote interface. [Hooks reference](https://antigravity.google/docs/hooks). |
 

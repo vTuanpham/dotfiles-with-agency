@@ -31,7 +31,7 @@ New adapters must decide every capability explicitly, including unsupported ones
 | Connection | Read and reply | Composer controls | Session details |
 | --- | --- | --- | --- |
 | Codex | History, progress, queue / active-turn steering, images, async questions | Model, reasoning, rename, compact, stop | Connection account and allowance, descendants, MCP servers |
-| Claude Code | Official SDK history, native hook questions; opt-in channel replies | Native terminal owns model and menus | Subagent IDs; account allowance unavailable |
+| Claude Code | Official SDK history; opt-in channel replies | Native terminal owns model and menus | Subagent IDs; account allowance unavailable |
 | OpenCode v2 | History, image input, prompt admission, forms and permission decisions | Native models, variants, agents, commands, stop | Session usage, descendants, project MCP servers |
 | Antigravity / ACP | Its own saved ACP sessions, replayed chat/images, prompt updates | Native config, modes, commands, cancel, form questions | Available native measurements only |
 
@@ -83,18 +83,6 @@ turn; they do not steer mid-turn. Without opt-in, discovery and history are
 read-only. Each profile has separate private channels; requests verify both the
 profile and native session IDs.
 
-The repository's `AskUserQuestion` PreToolUse hook offers new questions to paired
-Inbox devices before the terminal prompt opens. Apply it with `./install.sh --apply hooks`
-and let Claude reload its hook configuration. **This is an exclusive relay, not a
-simultaneous terminal and Inbox prompt.** PreToolUse runs before the native dialog,
-so the terminal waits on the hook while Inbox has the question. It holds the hook callback;
-an answer returns the original input plus `updatedInput.answers`, and Cancel denies
-that question. With no paired device or connected profile it leaves the native flow
-alone. After five minutes without an answer, or on hook failure, the native prompt
-takes over; expiry never answers or approves anything. An already-open terminal
-prompt cannot be transferred to Inbox. Question sockets are separate from channel
-consent, so answering questions does not enable ordinary chat replies.
-
 The documented [channel permission relay](https://code.claude.com/docs/en/channels-reference#relay-permission-prompts)
 keeps a terminal approval open and applies the first answer, but its response
 contains only `allow` or `deny`; it provides no question-answer payload.
@@ -104,14 +92,16 @@ The [SDK input callback](https://code.claude.com/docs/en/agent-sdk/user-input)
 belongs to an SDK-owned run; a session ID does not attach it to an existing terminal.
 [Remote Control](https://code.claude.com/docs/en/remote-control) provides Claude's
 own synchronized clients, without a published third-party question endpoint.
-Inbox therefore has no verified supported path to show and resolve the same Claude
-question in both interfaces. The existing relay remains available; this limit is
-not fixed by returning `allow` earlier or moving the wait to an async hook.
+Inbox therefore cannot show a reliably pending Claude question or resolve it.
+An [async hook](https://code.claude.com/docs/en/hooks#run-hooks-in-the-background)
+cannot control the prompt, and its delayed execution does not establish whether
+the prompt is still open. Inbox leaves questions in Claude's native interface;
+use Remote Control to answer on a phone.
 
 The Working label tracks the SDK-selected main conversation's latest native
 `end_turn` marker. A busy process with a completed main turn is Idle; background
-commands alone do not imply the model is generating. Native waiting prompts and
-held question callbacks still show Needs input.
+commands alone do not imply the model is generating. Native waiting prompts
+show Needs input when Claude's session listing reports them.
 
 </details>
 
@@ -462,8 +452,7 @@ races. Visual changes also need rendered phone and desktop checks. Tests never
 start model turns in real conversations. Vendor marks keep their owners' terms
 ([notice](src/agent_inbox/assets/NOTICE.md)).
 
-Question checks include paired HTTP answers through a real Claude hook subprocess
-and ACP SDK peer, with cancellation, decline and restart replay. OpenCode's native
+Question checks include an ACP SDK peer, with cancellation, decline and restart replay. OpenCode's native
 `session.form.create` API can exercise the same flow in an empty test session
 without inference; remove that owned session after checking answer and cancellation.
 

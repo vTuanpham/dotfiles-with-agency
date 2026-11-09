@@ -104,10 +104,7 @@ Claude suppresses pushes while the connected terminal is focused or being used.
 `AskUserQuestion` and permission prompts stay pending until answered. The
 `dialogExpiry` setting applies to other forwarded dialogs, so changing it does
 not implement a question timeout. No automatic-dismissal hook is installed.
-Agent Inbox's `AskUserQuestion` PreToolUse callback can collect new answers from
-paired devices before the terminal prompt opens. It returns the documented native
-answer or a user-requested denial; timeout/failure leaves the native prompt intact.
-See [Inbox's callback lifecycle](../agent-inbox/README.md#connect-a-harness).
+Agent Inbox does not intercept these questions. See its [Claude limitations](../agent-inbox/README.md#connect-a-harness).
 [Documented limits](https://code.claude.com/docs/en/remote-control#limitations),
 [shared question policy](../agent-baton/README.md#native-questions-and-hooks).
 

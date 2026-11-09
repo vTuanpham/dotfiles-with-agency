@@ -5,10 +5,9 @@ import os
 import subprocess
 import sys
 import uuid
-from dataclasses import replace
 from pathlib import Path
 
-from . import claude_history, claude_questions
+from . import claude_history
 from .capabilities import AdapterCapabilities
 from .claude_channel import channel_call
 from .context import SessionContext, Worker
@@ -81,25 +80,16 @@ def root(target):
     return found[0]
 
 
-def activity(info, turn_ended=False, pending=False):
-    if pending:
-        return "input-needed"
+def activity(info, turn_ended=False):
     if info["status"] == "busy" and turn_ended:
         return "idle"  # Process busy includes background commands after the main model turn ends.
     return {"busy": "active", "waiting": "input-needed", "idle": "idle"}[info["status"]]
 
 
-def pending_question(target):
-    try:
-        return bool(claude_questions.forms(target).forms)
-    except (OSError, RuntimeError, ValueError, KeyError, TypeError):
-        return False  # Optional question IPC must never hide an otherwise readable conversation.
-
-
 class Claude:
     capabilities = AdapterCapabilities(
         queued_messages=False, mid_turn_steering=False, approvals_survive_restart=False,
-        history_while_unloaded=False, images=True, interrupt=False, commands=False, questions=True,
+        history_while_unloaded=False, images=True, interrupt=False, commands=False, questions=False,
         reply_mode="opt_in_next_turn",
     )
 
@@ -112,9 +102,8 @@ class Claude:
             except RuntimeError:
                 continue  # Unmaterialized or sidechain transcripts are not root conversations.
             label = row.get("name") or info.get("custom_title") or info["summary"] or row["sessionId"][-8:]
-            pending = pending_question(replace(seed, session_id=row["sessionId"]))
             result.append(RootInfo(row["sessionId"], text(label, "session title", 200),
-                                   activity(row, overview.get("turn_ended", False), pending)))
+                                   activity(row, overview.get("turn_ended", False))))
         return result
 
     def snapshot(self, target, cursor=None, since=None):
@@ -131,8 +120,7 @@ class Claude:
             pass
         messages, tools, timeline = claude_history.decode(
             rows, target.session_id, outgoing, append_outgoing=not cursor)
-        pending = pending_question(target)
-        return Snapshot(activity(live, value.get("turn_ended", False), pending),
+        return Snapshot(activity(live, value.get("turn_ended", False)),
                         connected, messages, value["older"],
                         newer_cursor=value["newer"], catching_up=value["catching_up"],
                         activity=tools, timeline=timeline)
@@ -147,16 +135,12 @@ class Claude:
 
     def forms(self, target):
         live = root(target)
-        result = claude_questions.forms(target)
-        if not result.forms and live["status"] == "waiting":
+        if live["status"] == "waiting":
             return Forms([], "This prompt is open in Claude's native session. Answer it there.")
-        return result
+        return Forms([])
 
     def answer(self, target, identifier, values, cancel=False, decline=False):
-        root(target)
-        if decline:
-            raise DeliveryRejected("This native question has no decline action")
-        return claude_questions.answer(target, identifier, values, cancel)
+        raise DeliveryRejected("Answer this question in Claude's native session")
 
     def context(self, target):
         live = root(target)

@@ -194,8 +194,6 @@ def test_completed_main_turn_is_idle_while_process_has_background_work(tmp_path,
     value["turn_ended"] = True
     assert provider.snapshot(selected).status == "input-needed"
     assert "native session" in provider.forms(selected).unavailable
-    monkeypatch.setattr(claude.claude_questions, "forms", lambda _: (_ for _ in ()).throw(ConnectionError()))
-    assert provider.snapshot(selected).status == "input-needed"
 
 
 @dataclass
