@@ -3,7 +3,8 @@
 ## The standard
 
 1. One design per family and place, grown through four classes by parameters, never four unrelated pictures.
-2. Small and slim: every sprite rectangle fits `CRAFT_MAX` (19×7); each class grows in area.
+2. Small and slim: every sprite rectangle fits `CRAFT_MAX` (19×7); each class grows in area. OpenCode's narrow balloons alone
+   may use 13×9 (`BALLOON_MAX`): classes are 7×8, 9×9, 11×9 and 13×9, growing sideways.
 3. Detailed: at least three tones, structure (plates, seams, ribs, spars or rigging) and a highlight. One connected silhouette,
    with a few intentional joints instead of scattered texture. No outline or backing.
 4. Smooth: eight or more beats for Codex. The structure itself moves: bending plates, billowing surfaces, pitching fuselage,
@@ -57,7 +58,7 @@ place, a family or an effect means adding a row, not writing a new loop. `tests/
 
 | Part | Owner | What a row is |
 | --- | --- | --- |
-| Sprite | `craft.ts` (all Codex machines, including boats), `creatures.ts` (Claude), `AIR` in `crew.ts` (agy, OpenCode) | rectangular frames of letters; each Codex design is generated from class parameters |
+| Sprite | `craft.ts` (all Codex machines, including boats), `creatures.ts` (Claude), `balloon.ts` (OpenCode), `AIR` in `crew.ts` (agy) | rectangular frames of letters; machines and balloons are generated from class parameters |
 | Design | `design.ts` `DESIGNS[family][place]` | drawing's front, cruise, turn style and escort formation |
 | Air effects | `fx.ts` `CREW[family][place]` | emitters and lights hung on anchors of the sprite |
 | Passage (arrive, leave) | `exit-styles.ts` (look) and `exits.ts` (timing) | one small function per family and place, handcrafted pixels; every style ends clean at p = 1 |
@@ -68,6 +69,14 @@ Passages and reactions are deliberately **handcrafted pixels, not particle emitt
 shockwave on a send read far better than a swarm of dots did. Particles are for the air around the crew (trails, wind, light).
 
 ## Effects: how they are made
+
+OpenCode's `balloon.ts` cuts a local fabric envelope for each place: city ticker, harbor sail/pennant, beach globe/streamers,
+mountain quilted pear, country hay-stack/garland, forest leaf lantern, desert sun-disc/tassels and tundra ribbed lantern.
+Eight cached poses share a pressure clock: the fabric expands, a ripple travels down its gores, the bunting hem waves and the
+basket swings behind the pulse. `balloonPose` exposes the visible burner and external heat/ember anchors from that same pose.
+`balloonNose` is the burner voice, since drifting balloons have no heading. Large classes have smaller sister balloons; the
+seed's `balloonInk` remains their envelope colour. Effects paint before the solid cloth, with sparse pale heat and two embers;
+a sending burner flares with a pale hiss ring after the shared turn lead. The nine-row exception belongs only to this family.
 
 Every effect is **data for the engine in `particles.ts`**, never a hand-written loop of pixels.
 

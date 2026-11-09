@@ -1,6 +1,7 @@
 import { TURN_LEAD_MS } from '../crew-row'
 import { type Canvas, hash, mix } from '../pixels'
 import { craftFrames } from './craft'
+import { balloonFlare, balloonFrames } from './balloon'
 import { designFor, type Design, type Tier, type Turn } from './design'
 import { creatureFrames } from './creatures'
 import { boatFx, crewFx } from './fx'
@@ -38,9 +39,9 @@ const ROAD: Record<1 | 2 | 3 | 4, readonly string[]> = {
   4: ['...WW.WW.WW..', '.aaaaaaaaaaaa', '.dd.......dd.'],
 }
 
-/** The sprites no place changes (agy's sparks and OpenCode's balloons) and the generic Claude bird; Codex's machines are
+/** The sprites no place changes (agy's sparks) and the generic Claude bird; Codex's machines are
  *  craft.ts's and Claude's creatures creatures.ts's, one for each place. */
-const AIR: Record<Exclude<Kind, 'codex'>, Record<1 | 2 | 3 | 4, Frames>> = {
+const AIR: Record<'agy' | 'claude', Record<1 | 2 | 3 | 4, Frames>> = {
   agy: {
     1: [['.W.', 'WmW', '.W.'], ['W.W', '.m.', 'W.W']],
     2: [['.......mm.', 'd.dd.ddmWm', '.......mm.'], ['.......mm.', '.d.dd.dmWm', '.......mm.']],
@@ -58,15 +59,6 @@ const AIR: Record<Exclude<Kind, 'codex'>, Record<1 | 2 | 3 | 4, Frames>> = {
       ['.............', '.aaa.....aaa.', 'aaaaaaaaaWWs.', '.dd..aaa.....'],
     ],
     4: [['aaaa.........aaaa', '.aaaaaa.aaaaaa...', '...aaaaaaaaaWWs..', '..dd...aaaa..d...'], ['.................', '.aaaa.......aaaa.', 'aaaaaaaaaaaaWWs..', '..dd...aaaa..d...']],
-  },
-  opencode: {
-    1: [['ala', 'ala', '.a.', '.s.', '.h.'], ['ala', 'ala', '.a.', '.d.', '.h.']],
-    2: [['.lal.', 'alala', 'alala', '.lal.', '..a..', '.dsd.', '.hhh.'], ['.lal.', 'alala', 'alala', '.lal.', '..a..', '.ddd.', '.hhh.']],
-    3: [
-      ['..alala..', '.lalalal.', 'alalalala', 'ppppppppp', '.lalalal.', '..alala..', '...lal...', '...dsd...', '...hhh...'],
-      ['..alala..', '.lalalal.', 'alalalala', 'ppppppppp', '.lalalal.', '..alala..', '...lal...', '...ddd...', '...hhh...'],
-    ],
-    4: [['...alalala...', '.alalalalala.', 'alalalalalala', 'ppppppppppppp', 'alalalalalala', '.alalalalala.', '...alalala...', '....dsdsd....', '....hhhhh....'], ['...alalala...', '.alalalalala.', 'alalalalalala', 'ppppppppppppp', 'alalalalalala', '.alalalalala.', '...alalala...', '....dddsd....', '....hhhhh....']],
   },
 }
 
@@ -113,9 +105,9 @@ function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly strin
 
 /** A flyer's frames: a Codex machine is the craft its place builds (a glider over the mountains, a biplane over the fields),
  * and the generic drone and airship only where the place has none; a Claude worker is the winged creature of its place (a
- * kite on the beach, a butterfly in the fields); agy and OpenCode look the same everywhere. */
+ * kite on the beach, a butterfly in the fields); OpenCode sews a local festival balloon. */
 const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames =>
-  kind === 'codex' ? craftFrames(look.place, tier) : (kind === 'claude' && creatureFrames(look.place, tier)) || AIR[kind][tier]
+  kind === 'codex' ? craftFrames(look.place, tier) : kind === 'opencode' ? balloonFrames(look.place, tier) : (kind === 'claude' && creatureFrames(look.place, tier)) || AIR[kind][tier]
 
 /** The gait a flyer moves by: its family's, except that craft which cruise (a dragon, a banner plane) fly the continuous loop. */
 const gaitKind = (job: Job, look: Look) => designFor(job.kind ?? 'codex', look.place).cruise ? 'claude' : job.kind ?? 'codex'
@@ -212,11 +204,13 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   const drawn = !compact ? design.facing : null
   const turning: { mirror: 1 | -1; roll?: number; since?: number } = drawn ? orient(path, drawn, 0, job.talk) : { mirror: 1 }
   const facingRight = !drawn ? false : drawn === 'right' ? turning.mirror > 0 : turning.mirror < 0 // effects are written facing left
-  const frame = frames[(Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length]!
+  const beat = (Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length
+  const blast = kind === 'opencode' && !compact && job.talk?.sending && job.talk.ms >= TURN_LEAD_MS && job.talk.ms < TURN_LEAD_MS + 300
+  const frame = blast ? balloonFlare(look.place ?? 'city', job.tier ?? 1, beat) : frames[beat]!
   const art = drawn ? shape(frame, turning.mirror, turning.roll, design.turn) : frame
   const pal = paint({ ...job, kind }, look)
   const x0 = cx - (art[0]!.length >> 1), y0 = cy - (art.length >> 1)
-  const quietMachine = kind === 'codex' && look.place !== undefined && look.place !== 'city'
+  const quietMachine = kind === 'opencode' || kind === 'codex' && look.place !== undefined && look.place !== 'city'
   const air = () => {
     if (!compact) crewFx(c, look, { x0, y0, w: art[0]!.length, h: art.length, cx, cy, kind, tier: job.tier ?? 1, seed: job.seed, pace: job.pace ?? 0.6, phase: job.phase ?? look.frame, path, lift: job.lift ?? 0, ground: look.crewGround ?? c.H, flip: facingRight, talk: job.talk, turn: design.turn === 'coil' ? turning.since : undefined })
   }
