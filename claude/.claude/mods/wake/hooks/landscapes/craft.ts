@@ -1,16 +1,48 @@
 import type { WakePreset } from '../../types'
 
 // Codex is the mechanical crew, and each place gives its machines a body of its own: what a person would actually build and
-// fly there, drawn by hand rather than trimmed onto a generic drone. The city keeps the drones and blimps (it is a place of
-// them); the harbor and beach have boats. Four classes grow the same machine in the footprints the sky slots assume: 5, 7, 13
-// and 17 cells wide, and 2, 4, 4 and 4 rows tall. Sprite keys are crew.ts's: a body, W highlight, l light stripe, d shade or
-// rope, s lamp, p bunting, h hull or wood. Each craft has two frames so its image moves.
+// fly there, drawn by hand rather than trimmed onto a generic drone: the city a courier drone, a parcel drone, a news helicopter
+// and an advertising blimp; the harbor and beach have boats. Four classes grow the same machine, each a rectangle inside
+// CRAFT_MAX and larger than the one before. Sprite keys are crew.ts's: a body, W highlight, l light stripe, d shade or rope,
+// s lamp, p bunting, h hull or wood, r red (a beacon, a tail fin), g glass, k grey metal. Each craft has two or more frames so its
+// image moves (the helicopter's rotor has four). What a craft stirs up, lights and trails is data in fx.ts, not drawn here.
 
 type Frames = readonly (readonly string[])[]
 type Tier = 1 | 2 | 3 | 4
 
-/** Cells wide and rows tall of each class, which every craft keeps (a test holds them to it). */
-export const CRAFT_SIZE: Record<Tier, { w: number; h: number }> = { 1: { w: 5, h: 2 }, 2: { w: 7, h: 4 }, 3: { w: 13, h: 4 }, 4: { w: 17, h: 4 } }
+/**
+ * The room a sprite may take: the sky slots are 22 cells wide and the sky is ten rows, so no craft is wider than `w` or taller
+ * than `h`. Each class draws larger than the one before; inside these limits a craft has the cells its own shape needs (a
+ * helicopter wants a rotor, a mast, a cabin and skids: six rows). A test holds every craft to this.
+ */
+export const CRAFT_MAX = { w: 19, h: 7 }
+
+/**
+ * City: what a city actually flies. A courier drone, a delivery drone with its parcel on a tether, a news helicopter (rotor,
+ * tail boom, a nose lamp that blinks) and an advertising blimp (fins, a gondola and a ticker that scrolls along its flank).
+ * The helicopter's searchlight and the blimp's glow are the city aura's (aura.ts); the machines themselves stay solid pixels.
+ */
+const CITY_CRAFT: Record<Tier, Frames> = {
+  // r is a red beacon: it blinks on the second frame of the helicopter and the drones
+  1: [['ll.ll', '.aWa.', '..d..'], ['.l.l.', '.aWa.', '..r..']],
+  2: [
+    ['lll...lll', '.d.aaa.d.', '..aaWaa..', '....d....', '...hph...'],
+    ['.l.....l.', '.d.ara.d.', '..aaWaa..', '....d....', '...hph...'],
+  ],
+  // the news helicopter: rotor with dark tips over a hub, an engine on the roof, tinted glass in the nose, a white livery
+  // stripe, a red tail fin and a tail rotor that spins, a nose lamp, and skids on struts
+  // four frames: the blades sweep long and short, left and right, and the tail rotor flicks between its two positions
+  3: [
+    ['.d' + 'l'.repeat(11) + 'd.', '.......k.......', '..llkkkll.....r', 'gggaaaaaaaaaaar', 'ggaWWWWWWaa...d', '.skddddddkd...d', '..kkkkkkkkkk...'],
+    ['...d' + 'l'.repeat(7) + 'd...', '.......r.......', '..llkkkll.....r', 'gggaaaaaaaaaaar', 'ggaWWWWWWaa....', '.skddddddkd....', '..kkkkkkkkkk...'],
+    ['..d' + 'l'.repeat(9) + 'd..', '.......k.......', '..llkkkll.....r', 'gggaaaaaaaaaaar', 'ggaWWWWWWaa...d', '.skddddddkd...d', '..kkkkkkkkkk...'],
+    ['....d' + 'l'.repeat(5) + 'd....', '.......k.......', '..llkkkll.....r', 'gggaaaaaaaaaaar', 'ggaWWWWWWaa....', '.skddddddkd....', '..kkkkkkkkkk...'],
+  ],
+  4: [
+    ['.................d.', '....lllllllllll.dd.', '.llaaaaaaaaaaaaaaad', 'aaaWsWsWsWsWsWsaadd', '.ddaaaaaaaaaaaaaadd', '....dddddddddd.dd..', '........kssk.......'],
+    ['.................d.', '....lllllllllll.dd.', '.llaaaaaaaaaaaaaaad', 'aaasWsWsWsWsWsWaadW', '.ddaaaaaaaaaaaaaadd', '....dddddddddd.dd..', '........ksdk.......'],
+  ],
+}
 
 /** Mountains: a paraglider. The canopy arches over a rider on lines that meet at the harness, and its stripes ripple. */
 const PARAGLIDER: Record<Tier, Frames> = {
@@ -53,6 +85,7 @@ const SKIPLANE: Record<Tier, Frames> = {
 }
 
 const CRAFT: Partial<Record<WakePreset, Record<Tier, Frames>>> = {
+  city: CITY_CRAFT,
   mountains: PARAGLIDER,
   countryside: DUSTER,
   forest: AUTOGYRO,
@@ -60,8 +93,9 @@ const CRAFT: Partial<Record<WakePreset, Record<Tier, Frames>>> = {
   tundra: SKIPLANE,
 }
 
-/** The Codex craft a place builds for a class, or undefined where the generic machine belongs (the city). */
-export const craftFrames = (place: WakePreset | undefined, tier: Tier): Frames | undefined => place && CRAFT[place]?.[tier]
+/** The Codex craft a place builds for a class. A place with none of its own (the harbor and beach float boats, and send only
+ *  a crowded sky's overflow aloft) lends the city's machines, which are the ones that fly anywhere. */
+export const craftFrames = (place: WakePreset | undefined, tier: Tier): Frames => (place && CRAFT[place]?.[tier]) || CITY_CRAFT[tier]
 
 /** Every craft, for the test that holds them to their class's footprint. */
 export const ALL_CRAFT = CRAFT

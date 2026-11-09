@@ -31,11 +31,11 @@ test('every character is drawn on the same grid, with a colour for each letter i
   }
 })
 import { airJobs, boat, fly, placeFly } from '../hooks/landscapes/crew'
-import { ALL_CRAFT, CRAFT_SIZE } from '../hooks/landscapes/craft'
+import { ALL_CRAFT, CRAFT_MAX } from '../hooks/landscapes/craft'
 import { type Job, type Look, P } from '../hooks/landscapes/kit'
 import { canvas } from '../hooks/pixels'
 
-const look = { frame: 0, night: 1 } as Look
+const look = { frame: 0, night: 1, effects: false } as Look // bare sprites: these tests are about shape, not about the air round it
 const kinds = ['codex', 'agy', 'claude', 'opencode'] as const
 const tiers = [1, 2, 3, 4] as const
 
@@ -71,16 +71,23 @@ test('each crew class has its own size and animated image, including stale amber
   }
 })
 
-test('every place-built Codex craft keeps its class footprint and moves between its two frames', () => {
-  for (const [place, classes] of Object.entries(ALL_CRAFT)) for (const tier of tiers) {
-    const frames = classes![tier]
-    const { w, h } = CRAFT_SIZE[tier]
-    expect(frames.length, place).toBe(2)
-    for (const art of frames) {
-      expect(art.length, `${place} class ${tier} rows`).toBe(h)
-      for (const rowText of art) expect(rowText.length, `${place} class ${tier}: ${rowText}`).toBe(w)
+test('every place-built Codex craft is a rectangle inside the sky slot, grows with its class and moves between its two frames', () => {
+  for (const [place, classes] of Object.entries(ALL_CRAFT)) {
+    let area = 0
+    for (const tier of tiers) {
+      const frames = classes![tier]
+      expect(frames.length, place).toBeGreaterThanOrEqual(2) // a craft may have more (the helicopter's rotor has four)
+      const [h, w] = [frames[0]!.length, frames[0]![0]!.length]
+      expect(w, `${place} class ${tier} width`).toBeLessThanOrEqual(CRAFT_MAX.w)
+      expect(h, `${place} class ${tier} height`).toBeLessThanOrEqual(CRAFT_MAX.h)
+      for (const art of frames) {
+        expect(art.length, `${place} class ${tier} rows`).toBe(h)
+        for (const rowText of art) expect(rowText.length, `${place} class ${tier}: ${rowText}`).toBe(w)
+      }
+      expect(w * h, `${place} class ${tier} is larger than the class before`).toBeGreaterThan(area)
+      area = w * h
+      expect(frames[0]).not.toEqual(frames[1])
     }
-    expect(frames[0]).not.toEqual(frames[1])
   }
 })
 
@@ -109,7 +116,7 @@ test('flyers are drawn without an outline or backing, on any sky', () => {
   }
 })
 
-test('a crowded sky places twelve mixed flyers without covering reserved decor', () => {
+test('a crowded sky places twelve mixed flyers, each in its own place, and mostly leaves reserved decor clear (a soft preference)', () => {
   for (const width of [160, 260]) {
     const c = canvas(width, 16)
     const obstacles = [{ x: 30, y: 2, w: 5, h: 4 }, { x: 85, y: 7, w: 6, h: 5 }]
@@ -118,12 +125,13 @@ test('a crowded sky places twelve mixed flyers without covering reserved decor',
     airJobs(c, state, jobs, width - 16)
     expect(state.crewSpriteZones.length).toBe(12)
     expect(new Set(state.crewAnchors).size).toBe(12)
+    // flyers are nearer than scenery, so they may pass in front of it; they settle in clear sky where there is any
+    let covered = 0, cells = 0
+    for (const obstacle of obstacles) for (let y = obstacle.y; y < obstacle.y + obstacle.h; y++) for (let x = obstacle.x; x < obstacle.x + obstacle.w; x++) { cells++; if (c.get(x, y)) covered++ }
+    expect(covered / cells).toBeLessThan(0.5)
     for (const zone of state.crewSpriteZones) {
       expect(zone.w).toBeGreaterThanOrEqual(3)
       expect(zone.h).toBeGreaterThanOrEqual(2)
-      for (const obstacle of obstacles) {
-        for (let y = obstacle.y; y < obstacle.y + obstacle.h; y++) for (let x = obstacle.x; x < obstacle.x + obstacle.w; x++) expect(c.get(x, y)).toBe(0)
-      }
       let painted = 0
       for (let y = zone.y; y < zone.y + zone.h; y++) for (let x = zone.x; x < zone.x + zone.w; x++) if (c.get(x, y)) painted++
       expect(painted).toBeGreaterThanOrEqual(3)

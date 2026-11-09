@@ -1,10 +1,13 @@
 import { type Canvas, hash, mix } from '../pixels'
 import { craftFrames } from './craft'
 import { creatureFrames } from './creatures'
+import { boatFx, crewFx } from './fx'
+import type { Vec } from './particles'
+import { clockRate, gait, roamShare } from './gait'
 import { type Job, jobAccent, type Look, P } from './kit'
 
 // The crew's look: one family per harness, four classes that grow in size and detail.
-//   codex     mechanical  drone -> big drone -> airship -> mothership (a skiff -> tug -> steamship on the water)
+//   codex     mechanical  what each place builds (craft.ts): in the city a drone -> parcel drone -> helicopter -> blimp
 //   agy       celestial   spark -> comet -> constellation
 //   claude    living      sparrow -> gull -> eagle (also the subagents' birds)
 //   opencode  festival    hot-air balloons, free to drift: hopper -> striped balloon -> big balloon with a bunting band
@@ -33,21 +36,9 @@ const ROAD: Record<1 | 2 | 3 | 4, readonly string[]> = {
   4: ['...WW.WW.WW..', '.aaaaaaaaaaaa', '.dd.......dd.'],
 }
 
-const AIR: Record<Kind, Record<1 | 2 | 3 | 4, Frames>> = {
-  codex: {
-    1: [['a...a', '.aWa.'], ['.a.a.', '.aWa.']],
-    2: [['aa...aa', '.aaaaa.', '..aWa..', '..s.s..'], ['.a...a.', '.aaaaa.', '..aWa..', '..s.s..']],
-    // Sol and Astra are airships, four rows so they fit the sky band: a light upper hull, the accent body with its lit
-    // window row, a dark tail fin and a small grey gondola; the windows twinkle, and Astra's nose light blinks.
-    3: [
-      ['..llllllll...', 'dlaaaaaaaaal.', 'ddaWaWaWaaad.', '....dkkd.....'],
-      ['..llllllll...', 'dlaaaaaaaaal.', 'ddaaWaWaWaad.', '....dkkd.....'],
-    ],
-    4: [
-      ['...llllllllll....', 'dllaaaaaaaaaaal..', 'ddaWaWaWaWaWaaads', '.....dkkkkd......'],
-      ['...llllllllll....', 'dllaaaaaaaaaaal..', 'ddaaWaWaWaWaWaad.', '.....dkkkkd......'],
-    ],
-  },
+/** The sprites no place changes (agy's sparks and OpenCode's balloons) and the generic Claude bird; Codex's machines are
+ *  craft.ts's and Claude's creatures creatures.ts's, one for each place. */
+const AIR: Record<Exclude<Kind, 'codex'>, Record<1 | 2 | 3 | 4, Frames>> = {
   agy: {
     1: [['.W.', 'WmW', '.W.'], ['W.W', '.m.', 'W.W']],
     2: [['.......mm.', 'd.dd.ddmWm', '.......mm.'], ['.......mm.', '.d.dd.dmWm', '.......mm.']],
@@ -108,6 +99,8 @@ function paint(job: Job, look: Look) {
     s: P.yellow,
     p: job.isStale ? P.woodDark : P.yellow,
     k: P.surface2,
+    r: job.isStale ? P.peach : P.red, // a beacon, a tail fin
+    g: job.isStale ? mix(P.peach, P.white, 0.4) : mix(P.sapphire, P.white, 0.35), // glass
     h: job.isStale ? mix(P.peach, P.woodDark, 0.5) : P.wood,
   } as Record<string, number>
 }
@@ -134,53 +127,6 @@ function onlyOwnAir(c: Canvas, look: Look, cx: number, cy: number): Canvas {
 }
 
 /**
- * What each country does to the air around its crew, so a worker belongs to the place it flies over. Only soft light,
- * never a solid pixel: the sprite stays the silhouette and the place only adds its weather to it.
- *   city a searchlight beam at night   harbor a pennant streaming from the mast   beach a ribbon trailing behind
- *   mountains a thin cold contrail     countryside petals and pollen falling    forest fireflies circling
- *   desert heat-haze dust behind       tundra a drift of aurora light and snow glitter
- */
-function atmosphere(canvas: Canvas, look: Look, x0: number, y0: number, w: number, h: number, job: Job, ink: number) {
-  const f = look.frame, s = job.seed, cx = x0 + (w >> 1), cy = y0 + (h >> 1), tier = job.tier ?? 1
-  const night = look.night
-  const c = onlyOwnAir(canvas, look, cx, cy)
-  switch (look.place) {
-    case 'city':
-      if (night > 0.3 && tier > 1) for (let k = 1; k <= 4; k++) for (let dx = -(k >> 1); dx <= k >> 1; dx++) c.glow(cx + dx, y0 + h - 1 + k, P.yellow, 0.22 * night * (1 - k / 5) * (dx ? 0.5 : 1)) // a widening beam
-      break
-    case 'harbor':
-      c.glow(cx + 1 + ((f >> 3) & 1), y0 - 1, ink, 0.9)
-      c.glow(cx + 2 + ((f >> 3) & 1), y0 - 1 + ((f >> 2) & 1), ink, 0.45)
-      break
-    case 'beach':
-      for (let k = 1; k <= 4; k++) c.glow(x0 - k, cy + Math.round(Math.sin(f * 0.22 + k * 0.9 + s)), ink, 0.62 - k * 0.12)
-      break
-    case 'mountains':
-      for (let k = 1; k <= 6; k++) c.glow(x0 - k, cy + (k >> 2), P.white, 0.34 * (1 - k / 7) * (1 - night * 0.4))
-      break
-    case 'countryside':
-      for (let k = 0; k < 3; k++) {
-        const t = (f / 5 + k * 3 + s) % 9
-        c.glow(cx - 2 + k * 2 + Math.round(Math.sin(t * 0.9 + k)), y0 + h + Math.floor(t / 2), k % 2 ? P.pink : P.yellow, 0.6 * (1 - t / 9))
-      }
-      break
-    case 'forest':
-      for (let k = 0; k < 2; k++) {
-        const a = f * 0.1 + k * Math.PI + s
-        c.glow(Math.round(cx + Math.cos(a) * (w / 2 + 2)), Math.round(cy + Math.sin(a) * (h / 2 + 1.5)), P.yellow, 0.35 + 0.5 * night)
-      }
-      break
-    case 'desert':
-      for (let k = 1; k <= 5; k++) c.glow(x0 - k * 2, y0 + h - 1 + (k & 1), P.sand, 0.34 * (1 - k / 6))
-      break
-    case 'tundra':
-      c.glow(cx + Math.round(Math.sin(f * 0.1 + s) * (w / 2)), y0 + h, P.green, 0.38)
-      c.glow(cx + Math.round(Math.cos(f * 0.13 + s) * (w / 2 + 1)), y0 + h + 1, P.white, 0.4)
-      break
-  }
-}
-
-/**
  * A Codex machine takes the gear of the country it flies over, in solid pixels a row or two outside its body, so each place
  * gives it a different silhouette: a paraglider's canopy over the mountains, a pennant in the harbor, a trailing ribbon on the
  * beach, a lateen sail in the desert, skis in the tundra, a windmill rotor in the countryside, a hanging lantern in the forest,
@@ -202,10 +148,6 @@ function dress(canvas: Canvas, look: Look, x0: number, y0: number, w: number, h:
     case 'beach': // a ribbon streaming behind, longer for a bigger model
       for (let k = 1; k <= 2 + tier; k++) put(x0 - k, y0 + (h >> 1) + Math.round(Math.sin(f * 0.22 + k * 0.9 + job.seed)), k % 2 ? l : a)
       break
-    case 'city': // an aerial with a blinking light
-      put(cx, y0 - 1, d)
-      put(cx, y0 - 2, (f >> 3) % 2 ? (look.night > 0.3 ? P.red : P.white) : d)
-      break
   }
 }
 
@@ -213,23 +155,25 @@ function dress(canvas: Canvas, look: Look, x0: number, y0: number, w: number, h:
  * and the generic drone and airship only where the place has none; a Claude worker is the winged creature of its place (a
  * kite on the beach, a butterfly in the fields); agy and OpenCode look the same everywhere. */
 const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames =>
-  (kind === 'codex' && craftFrames(look.place, tier)) || (kind === 'claude' && creatureFrames(look.place, tier)) || AIR[kind][tier]
+  kind === 'codex' ? craftFrames(look.place, tier) : (kind === 'claude' && creatureFrames(look.place, tier)) || AIR[kind][tier]
 
 /** A flyer centred on (cx, cy): its family and class decide the sprite and which frame this beat shows. */
-export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kind: Kind = job.kind ?? 'codex', compact = false) {
+export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kind: Kind = job.kind ?? 'codex', compact = false, path: (ago: number) => Vec = () => [cx, cy]) {
   const frames = airFrames(look, kind, compact ? 1 : job.tier ?? 1)
-  const art = frames[(Math.floor(look.frame / (kind === 'claude' ? 3 : kind === 'opencode' ? 5 : 4)) + job.seed) % frames.length]!
+  // its wings, rotors and lights beat on its own clock, so a busy worker's run faster than a calm one's
+  const art = frames[(Math.floor((job.phase ?? look.frame) / (kind === 'claude' ? 3 : kind === 'opencode' ? 5 : 4)) + job.seed) % frames.length]!
   const pal = paint({ ...job, kind }, look)
   const x0 = cx - (art[0]!.length >> 1), y0 = cy - (art.length >> 1)
   draw(c, look, x0, y0, art, pal, true)
   if (!compact) {
     if (kind === 'codex') dress(c, look, x0, y0, art[0]!.length, art.length, { ...job, kind }, pal)
-    atmosphere(c, look, x0, y0, art[0]!.length, art.length, { ...job, kind }, pal.a!)
+    crewFx(c, look, { x0, y0, w: art[0]!.length, h: art.length, cx, cy, kind, tier: job.tier ?? 1, seed: job.seed, pace: job.pace ?? 0.6, phase: job.phase ?? look.frame, path, lift: job.lift ?? 0, ground: look.crewGround ?? c.H })
   }
 }
 
 /** Reserve the nearest clear lane; compact silhouettes keep a crowded sky readable. */
 export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, right: number) {
+  if (job.lane) x = job.lane.x // a flyer with a lane of the sky is centred in it, and roams it end to end
   const zones = look.crewZones ??= []
   const anchors = look.crewAnchors ??= []
   const sprites = look.crewSpriteZones ??= []
@@ -244,13 +188,12 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
     for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) {
       if (frames.some(frame => frame[dy]![dx] !== '.')) pixels.push([dx, dy])
     }
-    const padded = new Uint8Array(c.W * c.H)
-    for (let py = 0; py < c.H; py++) for (let px = 0; px < c.W; px++) if (blocked(px, py)) {
-      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-        const xx = px + ox, yy = py + oy
-        if (xx >= 0 && xx < c.W && yy >= 0 && yy < c.H) padded[yy * c.W + xx] = 1
-      }
-    }
+    // What a flyer must not cross: Mochi, her laptop and the other crew (their roaming boxes: every worker stays visible and
+    // hoverable), each with a ring of one cell. Scenery is only a preference (`soft`): a flyer is nearer than the buildings, so
+    // it may pass in front of them and hide a few, though it settles in clear sky when there is any.
+    const padded = new Uint8Array(c.W * c.H), soft = new Uint8Array(c.W * c.H)
+    for (const z of sprites) for (let py = Math.max(0, z.y - 1); py < Math.min(c.H, z.y + z.h + 1); py++) for (let px = Math.max(0, z.x - 1); px < Math.min(c.W, z.x + z.w + 1); px++) padded[py * c.W + px] = 1
+    for (const z of zones) for (let py = Math.max(0, z.y); py < Math.min(c.H, z.y + z.h); py++) for (let px = Math.max(0, z.x); px < Math.min(c.W, z.x + z.w); px++) soft[py * c.W + px] = 1
     const candidates: { x: number; y: number; distance: number }[] = []
     for (let cy = art.length >> 1; cy <= (look.crewGround ?? c.H) - Math.ceil(art.length / 2); cy++) {
       for (let cx = Math.ceil(w / 2); cx <= right - Math.ceil(w / 2); cx++) {
@@ -258,26 +201,59 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       }
     }
     candidates.sort((a, b) => a.distance - b.distance || a.y - b.y || a.x - b.x)
-    for (const candidate of candidates) {
+    // Home: clear sky near where it wants to be if any is free (candidates run nearest first, so the first with no scenery under
+    // it is the answer); else the spot nearby with the least scenery under it, hiding as little as it can.
+    let best: { k: (typeof candidates)[number]; hidden: number } | undefined
+    for (const k of candidates) {
+      if (Math.abs(k.x - x) > 16 || Math.abs(k.y - y) > 4) continue
+      const zx = k.x - (w >> 1), zy = k.y - (h >> 1)
+      if (!pixels.every(([dx, dy]) => !padded[(zy + dy) * c.W + zx + dx])) continue
+      let hidden = 0
+      for (const [dx, dy] of pixels) hidden += soft[(zy + dy) * c.W + zx + dx]!
+      if (!best || hidden < best.hidden) best = { k, hidden }
+      if (hidden === 0) break
+    }
+    for (const candidate of best ? [best.k, ...candidates] : candidates) {
       const zone = { x: candidate.x - (art[0]!.length >> 1), y: candidate.y - (art.length >> 1), w, h }
       if (pixels.some(([dx, dy]) => padded[(zone.y + dy) * c.W + zone.x + dx])) continue
-      const clearAt = (rise: number) => zone.y - rise >= 0 && pixels.every(([dx, dy]) => !padded[(zone.y + dy - rise) * c.W + zone.x + dx])
-      const bob = zone.y > 0 && zone.y + zone.h < (look.crewGround ?? c.H) && clearAt(1) && pixels.every(([dx, dy]) => !padded[(zone.y + dy + 1) * c.W + zone.x + dx])
-      // A hop of up to two pixels when something real happens to this worker (it acted, sent or received a message).
-      const hopRoom = bob && clearAt(2) ? 2 : bob ? 1 : 0
+      // The room it may roam: around home, as wide as its share of the free sky (crewRoam) and a few rows high, stopping only
+      // at Mochi and the other crew. The whole box is reserved, so no other flyer crosses a roaming worker; scenery does not
+      // limit it (it passes in front of buildings).
+      const ground = look.crewGround ?? c.H
+      const free = (sx: number, sy: number) => pixels.every(([dx, dy]) => {
+        const px = zone.x + dx + sx, py = zone.y + dy + sy
+        return px >= 0 && px < c.W && py >= 0 && py < ground && !padded[py * c.W + px]
+      })
+      const maxX = job.lane?.roam ?? look.crewRoam ?? PATROL, maxY = (job.tier ?? 1) >= 3 ? 3 : 4
+      let rx = 0
+      while (rx < maxX && free(-(rx + 1), 0) && free(rx + 1, 0)) rx++
+      // Rows above and below are tried apart (a rooftop below must not take away the open sky above), each as a full-width
+      // band: a row counts only if the sprite fits there at both ends and in the middle of its horizontal range.
+      const across = [-rx, -(rx >> 1), 0, rx >> 1, rx]
+      const rowFree = (sy: number) => across.every(sx => free(sx, sy))
+      let up = 0, down = 0
+      while (up < maxY && rowFree(-(up + 1))) up++
+      while (down < maxY && rowFree(down + 1)) down++
+      // A hop of up to two rows more when something real happens to this worker (it acted, sent or received a message).
+      let hopRoom = 0
+      while (hopRoom < 2 && rowFree(-(up + hopRoom + 1))) hopRoom++
       const hop = Math.round(hopRoom * Math.min(1, job.lift ?? 0))
-      const offset = bob ? Math.round(Math.sin(look.frame * 0.09 + job.seed)) - hop : 0
-      // Patrol: travel the clear sky beside its home, up to PATROL px each way, smoothly (well under a pixel a frame), so a
-      // working crew visibly goes about its business while never crossing a building or another flyer's stretch.
-      let reach = 0
-      while (reach < PATROL && pixels.every(([dx, dy]) => !padded[(zone.y + dy) * c.W + zone.x + dx - reach - 1] && !padded[(zone.y + dy) * c.W + zone.x + dx + reach + 1] && zone.x - reach - 1 >= 0 && zone.x + w + reach + 1 <= c.W)) reach++
-      const speed = [0, 0.045, 0.032, 0.022, 0.016][job.tier ?? 1]! * (job.isStale ? 0.3 : 1)
-      const drift = Math.round(reach * Math.sin(look.frame * speed + job.seed * 5))
-      const reserved = { ...zone, x: zone.x - reach, w: zone.w + 2 * reach, ...(bob ? { y: zone.y - Math.max(1, hopRoom), h: zone.h + 1 + Math.max(1, hopRoom) } : {}) }
+      // Where in the box it is now: its family's gait, over the room that its activity earns it (a calm worker hovers near home).
+      const pace = job.pace ?? 0.6
+      const { u, v } = gait(job.kind ?? 'codex', job.tier ?? 1, job.seed, job.phase ?? look.frame, rx)
+      const share = roamShare(pace)
+      const drift = Math.round(rx * share * u), offset = -Math.round(share * (v > 0 ? v * up : v * down)) - hop
+      const reserved = { x: zone.x - rx, y: zone.y - up - hopRoom, w: zone.w + 2 * rx, h: zone.h + up + down + hopRoom }
       zones.push(reserved)
       sprites.push(reserved)
       anchors.push((candidate.y + offset) * c.W + candidate.x + drift)
-      drawWithHit(c, job, () => fly(c, look, candidate.x + drift, candidate.y + offset, job, job.kind ?? 'codex'))
+      // where it was a moment ago: the same gait at earlier times, so its trail is exactly its own path
+      const kind = job.kind ?? 'codex', now = job.phase ?? look.frame
+      const path = (ago: number): Vec => { // the same gait at the time `ago` seconds back: a trail follows this
+        const g = gait(kind, job.tier ?? 1, job.seed, now - ago * 10 * clockRate(pace), rx)
+        return [candidate.x + Math.round(rx * share * g.u), candidate.y - Math.round(share * (g.v > 0 ? g.v * up : g.v * down))]
+      }
+      drawWithHit(c, job, () => fly(c, look, candidate.x + drift, candidate.y + offset, job, kind, false, path))
       return zone
     }
   }
@@ -303,9 +279,8 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
     if (!fits(0)) continue
     // even the compact mark patrols the clear stretch beside it, so no crew member ever just stands there
     let reach = 0
-    while (reach < PATROL && fits(-(reach + 1)) && fits(reach + 1)) reach++
-    const speed = [0, 0.045, 0.032, 0.022, 0.016][job.tier ?? 1]! * (job.isStale ? 0.3 : 1)
-    const drift = Math.round(reach * Math.sin(look.frame * speed + job.seed * 5))
+    while (reach < (look.crewRoam ?? PATROL) && fits(-(reach + 1)) && fits(reach + 1)) reach++
+    const drift = Math.round(reach * roamShare(job.pace ?? 0.6) * gait(job.kind ?? 'codex', job.tier ?? 1, job.seed, job.phase ?? look.frame, reach).u)
     const lift = -Math.round(Math.min(1, job.lift ?? 0) * (py > 0 && fits(0) ? 1 : 0))
     anchors.push((py + 2 + lift) * c.W + px + 1 + drift)
     art.forEach((row, dy) => [...row].forEach((ch, dx) => { if (ch !== '.') zones.push({ x: px + dx - reach, y: py + dy, w: 1 + 2 * reach, h: 1 }) }))
@@ -335,7 +310,39 @@ export function stations<T extends Job>(crew: readonly T[], count: number): [T, 
   })
 }
 
-/** Slots of sky across `right` columns: each flyer keeps a stretch wide enough for an airship and its sway. */
+/**
+ * How far each flyer may roam from its home, each way: the sky's width left over once every sprite has its own, shared out
+ * among the crew, so a lone worker ranges a long way and a full sky still lets each move a little. At most 26 cells; the
+ * clear sky around a flyer (buildings, others' boxes) can only shorten it.
+ */
+export function roamOf(crew: readonly Job[], right: number): number {
+  const widths = [0, 5, 9, 15, 19]
+  const used = crew.reduce((sum, job) => sum + widths[job.tier ?? 1]!, 0)
+  return Math.max(3, Math.min(26, Math.floor((right - 16 - used) / (2 * Math.max(1, crew.length)))))
+}
+
+/**
+ * Lanes: the whole width of the sky shared out among the flyers, each its own stretch to roam end to end. A flyer's stretch is as
+ * wide as its sprite and a margin in proportion to the others', so a big craft gets more room, and together they cover the scene
+ * from edge to edge however many there are: one worker ranges the whole sky, four a quarter each. Order is by identity (never
+ * list order), so the same crew always flies the same lanes. A lane's `x` is its centre and `roam` how far the flyer may go each
+ * way (capped, so a lone worker does not cross the whole scene in a single beat).
+ */
+export function lanes(crew: readonly Job[], right: number): Map<Job, { x: number; roam: number }> {
+  const widths = [0, 5, 9, 15, 19], margin = 6
+  const order = [...crew].sort(byIdentity)
+  const span = Math.max(8, right - 16), total = order.reduce((sum, job) => sum + widths[job.tier ?? 1]! + margin, 0)
+  const out = new Map<Job, { x: number; roam: number }>()
+  let at = 8
+  for (const job of order) {
+    const need = widths[job.tier ?? 1]! + margin, lane = (span * need) / Math.max(total, 1)
+    out.set(job, { x: Math.round(at + lane / 2), roam: Math.max(3, Math.floor((lane - widths[job.tier ?? 1]!) / 2)) })
+    at += lane
+  }
+  return out
+}
+
+/** Slots of sky across `right` columns: the sprite's home before lanes (a flyer without a lane, as in the dev sheets, still keeps one). */
 export const airSlots = (right: number) => Math.max(1, Math.floor((right - 16) / 22))
 
 /** Where a hovering job sits in the sky, in its slot of `count`: small ones flit about the lower sky, big ones glide high and slow. */
@@ -442,7 +449,7 @@ export function boat(c: Canvas, look: Look, x: number, y: number, job: Job): num
   draw(c, look, x, y, art, pal, false)
   const lamp = art[0]!.indexOf('s') >= 0 ? [art[0]!.indexOf('s'), 0] : [art[1]!.indexOf('s'), 1]
   if (look.night > 0.2) c.glow(x + lamp[0]!, y + lamp[1]!, job.isStale ? P.peach : P.yellow, 0.8)
-  if ((job.tier ?? 1) > 1 && !job.isStale && look.frame % 8 < 5) c.glow(x + art[0]!.indexOf('k') + (look.frame % 2), y - 1, P.white, 0.35) // funnel smoke
+  boatFx(c, look, { x, y, w: art[0]!.length, h: art.length, tier: job.tier ?? 1, seed: job.seed, pace: job.pace ?? 0.6 })
   return art[0]!.length
 }
 

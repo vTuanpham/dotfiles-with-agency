@@ -4,8 +4,10 @@
 // little gadget that pops out of its head, a different one for each character. To change or add a reaction: write one
 // `Effect` below and list it in EFFECTS under its kind. The scene knows nothing about the individual effects: it only
 // reports who sent or received and how strongly (see `Reaction`), and `react` paints.
+import type { WakePreset } from '../types'
 import type { CharacterId } from './mochi'
 import { P } from './landscapes/kit'
+import { type Emitter, emit } from './landscapes/particles'
 import { type Canvas, hash, mix } from './pixels'
 
 export type ReactionKind = 'codex' | 'claude' | 'agy' | 'opencode' | CharacterId
@@ -17,7 +19,7 @@ export type Box = { x0: number; y0: number; x1: number; y1: number }
 /** Light one pixel toward the effect's colour (or `color`) by `strength`, 0..1. Out of bounds is ignored. */
 type Paint = (x: number, y: number, strength: number, color?: number) => void
 /** `v` is the strength now (already quieter for a sender), `t` ms since the message arrived, `role` which end of it this is. */
-type Effect = (paint: Paint, box: Box, v: number, t: number, role: Reaction['role']) => void
+type Effect = (paint: Paint, box: Box, v: number, t: number, role: Reaction['role'], place?: WakePreset) => void
 
 /** The colour each reaction is drawn in: a harness's trail colour, a character's coat. */
 const ACCENT: Record<ReactionKind, number> = {
@@ -43,42 +45,88 @@ function arcs(paint: Paint, cx: number, cy: number, v: number, role: Reaction['r
 
 // ── the workers' reactions ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Codex: a ripple that widens around the sprite (an oval: it never runs under the sprite's feet). */
-const ring: Effect = (paint, b, v) => {
-  const spread = 1.5 + (1 - v) * 5
-  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2
-  const rx = (b.x1 - b.x0) / 2 + spread, ry = (b.y1 - b.y0) / 2 + spread
-  const steps = Math.ceil(2 * Math.PI * Math.max(rx, ry) * 1.5)
-  for (let i = 0; i < steps; i++) {
-    const angle = (i / steps) * 2 * Math.PI
-    const y = cy + ry * Math.sin(angle)
-    if (y <= b.y1) paint(cx + rx * Math.cos(angle), y, v * 0.8)
-  }
+// The four workers' reactions are particle bursts (landscapes/particles.ts), one description each: it is played forward for a
+// message that LEAVES (the particles fly out) and in reverse for one that LANDS (they gather in). To change one, edit its specs.
+const UP = -Math.PI / 2, TAU = Math.PI * 2
+const RAINBOW = [P.pink, P.yellow, P.teal, P.mauve, P.green, P.peach, P.red, P.blue]
+
+const DOWN = Math.PI / 2
+type Reaction2 = { send: Emitter[]; land: Emitter[] }
+
+/**
+ * Each crew's own send and its own receive. A send throws something out of the worker; a receive gathers something into it
+ * (`reverse`) and then lets it land (`delay`, played forward), so the two are different pictures, not one run backwards.
+ *   Codex     send: data packets fired up a column and a pulse   receive: a lock-on closing in, then a radar ping and a blip
+ *   Claude    send: a fan of feathers and stars                  receive: stars gather, then a few feathers settle
+ *   agy       send: a comet, sparks spiralling up from a flare   receive: the spiral collapses into a starburst
+ *   OpenCode  send: a confetti cannon                            receive: a pop of colour, then confetti raining down
+ */
+export const BURSTS: Record<'codex' | 'claude' | 'agy' | 'opencode', Reaction2> = {
+  codex: {
+    send: [
+      { count: 6, life: 0.8, burst: true, speed: [9, 13], angle: [UP - 0.04, UP + 0.04], colors: [P.white, P.teal], alpha: 1, envelope: 'fade', streak: 4 },
+      { count: 26, life: 0.9, burst: true, spawn: { ring: 2 }, speed: [4, 6], angle: [0, TAU], drag: 1.2, colors: [P.teal, P.white], alpha: 0.95, envelope: 'fade' },
+    ],
+    land: [
+      { count: 22, life: 0.8, burst: true, reverse: true, spawn: { ring: 7 }, speed: [0, 0], angle: [0, TAU], colors: [P.teal, P.white], alpha: 0.95, envelope: 'pulse' },
+      { count: 9, life: 0.55, burst: true, delay: 0.75, speed: [5, 8], angle: [0, TAU], drag: 1.2, colors: [P.teal, P.white], alpha: 1, envelope: 'fade', streak: 3 },
+      { count: 4, life: 0.6, burst: true, delay: 0.75, speed: [0, 0], angle: [0, TAU], colors: [P.white], alpha: 1, envelope: 'pulse', size: 2 },
+    ],
+  },
+  claude: {
+    send: [
+      { count: 12, life: 1.3, burst: true, spawn: { w: 2 }, speed: [4, 9], angle: [UP - 1.0, UP + 1.0], gravity: 3.5, drag: 0.6, swirl: 0.7, colors: [P.pink, P.white], alpha: 0.95, envelope: 'fade' },
+      { count: 8, life: 1.2, burst: true, spawn: { w: 5, h: 3 }, speed: [0, 0.5], angle: [0, TAU], colors: [P.white, P.pink], alpha: 1, envelope: 'twinkle', size: 2 },
+    ],
+    land: [
+      { count: 10, life: 0.9, burst: true, reverse: true, spawn: { ring: 6 }, speed: [0, 0], angle: [0, TAU], colors: [P.white, P.pink], alpha: 1, envelope: 'twinkle', size: 2 },
+      { count: 8, life: 1.4, burst: true, delay: 0.8, spawn: { w: 3 }, speed: [0, 1.2], angle: [DOWN - 0.7, DOWN + 0.7], gravity: 2, swirl: 1.1, colors: [P.pink, P.white], alpha: 0.9, envelope: 'fade' },
+    ],
+  },
+  agy: {
+    send: [
+      { count: 22, life: 1.3, burst: true, spawn: { ring: 1 }, speed: [3, 7], angle: [UP - 1.4, UP + 1.4], drag: 1.1, swirl: 2.2, colors: [P.white, P.mauve], alpha: 1, envelope: 'twinkle', size: 2 },
+      { count: 5, life: 0.5, burst: true, speed: [0, 0], angle: [0, TAU], colors: [P.white], alpha: 1, envelope: 'pulse', size: 2 },
+    ],
+    land: [
+      { count: 22, life: 0.9, burst: true, reverse: true, spawn: { ring: 1 }, speed: [4, 8], angle: [0, TAU], drag: 1.1, swirl: 2.4, colors: [P.white, P.mauve], alpha: 1, envelope: 'twinkle', size: 2 },
+      { count: 12, life: 0.6, burst: true, delay: 0.85, speed: [6, 9], angle: [0, TAU], drag: 1.5, colors: [P.white, P.mauve], alpha: 1, envelope: 'fade', streak: 3, size: 2 },
+    ],
+  },
+  opencode: {
+    send: [
+      { count: 22, life: 1.5, burst: true, spawn: { w: 2 }, speed: [6, 12], angle: [UP - 1.1, UP + 1.1], gravity: 14, drag: 0.35, swirl: 0.6, colors: RAINBOW, alpha: 1, envelope: 'fade' },
+    ],
+    land: [
+      { count: 16, life: 0.7, burst: true, spawn: { ring: 1 }, speed: [5, 8], angle: [0, TAU], drag: 1.5, colors: RAINBOW, alpha: 0.95, envelope: 'fade' },
+      { count: 20, life: 1.6, burst: true, delay: 0.25, spawn: { w: 8, h: 1 }, speed: [0.5, 2], angle: [DOWN - 0.4, DOWN + 0.4], gravity: 6, swirl: 0.9, colors: RAINBOW, alpha: 1, envelope: 'fade' },
+    ],
+  },
 }
 
-/** Claude: four-point stars that twinkle above and beside it. */
-const sparkles: Effect = (paint, b, v, t) => {
-  const width = b.x1 - b.x0
-  const stars: [number, number][] = [[0.1, -2], [0.9, -3], [0.5, -5], [0.3, -1]]
-  stars.forEach(([along, up], i) => {
-    const s = v * (0.55 + 0.45 * Math.sin(t * 0.02 + i * 2))
-    const x = Math.round(b.x0 + width * along), y = b.y0 + up
-    paint(x, y, s)
-    if (s > 0.35) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) paint(x + dx, y + dy, s * 0.6)
-  })
+/**
+ * What the place adds to any reaction, in its own colours: paper scraps in the city, spray at the harbor, bubbles on the beach, snow on
+ * the mountains and in the tundra, petals in the fields, leaves in the forest, sand in the desert.
+ */
+export const SCENE: Record<WakePreset, Emitter> = {
+  city: { count: 6, life: 1.2, burst: true, speed: [1, 3], angle: [UP - 1, UP + 1], gravity: 4, swirl: 0.8, colors: [P.overlay2, P.white], alpha: 0.7, envelope: 'fade' },
+  harbor: { count: 8, life: 0.9, burst: true, spawn: { w: 3 }, speed: [2, 5], angle: [UP - 0.9, UP + 0.9], gravity: 12, colors: [P.white, P.sky], alpha: 0.8, envelope: 'fade' },
+  beach: { count: 7, life: 1.4, burst: true, spawn: { w: 3 }, speed: [0.5, 1.5], angle: [UP - 0.7, UP + 0.7], gravity: -1.5, swirl: 0.8, colors: [P.white, P.sky], alpha: 0.8, envelope: 'pulse' },
+  mountains: { count: 8, life: 1.5, burst: true, spawn: { w: 3 }, speed: [0.5, 2], angle: [0, TAU], gravity: 1.5, swirl: 0.6, colors: [P.snow, P.white], alpha: 0.8, envelope: 'twinkle' },
+  countryside: { count: 7, life: 1.8, burst: true, spawn: { w: 3 }, speed: [0.5, 2], angle: [UP - 1, UP + 1], gravity: 1.5, swirl: 1.4, colors: [P.pink, P.yellow], alpha: 0.85, envelope: 'fade' },
+  forest: { count: 7, life: 1.8, burst: true, spawn: { w: 3 }, speed: [0.5, 2], angle: [UP - 1, UP + 1], gravity: 2, swirl: 1.5, colors: [P.green, P.teal, P.yellow], alpha: 0.85, envelope: 'fade' },
+  desert: { count: 9, life: 1.1, burst: true, spawn: { w: 3 }, speed: [1, 4], angle: [UP - 1.2, UP + 0.3], gravity: 6, colors: [P.sand, P.peach], alpha: 0.8, envelope: 'fade' },
+  tundra: { count: 9, life: 1.6, burst: true, spawn: { w: 3 }, speed: [0.5, 2], angle: [0, TAU], gravity: 1.2, swirl: 0.9, colors: [P.white, P.snow], alpha: 0.85, envelope: 'twinkle' },
 }
 
-/** agy: sparks that rise off it like heat. */
-const risingSparks: Effect = (paint, b, v) => {
-  for (let i = 0; i < 4; i++) paint(b.x0 + Math.round(((b.x1 - b.x0) * (i + 0.5)) / 4), b.y0 - 1 - Math.round((1 - v) * 6) - (i % 2) * 2, v)
+/** A worker's reaction: its own send or its own receive, and the place's accent. */
+const worker = (kind: keyof typeof BURSTS): Effect => (paint, b, v, t, role, place) => {
+  const glow = { glow: (x: number, y: number, color: number, alpha: number) => paint(x, y, alpha, color) }
+  const cx = (b.x0 + b.x1) / 2, cy = role === 'send' ? b.y0 : (b.y0 + b.y1) / 2
+  const specs = [...BURSTS[kind][role], ...(place ? [{ ...SCENE[place], delay: role === 'land' ? 0.5 : 0 }] : [])]
+  specs.forEach((spec, i) => emit(glow, spec, { at: () => [cx, cy], t: t / 1000, seed: i + 1, strength: Math.min(1, v * 1.6), wind: 0 }))
 }
 
-/** OpenCode: a little burst of colour thrown up and out. */
-const confetti: Effect = (paint, b, v) => {
-  const colors = [P.pink, P.yellow, P.teal, P.mauve, P.green, P.peach]
-  const cx = (b.x0 + b.x1) / 2
-  colors.forEach((color, i) => paint(cx + (i - 2.5) * (1.2 + (1 - v) * 2.2), b.y0 - 1 - (1 - v) * 5 + (i % 2) * 1.5, v, color))
-}
 
 // ── the root's gadgets: each character catches (or sends) the signal in its own way ─────────────────────────────────────────
 
@@ -136,7 +184,7 @@ const antenna: Effect = (paint, b, v, t) => {
 }
 
 const EFFECTS: Record<ReactionKind, Effect> = {
-  codex: ring, claude: sparkles, agy: risingSparks, opencode: confetti,
+  codex: worker('codex'), claude: worker('claude'), agy: worker('agy'), opencode: worker('opencode'),
   mochi: dish, tabby: radar, tuxedo: trumpet, bun: antenna,
 }
 
@@ -146,7 +194,7 @@ const EFFECTS: Record<ReactionKind, Effect> = {
  * stand (the root's, so marks drawn above her never move her gadget). Several packets in flight leave several reactions for
  * one worker: the strongest of each role wins. Hit owners are never changed, so hover stays exactly where it was.
  */
-export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[], kindOf: (id: string) => ReactionKind, fixed: Record<string, Box> = {}): void {
+export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[], kindOf: (id: string) => ReactionKind, fixed: Record<string, Box> = {}, place?: WakePreset): void {
   if (!c.hitOwners || reactions.length === 0) return
   const best = new Map<string, Reaction>()
   for (const reaction of reactions) {
@@ -177,6 +225,6 @@ export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[]
     for (let y = scanned.y0; y <= scanned.y1; y++) for (let x = scanned.x0; x <= scanned.x1; x++) {
       if (c.hitOwners[y * c.W + x] === owner) c.px[y * c.W + x] = mix(c.px[y * c.W + x]!, mix(accent, P.white, 0.7), v * SPRITE_GLOW)
     }
-    EFFECTS[kind]((x, y, strength, color) => lit(Math.round(x), Math.round(y), color ?? accent, strength), box, v, reaction.t, reaction.role)
+    EFFECTS[kind]((x, y, strength, color) => lit(Math.round(x), Math.round(y), color ?? accent, strength), box, v, reaction.t, reaction.role, place)
   }
 }

@@ -32,10 +32,10 @@ function aurora(c: Canvas, look: Look, strength: number) {
   const p = (look.seed % 628) / 100
   for (let x = 0; x < c.W; x++) {
     for (let band = 0; band < 2; band++) {
-      const base = 3.5 + band * 1.6 + 1.8 * Math.sin(x * 0.045 + t * 0.02 + band * 2 + p) + 1.2 * Math.sin(x * 0.11 - t * 0.035 + band)
+      const base = 5 + band * 2.2 + 2.4 * Math.sin(x * 0.045 + t * 0.02 + band * 2 + p) + 1.2 * Math.sin(x * 0.11 - t * 0.035 + band)
       const ray = (0.6 + 0.4 * Math.sin(x * 0.55 + t * 0.14 + band * 3)) * Math.min(1, Math.max(0, Math.sin(x * 0.035 - t * 0.012 + band * 1.7 + p) * 1.4))
       if (ray < 0.03) continue
-      const len = 6 + 2 * Math.sin(x * 0.09 + t * 0.04)
+      const len = 9 + 3 * Math.sin(x * 0.09 + t * 0.04)
       for (let k = 0; k < len; k++) c.glow(x, Math.round(base) - k, mix(AURORA[band]!, AURORA[2]!, (k / len) ** 1.2), strength * ray * (1 - k / len) ** 1.3)
     }
   }

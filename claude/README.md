@@ -146,13 +146,13 @@ It is Claude-only; [Agent Bridge](../agent-bridge/README.md) and
 A worker is a visitor with a life of its own. When a Bridge job starts it **arrives**, and when it finishes it
 stays a few seconds and **leaves**; each craft does both in its own way, and each landscape changes how:
 
-<img src="../docs/images/wake-passages.gif" alt="A grid of eight landscapes by four worker families. Each cell loops a worker arriving, working and leaving: the city saucer warps in and hyperdrives away, harbor boats sail off to the horizon, mountain paragliders spiral up a thermal, countryside biplanes roar off, forest autogyros come apart into leaves, desert skiffs kick up dust and tundra ski planes lift off into aurora glitter. Claude's creature, agy's sparks and OpenCode's balloon end differently in each place too." width="860">
+<img src="../docs/images/wake-passages.gif" alt="A grid of eight landscapes by four worker families. Each cell loops a worker arriving, working and leaving: the city helicopter lifts off in a ring of rotor wash and banks away, harbor boats sail off to the horizon, mountain paragliders spiral up a thermal, countryside biplanes roar off, forest autogyros come apart into leaves, desert skiffs kick up dust and tundra ski planes lift off into aurora glitter. Claude's creature, agy's sparks and OpenCode's balloon end differently in each place too." width="860">
 
 *Every family in every place: arriving (2.4 s), working, then leaving (3.2 s). Actual renderer output.*
 
 | Family | How it leaves, by place (an arrival is the same thing played backwards) |
 | --- | --- |
-| Codex | City: the saucer rises, charges and hyperdrives off in a streak of light. Harbor and beach: the boat sails for the horizon, its wake behind it (rougher on the beach). Mountains: the paraglider spirals up a thermal. Countryside: the biplane climbs and roars off, smoking. Forest: the autogyro lifts and comes apart into leaves. Desert: the skiff speeds off in a plume of dust. Tundra: the ski plane runs, lifts off and turns to aurora glitter |
+| Codex | City: by class, a drone shivers as its motors spool up and dashes off in afterimages; the helicopter lifts off in a ring of rotor wash and banks away, its searchlight still sweeping; the blimp's ticker blinks as it rises and drifts into the haze. Harbor and beach: the boat sails for the horizon, its wake behind it (rougher on the beach). Mountains: the paraglider spirals up a thermal. Countryside: the biplane climbs and roars off, smoking. Forest: the autogyro lifts and comes apart into leaves. Desert: the skiff speeds off in a plume of dust. Tundra: the ski plane runs, lifts off and turns to aurora glitter |
 | Claude | A different flight in each place: soars (city), skims the water (harbor), loops (beach), spirals up (mountains), swoops then climbs (countryside), flits into the canopy (forest), circles in the heat (desert), fades silent like an owl (tundra) |
 | agy | The sparks gather into one star, then end as a ring (city), ripples on the water (harbor), sun glints (beach), snow (mountains), wandering fireflies (countryside), fireflies going out one by one (forest), a dust devil (desert) or an aurora ribbon (tundra) |
 | OpenCode | The balloon rises, then pops into confetti (city), bubbles (beach), petals (countryside), leaves and spores (forest) or a flurry (tundra); in the harbor it drifts out to sea, in the mountains it is lost in cloud, in the desert it evaporates |
@@ -200,15 +200,40 @@ the class and keep their colour and character everywhere (agy light, OpenCode a 
 balloon); Claude's workers (its subagents and Claude Bridge jobs) are the winged creature of each
 place, in the family's pink (a table below lists them), while Codex, the mechanical crew, builds what each place would
 build: a steamship on the harbor and the beach (further out on the horizon when the skyline
-hides the shore), drones and blimps over the city, a paraglider in the mountains, a
+hides the shore), over the city a courier drone, a parcel drone, a news helicopter (tinted glass, a white livery
+stripe, a rotor that blurs through four frames, a searchlight that sweeps the roofs and lands in a pool) and an
+advertising blimp (a scrolling ticker, fins, a gondola), a paraglider in the mountains, a
 crop-duster over the countryside, an autogyro with a lantern in the forest, a sail-skiff in
-the desert and a ski-plane in the tundra (see `hooks/landscapes/craft.ts`). Every family also
-wears its place's weather as soft light (a searchlight over the city, a pennant in the
-harbor, a ribbon on the beach, a contrail in the mountains, petals in the countryside,
-fireflies in the forest, dust in the desert, aurora glitter in the tundra). Flyers patrol the
-clear sky beside their home, slowly and continuously, so nothing teleports; they pass in front
-of the backdrop but never over turn buildings. A worker hops when something real happens to it:
-Bridge reports it acted, its message sets off (the sender), or one lands on it (the recipient).
+the desert and a ski-plane in the tundra (see `hooks/landscapes/craft.ts`).
+
+**Crew life is data for one particle engine** (`hooks/landscapes/particles.ts`; the guide and recipes are in
+[`hooks/landscapes/CREW.md`](.claude/mods/wake/hooks/landscapes/CREW.md)). Every effect is an emitter or a light
+described in a table, stateless, so any frame draws alone and a trail is exactly the sprite's own path:
+
+- **They touch their place.** A helicopter's rotor blows the street up (a downdraught, dust swept out along the ground,
+  litter flung high); an autogyro whirls the forest's leaves, a duster throws chaff, a skiff sand, a ski plane snow;
+  boats leave a wake, bow spray and funnel smoke; feathers shake loose off wings; everything that flies throws a
+  shadow by day; the kite has a string to the sand.
+- **Dusk and night change the crew.** Codex machines show port and starboard lights and a strobe, the helicopter's searchlight
+  sweeps, a balloon glows from inside like a lantern and lights the ground under it, agy's star lights its halo and the ground,
+  owls have eyeshine, the kite a lantern, and butterflies and dragonflies glitter.
+- **Wind is real.** Gusts cross the whole sky faster the harder it blows, each place blows its own things about (dust, spray,
+  sand, snow, petals, leaves), and trails and smoke lean downwind.
+- **Motion follows what the worker really does.** A worker's pace is high just after an event and eases off over two
+  minutes; waiting, paused and stalled workers are calm and a running one is never idle. A busy worker roams wider, its
+  gait quickens and its wings beat faster; a change of pace never jumps the sprite. Each family has a gait of its own
+  (Codex hovers and goes, Claude loops, agy orbits, OpenCode drifts), and an event hops the sprite and flares its effects.
+- **Lanes, not slots.** The whole width of the sky is shared out among the flyers by size, so one worker roams the sky end to
+  end and four a quarter each. Only Mochi, her laptop and the other crew are obstacles; scenery is a preference, so a flyer
+  passes in front of buildings (and hides a few) when it must.
+- **Messages.** Each crew sends and receives in its own way, and the place colours it: Codex fires data packets up a column
+  and, receiving, locks on, then pings; Claude throws a fan of feathers and receives stars that gather and settle; agy
+  launches a spiral comet and receives a collapsing spiral and a starburst; OpenCode fires a confetti cannon and receives a
+  pop and raining confetti.
+
+A worker's arrival and exit run from the moment Wake sees it start or stop (Bridge's own times are already seconds old), and
+Wake looks at Bridge every five seconds while a worker runs and straight after an `agent-bridge start`, `resume`, `steer`,
+`watch` or `result`.
 A filling circle beside the harness mark (◔ ◑ ◕ ◉) shows the class, and effort is a
 five-bar signal icon (an image where the terminal shows images, ▁▃▄·· as text) for Bridge
 jobs and Claude subagents alike. Each row opens with the harness logo and, while the worker
@@ -339,6 +364,11 @@ independently of Wake. Setup, delivery receipts and limits belong to
   ([docs/tools](../docs/tools/README.md) turns them into images).
 - `bun dev/crew.ts <codex|agy|claude|opencode>` renders the four sprite classes over every landscape;
   `bun dev/crew-review.ts` renders synthetic before/after rows at three widths.
+- The crew, for design review: `bun dev/cast.ts [place|all]` draws the whole cast large; `bun dev/passages.ts <place> [class]`
+  shows every family arriving and leaving frame by frame; `bun dev/fx.ts <place> [pace] [wind] [hour]` shows the air effects;
+  `bun dev/roam.ts [place]` prints how far each family travels and its largest step per paint; `bun dev/perf.ts` prints
+  milliseconds a painted frame (the scene repaints twenty times a second, a 50 ms budget; it runs 1 to 6 ms: compare before and
+  after a change).
 - Motion and traffic over time, for nested crews: `bun dev/motion.ts [out.png] [width]` renders the
   scene through solo, chain, burst and crowded cases at several moments (patrol, hops, packets);
   `bun dev/rows.ts [width]` prints the inline rows' marks, lanes and root spine per moment as text,

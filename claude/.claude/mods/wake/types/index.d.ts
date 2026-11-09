@@ -20,6 +20,10 @@ export type WakeChip = {
   observationUnavailable?: boolean
   /** when this view first saw lastEventAt change: the worker just did something */
   activitySeenAt?: number
+  /** when this view first saw the worker running (a start, or a resume of an idle one); its arrival plays from here */
+  arrivedAt?: number
+  /** when this view first saw the worker stop; its exit plays from here */
+  leftAt?: number
   /** the effort levels this model offers, weakest first, from the native inventory; absent when unknown */
   effortLevels?: string[]
   awaitingRoot?: boolean; waitingForRoot?: boolean; maker?: 'claude'; state?: string; reason?: string

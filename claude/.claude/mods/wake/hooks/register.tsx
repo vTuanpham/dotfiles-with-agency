@@ -6,7 +6,7 @@ import { ownedBy, ownersIn, scanCodex, withoutDetachedOwners, type CodexCursor }
 import { accountToolBackend, applyMeasured, makerOf, modelTier, quotaDetails, scanQuotas } from './sources/accounts'
 import { extractCalls, writeRecap } from './sources/recap'
 import { scanTidy, tidyRequest } from './sources/tidy'
-import { type BandState, sceneInput } from './band'
+import { type BandState, passageStamps, sceneInput } from './band'
 import { EFFECT_FRAMES, MIN_SCENE_ROWS, SCENE_ROWS, type SceneEffect, type SceneHitMap, type SceneSelection, readScenePointer, sceneCardBounds, sceneFrame, sceneHitAt } from './scene'
 import { PRESETS, nextRain, skyOf } from './sources/weather'
 import { lookAround, namePlace, pinPreset } from './surroundings'
@@ -29,6 +29,8 @@ import { resourceDetail, scanResources } from './sources/resources'
 const AWAY_MS = 10 * 60_000
 const ASK_AWAY_MS = 3 * 60_000
 const CODEX_POLL_MS = 15_000
+const CODEX_BUSY_POLL_MS = 5_000 // while a worker runs: its start and stop should show within seconds (a scan of Wake's own owners is ~0.2 s)
+const BRIDGE_FOLLOW_MS = [1_500, 4_000] // after `agent-bridge start|resume|steer` begins: the job's record appears within a second or two
 // Quota is pushed, not polled: this session's own windows arrive as events (session.measure), and a turn ending or an account tool
 // running asks for a look. The timer is only the safety net for what nothing announces.
 const QUOTA_POLL_MS = 5 * 60_000
@@ -158,6 +160,8 @@ let quotaNudgedAt = 0
 let quotaForced: WakeQuota['cli'] | undefined // an account tool ran during a refresh: look again for it afterwards
 let quotaScanRevision = 0
 let bridgeInFlight = false
+let bridgeScannedAt = 0
+let resourceScannedAt = 0
 let agentsInFlight = false
 let awayTimer: Timer | null = null
 let recapGeneration = 0
@@ -354,10 +358,7 @@ function animateLanes($: EngineInterface, mode: 'packets' | null) {
 }
 
 function pollCodex($: EngineInterface) {
-  codexPoll ??= $.clock.every(CODEX_POLL_MS, () => {
-    void safely(() => codexTick($))
-    void safely(() => resourceTick($))
-  })
+  codexPoll ??= $.clock.every(CODEX_BUSY_POLL_MS, () => void safely(() => bridgeTimer($)))
   if (!effortPoll) {
     // its own slow schedule: the inventory changes rarely and is independent of quota polling
     $.clock.after(5_000, () => void safely(() => effortTick($)))
@@ -366,6 +367,17 @@ function pollCodex($: EngineInterface) {
   if (!quotaPoll) {
     void safely(() => quotaTick($))
     quotaPoll = $.clock.every(QUOTA_POLL_MS, () => void safely(() => quotaTick($)))
+  }
+}
+
+/** The Bridge look is due every 15 s, and every 5 s while a worker runs so that its arrival and exit show when they happen. */
+async function bridgeTimer($: EngineInterface) {
+  const now = await $.clock.now()
+  const busy = (await read($, chips)).some(job => job.running)
+  if (busy || now - bridgeScannedAt >= CODEX_POLL_MS) void safely(() => codexTick($))
+  if (now - resourceScannedAt >= CODEX_POLL_MS) {
+    resourceScannedAt = now
+    void safely(() => resourceTick($))
   }
 }
 
@@ -475,7 +487,10 @@ const recapBody = (lines_: WakeRecapLine[]) => lines_.map(line => `${MARK[line.m
 export async function codexTick($: EngineInterface) {
   if (bridgeInFlight) return
   bridgeInFlight = true
-  try { await scanBridgeTick($) } finally { bridgeInFlight = false }
+  try {
+    bridgeScannedAt = await $.clock.now()
+    await scanBridgeTick($)
+  } finally { bridgeInFlight = false }
 }
 
 async function scanBridgeTick($: EngineInterface) {
@@ -519,7 +534,7 @@ async function scanBridgeTick($: EngineInterface) {
   const newPeerMessages = peerMessages.observe(peerScope, scan.jobs)
   const projectChips = (previous: WakeChip[]) => [...scan.jobs
     .filter(job => job.running || job.awaitingRoot || (job.finishedAt ?? 0) > now - 30 * 60_000)
-    .map(job => ({ id: job.id, owner: job.owner, name: job.name, title: titleOf(job), backend: job.backend, account: job.account, model: job.model, effort: job.effort, running: job.running, isStale: job.isStale, since: job.finishedAt ?? job.lastEventAt, startedAt: job.startedAt, lastEventAt: job.eventKnown ? job.lastEventAt : undefined, activitySeenAt: (() => {
+    .map(job => ({ id: job.id, owner: job.owner, name: job.name, title: titleOf(job), backend: job.backend, account: job.account, model: job.model, effort: job.effort, running: job.running, isStale: job.isStale, since: job.finishedAt ?? job.lastEventAt, startedAt: job.startedAt, ...passageStamps(previous.find(old => old.id === job.id), job, now), lastEventAt: job.eventKnown ? job.lastEventAt : undefined, activitySeenAt: (() => {
       // When this view first saw the worker do something new; the first sight of a job is not an event.
       const oldJob = previous.find(old => old.id === job.id)
       const last = job.eventKnown ? job.lastEventAt : undefined
@@ -648,7 +663,7 @@ export const register: Register = on => {
       const target = sceneSelection?.target ?? lastSceneTarget
       return { text: target ? [target.title, ...target.details].join('\n') : 'No scene object has been selected.' }
     }
-    if (verb === 'legend') return { text: 'Crew: harness logos identify Codex, agy, Claude and OpenCode; unsupported terminals show text instead. The circle fills with model size, ◔ small to ◉ largest. Hover crew marks for harness or model details; model IDs appear only when known. In the scene, hover a building for its turn and tool kinds, or a sprite for its worker; /wake detail shows its full details. Colour names the harness (Codex teal, agy mauve, Claude pink, OpenCode balloons) and a larger sprite means a larger model class; each landscape leaves its mark on them (a searchlight over the city, a pennant in the harbor, a ribbon on the beach, a contrail in the mountains, petals in the countryside, fireflies in the forest, dust in the desert, aurora glitter in the tundra). Their windows mark read, search, edit, run, test, agent, web and failed calls. Lamps show plan progress; fireworks mark passing tests, storms mark failed commands, shooting stars mark finished jobs, lanterns rise when a plan is complete and a rainbow follows tests that pass right after a failed turn. ● running · ⌁ heavy queue · = paused · ↻ retrying · ? needs answer · ! stalled · ✓ done · ○ idle. Signal bars (five rising bars as an image, ▁▃▄▆█ as text) show thinking effort, for Bridge jobs and Claude subagents alike; the number is time since the last event; ▣▰▱ is Bridge scope use against the job cap; native Claude rN is admitted local-command need, ⌁N is queued need, and r? means unavailable. Native hovers show command and queue reason, never total agent RAM or a cap. Colored peer lanes join workers; ← points to the recipient, ─/━/═ means 1/2–4/5+ messages. The root sits at the right edge of the crew rows: ◉ is the root, a spine runs down to the last worker with a tie to it, ─┤ and ─┘ are the branches of workers, ↑ means the last message went to the root, ↓ came from it and · means the worker simply works for it. A bright packet runs each lane and the spine (two for a stream of five or more, faster when new); in the scene a trail behind everything joins workers to one another and to Mochi, and a comet with a short, quickly fading tail runs along it when a message arrives, and an envelope hops over Mochi when a message reaches or leaves the root. Message links pulse, then melt away gradually over 15 minutes. Narrow rows use ↗/↙ and the peer name instead. One logo opens the accounts of each CLI in the quota line, │ divides CLIs and idle accounts with the same numbers fold into a range (02–04). Quota bars show remaining per account/window; hover an account mark for percentages and source reset text when available. ✕ marks signed-out or expired accounts, ? means unknown, ~ means stale numbers.' }
+    if (verb === 'legend') return { text: 'Crew: harness logos identify Codex, agy, Claude and OpenCode; unsupported terminals show text instead. The circle fills with model size, ◔ small to ◉ largest. Hover crew marks for harness or model details; model IDs appear only when known. In the scene, hover a building for its turn and tool kinds, or a sprite for its worker; /wake detail shows its full details. Colour names the harness (Codex teal, agy mauve, Claude pink, OpenCode balloons) and a larger sprite means a larger model class; each landscape gives them a body and leaves its mark on them (over the city Codex is a drone, a parcel drone, a news helicopter whose rotor blows the street up and whose searchlight sweeps the roofs, or an advertising blimp; a pennant in the harbor, a ribbon on the beach, a contrail in the mountains, chaff and petals in the countryside, leaves and fireflies in the forest, sand in the desert, driven snow in the tundra). A busier worker roams wider and moves faster, wings beat at the pace of the worker, and the wind carries trails and smoke; at dusk and night machines show navigation lights, balloons glow from inside and the eyes of owls shine. Their windows mark read, search, edit, run, test, agent, web and failed calls. Lamps show plan progress; fireworks mark passing tests, storms mark failed commands, shooting stars mark finished jobs, lanterns rise when a plan is complete and a rainbow follows tests that pass right after a failed turn. ● running · ⌁ heavy queue · = paused · ↻ retrying · ? needs answer · ! stalled · ✓ done · ○ idle. Signal bars (five rising bars as an image, ▁▃▄▆█ as text) show thinking effort, for Bridge jobs and Claude subagents alike; the number is time since the last event; ▣▰▱ is Bridge scope use against the job cap; native Claude rN is admitted local-command need, ⌁N is queued need, and r? means unavailable. Native hovers show command and queue reason, never total agent RAM or a cap. Colored peer lanes join workers; ← points to the recipient, ─/━/═ means 1/2–4/5+ messages. The root sits at the right edge of the crew rows: ◉ is the root, a spine runs down to the last worker with a tie to it, ─┤ and ─┘ are the branches of workers, ↑ means the last message went to the root, ↓ came from it and · means the worker simply works for it. A bright packet runs each lane and the spine (two for a stream of five or more, faster when new); in the scene a trail behind everything joins workers to one another and to Mochi, and a comet with a short, quickly fading tail runs along it when a message arrives, and an envelope hops over Mochi when a message reaches or leaves the root. Message links pulse, then melt away gradually over 15 minutes. Narrow rows use ↗/↙ and the peer name instead. One logo opens the accounts of each CLI in the quota line, │ divides CLIs and idle accounts with the same numbers fold into a range (02–04). Quota bars show remaining per account/window; hover an account mark for percentages and source reset text when available. ✕ marks signed-out or expired accounts, ? means unknown, ~ means stale numbers.' }
     if (verb === 'tour') {
       tour = { start: frameNo }
       return { text: `Touring ${PRESETS.length} landscapes, 12 s each, a whole day in each; your own scene comes back after.` }
@@ -739,6 +754,9 @@ export const register: Register = on => {
     const named = e.tool === 'Bash' ? ownersIn(e.command) : []
     if (named.length) await safely(async () => update($, owners, list => (named.every(o => list.includes(o)) ? list : [...new Set([...list, ...named])])))
     let ran: Awaited<ReturnType<typeof next>> | undefined
+    // A worker that is about to start should arrive in the scene when it does, not at the next look: a foreground
+    // `start --watch` blocks below until the job is over, so these looks are set before it runs.
+    if (e.tool === 'Bash' && /(?:^|[\s;&|(])agent-bridge\s+(?:start|resume|steer)\b/.test(e.command)) for (const ms of BRIDGE_FOLLOW_MS) $.clock.after(ms, () => void safely(() => codexTick($)))
     try {
       ran = await next(e)
       return ran
@@ -754,6 +772,7 @@ export const register: Register = on => {
           const tool = accountToolBackend(e.command)
           if (tool) void nudgeQuota($, tool)
           else if (/(?:^|[\s;&|(])agent-bridge\s+(?:start|resume|steer|compact)\b/.test(e.command)) void nudgeQuota($)
+          if (/(?:^|[\s;&|(])agent-bridge\s+(?:start|resume|steer|watch|result|ack|interrupt|stop)\b/.test(e.command)) void safely(() => codexTick($)) // a job just began, ended or was ended
           const command = commandHead(e.command)
           if (isTestCommand(e.command)) {
             await update($, digest, d => ({ ...d, tests: [...d.tests, { command, ok: !failed }].slice(-20) }))

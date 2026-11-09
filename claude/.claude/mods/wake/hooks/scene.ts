@@ -1,5 +1,7 @@
 import type { WakeMood, WakePreset, WakePulseKind, WakeSceneHit } from '../types'
-import { placeFly, stations } from './landscapes/crew'
+import { lanes, placeFly, roamOf, stations } from './landscapes/crew'
+import { windLayer } from './landscapes/fx'
+import { type Emitter, emit } from './landscapes/particles'
 import { type DayPhase, type Job, jobAccent, type Landscape, type Look, P, SCENE_H, type SceneEvent, type Season } from './landscapes/kit'
 import { LANDSCAPES } from './landscapes'
 import { type Canvas, canvas, hash, mix, sprite } from './pixels'
@@ -39,7 +41,7 @@ export const EFFECT_FRAMES: Record<SceneEffect['kind'], number> = { fireworks: 4
 export type SceneWeather = { cloud: number; rain: 0 | 1 | 2 | 3; snow: 0 | 1 | 2 | 3; fog: boolean; thunder: boolean; wind: number }
 
 /** A running subagent as its place's creature: its id's seed (who it is: its lane and pace come from it) and its model's class. */
-export type SceneAgent = { id?: string; seed: number; tier: 1 | 2 | 3 | 4; hit?: WakeSceneHit; leaving?: number; arriving?: number }
+export type SceneAgent = { id?: string; seed: number; tier: 1 | 2 | 3 | 4; hit?: WakeSceneHit; leaving?: number; arriving?: number; pace?: number; phase?: number }
 
 export type SceneHitMap = { columns: number; rows: number; owners: number[]; targets: WakeSceneHit[] }
 export type SceneSelection = { target: WakeSceneHit; x: number; y: number }
@@ -166,11 +168,11 @@ function drawSky(c: Canvas, look: Look, input: SceneInput, celestialOwner = 0) {
   const starsVisible = look.night * (1 - Math.min(1, cloud * 1.2))
   if (starsVisible > 0.05) {
     for (let x = 0; x < c.W; x++) {
-      for (let y = 0; y < Math.round(H * 0.65); y++) {
+      for (let y = 0; y < Math.round(H * 0.85); y++) { // down toward the horizon, fainter as the air thickens
         const h = hash(x * 131 + y * 7919 + input.seed)
         if (h % 37 !== 0) continue
         const tw = (h + Math.floor(look.frame / 5)) % 11
-        c.glow(x, y, P.text, (tw === 0 ? 0.15 : tw === 1 ? 1 : 0.6) * starsVisible * (1 - y / (H * 0.8)))
+        c.glow(x, y, P.text, (tw === 0 ? 0.15 : tw === 1 ? 1 : 0.6) * starsVisible * (1 - y / (H * 0.95)))
       }
     }
   }
@@ -209,14 +211,16 @@ function drawSky(c: Canvas, look: Look, input: SceneInput, celestialOwner = 0) {
     }
   }
   // clouds: count and greyness from the cloud cover, drifting with the wind
-  const n = Math.round((c.W / 30) * (0.2 + cloud * 1.6))
+  // The clouds fill the whole sky, not only its top: high ones small and slow, low ones nearer, longer and quicker.
+  const n = Math.round((c.W / 30) * (0.2 + cloud * 1.6) * 1.5)
   const speed = 0.03 + (input.weather?.wind ?? 8) * 0.004
   const tone = mix(mix(P.overlay1, P.surface1, grey), top, look.night * 0.65)
   for (let k = 0; k < n; k++) {
-    const span = c.W + 30
-    const cx = Math.round((((hash(k + input.seed) % span) + look.frame * speed * (1 + (k % 3) * 0.3)) % span) - 15)
-    const cy = 1 + (hash(k * 7) % Math.round(H * 0.4))
-    const len = 6 + (hash(k * 13) % 10)
+    const span = c.W + 40
+    const cy = 1 + (hash(k * 7) % Math.round(H * 0.7))
+    const altitude = cy / (H * 0.7) // 0 high .. 1 low
+    const cx = Math.round((((hash(k + input.seed) % span) + look.frame * speed * (0.7 + altitude * 0.6) * (1 + (k % 3) * 0.3)) % span) - 20)
+    const len = 6 + (hash(k * 13) % 10) + Math.round(altitude * 6)
     for (let i = 0; i < len; i++) {
       c.glow(cx + i, cy, tone, 0.35 + grey * 0.3)
       if (i > 1 && i < len - 2) c.glow(cx + i, cy - 1, tone, 0.25 + grey * 0.3)
@@ -237,7 +241,7 @@ const SHARED_EVENTS: SceneEvent[] = [
       const dir = seed % 2 ? 1 : -1
       const t = age / 160
       const x = Math.round(dir > 0 ? t * (c.W + 10) - 5 : (1 - t) * (c.W + 10) - 5)
-      const y = 1 + (seed % 3)
+      const y = 1 + (seed % Math.round(H * 0.55)) // any altitude
       if (look.night > 0.4) {
         c.set(x, y, age % 8 < 4 ? P.red : P.surface2)
         c.set(x + 1, y, P.white)
@@ -258,7 +262,7 @@ const SHARED_EVENTS: SceneEvent[] = [
         const a = age - s * 14
         if (a < 0 || a > 12) continue
         const x0 = (hash(seed + s) % Math.max(1, c.W - 20)) + a * 2
-        const y0 = (hash(seed * 3 + s) % 3) + Math.floor(a / 3)
+        const y0 = (hash(seed * 3 + s) % Math.round(H * 0.45)) + Math.floor(a / 3)
         for (let k = 0; k < 5; k++) c.glow(x0 - k * 2, y0 - Math.floor(k / 2), P.white, 1 - k / 5)
       }
     },
@@ -270,7 +274,7 @@ const SHARED_EVENTS: SceneEvent[] = [
     when: look => look.night > 0.8,
     draw(c, _look, age, seed) {
       const x = Math.round(c.W * 0.2 + (seed % Math.max(1, Math.round(c.W * 0.5))) + Math.sin(age * 0.1) * 6)
-      const y = 2 + Math.round(Math.sin(age * 0.07))
+      const y = 2 + (seed % Math.round(H * 0.4)) + Math.round(Math.sin(age * 0.07))
       sprite(c, x, y, ['..g..', 'sssss'], { g: P.teal, s: P.overlay2 })
       if (age > 30 && age < 90) for (let yy = y + 2; yy < H - 1; yy++) for (let k = -1; k <= 1; k++) c.glow(x + 2 + k, yy, P.green, 0.18)
     },
@@ -283,8 +287,9 @@ const SHARED_EVENTS: SceneEvent[] = [
     draw(c, _look, age, seed) {
       for (let s = 0; s < 8; s++) {
         const a = (age + s * 13) % 25
-        const x0 = hash(seed + s * 17 + Math.floor((age + s * 13) / 25)) % c.W
-        for (let k = 0; k < 3; k++) c.glow(x0 + a - k, Math.floor(a / 4) - Math.floor(k / 2), P.yellow, 0.9 - k * 0.3)
+        const slot = hash(seed + s * 17 + Math.floor((age + s * 13) / 25))
+        const x0 = slot % c.W, y0 = (slot >> 8) % Math.round(H * 0.45) // each streak at its own height
+        for (let k = 0; k < 3; k++) c.glow(x0 + a - k, y0 + Math.floor(a / 4) - Math.floor(k / 2), P.yellow, 0.9 - k * 0.3)
       }
     },
   },
@@ -315,7 +320,7 @@ const SHARED_EVENTS: SceneEvent[] = [
     draw(c, _look, age, seed) {
       for (let b = 0; b < 7; b++) {
         const x = Math.round((age / 140) * (c.W + 30)) - 20 + Math.abs(b - 3) * 2
-        const y = 2 + Math.abs(b - 3) + (seed % 2)
+        const y = 2 + Math.abs(b - 3) + (seed % Math.round(H * 0.5)) // the flock at any altitude
         const up = (age + b) % 6 < 3
         c.set(x, y, P.surface2)
         c.set(x - 1, up ? y - 1 : y, P.surface2)
@@ -409,28 +414,26 @@ function drawEffect(c: Canvas, look: Look, fx: SceneEffect, ground: number, righ
   if (fx.kind === 'fireworks') {
     const { inks: sparks, fall, echo, mirror } = FIREWORK_STYLE[preset]
     for (let b = 0; b < 4; b++) {
-      const age = fx.age - b * 7
+      const age = fx.age - b * 6
       if (age < 0 || age > 20) continue
       const seed = hash(b * 101 + 7)
       const cx = Math.round(right * (0.15 + 0.23 * b) + (seed % 9))
-      const cy = 2 + (seed % 3)
+      const cy = 3 + (seed % Math.round(H * 0.35)) // shells burst at different heights across the whole sky
       const color = sparks[(seed + b) % sparks.length]!
       if (age < 5) {
         c.set(cx, ground - 1 - age * 2, P.white)
         c.glow(cx, ground - age * 2, P.yellow, 0.5)
         continue
       }
-      const r = Math.min(5, age - 4)
-      const fade = age > 13 ? (age - 13) / 8 : 0
-      const sink = age > 10 ? Math.floor((age - 10) / fall) : 0
-      for (let a = 0; a < 12; a++) {
-        const ang = (a / 12) * Math.PI * 2
-        const x = cx + Math.round(Math.cos(ang) * r * 1.4), y = cy + Math.round(Math.sin(ang) * r * 0.8) + sink
-        c.glow(x, y, a % 2 ? color : P.white, 1 - fade)
-        if (mirror) c.glow(x, Math.min(H - 1, ground + 1 + Math.floor(Math.max(0, ground - y) / 2)), color, 0.35 * (1 - fade)) // its reflection in the water
-        if (echo && r > 2) c.glow(cx + Math.round(Math.cos(ang) * (r - 2) * 1.4), cy + Math.round(Math.sin(ang) * (r - 2) * 0.8) + sink, color, 0.45 * (1 - fade)) // the ridge answers
-      }
-      if (age < 8) c.glow(cx, cy, P.white, 0.9)
+      // The shell is a particle burst: sparks thrown out in every direction that slow in the air and sink under gravity (more
+      // slowly in a place where `fall` is large), leaving short streaks; a flash at the heart of it; the ridge's echo and the
+      // water's reflection are the same burst again, fainter.
+      const burst: Emitter = { count: 30, life: 1.4, burst: true, spawn: { ring: 0.5 }, speed: [4, 9], angle: [0, Math.PI * 2], drag: 1.2, gravity: 8 / fall, colors: [P.white, color, color], alpha: 1, envelope: 'fade', streak: 2, size: 2 }
+      const source = { at: (): readonly [number, number] => [cx, cy], t: (age - 5) / 10, seed: seed + b, strength: 1, wind: look.wind }
+      emit(c, burst, source)
+      emit(c, { ...burst, count: 14, speed: [1, 3], colors: [P.white], life: 0.5, streak: 0 }, source) // the flash
+      if (echo) emit(c, { ...burst, count: 18, speed: [2, 5], alpha: 0.45, size: 1 }, source)
+      if (mirror) emit(c, { ...burst, gravity: -(8 / fall), alpha: 0.35, size: 1 }, { ...source, at: () => [cx, Math.min(H - 1, ground + 1 + Math.max(0, ground - cy) / 2)] })
     }
   } else if (fx.kind === 'storm') {
     const local = STORM[preset]
@@ -460,7 +463,7 @@ function drawEffect(c: Canvas, look: Look, fx: SceneEffect, ground: number, righ
     for (let x = 0; x < c.W; x++) {
       const behind = head - x
       if (behind < 0 || behind > 24) continue
-      const y = 1 + Math.round(1.6 * Math.sin(x * 0.3 + fx.age * 0.4))
+      const y = 4 + Math.round(1.6 * Math.sin(x * 0.3 + fx.age * 0.4)) + Math.round(2 * Math.sin(x * 0.04))
       const strength = (1 - behind / 24) * (1 - Math.max(0, t - 0.7) / 0.3)
       c.glow(x, y, P.green, 0.9 * strength)
       c.glow(x, y + 1, P.teal, 0.55 * strength)
@@ -613,7 +616,7 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   }
   const jobs = input.jobs.map(job => ({ ...job, hitOwner: registerHit(job.hit) || undefined }))
   const agents = input.agents.map(agent => ({
-    isStale: false, seed: agent.seed, tier: agent.tier, kind: 'claude' as const,
+    isStale: false, seed: agent.seed, tier: agent.tier, kind: 'claude' as const, pace: agent.pace, phase: agent.phase, lane: undefined as Job['lane'],
     hit: agent.hit, hitOwner: registerHit(agent.hit) || undefined,
   }))
   const skyOwner = registerHit({ id: 'sky', title: 'Sky', details: [look.isDay ? 'Daytime' : 'Nighttime', input.weather ? `Cloud cover: ${Math.round(input.weather.cloud * 100)}%` : 'Weather unavailable'] })
@@ -763,7 +766,10 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
     else draw()
   }
 
-  // Subagents and jobs share the same exclusion zones.
+  // Subagents and jobs share the same exclusion zones, and the same sky: each roams its share of what is free.
+  look.crewRoam = roamOf([...jobs, ...agents], right)
+  for (const [member, lane] of lanes([...jobs, ...agents], right)) member.lane = lane // each flyer owns a stretch of the whole sky
+  windLayer(c, look) // gusts and what the wind carries here: over the scenery, under the crew
   land.jobs(c, look, jobs, right)
   for (const [bird, j] of stations(agents, 5)) {
     if (j >= 5) continue
@@ -808,11 +814,11 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   const kindOf = (id: string): ReactionKind => id === 'mochi' ? asCharacter(input.character) : input.jobs.find(job => job.hit?.id === id)?.kind ?? (input.agents.some(agent => agent.hit?.id === id) ? 'claude' : 'codex')
   // the root's gadget stands on her body, wherever the marks above her happen to be
   const rootBox = { x0: catX, x1: catX + 8, y0: ground - MOCHI_ROWS, y1: ground - 1 }
-  if (localHits) react(c, localHits.targets, reactions, kindOf, { mochi: rootBox })
+  if (localHits) react(c, localHits.targets, reactions, kindOf, { mochi: rootBox }, input.preset)
   // a worker that has just started arrives, and one that has just finished leaves, each in its craft's own way (exits.ts)
   const coming = [...input.jobs.map(job => ({ ...job, kind: job.kind ?? 'codex' as const })), ...input.agents.map(agent => ({ ...agent, kind: 'claude' as const }))]
     .flatMap(job => job.hit && (job.arriving ?? job.leaving) !== undefined
-      ? [{ id: job.hit.id, kind: job.kind, place: input.preset, seed: job.seed, age: job.arriving ?? job.leaving!, arriving: job.arriving !== undefined }] : [])
+      ? [{ id: job.hit.id, kind: job.kind, place: input.preset, seed: job.seed, tier: job.tier ?? 1, age: job.arriving ?? job.leaving!, arriving: job.arriving !== undefined }] : [])
   if (localHits && coming.length && !plan.collect) passages(c, localHits.targets, coming)
   return finish()
 }

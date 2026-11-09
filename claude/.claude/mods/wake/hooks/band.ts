@@ -2,6 +2,7 @@ import type { WakeChip, WakeMood, WakePulse, WakeStep, WakeSurroundings, WakeTal
 import { PACKET_RUN_MS, activityFlash, messageFade, packetWindow } from './crew-row'
 import type { Season } from './landscapes/kit'
 import { seedOf } from './pixels'
+import { PhaseClock, paceOf } from './landscapes/gait'
 import { ARRIVE_MS, EXIT_MS } from './exits'
 import type { CharacterId } from './mochi'
 import type { SceneEffect, SceneInput, SceneTurn, SceneWeather } from './scene'
@@ -119,11 +120,35 @@ export function crewLifts(chips: WakeChip[], now: number): Map<string, number> {
   return lifts
 }
 
-/** How long ago a worker that is no longer running finished, while it is still playing its exit (see exits.ts). */
-const leavingFor = (job: WakeChip, now: number) => !job.running && now >= job.since && now - job.since < EXIT_MS ? now - job.since : undefined
+/**
+ * Both passages run on Wake's own clock: from the moment this view saw the worker stop or start, never from Bridge's
+ * timestamps, which are already seconds old by the time a scan reads them (a passage measured from them is over before
+ * it begins). A worker already running when Wake looked has no `arrivedAt`, so it never replays its arrival.
+ */
+const sinceIn = (at: number | undefined, now: number, length: number) => at !== undefined && now >= at && now - at < length ? now - at : undefined
 
-/** How long ago a running worker started, while it is still arriving (exits.ts); a worker already running when Wake looked never replays it. */
-const arrivingFor = (job: WakeChip, now: number) => job.running && job.startedAt !== undefined && now >= job.startedAt && now - job.startedAt < ARRIVE_MS ? now - job.startedAt : undefined
+/** A worker this view has never seen still gets its passage if it started or stopped within a scan or two of now. */
+const SEEN_LATE_MS = 20_000
+
+/**
+ * The passage stamps for a worker in this scan: `old` is the same worker's chip from the scan before (absent when new to
+ * this view). A start or a resume is a worker found running that was not; a stop is one found stopped that was running.
+ */
+export function passageStamps(old: Pick<WakeChip, 'running' | 'arrivedAt' | 'leftAt'> | undefined, job: { running: boolean; startedAt?: number; finishedAt?: number }, now: number): Pick<WakeChip, 'arrivedAt' | 'leftAt'> {
+  const recent = (at: number | undefined) => at !== undefined && now >= at && now - at < SEEN_LATE_MS
+  if (job.running) return { arrivedAt: old ? (old.running ? old.arrivedAt : now) : recent(job.startedAt) ? now : undefined }
+  return { leftAt: old ? (old.running ? now : old.leftAt) : recent(job.finishedAt) ? now : undefined }
+}
+
+/** How long ago a worker that is no longer running was seen to stop, while it is still playing its exit (see exits.ts). */
+const leavingFor = (job: WakeChip, now: number) => (job.running ? undefined : sinceIn(job.leftAt, now, EXIT_MS))
+
+/** How long ago a running worker was seen to start, while it is still arriving (exits.ts). */
+const arrivingFor = (job: WakeChip, now: number) => (job.running ? sinceIn(job.arrivedAt, now, ARRIVE_MS) : undefined)
+
+/** Each worker's gait clock: it runs on from one paint to the next, faster when the worker is busier (see gait.ts). */
+const gaitClock = new PhaseClock()
+const gaitOf = (id: string, pace: number, now: number) => ({ pace, phase: gaitClock.advance(id, pace, now) })
 
 export function sceneInput(state: BandState, width: number, frame: number, effect: SceneEffect | null, now: number): SceneInput {
   const lifts = crewLifts(state.chips, now)
@@ -177,6 +202,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
       leaving: leavingFor(job, now),
       arriving: arrivingFor(job, now),
       lift: job.id ? lifts.get(job.id) : undefined,
+      ...gaitOf(job.id ?? `${job.owner}/${job.name}`, job.running ? paceOf(job, now) : 0.3, now),
       isStale: job.isStale, seed: seedOf(job.name), tier: modelTier(job.backend ?? 'codex', job.model),
       kind: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const), maker: job.maker,
       signal: !!peer && peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt < 2_000 && Math.floor((now - peer.observedAt) / 400) % 2 === 1,
@@ -192,7 +218,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
       } : undefined,
     }}),
     agents: state.subagents.filter(agent => agent.leftAt === undefined || now - agent.leftAt < EXIT_MS).map(agent => ({
-      id: agent.id, seed: seedOf(agent.id), tier: agent.tier,
+      id: agent.id, seed: seedOf(agent.id), tier: agent.tier, ...gaitOf(agent.id, agent.leftAt === undefined ? 0.75 : 0.3, now),
       leaving: agent.leftAt !== undefined && now >= agent.leftAt ? now - agent.leftAt : undefined,
       arriving: agent.leftAt === undefined && now >= agent.since && now - agent.since < ARRIVE_MS ? now - agent.since : undefined,
       hit: {

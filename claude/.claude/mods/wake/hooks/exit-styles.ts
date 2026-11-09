@@ -3,20 +3,25 @@
 // A style gets `p`, how far through the *exit* it is (0..1), and must leave nothing visible at p = 1 (that is the end of an
 // exit and the start of an arrival, which plays the same style backwards). Trails go through `behind` and `flip`, so they stay
 // behind the craft whichever way it moves. Every family has a style for every landscape:
-//   Codex     the machine its place builds (a saucer, a boat, a paraglider, a biplane, an autogyro, a skiff, a ski plane)
+//   Codex     the machine its place builds (a drone's dash, a helicopter's lift-off and bank, a blimp's drift, a boat, a paraglider,
+//             a biplane, an autogyro, a skiff, a ski plane)
 //   Claude    the place's creature in flight (soar, skim, loop, spiral, swoop, flit, thermal, ghost)
 //   agy       how its sparks end (ring, ripple, glints, snow, fireflies, blink, dust devil, aurora ribbon)
 //   OpenCode  where its balloon goes (pops to confetti, bubbles, petals, spores or flurry; drifts, mists or shimmers away)
+// Two helpers apply to any style: `ghosted` leaves afterimages behind a fast mover, and every family's `signature` burst (a radar
+// pulse, feathers, a starburst, confetti) pushes out at the start of an exit and gathers in at the end of an arrival.
 // To add or change one, write a function here and name it in the family's table.
 import { P } from './landscapes/kit'
 import { type Canvas, hash, mix } from './pixels'
 
 export type Dot = { x: number; y: number; color: number }
-export type Look = { dx?: number; dy?: number; sx?: number; sy?: number; dissolve?: number; tint?: number; tintBy?: number }
+export type Look = { dx?: number; dy?: number; sx?: number; sy?: number; dissolve?: number; tint?: number; tintBy?: number; /** 0..1: draw it translucent over what is there, as an afterimage */ alpha?: number }
 export type Ctx = {
   c: Canvas
   p: number
   seed: number
+  /** the model class, 1..4: a big machine leaves differently from a small one */
+  tier: number
   arriving: boolean
   cx: number
   cy: number
@@ -42,25 +47,59 @@ const spot = (k: Ctx, i: number, salt: number, range: number) => (hash(i * salt 
 
 // ── Codex: the machine each place builds ─────────────────────────────────────────────────────────────────────────────────────
 
-/** City: the saucer hovers and rises, charges (a halo, a shake, going white), then hyperdrives off in a streak of light. */
-const hyperdrive: Style = k => {
-  const { p, cx, cy, c } = k
-  const rise = ease(p / 0.5) * Math.max(0, Math.min(7, k.y0 - 1))
-  if (p < 0.55) {
-    const charge = clamp((p - 0.3) / 0.25)
-    k.sprite({ dy: -rise, dx: Math.round(Math.sin(p * 70) * charge), tint: P.white, tintBy: charge * 0.6 })
-    for (let a = 0; a < 10 && charge > 0.1; a++) { // a halo draws in as it charges
-      const angle = (a / 10) * Math.PI * 2, r = 6 - charge * 3
-      k.lit(cx + Math.cos(angle) * r * 1.4, cy - rise + Math.sin(angle) * r * 0.8, P.sky, charge * 0.7)
-    }
-    return
+/**
+ * Afterimages: the style played again a little earlier, faint and fainter, behind the craft, so anything that moves fast leaves a
+ * trail of where it was. (Arriving, "earlier" is later in the style's own time: the ghosts still trail the way it came.)
+ */
+const ghosted = (style: Style, count = 3, step = 0.035, alpha = 0.3): Style => k => {
+  for (let i = count; i >= 1; i--) {
+    const q = k.behind(i, step)
+    if (q < 0 || q > 1) continue
+    const fade = alpha * (1 - (i - 1) / count)
+    style({ ...k, p: q, sprite: look => k.sprite({ ...look, alpha: (look.alpha ?? 1) * fade }), lit: (x, y, color, a) => k.lit(x, y, color, a * fade) })
   }
-  const q = (p - 0.55) / 0.45, dx = q * q * (c.W - cx + 30), y = cy - rise
-  // stretched along its flight and thinned across it, so the saucer turns into a bolt of light
-  k.sprite({ dy: -rise, dx, sx: 1 + q * q * 14, sy: Math.max(0.25, 1 - q * 0.8), tint: P.white, tintBy: 0.5 + 0.5 * q })
-  if (q < 0.15) for (let a = 0; a < 12; a++) k.lit(cx + Math.cos(a) * (1 + q * 40) * 1.4, y + Math.sin(a) * (1 + q * 40) * 0.8, P.white, 0.8 * (1 - q / 0.15)) // the flash
-  for (let x = Math.max(0, cx - 4); x < Math.min(c.W, cx + dx); x++) k.lit(x, y, P.white, 0.55 * (1 - q) * clamp(1 - (cx + dx - x) / 44)) // the streak it leaves
+  style(k)
 }
+
+/**
+ * City drones (classes 1 and 2): hover with a shiver as the motors spool up, then dash off up and away, leaving a streak of
+ * light and afterimages; arriving, they dive in and brake.
+ */
+const dash: Style = ghosted(k => {
+  const { p, cx, cy } = k
+  const dir = dirOf(k), go = clamp((p - 0.28) / 0.72)
+  const shiver = p < 0.3 ? Math.round(Math.sin(p * 90) * (p / 0.3)) : 0
+  const dx = dir * go * go * k.c.W * 0.45 + shiver, dy = -go * Math.min(10, k.y0 - 1) - Math.sin(go * 7) * 0.8
+  k.sprite({ dx, dy, dissolve: clamp((go - 0.65) / 0.35), tint: P.white, tintBy: clamp(go * 0.8) * 0.5 })
+  for (let i = 1; i <= 7; i++) k.lit(cx + dx - dir * k.flip * i * 1.6, cy + dy + i * 0.35, P.teal, 0.5 * (1 - i / 8) * (1 - k.p))
+}, 3, 0.04, 0.3)
+
+/**
+ * City helicopter (class 3): spools up, lifts straight off in a ring of rotor wash that spreads over the street, banks away over
+ * the roofs and shrinks into the sky, its searchlight still sweeping.
+ */
+const chopper: Style = ghosted(k => {
+  const { p, cx, cy } = k
+  const dir = dirOf(k), lift = ease(clamp(p / 0.45)) * Math.max(0, Math.min(5, k.y0 - 1)), bank = clamp((p - 0.4) / 0.6)
+  const dx = dir * bank * bank * k.c.W * 0.4, dy = -lift - bank * bank * 7
+  k.sprite({ dx, dy, sx: 1 - bank * 0.4, sy: 1 - bank * 0.4, dissolve: clamp((bank - 0.7) / 0.3) })
+  if (p < 0.5) for (let a = 0; a < 14; a++) { // rotor wash: rings flattened to the ground plane, widening as it climbs
+    const angle = (a / 14) * Math.PI * 2, r = 2 + p * 20
+    k.lit(cx + Math.cos(angle) * r * 1.7, k.y1 + 2 + Math.sin(angle) * r * 0.25, P.white, 0.4 * (1 - p / 0.5))
+  }
+  for (let r = 1; r <= 9; r++) k.lit(cx + dx - dir * k.flip * r * 0.6, cy + dy + 2 + r * 0.9, P.yellow, 0.32 * (1 - r / 10) * (1 - bank)) // the searchlight
+}, 2, 0.05, 0.22)
+
+/** City blimp (class 4): the ticker blinks, the lines let go, and it rises and drifts off into the haze, going pale with distance. */
+const airship: Style = k => {
+  const { p } = k
+  const dir = dirOf(k), rise = ease(p) * Math.max(0, Math.min(6, k.y0 - 1))
+  k.sprite({ dx: dir * p * p * k.c.W * 0.35, dy: -rise, sx: 1 - p * 0.25, sy: 1 - p * 0.25, dissolve: clamp((p - 0.5) / 0.5), tint: P.white, tintBy: p * 0.55 })
+  if (p < 0.7) for (let x = k.x0 + 1; x < k.x1; x += 2) k.lit(x + dir * p * p * k.c.W * 0.35, k.y0 + 3 - rise, (Math.floor(p * 30) + x) % 2 ? P.yellow : P.white, 0.5 * (1 - p / 0.7)) // the ticker
+  for (let i = 1; i <= 6; i++) k.lit(k.cx + dir * p * p * k.c.W * 0.35 - dir * k.flip * i * 2.4, k.cy - rise, P.white, 0.22 * (1 - i / 7) * (1 - p)) // a contrail
+}
+
+const cityCraft: Style = k => (k.tier >= 4 ? airship : k.tier === 3 ? chopper : dash)(k)
 
 /** A boat under sail for the horizon, its wake behind the hull, dissolving into the haze. `chop` is how much the water throws it about. */
 const sailing = (chop: number, wake: number): Style => k => {
@@ -122,8 +161,8 @@ const skiplane: Style = k => {
 }
 
 const CODEX: Record<string, Style> = {
-  city: hyperdrive, harbor: sailing(0.5, P.white), beach: sailing(1.4, P.sky), mountains: paraglide,
-  countryside: biplane, forest: gyro, desert: skiff, tundra: skiplane,
+  city: cityCraft, harbor: sailing(0.5, P.white), beach: sailing(1.4, P.sky), mountains: ghosted(paraglide, 2, 0.05, 0.2),
+  countryside: ghosted(biplane, 3, 0.04, 0.28), forest: gyro, desert: ghosted(skiff, 3, 0.04, 0.28), tundra: ghosted(skiplane, 2, 0.05, 0.25),
 }
 
 // ── Claude: the creature's flight, by place ──────────────────────────────────────────────────────────────────────────────────────
@@ -153,11 +192,37 @@ function shed(k: Ctx, kind: Flight['shed'], x: number, y: number) {
   if (kind === 'snow') for (let i = 0; i < 4; i++) k.lit(x + spot(k, i, 11, 4), y + age * (4 + i * 2), P.white, 0.7 * (1 - p))
 }
 
-const flight = (place: string): Style => k => {
+const flight = (place: string): Style => ghosted(k => {
   const f = FLIGHT[place] ?? FLIGHT.city!
   const here = f.path(k.p, k)
   k.sprite({ dx: here.dx, dy: here.dy, dissolve: clamp((k.p - f.dissolveFrom) / (1 - f.dissolveFrom)), ...(f.ghost ? { tint: P.white, tintBy: clamp(k.p * 1.3) * 0.6 } : {}) })
   shed(k, f.shed, k.cx + here.dx, k.cy + here.dy)
+}, 2, 0.05, 0.22)
+
+// ── every family's signature: the burst at the moment of arriving or setting off ─────────────────────────────────────────────
+
+/**
+ * The energy of a passage's resting end, in the family's own way. Leaving, it pushes out from the craft as it sets off; arriving,
+ * it pulls in and gathers as the craft lands. It runs over the last fifth of an arrival and the first fifth of an exit.
+ *   Codex     a square radar pulse, teal      Claude    a puff of pink feathers
+ *   agy       a four-pointed starburst       OpenCode  a pop of confetti
+ */
+const SIGNATURE_WINDOW = 0.22
+const signature = (kind: 'codex' | 'agy' | 'claude' | 'opencode'): Style => k => {
+  if (k.p >= SIGNATURE_WINDOW) return
+  const t = k.p / SIGNATURE_WINDOW // 0 at rest .. 1 at the edge of the window
+  const radius = 2 + t * 8
+  const alpha = k.arriving ? 0.25 + 0.65 * t : 0.9 * (1 - t) // gathering gets brighter as it closes in; a burst fades as it spreads
+  if (kind === 'codex') {
+    for (let i = -radius; i <= radius; i++) for (const [x, y] of [[i, -radius * 0.55], [i, radius * 0.55], [-radius, i * 0.55], [radius, i * 0.55]] as const) k.lit(k.cx + x, k.cy + y, P.teal, alpha * 0.5)
+  } else if (kind === 'claude') {
+    for (let i = 0; i < 9; i++) k.lit(k.cx + Math.cos(i * 2.4 + k.seed) * radius * 1.3 + Math.sin(k.p * 40 + i) * 0.6, k.cy + Math.sin(i * 2.4 + k.seed) * radius * 0.7 + t * 2, i % 3 ? P.pink : P.white, alpha * 0.8)
+  } else if (kind === 'agy') {
+    for (let r = 1; r <= radius; r++) for (const [x, y] of [[r, 0], [-r, 0], [0, r * 0.6], [0, -r * 0.6]] as const) k.lit(k.cx + x, k.cy + y, r < radius * 0.5 ? P.white : P.mauve, alpha * (1 - r / (radius + 1)))
+  } else {
+    const palette = [P.red, P.yellow, P.green, P.blue, P.lavender, P.peach]
+    for (let i = 0; i < 12; i++) k.lit(k.cx + Math.cos(i * 1.9 + k.seed) * radius * 1.2, k.cy + Math.sin(i * 1.9 + k.seed) * radius * 0.8 + t * t * 3, palette[i % palette.length]!, alpha)
+  }
 }
 
 // ── agy: how the sparks end, by place ────────────────────────────────────────────────────────────────────────────────────────
@@ -246,5 +311,11 @@ const balloon = (place: string): Style => k => {
   colors.forEach((color, i) => k.lit(hx + Math.cos(i * 1.7) * r * spread + Math.sin(r * 9 + i) * sway, top + Math.sin(i * 1.7) * r * (spread / 2) + r * r * gravity, color, 1 - r))
 }
 
-export const styleFor = (kind: 'codex' | 'agy' | 'claude' | 'opencode', place: string): Style =>
-  kind === 'codex' ? CODEX[place] ?? hyperdrive : kind === 'claude' ? flight(place) : kind === 'agy' ? spark(place) : balloon(place)
+const styleOf = (kind: 'codex' | 'agy' | 'claude' | 'opencode', place: string): Style =>
+  kind === 'codex' ? CODEX[place] ?? cityCraft : kind === 'claude' ? flight(place) : kind === 'agy' ? spark(place) : balloon(place)
+
+/** The style a family plays in a place: its way of going, with its signature burst at the resting end. */
+export const styleFor = (kind: 'codex' | 'agy' | 'claude' | 'opencode', place: string): Style => {
+  const way = styleOf(kind, place), burst = signature(kind)
+  return k => { way(k); burst(k) }
+}

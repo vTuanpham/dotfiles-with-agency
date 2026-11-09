@@ -1,0 +1,81 @@
+import { hash } from '../pixels'
+
+// How a crew member moves about its home, and how its real activity sets the pace of it.
+//
+// A gait is a smooth path in a unit square: `u` and `v` run -1..1 across and up the room the sprite has, so the same path
+// serves any amount of free sky. Each family has its own:
+//   codex     hovers, then goes: eases from one waypoint to the next, like a machine on a patrol route
+//   claude    loops: a figure of eight, flapping and gliding, faster the smaller the bird
+//   agy       orbits: a slow ellipse whose size breathes, like something with a pull on it
+//   opencode  drifts: a wide lazy sway with a slow bob, wherever the wind takes a balloon
+// `reach` is the room it has each way, in cells; a gait stretches in time to suit it.
+// Time is `phase`, the worker's own clock in frames (ten a second at pace 1.0): a busy worker's clock runs faster, so its
+// gait quickens and its wings beat faster, and a waiting one's slows to a hover. The path is a function of the phase alone,
+// so the speed can change at any moment without the sprite jumping.
+
+type Kind = 'codex' | 'agy' | 'claude' | 'opencode'
+
+const ease = (t: number) => t * t * (3 - 2 * t)
+const waypoint = (seed: number, k: number) => (hash(seed * 131 + k * 977) % 2001) / 1000 - 1
+const leg = (seed: number, t: number, length: number) => {
+  const k = Math.floor(t / length), f = ease(t / length - k)
+  return waypoint(seed, k) * (1 - f) + waypoint(seed, k + 1) * f
+}
+
+export function gait(kind: Kind, tier: number, seed: number, time: number, reach = 18): { u: number; v: number } {
+  const s = seed * 5
+  // the wider the room, the longer each sweep takes: crossing the whole sky is a leisurely passage, not a dash
+  const t = time / Math.max(1, reach / 18)
+  switch (kind) {
+    case 'codex': {
+      const slow = tier >= 4 ? 1.8 : tier === 3 ? 1.15 : 1 // a blimp changes course least often, a helicopter a little less than a drone
+      return { u: leg(seed, t, 42 * slow), v: leg(seed + 3, t, 55 * slow) }
+    }
+    case 'claude': {
+      const quick = [0, 1.5, 1.2, 1, 0.85][tier] ?? 1
+      return { u: Math.sin(t * 0.06 * quick + s), v: 0.55 * Math.sin(t * 0.12 * quick + s * 2) }
+    }
+    case 'agy':
+      return { u: Math.sin(t * 0.045 + s) * Math.cos(t * 0.011 + s), v: 0.8 * Math.cos(t * 0.045 + s) * (0.7 + 0.3 * Math.sin(t * 0.017)) }
+    case 'opencode':
+      return { u: 0.9 * Math.sin(t * 0.018 + s) + 0.1 * Math.sin(t * 0.05 + s), v: 0.6 * Math.sin(t * 0.03 + s * 3) }
+  }
+}
+
+/** Gait frames that pass per scene frame: a calm worker's clock runs at 0.8, a busy one's at 1.8. */
+export const clockRate = (pace: number) => 0.8 + 1.0 * Math.max(0, Math.min(1, pace))
+
+/** The part of its room a worker uses: a calm one stays near home, a busy one ranges. */
+export const roamShare = (pace: number) => 0.6 + 0.4 * Math.max(0, Math.min(1, pace))
+
+/** Seconds of its own events over which a worker winds down from busy to calm. */
+const BUSY_MS = 120_000
+
+/**
+ * How busy a worker is right now, 0..1, from what it really did: just after an event it is at 1, easing to a floor over two
+ * minutes without one. A worker waiting on the root or a peer, a paused one and a stalled one are calm no matter when they
+ * last spoke; one with no known event yet is at a steady middle.
+ */
+export function paceOf(job: { state?: string; isStale: boolean; waitingForRoot?: boolean; awaitingRoot?: boolean; waitingPeer?: unknown; lastEventAt?: number; activitySeenAt?: number }, now: number): number {
+  if (job.isStale) return 0.12
+  if (job.waitingForRoot || job.awaitingRoot || job.waitingPeer || /wait|pause/.test(job.state ?? '')) return 0.1
+  if (/retry/.test(job.state ?? '')) return 0.35
+  const last = Math.max(job.activitySeenAt ?? 0, job.lastEventAt ?? 0)
+  if (!last) return 0.45
+  return Math.max(0.35, 1 - Math.max(0, now - last) / BUSY_MS) // a running worker is never idle
+}
+
+/** Each worker's gait clock, advanced by real time at its own pace. Held by the scene's caller, one per view. */
+export class PhaseClock {
+  private readonly at = new Map<string, { t: number; phase: number }>()
+
+  advance(id: string, pace: number, now: number): number {
+    const before = this.at.get(id)
+    // a pause (a hidden terminal, a long redraw) must not jump the sprite: at most half a second of motion is owed
+    const owed = before ? Math.min(Math.max(0, now - before.t), 500) : 0
+    const phase = (before?.phase ?? hash(id.length * 31 + id.charCodeAt(0)) % 1000) + (owed / 100) * clockRate(pace)
+    this.at.set(id, { t: now, phase })
+    if (this.at.size > 256) for (const key of [...this.at.keys()].slice(0, 64)) this.at.delete(key)
+    return phase
+  }
+}
