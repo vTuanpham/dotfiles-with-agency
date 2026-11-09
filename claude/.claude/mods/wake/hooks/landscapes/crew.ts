@@ -38,9 +38,8 @@ const ROAD: Record<1 | 2 | 3 | 4, readonly string[]> = {
   4: ['...WW.WW.WW..', '.aaaaaaaaaaaa', '.dd.......dd.'],
 }
 
-/** The sprites no place changes (agy's sparks and OpenCode's balloons) and the generic Claude bird; Codex's machines are
- *  craft.ts's and Claude's creatures creatures.ts's, one for each place. */
-const AIR: Record<Exclude<Kind, 'codex'>, Record<1 | 2 | 3 | 4, Frames>> = {
+/** The sprites no place changes; Codex and Claude have their own place-specific generators. */
+const AIR: Record<Exclude<Kind, 'codex' | 'claude'>, Record<1 | 2 | 3 | 4, Frames>> = {
   agy: {
     1: [['.W.', 'WmW', '.W.'], ['W.W', '.m.', 'W.W']],
     2: [['.......mm.', 'd.dd.ddmWm', '.......mm.'], ['.......mm.', '.d.dd.dmWm', '.......mm.']],
@@ -49,15 +48,6 @@ const AIR: Record<Exclude<Kind, 'codex'>, Record<1 | 2 | 3 | 4, Frames>> = {
       ['.........m...', '...a....d.d..', '....d..d...d.', '.....dW.....a'],
     ],
     4: [['..W.......M......', '...d....d.d..W...', '....d..d...dd....', '.....dW.....W....', '....d........d...'], ['..a.......m......', '...d....d.d..a...', '....d..d...dd....', '.....dW.....W....', '....d........d...']],
-  },
-  claude: {
-    1: [['a.a', '.a.'], ['.a.', 'a.a']],
-    2: [['a.....a', '.aa.aa.', '...d...'], ['...a...', 'aaadaaa', '.a...a.']],
-    3: [
-      ['aaa.......aaa', '.aaaaa.aaaaa.', '...aaaaaaWWs.', '.dd..aaa.....'],
-      ['.............', '.aaa.....aaa.', 'aaaaaaaaaWWs.', '.dd..aaa.....'],
-    ],
-    4: [['aaaa.........aaaa', '.aaaaaa.aaaaaa...', '...aaaaaaaaaWWs..', '..dd...aaaa..d...'], ['.................', '.aaaa.......aaaa.', 'aaaaaaaaaaaaWWs..', '..dd...aaaa..d...']],
   },
   opencode: {
     1: [['ala', 'ala', '.a.', '.s.', '.h.'], ['ala', 'ala', '.a.', '.d.', '.h.']],
@@ -112,10 +102,9 @@ function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly strin
 }
 
 /** A flyer's frames: a Codex machine is the craft its place builds (a glider over the mountains, a biplane over the fields),
- * and the generic drone and airship only where the place has none; a Claude worker is the winged creature of its place (a
- * kite on the beach, a butterfly in the fields); agy and OpenCode look the same everywhere. */
+ * and a Claude worker is its place's living winged creature; agy and OpenCode look the same everywhere. */
 const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames =>
-  kind === 'codex' ? craftFrames(look.place, tier) : (kind === 'claude' && creatureFrames(look.place, tier)) || AIR[kind][tier]
+  kind === 'codex' ? craftFrames(look.place, tier) : kind === 'claude' ? creatureFrames(look.place, tier) : AIR[kind][tier]
 
 /** The gait a flyer moves by: its family's, except that craft which cruise (a dragon, a banner plane) fly the continuous loop. */
 const gaitKind = (job: Job, look: Look) => designFor(job.kind ?? 'codex', look.place).cruise ? 'claude' : job.kind ?? 'codex'
@@ -216,11 +205,11 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   const art = drawn ? shape(frame, turning.mirror, turning.roll, design.turn) : frame
   const pal = paint({ ...job, kind }, look)
   const x0 = cx - (art[0]!.length >> 1), y0 = cy - (art.length >> 1)
-  const quietMachine = kind === 'codex' && look.place !== undefined && look.place !== 'city'
+  const quietMachine = kind === 'claude' || kind === 'codex' && look.place !== undefined && look.place !== 'city'
   const air = () => {
     if (!compact) crewFx(c, look, { x0, y0, w: art[0]!.length, h: art.length, cx, cy, kind, tier: job.tier ?? 1, seed: job.seed, pace: job.pace ?? 0.6, phase: job.phase ?? look.frame, path, lift: job.lift ?? 0, ground: look.crewGround ?? c.H, flip: facingRight, talk: job.talk, turn: design.turn === 'coil' ? turning.since : undefined })
   }
-  // Air stays behind the solid machine: no particle can repaint one of its body cells.
+  // Air stays behind solid machines and plumage: no particle can repaint a body cell.
   if (quietMachine) air()
   draw(c, look, x0, y0, art, pal, !quietMachine)
   if (!compact) { // Companions use their family's sprites and follow the leader's actual path.

@@ -65,6 +65,8 @@ export type Emitter = {
   size?: 1 | 2
   /** Cells of streak behind the head, along the way it came. */
   streak?: number
+  /** A small expanding sound arc, opening along the particle's direction of travel. */
+  arc?: boolean
   /** Played backwards: it starts spread out and gathers into the origin. */
   reverse?: boolean
 }
@@ -77,6 +79,8 @@ export type Source = {
   seed: number
   /** 0..1.5: how strongly this effect shows now (the worker's pace, a reaction's strength). */
   strength: number
+  /** A stroke-driven trail keeps the strength of its birth, rather than vanishing on the next upstroke. */
+  strengthAtBirth?: (secondsAgo: number) => number
   /** The world's wind, km/h. */
   wind: number
 }
@@ -126,10 +130,15 @@ export function emit(c: Pick<Canvas, 'glow'>, e: Emitter, s: Source): void {
       ? (() => { const a = byte(r, 24) * 6.2832; return [Math.cos(a) * e.spawn.ring! * 1.4, Math.sin(a) * e.spawn.ring! * 0.7] as const })()
       : ([(byte(r, 24) * 2 - 1) * (e.spawn?.w ?? 0), (byte(r, 4) * 2 - 1) * (e.spawn?.h ?? 0)] as const)
     const [x, y] = place(e, born, r, around, shown, s.wind)
-    const alpha = clamp(envelope(e.envelope, f, byte(r, 12), shown) * e.alpha * s.strength)
+    const alpha = clamp(envelope(e.envelope, f, byte(r, 12), shown) * e.alpha * s.strength * (s.strengthAtBirth?.(e.burst ? 0 : age) ?? 1))
     if (alpha <= 0.01) continue
     const color = ramp(e.colors, f)
     c.glow(Math.round(x), Math.round(y), color, alpha)
+    if (e.arc) {
+      const direction = Math.cos((e.angle[0] + e.angle[1]) / 2) < 0 ? -1 : 1
+      const reach = 1 + Math.floor(f * 2)
+      for (const side of [-1, 1]) c.glow(Math.round(x) - direction, Math.round(y) + side * reach, color, alpha * 0.65)
+    }
     if (e.size === 2) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(Math.round(x) + dx, Math.round(y) + dy, color, alpha * 0.4)
     for (let j = 1; j <= (e.streak ?? 0); j++) { // a streak: the same particle a moment earlier, fainter
       const [px, py] = place(e, born, r, around, e.reverse ? shown + j * 0.03 : Math.max(0, shown - j * 0.03), s.wind)

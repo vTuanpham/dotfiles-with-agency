@@ -17,6 +17,10 @@ const wingmen: Design['escorts'] = {
   4: [{ tier: 1, lag: 0.1, dx: -18, dy: -1 }, { tier: 1, lag: 0.15, dx: 18, dy: 1 }],
 }
 const symmetric: Design = { facing: null, cruise: false, escorts: {}, turn: 'none' }
+const flock: Design['escorts'] = {
+  3: [{ tier: 1, lag: 0.12, dx: -16, dy: -1 }],
+  4: [{ tier: 1, lag: 0.12, dx: -19, dy: -1 }, { tier: 1, lag: 0.18, dx: 19, dy: 1 }],
+}
 
 /** The motion contract of every family/place design. Sprite and effect owners plug into this table, never family checks. */
 export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
@@ -31,7 +35,16 @@ export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
     tundra: { facing: 'left', cruise: true, turn: 'bank', escorts: wingmen },
   },
   // These retain the other families' existing motion while their place-specific art is developed.
-  claude: { city: symmetric, harbor: symmetric, beach: symmetric, mountains: symmetric, countryside: symmetric, forest: symmetric, desert: symmetric, tundra: symmetric },
+  claude: {
+    city: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
+    harbor: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
+    beach: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
+    mountains: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
+    countryside: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
+    forest: { facing: 'left', cruise: false, turn: 'bank', escorts: flock },
+    desert: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
+    tundra: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
+  },
   agy: { city: symmetric, harbor: symmetric, beach: symmetric, mountains: symmetric, countryside: symmetric, forest: symmetric, desert: symmetric, tundra: symmetric },
   opencode: { city: symmetric, harbor: symmetric, beach: symmetric, mountains: symmetric, countryside: symmetric, forest: symmetric, desert: symmetric, tundra: symmetric },
 }
