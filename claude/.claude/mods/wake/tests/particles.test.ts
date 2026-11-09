@@ -92,11 +92,12 @@ test('a worker with a message for the root brakes to a hover, stays still while 
   expect(routeRate(-10, window, back)).toBe(1) // before the message
   expect(routeRate(0, window, back)).toBe(1) // the instant it arrives it is still at speed ...
   expect(routeRate(200, window, back)).toBeLessThan(1) // ... then brakes ...
-  expect(routeRate(400, window, back)).toBe(0) // ... to a stop
+  expect(routeRate(200, window, back)).toBeGreaterThan(0.5) // ... but with momentum: it coasts on rather than stopping dead ...
+  expect(routeRate(back, window, back)).toBe(0) // ... slowing to a stop as its turn is done
   expect(routeRate(window - 1, window, back)).toBe(0) // hovering, facing her, until the message is done
-  expect(routeRate(window + 450, window, back)).toBeGreaterThan(0) // then it turns back and accelerates
-  expect(routeRate(window + 450, window, back)).toBeLessThan(1)
-  expect(routeRate(window + back + 1, window, back)).toBe(1) // and is on its way again
+  expect(routeRate(window + 450, window, back)).toBeGreaterThan(0) // then it turns back and gathers speed ...
+  expect(routeRate(window + 450, window, back)).toBeLessThan(0.5) // ... gently, not snapping to cruise
+  expect(routeRate(window + 1.5 * back + 1, window, back)).toBe(1) // and is on its way again
   const rates = Array.from({ length: 360 }, (_, i) => routeRate(i * 10, window, back)) // never jumps from one moment to the next
   for (let i = 1; i < rates.length; i++) expect(Math.abs(rates[i]! - rates[i - 1]!)).toBeLessThan(0.1)
   // the route clock stands still at rate 0, the animation clock beside it does not
