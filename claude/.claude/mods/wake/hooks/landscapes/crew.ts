@@ -2,6 +2,7 @@ import { TURN_LEAD_MS } from '../crew-row'
 import { type Canvas, hash, mix } from '../pixels'
 import { craftFrames } from './craft'
 import { agyFrames } from './agy'
+import { balloonFlare, balloonFrames } from './balloon'
 import { designFor, type Design, type Tier, type Turn } from './design'
 import { creatureFrames } from './creatures'
 import { boatFx, crewFx } from './fx'
@@ -37,19 +38,6 @@ const ROAD: Record<1 | 2 | 3 | 4, readonly string[]> = {
   2: ['...WW....', '.aaaaaaaa', '.d.....d.'],
   3: ['...WW.WW...', '.aaaaaaaaaa', '.dd.....dd.'],
   4: ['...WW.WW.WW..', '.aaaaaaaaaaaa', '.dd.......dd.'],
-}
-
-/** OpenCode's balloons, the same everywhere (its worker is reworking them); Codex, Claude and agy have place-specific generators. */
-const AIR: Record<'opencode', Record<1 | 2 | 3 | 4, Frames>> = {
-  opencode: {
-    1: [['ala', 'ala', '.a.', '.s.', '.h.'], ['ala', 'ala', '.a.', '.d.', '.h.']],
-    2: [['.lal.', 'alala', 'alala', '.lal.', '..a..', '.dsd.', '.hhh.'], ['.lal.', 'alala', 'alala', '.lal.', '..a..', '.ddd.', '.hhh.']],
-    3: [
-      ['..alala..', '.lalalal.', 'alalalala', 'ppppppppp', '.lalalal.', '..alala..', '...lal...', '...dsd...', '...hhh...'],
-      ['..alala..', '.lalalal.', 'alalalala', 'ppppppppp', '.lalalal.', '..alala..', '...lal...', '...ddd...', '...hhh...'],
-    ],
-    4: [['...alalala...', '.alalalalala.', 'alalalalalala', 'ppppppppppppp', 'alalalalalala', '.alalalalala.', '...alalala...', '....dsdsd....', '....hhhhh....'], ['...alalala...', '.alalalalala.', 'alalalalalala', 'ppppppppppppp', 'alalalalalala', '.alalalalala.', '...alalala...', '....dddsd....', '....hhhhh....']],
-  },
 }
 
 /** OpenCode's festival: a handful of existing inks no other family owns (Codex teal, agy mauve, Claude pink, stale
@@ -94,10 +82,10 @@ function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly strin
 }
 
 /** A flyer's frames: a Codex machine is the craft its place builds (a glider over the mountains, a biplane over the fields),
- * a Claude worker is its place's living winged creature, and agy's luminous bodies are generated per place; OpenCode's balloons
- * are the same everywhere. */
+ * a Claude worker is its place's living winged creature, agy's luminous bodies are generated per place, and OpenCode sews a local
+ * festival balloon: every family has a generator for each place. */
 const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames =>
-  kind === 'codex' ? craftFrames(look.place, tier) : kind === 'claude' ? creatureFrames(look.place, tier) : kind === 'agy' ? agyFrames(look.place, tier) : AIR[kind][tier]
+  kind === 'codex' ? craftFrames(look.place, tier) : kind === 'claude' ? creatureFrames(look.place, tier) : kind === 'agy' ? agyFrames(look.place, tier) : balloonFrames(look.place, tier)
 
 /** The gait a flyer moves by: its family's, except that craft which cruise (a dragon, a banner plane) fly the continuous loop. */
 const gaitKind = (job: Job, look: Look) => designFor(job.kind ?? 'codex', look.place).cruise ? 'claude' : job.kind ?? 'codex'
@@ -198,7 +186,9 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   const drawn = !compact ? design.facing : null
   const turning: { mirror: 1 | -1; roll?: number; since?: number } = drawn ? orient(path, drawn, 0, job.talk) : { mirror: 1 }
   const facingRight = !drawn ? false : drawn === 'right' ? turning.mirror > 0 : turning.mirror < 0 // effects are written facing left
-  const frame = frames[(Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length]!
+  const beat = (Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length
+  const blast = kind === 'opencode' && !compact && job.talk?.sending && job.talk.ms >= TURN_LEAD_MS && job.talk.ms < TURN_LEAD_MS + 300
+  const frame = blast ? balloonFlare(look.place ?? 'city', job.tier ?? 1, beat) : frames[beat]!
   const art = drawn ? shape(frame, turning.mirror, turning.roll, design.turn) : [...frame]
   if (kind === 'agy' && drawn && turning.roll !== undefined) {
     // Projection can merge cells; keep the core in its own projected cell rather than losing it behind a filament.
@@ -209,7 +199,7 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   }
   const pal = paint({ ...job, kind }, look)
   const x0 = cx - (art[0]!.length >> 1), y0 = cy - (art.length >> 1)
-  const quietMachine = kind === 'agy' || kind === 'claude' || kind === 'codex' && look.place !== undefined && look.place !== 'city'
+  const quietMachine = kind === 'agy' || kind === 'claude' || kind === 'opencode' || kind === 'codex' && look.place !== undefined && look.place !== 'city'
   const coreY = kind === 'agy' ? art.findIndex(row => row.includes('M')) : -1
   const nose: Vec | undefined = coreY < 0 ? undefined : [(art[coreY]!.indexOf('M') - (art[0]!.length >> 1)) * (facingRight ? -1 : 1), coreY - (art.length >> 1)]
   const air = () => {

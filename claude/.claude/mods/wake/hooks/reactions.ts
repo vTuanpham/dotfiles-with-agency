@@ -21,7 +21,7 @@ type Effect = (paint: Paint, box: Box, v: number, t: number, role: Reaction['rol
 
 /** The colour each reaction is drawn in: a harness's trail colour, a character's coat. */
 const ACCENT: Record<ReactionKind, number> = {
-  codex: P.teal, claude: P.pink, agy: P.mauve, opencode: P.green,
+  codex: P.teal, claude: P.pink, agy: P.mauve, opencode: P.white,
   mochi: P.lavender, tabby: P.peach, tuxedo: P.yellow, bun: P.pink,
 }
 const SOFTER_SEND = 0.6 // the sender's reaction is the receiver's, a little quieter
@@ -75,7 +75,7 @@ const risingSparks: Effect = (paint, b, v) => {
 
 /** OpenCode: a little burst of colour thrown up and out. */
 const confetti: Effect = (paint, b, v) => {
-  const colors = [P.pink, P.yellow, P.teal, P.mauve, P.green, P.peach]
+  const colors = [P.green, P.yellow, P.red, P.blue, P.lavender]
   const cx = (b.x0 + b.x1) / 2
   colors.forEach((color, i) => paint(cx + (i - 2.5) * (1.2 + (1 - v) * 2.2), b.y0 - 1 - (1 - v) * 5 + (i % 2) * 1.5, v, color))
 }

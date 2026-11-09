@@ -3,6 +3,7 @@ import { type Canvas } from '../pixels'
 import { type Emitter, type Light, type Vec, coneEnd, emit, shine, thrustPuff } from './particles'
 import { craftLamp, craftNose, craftPush, dragonCrests } from './craft'
 import { agyCore, agyOrbit, agyPulse } from './agy'
+import { balloonNose, balloonPose } from './balloon'
 import { creatureNose, creatureStroke } from './creatures'
 import { TURN_LEAD_MS } from '../crew-row'
 import { clockRate } from './gait'
@@ -156,13 +157,16 @@ const AGY: Partial<Record<WakePreset | 'any', Cell>> = {
 const OPENCODE: Partial<Record<WakePreset | 'any', Cell>> = {
   any: {
     streams: [
-      { at: 'below', dy: -2, emitter: { count: 9, life: 0.4, spawn: { w: 0.6 }, speed: [1.5, 3], angle: [UP - 0.25, UP + 0.25], colors: [P.yellow, P.peach, P.red], alpha: 0.85, envelope: 'fade' } }, // the burner's flame, up into the envelope
-      { at: 'above', emitter: { count: 6, life: 1.3, spawn: { w: 3 }, speed: [0.8, 1.8], angle: [UP - 0.3, UP + 0.3], wind: 0.5, colors: [P.white], alpha: 0.16, envelope: 'pulse' } }, // heat shimmering off the top
-      { at: 'below', follow: true, emitter: { count: 6, life: 1.3, spawn: { w: 1 }, speed: [0, 0.8], angle: [DOWN - 0.5, DOWN + 0.5], gravity: 2, wind: 0.8, colors: [P.peach, P.red], alpha: 0.55, envelope: 'fade' } }, // embers drifting down behind it
+      { at: 'above', follow: true, emitter: { count: 2, life: 0.45, speed: [1, 2], angle: [UP - 0.3, UP + 0.3], swirl: 0.4, wind: 0.25, colors: [P.white, P.sky], alpha: 0.2, envelope: 'fade' } }, // pale heat at the mouth's open side, on the pressure stroke
+      { at: 'below', follow: true, emitter: { count: 2, life: 0.65, speed: [0.5, 1.5], angle: [DOWN - 0.5, DOWN + 0.5], gravity: 2, wind: 0.5, colors: [P.yellow, P.white], alpha: 0.25, envelope: 'fade' } }, // two small drifting embers per flare
+    ],
+    talking: [
+      { at: 'nose', emitter: { count: 2, life: 0.3, burst: true, speed: [3, 5], angle: [UP - 0.15, UP + 0.15], colors: [P.white, P.yellow], alpha: 0.9, envelope: 'fade' } },
+      { at: 'nose', emitter: { count: 5, life: 0.6, burst: true, spawn: { ring: 1 }, speed: [3, 5], angle: [0, TAU], drag: 1, colors: [P.white, P.sky], alpha: 0.45, envelope: 'fade' } }, // the burner's short hiss ring
     ],
     lights: [
-      { at: 'centre', dy: 1, light: { shape: 'halo', color: P.peach, alpha: 0.3, reach: 3, modulate: 'pulse' } }, // the envelope lit from inside, like a lantern
-      { at: 'ground', light: { shape: 'pool', color: P.peach, alpha: 0.26, reach: 5, modulate: 'pulse' } }, // and the burner's glow on the ground below
+      { at: 'nose', light: { shape: 'halo', color: P.yellow, alpha: 0.2, reach: 2 } },
+      { at: 'ground', light: { shape: 'pool', color: P.yellow, alpha: 0.16, reach: 3 } },
       ...SHADOW,
     ],
   },
@@ -229,6 +233,10 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
     const [x, y] = creatureNose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed)
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
   }
+  if (a.kind === 'opencode') {
+    const [x, y] = balloonNose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed)
+    a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
+  }
   const dark = clamp(look.night + (look.blend?.dusk ?? 0) * 0.6 + (look.blend?.dawn ?? 0) * 0.4) // dusk and dawn count as half dark
   const strength = 0.35 + 0.65 * a.pace + 0.5 * a.lift
   const t = a.phase / 10
@@ -263,6 +271,13 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
           const dx = point[0] - (a.w >> 1), [px, py] = s.follow ? a.path(ago / clockRate(a.pace)) : [a.cx, a.cy]
           return [px + (a.flip ? -dx : dx), py + point[1] - (a.h >> 1)]
         }
+        if (a.kind === 'opencode') {
+          const back = s.follow ? ago : 0
+          const pose = balloonPose(place, a.tier as Tier, Math.floor((a.phase - back * 10) / 1.5) + a.seed)
+          const [x, y] = s.at === 'above' ? pose.heat : pose.ember
+          const [px, py] = s.follow ? a.path(back / clockRate(a.pace)) : [a.cx, a.cy]
+          return [px + x - (a.w >> 1), py + y - (a.h >> 1)]
+        }
         if (machine || creature) {
           const push = pose(s.follow ? ago : 0), dx = push.x - (a.w >> 1)
           const [px, py] = s.follow ? a.path(ago / clockRate(a.pace)) : [a.cx, a.cy]
@@ -272,7 +287,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
         return [px + ox, py + oy]
       }
       const beat = (a.phase / 1.5 + a.seed) % 8
-      const stroke = a.kind === 'agy' && s.at === 'tail' ? agyPulse(place, a.tier as Tier, Math.floor(beat)).force : machine ? pose(0).force : s.beats ? 0.2 + 0.8 * Math.max(...s.beats.map(b => Math.max(0, Math.cos((beat - b) * Math.PI / 4)) ** 6)) : 1
+      const stroke = a.kind === 'agy' && s.at === 'tail' ? agyPulse(place, a.tier as Tier, Math.floor(beat)).force : a.kind === 'opencode' ? balloonPose(place, a.tier as Tier, Math.floor(beat)).force : machine ? pose(0).force : s.beats ? 0.2 + 0.8 * Math.max(...s.beats.map(b => Math.max(0, Math.cos((beat - b) * Math.PI / 4)) ** 6)) : 1
       emit(c, a.flip ? mirrored(s.emitter) : s.emitter, { at: origin, t, seed: a.seed * 31 + i, strength: strength * stroke, ...(creature ? { strengthAtBirth: (ago: number) => pose(ago).force } : {}), wind })
     }
     if (a.talk?.sending && a.talk.over === undefined) for (const [i, s] of (cell.talking ?? []).entries()) { // shouting a message at the root: a burst on the message's own clock
@@ -289,7 +304,8 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
       const [ox, oy] = lamp ? [a.flip ? (a.w >> 1) - lamp[0] : lamp[0] - (a.w >> 1), lamp[1] - (a.h >> 1)] : anchorOf(a, l.at, l.dx, l.dy)
       const x = a.cx + ox, y = a.cy + oy
       const light = l.toGround ? { ...l.light, reach: Math.max(1, (look.crewGround ?? c.H) - Math.round(y)) } : l.light
-      const level = l.always === 'day' ? 1 - look.night : l.always || l.toGround ? 1 : dark
+      const burner = a.kind === 'opencode' && !l.always ? 0.25 + 0.75 * balloonPose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed).force : 1
+      const level = (l.always === 'day' ? 1 - look.night : l.always || l.toGround ? 1 : dark) * burner
       shine(c, light, x, y, t, level, a.seed)
       if (l.lands) { const [ex, ey] = coneEnd(light, x, y, t, a.seed); shine(c, l.lands, ex, Math.min((look.crewGround ?? c.H) - 1, ey), t, dark, a.seed) }
     }
