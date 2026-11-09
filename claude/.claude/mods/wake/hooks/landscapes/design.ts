@@ -32,7 +32,16 @@ export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
   },
   // These retain the other families' existing motion while their place-specific art is developed.
   claude: { city: symmetric, harbor: symmetric, beach: symmetric, mountains: symmetric, countryside: symmetric, forest: symmetric, desert: symmetric, tundra: symmetric },
-  agy: { city: symmetric, harbor: symmetric, beach: symmetric, mountains: symmetric, countryside: symmetric, forest: symmetric, desert: symmetric, tundra: symmetric },
+  agy: {
+    city: { facing: 'left', cruise: true, turn: 'bank', escorts: wingmen },
+    harbor: { facing: 'left', cruise: false, turn: 'coil', escorts: wingmen },
+    beach: { facing: null, cruise: false, turn: 'none', escorts: wingmen },
+    mountains: { facing: 'left', cruise: true, turn: 'coil', escorts: wingmen },
+    countryside: { facing: null, cruise: false, turn: 'none', escorts: wingmen },
+    forest: { facing: null, cruise: false, turn: 'none', escorts: wingmen },
+    desert: { facing: null, cruise: false, turn: 'none', escorts: wingmen },
+    tundra: { facing: 'left', cruise: true, turn: 'coil', escorts: wingmen },
+  },
   opencode: { city: symmetric, harbor: symmetric, beach: symmetric, mountains: symmetric, countryside: symmetric, forest: symmetric, desert: symmetric, tundra: symmetric },
 }
 

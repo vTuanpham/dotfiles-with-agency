@@ -3,3 +3,5 @@ dev/*.png
 dev/*.png.json
 dev/codex-*-beats.json
 dev/codex-*-ascii.txt
+dev/agy-*.json
+dev/agy-*-ascii.txt
