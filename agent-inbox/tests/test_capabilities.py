@@ -27,10 +27,10 @@ def test_capabilities_reject_coercion_and_invented_reply_modes(field, value):
         AdapterCapabilities(**values)
 
 
-def test_claude_capabilities_keep_chat_opt_in_and_support_native_hook_questions():
+def test_claude_capabilities_keep_chat_opt_in_and_questions_native():
     capabilities = ADAPTERS["claude"].capabilities
     assert capabilities.reply_mode == "opt_in_next_turn"
     assert not any((capabilities.queued_messages, capabilities.mid_turn_steering,
                     capabilities.approvals_survive_restart, capabilities.commands,
                     capabilities.interrupt))
-    assert capabilities.questions
+    assert not capabilities.questions

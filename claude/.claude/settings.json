@@ -19,10 +19,6 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "AskUserQuestion",
-        "hooks": [{"type": "command", "command": "agent-inbox claude-question", "timeout": 300}]
-      },
-      {
         "matcher": "Bash",
         "hooks": [
           {

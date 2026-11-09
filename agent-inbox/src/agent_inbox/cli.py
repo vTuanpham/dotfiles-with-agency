@@ -3,11 +3,9 @@
 import argparse
 import asyncio
 import fcntl
-import json
 import os
 import shutil
 import subprocess
-import sys
 import uuid
 from pathlib import Path
 
@@ -54,7 +52,6 @@ def main():
                              help="run the native Claude channel (normally started by the launcher)")
     channel.add_argument("--session", required=True)
     channel.add_argument("--config-dir", type=Path, required=True)
-    sub.add_parser("claude-question", help="native AskUserQuestion PreToolUse callback (JSON on stdin)")
     native = sub.add_parser("add-native", help="register another harness's existing native root link")
     for option in ("harness", "session", "label", "url"):
         native.add_argument("--" + option, required=True)
@@ -73,16 +70,7 @@ def main():
     os.umask(0o077)
     store = Store(args.state.expanduser())
     try:
-        if args.action == "claude-question":
-            from .claude_questions import hook
-
-            try:
-                raw = sys.stdin.buffer.read(1024 * 1024 + 1)
-                result = hook(store, raw) if len(raw) <= 1024 * 1024 else {}
-            except (OSError, ValueError, KeyError, TypeError, TimeoutError):
-                result = {}  # Hook failure must not answer or suppress the native question.
-            print(json.dumps(result))
-        elif args.action == "claude-channel":
+        if args.action == "claude-channel":
             from .claude_channel import profile_channels, run
 
             asyncio.run(run(profile_channels(store.home, args.config_dir), args.session, args.config_dir))
