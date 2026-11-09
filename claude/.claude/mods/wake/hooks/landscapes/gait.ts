@@ -7,7 +7,7 @@ import { hash } from '../pixels'
 //   codex     hovers, then goes: eases from one waypoint to the next, like a machine on a patrol route
 //   claude    loops: a figure of eight, flapping and gliding, faster the smaller the bird
 //   agy       orbits: a slow ellipse whose size breathes, like something with a pull on it
-//   opencode  drifts: a wide lazy sway with a slow bob, wherever the wind takes a balloon
+//   opencode  drifts: a wide lazy sway with a slow bob, wherever the wind takes a lantern garland
 // `reach` is the room it has each way, in cells; a gait stretches in time to suit it.
 // Time is `phase`, the worker's own clock in frames (ten a second at pace 1.0): a busy worker's clock runs faster, so its
 // gait quickens and its wings beat faster, and a waiting one's slows to a hover. The path is a function of the phase alone,

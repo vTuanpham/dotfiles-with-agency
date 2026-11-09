@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { type WakePreset } from '../types'
 import { styleFor } from '../hooks/exit-styles'
 import { ALL_CRAFT } from '../hooks/landscapes/craft'
-import { ALL_BALLOONS } from '../hooks/landscapes/balloon'
+import { ALL_LANTERNS } from '../hooks/landscapes/lantern'
 import { ALL_CREATURES } from '../hooks/landscapes/creatures'
 import { CARRIED, CREW } from '../hooks/landscapes/fx'
 import { LANDSCAPES } from '../hooks/landscapes'
@@ -32,7 +32,7 @@ test('every place has what each family needs: a Codex machine, a Claude creature
     expect(ALL_CREATURES[place], `${place} creature`).toBeDefined()
     expect(CARRIED[place], `${place} wind-borne`).toBeDefined()
     expect(ALL_CRAFT[place], `${place} craft`).toBeDefined()
-    expect(ALL_BALLOONS[place], `${place} festival balloon`).toBeDefined()
+    expect(ALL_LANTERNS[place], `${place} festival lantern`).toBeDefined()
   }
 })
 

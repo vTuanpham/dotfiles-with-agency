@@ -3,7 +3,7 @@ import { type Canvas } from '../pixels'
 import { type Emitter, type Light, type Vec, coneEnd, emit, shine, thrustPuff } from './particles'
 import { craftLamp, craftNose, craftPush, dragonCrests } from './craft'
 import { agyCore, agyOrbit, agyPulse } from './agy'
-import { balloonNose, balloonPose } from './balloon'
+import { lanternNose, lanternPose } from './lantern'
 import { creatureNose, creatureStroke } from './creatures'
 import { TURN_LEAD_MS } from '../crew-row'
 import { clockRate } from './gait'
@@ -157,15 +157,14 @@ const AGY: Partial<Record<WakePreset | 'any', Cell>> = {
 const OPENCODE: Partial<Record<WakePreset | 'any', Cell>> = {
   any: {
     streams: [
-      { at: 'above', follow: true, emitter: { count: 2, life: 0.45, speed: [1, 2], angle: [UP - 0.3, UP + 0.3], swirl: 0.4, wind: 0.25, colors: [P.white, P.sky], alpha: 0.2, envelope: 'fade' } }, // pale heat at the mouth's open side, on the pressure stroke
-      { at: 'below', follow: true, emitter: { count: 2, life: 0.65, speed: [0.5, 1.5], angle: [DOWN - 0.5, DOWN + 0.5], gravity: 2, wind: 0.5, colors: [P.yellow, P.white], alpha: 0.25, envelope: 'fade' } }, // two small drifting embers per flare
+      { at: 'above', follow: true, emitter: { count: 2, life: 0.45, speed: [1, 2], angle: [UP - 0.3, UP + 0.3], swirl: 0.4, wind: 0.25, colors: [P.white, P.yellow], alpha: 0.2, envelope: 'fade' } }, // faint rising heat above the brightest paper window
     ],
     talking: [
       { at: 'nose', emitter: { count: 2, life: 0.3, burst: true, speed: [3, 5], angle: [UP - 0.15, UP + 0.15], colors: [P.white, P.yellow], alpha: 0.9, envelope: 'fade' } },
-      { at: 'nose', emitter: { count: 5, life: 0.6, burst: true, spawn: { ring: 1 }, speed: [3, 5], angle: [0, TAU], drag: 1, colors: [P.white, P.sky], alpha: 0.45, envelope: 'fade' } }, // the burner's short hiss ring
+      { at: 'nose', emitter: { count: 5, life: 0.6, burst: true, spawn: { ring: 1 }, speed: [3, 5], angle: [0, TAU], drag: 1, colors: [P.white, P.yellow], alpha: 0.35, envelope: 'fade' } }, // a pale warm halo from the lead lantern
     ],
     lights: [
-      { at: 'nose', light: { shape: 'halo', color: P.yellow, alpha: 0.2, reach: 2 } },
+      { at: 'nose', light: { shape: 'halo', color: P.yellow, alpha: 0.16, reach: 1, from: 0.12 } },
       { at: 'ground', light: { shape: 'pool', color: P.yellow, alpha: 0.16, reach: 3 } },
       ...SHADOW,
     ],
@@ -234,7 +233,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
   }
   if (a.kind === 'opencode') {
-    const [x, y] = balloonNose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed)
+    const [x, y] = lanternNose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed)
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
   }
   const dark = clamp(look.night + (look.blend?.dusk ?? 0) * 0.6 + (look.blend?.dawn ?? 0) * 0.4) // dusk and dawn count as half dark
@@ -273,8 +272,8 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
         }
         if (a.kind === 'opencode') {
           const back = s.follow ? ago : 0
-          const pose = balloonPose(place, a.tier as Tier, Math.floor((a.phase - back * 10) / 1.5) + a.seed)
-          const [x, y] = s.at === 'above' ? pose.heat : pose.ember
+          const pose = lanternPose(place, a.tier as Tier, Math.floor((a.phase - back * 10) / 1.5) + a.seed)
+          const [x, y] = pose.heat
           const [px, py] = s.follow ? a.path(back / clockRate(a.pace)) : [a.cx, a.cy]
           return [px + x - (a.w >> 1), py + y - (a.h >> 1)]
         }
@@ -287,8 +286,8 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
         return [px + ox, py + oy]
       }
       const beat = (a.phase / 1.5 + a.seed) % 8
-      const stroke = a.kind === 'agy' && s.at === 'tail' ? agyPulse(place, a.tier as Tier, Math.floor(beat)).force : a.kind === 'opencode' ? balloonPose(place, a.tier as Tier, Math.floor(beat)).force : machine ? pose(0).force : s.beats ? 0.2 + 0.8 * Math.max(...s.beats.map(b => Math.max(0, Math.cos((beat - b) * Math.PI / 4)) ** 6)) : 1
-      emit(c, a.flip ? mirrored(s.emitter) : s.emitter, { at: origin, t, seed: a.seed * 31 + i, strength: strength * stroke, ...(creature ? { strengthAtBirth: (ago: number) => pose(ago).force } : {}), wind })
+      const stroke = a.kind === 'agy' && s.at === 'tail' ? agyPulse(place, a.tier as Tier, Math.floor(beat)).force : machine ? pose(0).force : s.beats ? 0.2 + 0.8 * Math.max(...s.beats.map(b => Math.max(0, Math.cos((beat - b) * Math.PI / 4)) ** 6)) : 1
+      emit(c, a.flip ? mirrored(s.emitter) : s.emitter, { at: origin, t, seed: a.seed * 31 + i, strength: strength * stroke, ...(creature ? { strengthAtBirth: (ago: number) => pose(ago).force } : a.kind === 'opencode' ? { strengthAtBirth: (ago: number) => lanternPose(place, a.tier as Tier, Math.floor((a.phase - ago * 10) / 1.5) + a.seed).force } : {}), wind })
     }
     if (a.talk?.sending && a.talk.over === undefined) for (const [i, s] of (cell.talking ?? []).entries()) { // shouting a message at the root: a burst on the message's own clock
       if (s.tiers && !s.tiers.includes(a.tier)) continue
@@ -299,12 +298,19 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
     }
     for (const l of cell.lights ?? []) {
       if (l.tiers && !l.tiers.includes(a.tier)) continue
+      if (a.kind === 'opencode' && l.at === 'nose') {
+        for (const lamp of lanternPose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed).lamps) {
+          shine(c, l.light, a.cx + lamp.flame[0] - (a.w >> 1) + 0.5, a.cy + lamp.flame[1] - (a.h >> 1) + 0.5,
+            t, dark * (0.65 + 0.35 * lamp.force), a.seed)
+        }
+        continue
+      }
       const lamp = a.kind === 'codex' && place !== 'city' && l.light.color === P.red
         ? craftLamp(place, a.tier as Tier, ((Math.floor(a.phase / 1.5) + a.seed) % 8 + 8) % 8) : undefined
       const [ox, oy] = lamp ? [a.flip ? (a.w >> 1) - lamp[0] : lamp[0] - (a.w >> 1), lamp[1] - (a.h >> 1)] : anchorOf(a, l.at, l.dx, l.dy)
       const x = a.cx + ox, y = a.cy + oy
       const light = l.toGround ? { ...l.light, reach: Math.max(1, (look.crewGround ?? c.H) - Math.round(y)) } : l.light
-      const burner = a.kind === 'opencode' && !l.always ? 0.25 + 0.75 * balloonPose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed).force : 1
+      const burner = a.kind === 'opencode' && !l.always ? 0.25 + 0.75 * lanternPose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed).force : 1
       const level = (l.always === 'day' ? 1 - look.night : l.always || l.toGround ? 1 : dark) * burner
       shine(c, light, x, y, t, level, a.seed)
       if (l.lands) { const [ex, ey] = coneEnd(light, x, y, t, a.seed); shine(c, l.lands, ex, Math.min((look.crewGround ?? c.H) - 1, ey), t, dark, a.seed) }
