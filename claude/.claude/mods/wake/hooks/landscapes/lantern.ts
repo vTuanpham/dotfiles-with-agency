@@ -23,6 +23,24 @@ const BEATS = 8
 const COUNT = { 1: 1, 2: 2, 3: 3, 4: 5 } as const
 const WIDTH = { 1: 5, 2: 9, 3: 13, 4: 19 } as const
 
+/**
+ * How each place hangs its garland: how many rows below the string's top line lantern `i` of `n` hangs. This is the first thing the
+ * eye sees at one pixel to the cell, before any corner or tassel: flat in the city, a sagging swag of bunting in the harbor,
+ * swinging alternately on the beach, stepping down the slope in the mountains, an arch over the fields, an uneven drift in the
+ * forest; the desert and the tundra stay level and differ by their own tassels and crowns.
+ */
+const hang = (place: WakePreset, i: number, n: number): number => {
+  if (n < 2) return 0
+  switch (place) {
+    case 'harbor': return Math.round(1.3 * Math.sin(Math.PI * i / (n - 1))) // sags in the middle
+    case 'beach': return i % 2 // swings up and down
+    case 'mountains': return Math.round(i / (n - 1)) // steps down the slope
+    case 'countryside': return 1 - Math.round(1.3 * Math.sin(Math.PI * i / (n - 1))) // an arch: the middle hangs high
+    case 'forest': return [0, 1, 0, 0, 1][i % 5]! // uneven, like leaves on a twig
+    default: return 0
+  }
+}
+
 function lantern(place: WakePreset, tier: Tier, beat: number): Pose {
   const w = WIDTH[tier], h = 7, phase = beat * Math.PI / 4
   const rows = Array.from({ length: h }, () => Array<string>(w).fill('.'))
@@ -46,7 +64,7 @@ function lantern(place: WakePreset, tier: Tier, beat: number): Pose {
   for (let x = centres[0]!; x < centres.at(-1)!; x++) line(x, ribbon(x), x + 1, ribbon(x + 1), 'd')
   const lamps: Lamp[] = []
   for (const [i, cx] of centres.entries()) {
-    const q = phase - i * 0.95, top = 1 + Math.round(0.5 + 0.5 * Math.sin(q))
+    const q = phase - i * 0.95, top = 1 + hang(place, i, centres.length) + Math.round(0.5 + 0.5 * Math.sin(q))
     const depth = place === 'harbor' || place === 'desert' ? 3 : 4
     const force = (0.5 + 0.5 * Math.cos(q + 0.45)) ** 2
     const left = cx - 1, bottom = top + depth - 1
