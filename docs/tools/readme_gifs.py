@@ -416,9 +416,71 @@ def crew():
     save_gif(frames, IMAGES / "wake-passages.gif")
 
 
+# ── the new crew: the cast at work, a message sequence, an interrupt ──────────────────────────────────────
+
+def cast():
+    """Every family at work in every place (class 4): the moving structure, the effects and the escorts."""
+    small, bold = label_font(False, 15), label_font(True, 17)
+    data, size = cells(WORK / "readme-crew-cast.bin", 72)
+    scale, left, top, gap = 3, 118, 34, 6
+    cell_w, cell_h = 72 * scale, SCENE_H * scale
+    width = left + len(FAMILIES) * (cell_w + gap)
+    frames = []
+    for i in range(FRAMES):
+        sheet = Image.new("RGB", (width, top + len(PLACES) * (cell_h + gap)), BASE)
+        draw = ImageDraw.Draw(sheet)
+        for f, family in enumerate(FAMILIES):
+            draw.text((left + f * (cell_w + gap) + 4, 8), family, font=bold, fill=TEXT)
+        for p, place in enumerate(PLACES):
+            y = top + p * (cell_h + gap)
+            draw.text((10, y + cell_h // 2 - 9), place, font=small, fill=(166, 173, 200))
+            for f in range(len(FAMILIES)):
+                sheet.paste(scene(data, size, (p * len(FAMILIES) + f) * FRAMES + i, scale), (left + f * (cell_w + gap), y))
+        frames.append(sheet)
+    save_gif(frames, IMAGES / "wake-cast.gif")
+
+
+def tiles(sheet_name, width_cells, scale, columns, labels, out_name, captions=None):
+    """A grid of one-scene tiles, each a looping family, labelled above."""
+    small, bold = label_font(False, 15), label_font(True, 17)
+    data, size = cells(WORK / sheet_name, width_cells)
+    cell_w, cell_h = width_cells * scale, SCENE_H * scale
+    rows = -(-len(labels) // columns)
+    pad, head = 10, 28
+    width = pad + columns * (cell_w + pad)
+    height = pad + rows * (head + cell_h + pad)
+    frames = []
+    for i in range(FRAMES):
+        sheet = Image.new("RGB", (width, height), BASE)
+        draw = ImageDraw.Draw(sheet)
+        for n, label in enumerate(labels):
+            x, y = pad + (n % columns) * (cell_w + pad), pad + (n // columns) * (head + cell_h + pad)
+            draw.text((x, y), label, font=bold, fill=TEXT)
+            if captions:
+                draw.text((x + cell_w - 8 * len(captions[n]) - 4, y + 4), captions[n], font=small, fill=(166, 173, 200))
+            sheet.paste(scene(data, size, n * FRAMES + i, scale), (x, y + head))
+        frames.append(sheet)
+    save_gif(frames, IMAGES / out_name)
+
+
+def sequence():
+    """A worker with a message for the root: it brakes to a hover, turns to face her, sends, turns back and sets off again."""
+    tiles("readme-crew-sequence.bin", 110, 4, 2, FAMILIES, "wake-sequence.gif")
+
+
+def strike():
+    """A worker whose turn is interrupted is struck down, shedding its family's debris."""
+    tiles("readme-crew-strike.bin", 64, 4, 2, FAMILIES, "wake-strike.gif",
+          captions=("city", "mountains", "desert", "tundra"))
+
+
+NEW = {"cast": cast, "sequence": sequence, "strike": strike}
+
 if __name__ == "__main__":
     WORK.mkdir(parents=True, exist_ok=True)
-    want = sys.argv[1:] or ["dock", "landscapes", "hero", "crew"]
+    want = sys.argv[1:] or ["dock", "landscapes", "hero", "crew", "cast", "sequence", "strike"]
+    if any(name in NEW for name in want):
+        run("bun", "dev/readme-crew.ts", str(WORK / "readme-crew"), str(FRAMES), cwd=WAKE)
     if "landscapes" in want or "hero" in want:
         for w in (180, 200):
             run("bun", "dev/showcase.ts", str(WORK / f"showcase{w}.bin"), str(FRAMES), str(w), cwd=WAKE)
@@ -427,4 +489,4 @@ if __name__ == "__main__":
     if "crew" in want:
         run("bun", "dev/crew-life.ts", str(WORK / "crew"), str(FRAMES), cwd=WAKE)
     for name in want:
-        {"dock": dock, "landscapes": landscapes, "hero": hero, "crew": crew}[name]()
+        {"dock": dock, "landscapes": landscapes, "hero": hero, "crew": crew, **NEW}[name]()

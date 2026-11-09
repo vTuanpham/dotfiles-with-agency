@@ -143,35 +143,65 @@ It is Claude-only; [Agent Bridge](../agent-bridge/README.md) and
 
 *Mochi, Tabby, Tuxedo and Bun (`/wake mochi <name>`), each catching a message with its own gadget. Actual renderer output.*
 
-A worker is a visitor with a life of its own. When a Bridge job starts it **arrives**, and when it finishes it
-stays a few seconds and **leaves**; each craft does both in its own way, and each landscape changes how:
+### The crew at work
 
-<img src="../docs/images/wake-passages.gif" alt="A grid of eight landscapes by four worker families. Each cell loops a worker arriving, working and leaving: the city dragon warps away in a streak of afterimages, harbor boats sail off to the horizon, mountain paragliders spiral up a thermal, countryside biplanes roar off, forest autogyros come apart into leaves, desert skiffs kick up dust and tundra ski planes lift off into aurora glitter. Claude's creature, agy's sparks and OpenCode's balloon end differently in each place too." width="860">
+Every worker is a small, slim design whose **structure itself moves**: a travelling wave, a wingbeat, billowing fabric,
+a breathing paper shade, not a fixed sprite with a blinking pixel. Each family has one idea, drawn differently in every
+place, and four classes that grow the same design (1 Haiku/Luna, 2 Sonnet/Terra, 3 Opus/Sol, 4 Fable/Astra; unknown models
+are class 2) by length, with escorts flying beside the biggest.
+
+<img src="../docs/images/wake-cast.gif" alt="A grid of eight landscapes by four worker families, each at class 4 and working: Codex builds a clockwork dragon over the city and a different slim plated machine in every other place, Claude is a living winged creature native to each place, agy is a luminous being whose body flows, and OpenCode hangs a garland of glowing paper lanterns shaped differently in each place." width="860">
+
+*Every family in every place at class 4, working. Actual renderer output.*
+
+| Family | The idea | By place |
+| --- | --- | --- |
+| Codex | A slim plated machine with an eye, a pulse of light running through it and a thrust that belongs to its body | City: a clockwork dragon whose wave shoots a blue shock arc from each low bend; harbor: a paddle launch; beach: a banner tug; mountains: a ridge glider; countryside: a crop biplane; forest: an autogyro; desert: a lateen hover yacht; tundra: a sprung ski plane |
+| Claude | A living winged creature native to the place, in the family's pink | A swift, tern, frigate, bearded vulture, swallow, moth-owl, hoopoe and ptarmigan, each with its own wingbeat, feather shimmer and call |
+| agy | Celestial light with a physical rhythm | A diamond kite, flame wisp, solar star, aurora curtain, twin lanterns, spore bell, mirage ring and a crowned spirit |
+| OpenCode | A garland of warm paper lanterns on a ribbon, longer with the class | The string hangs differently in each place: flat in the city, a sagging swag in the harbor, swinging on the beach, stepping down the slope in the mountains, an arch over the fields, drifting in the forest |
+
+Each design declares how it faces and turns (`hooks/landscapes/design.ts`): a dragon coils into a spiral and uncurls the
+other way, a plane, glider or bird banks, and a symmetric design never turns. Workers may pass through one another in the open
+sky (only Mochi and her laptop are hard boundaries), and they hide a little scenery when they must.
+
+### Messages
+
+When a worker has a message for Mochi it does not fly backward to say it. It **brakes to a hover** with momentum, its wings
+still beating, **turns to face her**, and only then **sends**: the call, the packet along the trail and the pulse on
+the sender. Mochi (or Tabby, Tuxedo, Bun) catches it with a gadget, the worker **turns back** to the course it is about to fly and
+gathers speed again. It works the same way for a Bridge worker and for a native Claude subagent (the engine's
+`session.send` reports every SendMessage), in both directions.
+
+<img src="../docs/images/wake-sequence.gif" alt="A worker in each of the four families, flying over the city, has a message for the root: it brakes to a hover, turns to face Mochi, sends it as a call and a packet that crosses to her, then turns back and sets off again." width="860">
+
+*Brake, turn, send, catch, turn back, resume, per family. Actual renderer output.*
+
+### Interrupts
+
+A worker whose turn is cut off by the root (a native subagent's aborted turn, or a Bridge job's interrupted turn) does not
+take a bow: a bolt strikes it, it flashes white, shudders and falls dissolving, shedding what it is made of.
+
+<img src="../docs/images/wake-strike.gif" alt="Four workers struck down when interrupted: a Codex dragon over the city sheds smoke and sparks, a Claude bird over the mountains loses feathers, an agy ribbon over the desert scatters embers and OpenCode's lanterns over the tundra tear into paper scraps and sparks." width="560">
+
+*Struck down, in each family's own debris. Actual renderer output.*
+
+### Arrivals and exits
+
+A worker is a visitor with a life of its own. It **arrives** when its job starts, or when a reply wakes it, and it **leaves the
+moment it is done**: a Bridge job parked waiting for the root leaves then, not only when it is finally retired; a native
+subagent leaves when it goes idle. Each craft does both in its own way, and each landscape changes how:
+
+<img src="../docs/images/wake-passages.gif" alt="A grid of eight landscapes by four worker families. Each cell loops a worker arriving, working and leaving: the city dragon warps away in a streak of afterimages, harbor boats sail off to the horizon, mountain gliders spiral up a thermal, countryside biplanes roar off, forest autogyros come apart into leaves, desert yachts kick up dust and tundra ski planes lift off into aurora glitter. Claude's creature, agy's light and OpenCode's lanterns end differently in each place too." width="860">
 
 *Every family in every place: arriving (2.4 s), working, then leaving (3.2 s). Actual renderer output.*
 
-| Family | How it leaves, by place (an arrival is the same thing played backwards) |
-| --- | --- |
-| Codex | City: the clockwork dragon rises, charges (a halo, a shake, going white) and hyperdrives off in a streak of light; it warps in the same way. Harbor: the boat sails for the horizon, its wake behind it. Beach: the banner plane roars off. Mountains: the paraglider spirals up a thermal. Countryside: the biplane climbs and roars off, smoking. Forest: the autogyro lifts and comes apart into leaves. Desert: the skiff speeds off in a plume of dust. Tundra: the ski plane runs, lifts off and turns to aurora glitter |
-| Claude | A different flight in each place: soars (city), skims the water (harbor), loops (beach), spirals up (mountains), swoops then climbs (countryside), flits into the canopy (forest), circles in the heat (desert), fades silent like an owl (tundra) |
-| agy | The sparks gather into one star, then end as a ring (city), ripples on the water (harbor), sun glints (beach), snow (mountains), wandering fireflies (countryside), fireflies going out one by one (forest), a dust devil (desert) or an aurora ribbon (tundra) |
-| OpenCode | The balloon rises, then pops into confetti (city), bubbles (beach), petals (countryside), leaves and spores (forest) or a flurry (tundra); in the harbor it drifts out to sea, in the mountains it is lost in cloud, in the desert it evaporates |
-
-Claude's workers, subagents included, are a creature that belongs to the place (`hooks/landscapes/creatures.ts`),
-the same four sizes everywhere:
-
-| Place | Creature | Place | Creature |
-| --- | --- | --- | --- |
-| City | pigeon | Forest | owl |
-| Harbor | gull | Desert | dragonfly |
-| Beach | kite on its string | Tundra | snowy owl |
-| Mountains | eagle | Countryside | butterfly |
-
-A subagent arrives when Claude spawns it and leaves when it finishes, like a Bridge job; it is kept in the
-scene only while it leaves, and nothing else (the crew rows, the counts, `/wake`) counts it. A worker already
-running when Wake starts does not replay its arrival. Each style is one small function in
-`hooks/exit-styles.ts`; `hooks/exits.ts` runs them (lifting a sprite's pixels off the finished scene, repainting
-the background and drawing it again moved, stretched or dissolving), so a new style or place is a single entry.
+Codex machines hyperdrive, sail, roar off or lift away in their place's way (the city dragon charges, shakes, goes white and
+warps off in a streak of light), Claude's creatures soar, skim, loop or fade, agy's light gathers and ends as a ring, ripples,
+glints or an aurora ribbon, and OpenCode's lanterns rise and burn out into petals, spores or a flurry. An arrival is the same
+thing played backwards. A subagent is kept in the scene only while it leaves, and nothing else (the crew rows, the counts,
+`/wake`) counts it; a worker already running when Wake starts does not replay its arrival. Each style is one small function in
+`hooks/exit-styles.ts`; `hooks/exits.ts` runs them, so a new style or place is a single entry.
 
 ### Crew and quota rows
 
@@ -194,45 +224,30 @@ logos appear in hover details only when the model ID identifies the maker.
 The [Claude Code documentation](https://code.claude.com/docs/en/sub-agents)
 describes its subagent workflow and status access.
 
-Classes are 1 Haiku/Luna, 2 Sonnet/Terra, 3 Opus/Sol and 4 Fable/Astra;
-unrecognized models fall back to class 2. Each harness has four scene sprites that grow with
-the class and keep their colour and character everywhere (agy light, OpenCode a festival
-balloon); Claude's workers (its subagents and Claude Bridge jobs) are the winged creature of each
-place, in the family's pink (a table below lists them), while Codex, the mechanical crew, builds what each place would
-build, every one a slim plated machine with an eye whose structure itself moves: over the city a clockwork dragon (a
-thin plated body with a pulse of light running down it, a small head, a booster jet at the tail and a blue shock arc
-dropping from each low bend of its wave; one design grown from a small whelp to a long Astra, with whelps flying alongside
-Sol and Astra), a paddle launch in the harbor, a banner tug on the beach, a ridge glider in the mountains, a crop biplane
-over the countryside, an autogyro in the forest, a lateen hover yacht in the desert and a sprung ski plane in the tundra
-(see `hooks/landscapes/craft.ts` and `CREW.md`). Each design says how it faces and turns (`hooks/landscapes/design.ts`): a
-dragon coils into a spiral and uncurls the other way, a plane or glider banks, a symmetric design never turns. A worker with a
-message for Mochi turns to her first and only then sends it, roaring it in its own voice. A worker whose turn is interrupted
-(a native subagent or a Bridge job) is struck down: a bolt, a white flash, then it falls dissolving and shedding its debris.
+A filling circle beside the harness mark shows the class (see [the crew at work](#the-crew-at-work) for the designs), and
+Claude's workers (its subagents and Claude Bridge jobs) are in the family's pink; the code is in `hooks/landscapes/`
+(`craft.ts`, `creatures.ts`, `agy.ts`, `lantern.ts`) and [`CREW.md`](.claude/mods/wake/hooks/landscapes/CREW.md) is the standard
+every new design is held to.
 
 **Crew life is data for one particle engine** (`hooks/landscapes/particles.ts`; the guide and recipes are in
 [`hooks/landscapes/CREW.md`](.claude/mods/wake/hooks/landscapes/CREW.md)). Every effect is an emitter or a light
 described in a table, stateless, so any frame draws alone and a trail is exactly the sprite's own path:
 
-- **They touch their place.** The city dragon trails data packets and burns a booster jet; an autogyro whirls the
-  forest's leaves, a duster throws chaff, a skiff sand, a ski plane snow;
-  boats leave a wake, bow spray and funnel smoke; feathers shake loose off wings; everything that flies throws a
-  shadow by day; the kite has a string to the sand.
-- **Dusk and night change the crew, where the design motivates it.** The dragon's head glows, planes and boats show
-  navigation lights, a balloon glows from inside like a lantern and lights the ground under it, agy's star lights its halo and the ground,
-  owls have eyeshine, the kite a lantern, and butterflies and dragonflies glitter.
+- **They touch their place.** The dragon trails data packets and a booster jet; an autogyro whirls the forest's leaves, a
+  duster throws chaff, a yacht sand, a ski plane snow; feathers shake loose off wings; everything that flies throws a shadow by day.
+- **Dusk and night change the crew, only where the design motivates it.** The dragon's head glows, planes show navigation
+  lights, lanterns glow from the flame and light the ground under them, agy's light lights its halo, owls have eyeshine.
 - **Wind is real.** Gusts cross the whole sky faster the harder it blows, each place blows its own things about (dust, spray,
   sand, snow, petals, leaves), and trails and smoke lean downwind.
 - **Motion follows what the worker really does.** A worker's pace is high just after an event and eases off over two
   minutes; waiting, paused and stalled workers are calm and a running one is never idle. A busy worker roams wider, its
-  gait quickens and its wings beat faster; a change of pace never jumps the sprite. Each family has a gait of its own
-  (Codex hovers and goes, Claude loops, agy orbits, OpenCode drifts), and an event hops the sprite and flares its effects.
+  gait quickens and its wings beat faster; a change of pace never jumps the sprite, and a worker that talks to the root
+  hovers for it. An event hops the sprite and flares its effects.
 - **Lanes, not slots.** The whole width of the sky is shared out among the flyers by size, so one worker roams the sky end to
-  end and four a quarter each. Only Mochi, her laptop and the other crew are obstacles; scenery is a preference, so a flyer
-  passes in front of buildings (and hides a few) when it must.
-- **Messages.** Each crew sends and receives in its own handcrafted way: the sender pulses as the comet leaves and the
-  receiver as it lands. Codex sends a widening shockwave ripple, Claude twinkling four-point stars, agy sparks that rise like
-  heat, OpenCode a burst of colour; Mochi and the other characters catch or send the signal with a gadget that pops out of
-  their head.
+  end and four a quarter each.
+- **Hand-made moments.** Arrivals, exits and message reactions are handcrafted pixels, not particles: the sender pulses as
+  the comet launches and the receiver as it lands (Codex a widening ripple, Claude twinkling stars, agy rising sparks, OpenCode
+  a burst of colour), and Mochi or another character catches it with a gadget that pops out of their head.
 
 A worker's arrival and exit run from the moment Wake sees it start or stop (Bridge's own times are already seconds old), and
 Wake looks at Bridge every five seconds while a worker runs and straight after an `agent-bridge start`, `resume`, `steer`,
@@ -240,7 +255,7 @@ Wake looks at Bridge every five seconds while a worker runs and straight after a
 A filling circle beside the harness mark (◔ ◑ ◕ ◉) shows the class, and effort is a
 five-bar signal icon (an image where the terminal shows images, ▁▃▄·· as text) for Bridge
 jobs and Claude subagents alike. Each row opens with the harness logo and, while the worker
-runs, the harness's own spinner (Codex orbits, agy twinkles, OpenCode's balloon bobs); the
+runs, the harness's own spinner (Codex orbits, agy twinkles, OpenCode's lantern flickers); the
 working headline's spinner follows the command: a shell spins, tests fill a gauge, edits grow a caret,
 reads fill a page, searches circle, agents turn a gem, the web turns a globe; thinking keeps the
 landscape's own.
