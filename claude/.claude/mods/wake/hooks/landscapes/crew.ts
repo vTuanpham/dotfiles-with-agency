@@ -373,7 +373,7 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
     // even the compact mark patrols the clear stretch beside it, so no crew member ever just stands there
     let reach = 0
     while (reach < (look.crewRoam ?? PATROL) && fits(-(reach + 1)) && fits(reach + 1)) reach++
-    const drift = Math.round(reach * roamShare(job.pace ?? 0.6) * gait(gaitKind(job, look), job.tier ?? 1, job.seed, job.phase ?? look.frame, reach).u)
+    const drift = Math.round(reach * roamShare(job.pace ?? 0.6) * gait(gaitKind(job, look), job.tier ?? 1, job.seed, job.route ?? job.phase ?? look.frame, reach).u)
     const lift = -Math.round(Math.min(1, job.lift ?? 0) * (py > 0 && fits(0) ? 1 : 0))
     anchors.push((py + 2 + lift) * c.W + px + 1 + drift)
     art.forEach((row, dy) => [...row].forEach((ch, dx) => { if (ch !== '.') zones.push({ x: px + dx - reach, y: py + dy, w: 1 + 2 * reach, h: 1 }) }))
