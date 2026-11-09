@@ -86,7 +86,7 @@ function tethers(state: BandState, now: number): NonNullable<SceneInput['peerEdg
     && peer.messageState !== undefined && now >= peer.lastAt && now - peer.lastAt <= 900_000)).map(job => job.id))
   const edges: NonNullable<SceneInput['peerEdges']> = [
     ...state.subagents.filter(agent => agent.leftAt === undefined).map(agent => ({ id: agent.id, family: 'claude' as const, name: agent.name ?? agent.description, what: `Claude subagent · ${agent.type}`, activeAt: undefined as number | undefined })),
-    ...state.chips.filter(job => job.running && job.id && !talking.has(job.id)).map(job => ({
+    ...state.chips.filter(job => isWorking(job) && job.id && !talking.has(job.id)).map(job => ({
       id: job.id!, family: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const), name: job.title ?? job.name, what: `Bridge job · ${job.backend}`, activeAt: job.lastEventAt,
     })),
   ].slice(0, 4).map(worker => ({
@@ -136,17 +136,25 @@ const SEEN_LATE_MS = 20_000
  * The passage stamps for a worker in this scan: `old` is the same worker's chip from the scan before (absent when new to
  * this view). A start or a resume is a worker found running that was not; a stop is one found stopped that was running.
  */
-export function passageStamps(old: Pick<WakeChip, 'running' | 'arrivedAt' | 'leftAt'> | undefined, job: { running: boolean; startedAt?: number; finishedAt?: number }, now: number): Pick<WakeChip, 'arrivedAt' | 'leftAt'> {
+export function passageStamps(old: Pick<WakeChip, 'running' | 'waitingForRoot' | 'state' | 'arrivedAt' | 'leftAt'> | undefined, job: { running: boolean; waitingForRoot?: boolean; state?: string; startedAt?: number; finishedAt?: number }, now: number): Pick<WakeChip, 'arrivedAt' | 'leftAt'> {
   const recent = (at: number | undefined) => at !== undefined && now >= at && now - at < SEEN_LATE_MS
-  if (job.running) return { arrivedAt: old ? (old.running ? old.arrivedAt : now) : recent(job.startedAt) ? now : undefined }
-  return { leftAt: old ? (old.running ? now : old.leftAt) : recent(job.finishedAt) ? now : undefined }
+  if (isWorking(job)) return { arrivedAt: old ? (isWorking(old) ? old.arrivedAt : now) : recent(job.startedAt) ? now : undefined }
+  return { leftAt: old ? (isWorking(old) ? now : old.leftAt) : recent(job.finishedAt) ? now : undefined }
 }
 
-/** How long ago a worker that is no longer running was seen to stop, while it is still playing its exit (see exits.ts). */
-const leavingFor = (job: WakeChip, now: number) => (job.running ? undefined : sinceIn(job.leftAt, now, EXIT_MS))
+/**
+ * Whether a worker is at work, which is what is on the scene: running, and not parked waiting for the root. A worker that has
+ * finished its report is DONE even while its runner stays alive for a reply (a Bridge job waiting for the root), so its exit
+ * plays when it is done, not only when it is finally retired or stopped; a reply that wakes it plays its arrival again.
+ */
+export const isWorking = (job: { running: boolean; waitingForRoot?: boolean; state?: string }): boolean =>
+  job.running && !job.waitingForRoot && job.state !== 'waiting_for_root'
 
-/** How long ago a running worker was seen to start, while it is still arriving (exits.ts). */
-const arrivingFor = (job: WakeChip, now: number) => (job.running ? sinceIn(job.arrivedAt, now, ARRIVE_MS) : undefined)
+/** How long ago a worker that is no longer at work was seen to stop, while it is still playing its exit (see exits.ts). */
+const leavingFor = (job: WakeChip, now: number) => (isWorking(job) ? undefined : sinceIn(job.leftAt, now, EXIT_MS))
+
+/** How long ago a worker at work was seen to start, while it is still arriving (exits.ts). */
+const arrivingFor = (job: WakeChip, now: number) => (isWorking(job) ? sinceIn(job.arrivedAt, now, ARRIVE_MS) : undefined)
 
 /** Each worker's gait clock: it runs on from one paint to the next, faster when the worker is busier (see gait.ts). */
 const gaitClock = new PhaseClock()
@@ -240,14 +248,14 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
           family: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const),
         }
       })), ...tethers(state, now), ...nativeEdges(state, now)],
-    jobs: state.chips.filter(job => job.running || leavingFor(job, now) !== undefined).map(job => {
+    jobs: state.chips.filter(job => isWorking(job) || leavingFor(job, now) !== undefined).map(job => {
       const peer = [...(job.peers ?? [])].filter(p => now - p.lastAt <= 900_000 && now >= p.lastAt).sort((a, b) => b.lastAt - a.lastAt)[0]
       return {
       leaving: leavingFor(job, now),
       struck: job.interrupted || undefined, // its last turn was cut off: it leaves by being struck down
       arriving: arrivingFor(job, now),
       lift: job.id ? lifts.get(job.id) : undefined,
-      ...gaitOf(job.id ?? `${job.owner}/${job.name}`, job.running ? paceOf(job, now) : 0.3, now, routeFor(job, now)),
+      ...gaitOf(job.id ?? `${job.owner}/${job.name}`, isWorking(job) ? paceOf(job, now) : 0.3, now, routeFor(job, now)),
       isStale: job.isStale, seed: seedOf(job.name), tier: modelTier(job.backend ?? 'codex', job.model),
       kind: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const), maker: job.maker,
       signal: !!peer && peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt < 2_000 && Math.floor((now - peer.observedAt) / 400) % 2 === 1,
