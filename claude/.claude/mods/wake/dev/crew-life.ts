@@ -15,7 +15,7 @@ const base = (width: number, preset: SceneInput['preset']): SceneInput => ({
   width, frame: 0, hour: 14, sun: { rise: 6, set: 18 }, moonPhase: 0.3, season: 'summer', snowy: false,
   weather: { cloud: 0.2, rain: 0, snow: 0, fog: false, thunder: false, wind: 8 },
   preset, seed: 12345, turns: [], live: null, mood: 'idle', plan: null, effect: null, agents: [], jobs: [],
-})
+});
 
 // the characters: a worker keeps messaging the root, so each character's gadget pops out to catch it again and again
 {

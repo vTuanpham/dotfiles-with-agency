@@ -152,19 +152,19 @@ a breathing paper shade, not a fixed sprite with a blinking pixel. Each family h
 place, and four classes that grow the same design (1 Haiku/Luna, 2 Sonnet/Terra, 3 Opus/Sol, 4 Fable/Astra; unknown models
 are class 2) by length, with escorts flying beside the biggest.
 
-<img src="../docs/images/wake-cast.gif" alt="A grid of eight landscapes by four worker families, each at class 4 and working: Codex builds a clockwork dragon over the city and a different slim plated machine in every other place, Claude is a living winged creature native to each place, agy is a luminous being whose body flows, and OpenCode hangs a garland of glowing paper lanterns shaped differently in each place." width="860">
+<img src="../docs/images/wake-cast.gif" alt="Eight landscapes and four worker families at class 4: clockwork machines, living creatures, constellations and lit paper crafts." width="860">
 
 *Every family in every place at class 4, working. Actual renderer output.*
 
 | Family | The idea | By place |
 | --- | --- | --- |
-| Codex | A slim plated machine with an eye, a pulse of light running through it and a thrust that belongs to its body | City: a clockwork dragon whose wave shoots a blue shock arc from each low bend; harbor: a paddle launch; beach: a banner tug; mountains: a ridge glider; countryside: a crop biplane; forest: an autogyro; desert: a lateen hover yacht; tundra: a sprung ski plane |
-| Claude | A living winged creature native to the place, in the family's pink | A swift, tern, frigate, bearded vulture, swallow, moth-owl, hoopoe and ptarmigan, each with its own wingbeat, feather shimmer and call |
-| agy | Celestial light with a physical rhythm | A diamond kite, flame wisp, solar star, aurora curtain, twin lanterns, spore bell, mirage ring and a crowned spirit |
-| OpenCode | A garland of warm paper lanterns on a ribbon, longer with the class | The string hangs differently in each place: flat in the city, a sagging swag in the harbor, swinging on the beach, stepping down the slope in the mountains, an arch over the fields, drifting in the forest |
+| Codex | Mint clockwork with a glass eye and gear | Dragon, whale, jellyfish, airship, bee, spider, scarab and narwhal |
+| Claude | Living winged creatures in the family's pink | Pigeon, pelican, flamingo, eagle, butterfly, owl, dragonfly and puffin |
+| agy | Constellations with a moving pulse of light | Crown, sail, starfish, condor, plough, tree, scorpion and aurora arch |
+| OpenCode | Paper and cloth with a warm window | Crane, carp streamer, kite, sky lantern, balloon, lantern string, flying carpet and paper star |
 
 Each design declares how it faces and turns (`hooks/landscapes/design.ts`): a dragon coils into a spiral and uncurls the
-other way, a plane, glider or bird banks, and a symmetric design never turns. Workers may pass through one another in the open
+other way, a headed craft or bird banks, and a symmetric design never turns. Workers may pass through one another in the open
 sky (only Mochi and her laptop are hard boundaries), and they hide a little scenery when they must.
 
 ### Messages
@@ -184,7 +184,7 @@ gathers speed again. It works the same way for a Bridge worker and for a native 
 A worker whose turn is cut off by the root (a native subagent's aborted turn, or a Bridge job's interrupted turn) does not
 take a bow: a bolt strikes it, it flashes white, shudders and falls dissolving, shedding what it is made of.
 
-<img src="../docs/images/wake-strike.gif" alt="Four workers struck down when interrupted: a Codex dragon over the city sheds smoke and sparks, a Claude bird over the mountains loses feathers, an agy ribbon over the desert scatters embers and OpenCode's lanterns over the tundra tear into paper scraps and sparks." width="560">
+<img src="../docs/images/wake-strike.gif" alt="Four workers struck down: a Codex dragon sheds smoke and sparks, a Claude eagle loses feathers, an agy scorpion scatters light and an OpenCode paper star tears into scraps and sparks." width="560">
 
 *Struck down, in each family's own debris. Actual renderer output.*
 
@@ -194,7 +194,7 @@ A worker is a visitor with a life of its own. It **arrives** when its job starts
 moment it is done**: a Bridge job parked waiting for the root leaves then, not only when it is finally retired; a native
 subagent leaves when it goes idle. Each craft does both in its own way, and each landscape changes how:
 
-<img src="../docs/images/wake-passages.gif" alt="A grid of eight landscapes by four worker families. Each cell loops a worker arriving, working and leaving: the city dragon warps away in a streak of afterimages, harbor boats sail off to the horizon, mountain gliders spiral up a thermal, countryside biplanes roar off, forest autogyros come apart into leaves, desert yachts kick up dust and tundra ski planes lift off into aurora glitter. Claude's creature, agy's light and OpenCode's lanterns end differently in each place too." width="860">
+<img src="../docs/images/wake-passages.gif" alt="Eight landscapes and four worker families, each arriving, working and leaving in its own way." width="860">
 
 *Every family in every place: arriving (2.4 s), working, then leaving (3.2 s). Actual renderer output.*
 
