@@ -140,16 +140,16 @@ const AUTOMATA: Record<Exclude<WakePreset, 'city'>, Machine> = {
       ['.....k...k.....', '....lllllll....', '...asaWgasad...', '....dkpppkd....', '....kd.d.dk....', '....k..d..k....', '...k...d...k...'],
     ],
   } },
-  desert: { name: 'racer', strokes: 4, art: { // a pod racer: two engines out in front with a spark arcing between them, cables, and the pilot's pod towed behind
-    1: [['sk...', 'f.Wga', 'sk...'], ['sk...', '.fWga', 'sk...']],
-    2: [['.......', 'sakf...', '.f.dWga', 'sak....', '.......'], ['.......', 'sak....', 'f..dWga', 'sakf...', '.......']],
+  desert: { name: 'sun skiff', strokes: 4, art: { // a long low hull under a tall sail of solar glass that shimmers, a pennant astern, a jet that stutters
+    1: [['.lg.k', 'sWgaf', '.dd..'], ['.lp.k', 'sWgdf', '.dd..']],
+    2: [['..l....', '.lgl.p.', '..k..k.', 'sWgaadf', '.dddd..'], ['..l....', '.lpl..p', '..k..k.', 'sWgaaff', '.dddd..']],
     3: [
-      ['.laad......', 'sakadf..p..', '..f..ddlWga', '.laad......', 'sakad......', '...........'],
-      ['.laad......', 'sakad...p..', '.f...ddlWga', '.laad......', 'sakadf.....', '...........'],
+      ['....l......', '...lgl.....', '..lgpgl.p..', '....k...k..', 'sWgaaaaaadf', '.dddkdddd..'],
+      ['....l......', '...lpl.....', '..lpgpl..p.', '....k...k..', 'sWgaaaaaaff', '.dddkdddd..'],
     ],
     4: [
-      ['...............', '.llaaad........', 'sakaaadf....p..', '...f...ddddlWga', '.llaaad........', 'sakaaad........', '...............'],
-      ['...............', '.llaaad........', 'sakaaad.....p..', '..f....ddddlWga', '.llaaad........', 'sakaaadf.......', '...............'],
+      ['......l........', '.....lgl.......', '....lgpgl......', '...lgpgpgl..p..', '......k.....k..', 'sWgaaaaaaaaaadf', '..ddddkdddkdd..'],
+      ['......l........', '.....lpl.......', '....lpgpl......', '...lpgpgpl...p.', '......k.....k..', 'sWgaaaaaaaaaaff', '..ddddkdddkdd..'],
     ],
   } },
   tundra: { name: 'snowcat', strokes: 2, art: { // a tracked crawler: a plough, a windscreen, a beacon that turns on its roof, and tracks whose wheels roll
@@ -238,11 +238,11 @@ export const turnPose: Partial<Record<WakePreset, Record<Tier, readonly string[]
     3: ['....lll....', '...sWgWs...', '....dkd....', '....d.d....', '....d.d....', '...dd.dd...'],
     4: ['...............', '.....lllll.....', '....saWgWas....', '.....ddkdd.....', '.....d...d.....', '.....d...d.....', '....dd...dd....'],
   },
-  desert: { // the racer's two intakes with the spark between them and the pod behind
-    1: ['l...l', 'kfWgk', 'd...d'],
-    2: ['.......', 'll...ll', 'kafWgak', 'dd...dd', '.......'],
-    3: ['...........', '.lal...lal.', '.akafWgfaka', '.dad...dad.', '...........', '...........'],
-    4: ['...............', '...............', '..lal.....lal..', '..akaf.Wg.faka.', '..dad.....dad..', '...............', '...............'],
+  desert: { // the skiff bow on: its sail turned edge to you, one bright line above the prow and its two lamps
+    1: ['..g..', 'sWgWs', '.dkd.'],
+    2: ['...l...', '...g...', '...k...', '.sWgWs.', '..dkd..'],
+    3: ['.....l.....', '.....g.....', '.....p.....', '.....k.....', '...sWgWs...', '....dkd....'],
+    4: ['.......l.......', '.......g.......', '.......p.......', '.......g.......', '.......k.......', '....saWgWas....', '.....ddkdd.....'],
   },
   tundra: { // the snowcat's wide cab, a headlamp at each side, the plough right across, a track at each end
     1: ['..r..', 'sWgWs', 'kpppk'],
