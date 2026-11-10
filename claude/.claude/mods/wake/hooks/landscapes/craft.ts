@@ -1,5 +1,6 @@
 import type { WakePreset } from '../../types'
 import type { Tier } from './design'
+import { flex } from './flex'
 
 // Codex is the clockwork crew: every place has its own automaton, built of the same plated metal with a glass eye and a gear.
 // Over the city the clockwork dragon (a generator, see `dragon` below: one design that grows from a small, slim whelp to a long
@@ -166,11 +167,22 @@ const AUTOMATA: Record<Exclude<WakePreset, 'city'>, Machine> = {
   } },
 }
 
+/** What runs on a machine beat by beat, over its two drawn poses: the saucer's rim lamps chase each other all the way round
+ *  (one lamp in four lit, stepping a cell each beat), and the skiff's pennant streams on the wind. */
+const LIVE: Partial<Record<WakePreset, (rows: readonly string[], beat: number) => readonly string[]>> = {
+  beach: (rows, beat) => {
+    const rim = rows.reduce((best, row, y) => [...row].filter(c => c === 'k').length > [...rows[best]!].filter(c => c === 'k').length ? y : best, 0)
+    return rows.map((row, y) => y !== rim ? row : [...row].map((c, x) => c === 's' || c === 'a' ? ((x + beat) % 4 === 0 ? 's' : 'a') : c).join(''))
+  },
+  desert: (rows, beat) => flex(rows, { from: 0.72, amp: 1, wave: 0.9, rows: [0, 0.5] }, beat, BEATS),
+}
+
 /** A machine's physical push point and strength come from the same pose as its plates. Kept alongside the drawn frame. */
 type MachineFrame = { rows: readonly string[]; push: { x: number; y: number; force: number }; lamp?: readonly [number, number] }
 function machine(place: Exclude<WakePreset, 'city'>, tier: Tier, beat: number): MachineFrame {
   const { w, h } = MACHINE_SIZE[tier], kind = AUTOMATA[place], down = Math.floor(beat * kind.strokes / 4) % 2
-  const rows = Array.from({ length: h }, (_, y) => (kind.art[tier][down]![y] ?? '').padEnd(w, '.').slice(0, w))
+  const drawn = Array.from({ length: h }, (_, y) => (kind.art[tier][down]![y] ?? '').padEnd(w, '.').slice(0, w))
+  const rows = LIVE[place]?.(drawn, beat) ?? drawn
   const cells = rows.flatMap((row, y) => [...row].flatMap((ink, x) => ink === '.' ? [] : [[x, y, ink] as const]))
   // It pushes from the lowest cell of its trailing half (a fluke, a leg, a propeller); its lamp, if it carries one, is its first.
   const low = cells.filter(([x]) => x >= w >> 1).reduce((a, b) => b[1] > a[1] || b[1] === a[1] && b[0] > a[0] ? b : a)
