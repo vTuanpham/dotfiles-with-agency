@@ -949,7 +949,7 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
         }
         for (let at = 0; at < length; at++) if (at <= head && t <= PACKET_RUN_MS) {
           const distance = Math.floor(head) - at
-          const glow = style === 'packet' ? distance === 0 ? 1 : distance <= 4 ? 0.78 - distance * 0.1 : 0 : style === 'song' ? distance === 0 || distance === 4 || distance === 8 ? 1 : 0 : style === 'ember' ? distance === 0 ? 1 : distance === 1 ? 0.65 : 0 : distance === 0 ? 1 : distance <= 6 ? 0.85 - distance * 0.12 : 0
+          const glow = style === 'packet' ? distance === 0 ? 1 : distance <= 4 ? 0.78 - distance * 0.1 : 0 : style === 'song' ? distance === 0 || distance === 4 || distance === 8 ? 1 : 0 : style === 'ember' ? distance === 0 ? 1 : distance <= 4 ? 0.75 - distance * 0.14 : 0 : distance === 0 ? 1 : distance <= 6 ? 0.85 - distance * 0.12 : 0
           light[at] = Math.max(light[at]!, glow)
         }
         if (head > length - 1) landing = Math.max(landing, Math.exp(-(head - (length - 1)) / tail))
@@ -964,6 +964,16 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
         const ink = glow === 1 ? style === 'ember' ? P.yellow : P.white : style === 'ember' ? Math.floor((edge.arriving ?? 0) / 150) % 2 ? P.red : P.peach : style === 'starfall' ? P.lavender : accent
         const color = mix(base, ink, Math.min(1, Math.max(k % 3 === 0 ? ember : 0, glow * (1 + NIGHT_GAIN * night))))
         if (color !== base) c.set(x, y, color)
+        if (glow === 1 && style === 'ember') {
+          // A live coal: a white-hot heart in its flame, and sparks that drop away behind it and go out.
+          const tick = Math.floor((edge.arriving ?? 0) / 90)
+          c.set(x, y, mix(P.yellow, P.white, .6))
+          for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(x + ox, y + oy, P.yellow, .55)
+          for (const [n, drop] of [[3, 1], [5, 2], [8, 3]] as const) if (k >= n && (tick + n) % 3) {
+            const cell = path[k - n]!
+            c.glow(cell % c.W, Math.floor(cell / c.W) + drop, drop === 1 ? P.yellow : drop === 2 ? P.peach : P.red, .8 - drop * .18)
+          }
+        }
         if (glow === 1 && style === 'packet') {
           const previous = path[Math.max(0, k - 1)]!, dx = Math.sign(x - previous % c.W), dy = Math.sign(y - Math.floor(previous / c.W))
           if (missile) {
