@@ -217,4 +217,4 @@ export const turnPose: Partial<Record<WakePreset, Record<Tier, readonly string[]
 }
 
 /** At night the lit edge of the paper glows with its flame. */
-export const emissive = 'l'
+export const emissive = 'la' // the paper is lit from inside: only its shade and trim go dark
