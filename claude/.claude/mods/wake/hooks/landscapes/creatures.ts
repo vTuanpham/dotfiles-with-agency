@@ -28,22 +28,28 @@ const CREATURES: Record<WakePreset, Creature> = {
       ['...............', '.sa............', 'Wkaaaaaaa....k.', '.aaaaadaaaaadk.', '..llldadaddd...', '.....ldad......', '......ld.......'],
     ],
   } },
-  harbor: { name: 'pelican', strokes: 2, face: 'left', art: { // a great bill with its yellow pouch, on slow heavy wings
-    1: [['..l..', 'Wsaad', '.sd..'], ['.....', 'Wsaad', '.sld.']],
-    2: [['...ll..', '.s.la..', 'WWaaaad', '.sdadd.', '.......'], ['.......', '.s.....', 'WWaaaad', '.sdlad.', '...ld..']],
-    3: [['......kk...', '.sa..lka...', 'WWaa.laa...', '.ssaaaaaaak', '..llaaadd..', '....lld....'], ['...........', '.sa........', 'WWaaaaaaa..', '.ssaaaaaaak', '..lldaadd..', '....lkk....']],
-    4: [ // black wing tips and a pale breast
-      ['.........kk....', '........lka....', '..sa...llaa....', 'WWWaa.laaaa....', '.sssaaaaaaaaak.', '...llaaaaaadd..', '.....llldd.....'],
-      ['...............', '..sa...........', 'WWWaaaaaaaa....', '.sssaaaaaaaaak.', '...lldlaaadd...', '.....llak......', '......lkk......'],
+  harbor: { name: 'dolphin', strokes: 1, face: 'left', art: { // it leaps: arched up out of the water, then nose down and fluke high
+    1: [['kaad.', 'lW.ad', '...d.'], ['...dd', 'kaaa.', 'lW...']],
+    2: [['...d...', 'kaaaaa.', 'lWWl.ad', '....d.d', '.......'], ['....d.d', '...d.ad', 'kaaaaa.', 'lWWl...', '.......']],
+    3: [
+      ['.....d.....', '..aaaaaa...', 'akaaaaaaa..', 'lWWWl.daa..', '........ad.', '.......d.dd'],
+      ['.......d.dd', '.....d..ad.', '..aaaaaaa..', 'akaaaaaa...', 'lWWWWl.....', '...........'],
+    ],
+    4: [ // a dark eye, a pale beak and belly, a dorsal fin, a notched fluke
+      ['.......dd......', '...aaaaaaaa....', '.akaaaaaaaaaa..', 'llWWWWl..daaa..', '...........aad.', '............ad.', '...........d.dd'],
+      ['...........d.dd', '............ad.', '.......dd..aad.', '...aaaaaaaaaa..', '.akaaaaaaaaa...', 'llWWWWWl.......', '...............'],
     ],
   } },
-  beach: { name: 'flamingo', strokes: 2, face: 'left', art: { // all neck and trailing legs, with a bent bill and black wing tips
-    1: [['..l..', 'Waadd', 'k....'], ['.....', 'Waadd', 'k.l..']],
-    2: [['...kl..', '.s.la..', 'Waaaadd', 'k..d...', '.......'], ['.......', '.s.....', 'Waaaadd', 'k..la..', '...lk..']],
-    3: [['......kl...', '.s...lla...', 'Waaaaaaaddd', 'k...ddaa..d', '...........', '...........'], ['...........', '.s.........', 'Waaaaaaaddd', 'k...dlaa..d', '.....lla...', '......lk...']],
+  beach: { name: 'flamingo', strokes: 2, face: 'left', art: { // it wades: an S of neck, a bent black-tipped bill, one leg tucked, then a step and a bob of the head
+    1: [['sa...', '.aad.', '..r..'], ['sa...', '.aad.', '.r.r.']],
+    2: [['.sa....', 'k..a...', '..aalk.', '...rr..', '...r...'], ['sa.....', 'k..a...', '..aalk.', '..r.r..', '..r.r..']],
+    3: [
+      ['..laa......', '.ks..a.....', '....aalak..', '.....aadd..', '.....r.rr..', '.....r.....'],
+      ['.laa.......', 'ks..a......', '....aalak..', '.....aadd..', '....r..r...', '...rr..r...'],
+    ],
     4: [
-      ['........kl.....', '.......lla.....', '.s.....laa.....', 'Waaaaaaaaaadddd', 'k.....ddaa....d', '...............', '...............'],
-      ['...............', '.s.............', 'Waaaaaaaaaadddd', 'k.....dlaa....d', '.......lla.....', '........lk.....', '...............'],
+      ['...laa.........', '..ks..a........', '......a........', '.....aalaaak...', '......aaaadd...', '.......r.rr....', '.......r.......'],
+      ['..laa..........', '.ks..a.........', '......a........', '.....aalaaak...', '......aaaadd...', '......r..r.....', '.....rr..r.....'],
     ],
   } },
   mountains: { name: 'eagle', strokes: 1, face: 'left', art: { // white head and tail, a yellow bill, broad fingered wings held out to soar
@@ -73,13 +79,16 @@ const CREATURES: Record<WakePreset, Creature> = {
       ['.....k...k.....', '.....aaaaa.....', '..lllasasalll..', '.laaaaaWaaaaal.', 'laa.dalllad.aal', 'd.d..aldla..d.d', '......k.k......'],
     ],
   } },
-  desert: { name: 'dragonfly', strokes: 6, face: 'left', art: { // a long jointed needle under four whirring glass wings
-    1: [['.W.W.', 'sakad', '.....'], ['.....', 'sakad', '.W.W.']],
-    2: [['.W..W..', '..ll...', 'saakdad', '.......', '.......'], ['.......', '.......', 'saakdad', '..ll...', '.W..W..']],
-    3: [['..W....W...', '...l..l....', 'ssaakadadad', '.s.........', '...........', '...........'], ['...........', '...........', 'ssaakadadad', '.s.l..l....', '..W....W...', '...........']],
+  desert: { name: 'fox', strokes: 2, face: 'left', art: { // a fennec at a trot: great dark-tipped ears, an amber eye, a pale chest, a brush with a white tip
+    1: [['d..aW', 'saaa.', '.d.d.'], ['d..aW', 'saaa.', 'd...d']],
+    2: [['d.d....', 'ksa..aW', '.aaaaa.', '.d.d.d.', '.......'], ['d.d....', 'ksa..aW', '.aaaaa.', '..d.d..', '.......']],
+    3: [
+      ['.d.d.......', '.a.a....aa.', 'kasaa..aaWW', '.laaaaaaad.', '..d.d..d.d.', '.d...dd...d'],
+      ['.d.d.......', '.a.a....aa.', 'kasaa..aaWW', '.laaaaaaad.', '...dd..dd..', '...d...d...'],
+    ],
     4: [
-      ['..WW.....WW....', '...ll...ll.....', '....ll.ll......', 'ssaaakkadadadad', '.s.............', '...............', '...............'],
-      ['...............', '...............', '...............', 'ssaaakkadadadad', '.s..ll.ll......', '...ll...ll.....', '..WW.....WW....'],
+      ['..d.d..........', '..a.a.......aa.', 'kaasaaa...aaaWW', '.llaaaaaaaaaad.', '...laaaaaaad...', '...d.d...d.d...', '..d...d.d...d..'],
+      ['..d.d..........', '..a.a.......aa.', 'kaasaaa...aaaWW', '.llaaaaaaaaaad.', '...laaaaaaad...', '....dd....dd...', '.....d....d....'],
     ],
   } },
   tundra: { name: 'puffin', strokes: 6, face: 'left', art: { // stout, dark-backed and white-fronted, a bright bill and feet, wings a blur

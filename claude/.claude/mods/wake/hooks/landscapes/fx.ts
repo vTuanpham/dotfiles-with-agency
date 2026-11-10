@@ -128,15 +128,15 @@ const SHED = (colors: readonly number[], extra: Partial<Emitter> = {}): Stream =
 const CLAUDE: Partial<Record<WakePreset | 'any', Cell>> = {
   any: { lights: SHADOW, streams: [FEATHER] },
   city: { talking: CALL(11), streams: [SHED([P.white, P.overlay1]), ...BIRD_WASH(P.overlay1)] }, // the pigeon's grey down
-  harbor: { talking: CALL(8), streams: [SHED([P.sky, P.white], { life: 0.7, angle: [DOWN - 0.15, DOWN + 0.15], gravity: 7, swirl: 0 }), ...BIRD_WASH(P.sky)] }, // water dripping from the pelican's pouch
-  beach: { talking: CALL(9, 0.06), streams: [SHED([P.pink, P.white], { gravity: 0.6, swirl: 1.2 }), ...BIRD_WASH(P.sand)] }, // the flamingo's rose feathers
+  harbor: { talking: CALL(8), streams: [SHED([P.sky, P.white], { count: 9, life: 0.7, speed: [1, 3], angle: [UP - 0.7, UP + 0.7], gravity: 7, swirl: 0 })] }, // spray thrown up by the dolphin's fluke
+  beach: { talking: CALL(9, 0.06), streams: [SHED([P.sky, P.white], { count: 4, life: 0.6, speed: [0.5, 1.5], angle: [UP - 0.8, UP + 0.8], gravity: 5, swirl: 0 })] }, // splashes round the flamingo's legs
   mountains: { talking: CALL(6, 0.08), streams: [SHED([P.white, P.snow], { count: 5, life: 0.4, speed: [3, 6], angle: [-0.1, 0.1], gravity: 0, swirl: 0, alpha: 0.35, streak: 2 }), ...BIRD_WASH(P.snow)] }, // the air streaming off the eagle's wingtip
   countryside: { talking: CALL(12), streams: [SHED([P.yellow, P.white], { count: 9, speed: [0.1, 0.5], angle: [0, TAU], gravity: 0.3, envelope: 'twinkle' }), ...BIRD_WASH(P.yellow)] }, // pollen off the butterfly's wings
   forest: {
     talking: CALL(4, 0.12), streams: [SHED([P.leaf, P.yellow], { count: 5, gravity: 1, swirl: 1.2 }), ...BIRD_WASH(P.leaf)], // leaves stirred by the owl
     lights: [-1, 1].map(dx => ({ at: 'nose' as const, dx, dy: -1, light: { shape: 'halo' as const, color: P.yellow, alpha: 0.45, reach: 0, from: 0.05 } })), // its eyes shine in the dark
   },
-  desert: { talking: CALL(5, 0.1), streams: [SHED([P.sky, P.teal, P.white], { count: 6, life: 0.6, speed: [0, 0.3], angle: [0, TAU], gravity: 0, swirl: 0.2, envelope: 'twinkle' }), ...BIRD_WASH(P.sand)] }, // glints off the dragonfly's glass wings
+  desert: { talking: CALL(5, 0.1), streams: [SHED([P.sand, P.peach], { count: 6, life: 0.6, speed: [0.5, 2], angle: [UP - 0.2, UP + 0.9], gravity: 4, swirl: 0 })] }, // sand kicked up by the fox's paws
   tundra: { talking: CALL(7, 0.06), streams: [SHED([P.snow, P.white], { count: 8, gravity: 0.8, swirl: 1 }), ...BIRD_WASH(P.snow)] }, // a flurry behind the puffin
 }
 
@@ -190,10 +190,10 @@ const OPENCODE: Partial<Record<WakePreset | 'any', Cell>> = {
   },
   // What each craft adds of its own, from the same flame.
   city: { streams: [PAPER([P.white, P.sky])] }, // scraps of folded paper off the crane
-  harbor: { streams: [PAPER([P.sky, P.white], { gravity: 3 })] }, // spray off the carp
+  harbor: { streams: [PAPER([P.sky, P.white], { gravity: 3, angle: [-0.3, 0.3], speed: [0.5, 1.5], envelope: 'fade' })] }, // ripples trailing the paper boat
   beach: { streams: [PAPER([P.peach, P.yellow], { swirl: 1.2 })] }, // ribbon ends off the kite's tail
   mountains: { streams: [PAPER([P.overlay1, P.surface2], { count: 5, life: 1.6, angle: [UP - 0.3, UP + 0.3], gravity: -0.6, alpha: 0.35, envelope: 'fade' })] }, // the lantern's thin smoke
-  countryside: { streams: [PAPER([P.yellow, P.white], { count: 4, life: 0.4, speed: [2, 4], angle: [UP - 0.2, UP + 0.2], gravity: 0, envelope: 'fade', streak: 1 })] }, // the burner's jet
+  countryside: { streams: [PAPER([P.peach, P.white], { count: 5, speed: [1, 2.5], angle: [-0.3, 0.3], gravity: 0.4, swirl: 0.8 })] }, // threads of cloth streaming off the carp's tail
   forest: { streams: [PAPER([P.yellow, P.green], { life: 2, swirl: 1.6, gravity: 0 })] }, // fireflies drawn to the lanterns
   desert: { streams: [PAPER([P.yellow, P.peach, P.mauve], { count: 9, gravity: 0.5 })] }, // the carpet's trail of magic dust
   tundra: { streams: [PAPER([P.snow, P.white, P.sky], { gravity: 0.6, swirl: 1 })] }, // frost glittering off the star

@@ -41,37 +41,40 @@ export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
   },
   // Birds in profile cruise and bank; the butterfly and the owl are seen face on, so they have no heading and wander.
   claude: {
-    city: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
-    harbor: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
-    beach: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
-    mountains: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
-    countryside: { facing: null, cruise: false, turn: 'none', escorts: flock },
-    forest: { facing: null, cruise: false, turn: 'none', escorts: flock },
-    desert: { facing: 'left', cruise: false, turn: 'bank', escorts: flock },
-    tundra: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
+    // Birds that flock keep a follower at the top classes; a second dolphin, flamingo, owl or fox would read as another worker.
+    city: { facing: 'left', cruise: true, turn: 'bank', escorts: flock }, // pigeons flock
+    harbor: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the dolphin
+    beach: { facing: 'left', cruise: false, turn: 'bank', escorts: {} }, // the flamingo wades
+    mountains: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the eagle soars alone
+    countryside: { facing: null, cruise: false, turn: 'none', escorts: flock }, // butterflies go in pairs
+    forest: { facing: null, cruise: false, turn: 'none', escorts: {} }, // the owl
+    desert: { facing: 'left', cruise: false, turn: 'bank', escorts: {} }, // the fox
+    tundra: { facing: 'left', cruise: true, turn: 'bank', escorts: flock }, // puffins flock
   },
   // The coil is the dragon's turn alone. Figures with a front (the condor's arrowhead, the plough, the scorpion) bank; the rest
   // are the same from either side and simply drift.
   agy: {
-    city: { facing: null, cruise: false, turn: 'none', escorts: wingmen },
-    harbor: { facing: null, cruise: false, turn: 'none', escorts: wingmen },
-    beach: { facing: null, cruise: false, turn: 'none', escorts: wingmen },
-    mountains: { facing: 'left', cruise: true, turn: 'bank', escorts: wingmen },
-    countryside: { facing: 'left', cruise: true, turn: 'bank', escorts: wingmen },
-    forest: { facing: null, cruise: false, turn: 'none', escorts: wingmen },
-    desert: { facing: 'left', cruise: false, turn: 'bank', escorts: wingmen },
-    tundra: { facing: null, cruise: false, turn: 'none', escorts: wingmen },
+    // A constellation is complete in itself: no companion star figures.
+    city: { facing: null, cruise: false, turn: 'none', escorts: {} },
+    harbor: { facing: null, cruise: false, turn: 'none', escorts: {} },
+    beach: { facing: null, cruise: false, turn: 'none', escorts: {} },
+    mountains: { facing: 'left', cruise: true, turn: 'bank', escorts: {} },
+    countryside: { facing: 'left', cruise: true, turn: 'bank', escorts: {} },
+    forest: { facing: null, cruise: false, turn: 'none', escorts: {} },
+    desert: { facing: 'left', cruise: false, turn: 'bank', escorts: {} },
+    tundra: { facing: null, cruise: false, turn: 'none', escorts: {} },
   },
   // The crane, the carp, the kite and the carpet have a front and fly along; lanterns, the balloon and the star drift with the air.
   opencode: {
-    city: { facing: 'left', cruise: true, turn: 'bank', escorts: sisters },
-    harbor: { facing: 'left', cruise: true, turn: 'bank', escorts: sisters },
-    beach: { facing: 'left', cruise: false, turn: 'bank', escorts: sisters },
-    mountains: { facing: null, cruise: false, turn: 'none', escorts: sisters },
-    countryside: { facing: null, cruise: false, turn: 'none', escorts: sisters },
-    forest: { facing: null, cruise: false, turn: 'none', escorts: sisters },
-    desert: { facing: 'left', cruise: true, turn: 'bank', escorts: sisters },
-    tundra: { facing: null, cruise: false, turn: 'none', escorts: sisters },
+    // Lanterns are released in numbers, so the sky lantern and the star keep sisters; the other crafts fly alone.
+    city: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the crane
+    harbor: { facing: null, cruise: false, turn: 'none', escorts: {} }, // the paper boat
+    beach: { facing: 'left', cruise: false, turn: 'bank', escorts: {} }, // the kite
+    mountains: { facing: null, cruise: false, turn: 'none', escorts: sisters }, // sky lanterns
+    countryside: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the carp streamer
+    forest: { facing: null, cruise: false, turn: 'none', escorts: {} }, // the lantern string is already several
+    desert: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the carpet
+    tundra: { facing: null, cruise: false, turn: 'none', escorts: sisters }, // paper stars
   },
 }
 

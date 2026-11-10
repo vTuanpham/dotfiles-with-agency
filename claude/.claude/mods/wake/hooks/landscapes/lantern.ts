@@ -84,7 +84,18 @@ const CRAFTS: Record<WakePreset, Craft> = {
       ['...............', 'W............d.', '.a..........dd.', '..aaalssaaadd..', '...dlaaaadd....', '....llaad......', '.....lld.......'],
     ],
   } },
-  harbor: { name: 'carp streamer', wave: carp },
+  harbor: { name: 'paper boat', cycles: 2, art: { // a folded boat on the water, a candle glowing through its peak; it rocks bow up, stern up
+    1: [['..s..', 'laaad', '.ddd.'], ['..f..', 'laaad', '.ddd.']],
+    2: [['...l...', '..lsd..', 'l.asa..', '.aapaa.', '..ddd..'], ['...l...', '..lsd..', '..asa.d', '.aapaa.', '..ddd..']],
+    3: [
+      ['.....l.....', '....lsd....', '...lassd...', 'l.laaaaad..', '.aapadapaa.', '..ddddddd..'],
+      ['.....l.....', '....lsd....', '...lassd...', '..laaaaad.d', '.aapadapaa.', '..ddddddd..'],
+    ],
+    4: [ // the peak, the two raised points of the hull, a crease down the middle and a painted band
+      ['.......l.......', '......lad......', '.....lasad.....', 'l...lasssad....', 'al.laaaaaaad..d', '.aapaaadaaapad.', '..ddddddddddd..'],
+      ['.......l.......', '......lad......', '.....lasad.....', '....lasssad...d', 'l..laaaaaaad.ad', '.aapaaadaaapad.', '..ddddddddddd..'],
+    ],
+  } },
   beach: { name: 'kite', cycles: 1, art: { // a diamond on its cross spars, trailing a tail of bows that snakes behind
     1: [['ls...', '.d.p.', '.....'], ['ls...', '.d...', '..p..']],
     2: [['.l.....', 'lsa....', '.d.d...', '....p.d', '.......'], ['.l.....', 'lsa....', '.d.....', '..d.p..', '.....d.']],
@@ -96,22 +107,14 @@ const CRAFTS: Record<WakePreset, Craft> = {
   } },
   mountains: { name: 'sky lantern', cycles: 2, art: { // a tall paper lantern glowing right through, its flame guttering beneath
     1: [['.la..', '.ss..', '..f..'], ['.la..', '.ss..', '.f...']],
-    2: [['.laad..', '.lssd..', '.assd..', '..d.d..', '...f...'], ['.laad..', '.lssd..', '.assd..', '..d.d..', '..f....']],
-    3: [['...laad....', '..lssssd...', '..lssssd...', '...assd....', '...d.d.....', '....f......'], ['...laad....', '..lssssd...', '..lssssd...', '...assd....', '...d.d.....', '.....f.....']],
-    4: [
-      ['....laaaad.....', '...lssssssd....', '...lssssssd....', '...lssssssd....', '....asssad.....', '.....d.d.......', '......f........'],
-      ['....laaaad.....', '...lssssssd....', '...lssssssd....', '...lssssssd....', '....asssad.....', '.....d.d.......', '.......f.......'],
+    2: [['.laad..', '.lssd..', '.lapd..', '..kk...', '...f...'], ['.laad..', '.lssd..', '.lapd..', '..kk...', '..f....']],
+    3: [['...laad....', '..lssssd...', '..lsasad...', '..lapapd...', '...dkkd....', '....f......'], ['...laad....', '..lssssd...', '..lsasad...', '..lapapd...', '...dkkd....', '.....f.....']],
+    4: [ // lit panels between paper seams, a painted band, a wire rim, and the flame guttering beneath
+      ['.....laaad.....', '....lssssssd...', '....lsasasad...', '....lapapapd...', '.....aaaaad....', '......dkkd.....', '.......f.......'],
+      ['.....laaad.....', '....lssssssd...', '....lsasasad...', '....lapapapd...', '.....aaaaad....', '......dkkd.....', '........f......'],
     ],
   } },
-  countryside: { name: 'balloon', cycles: 2, art: { // a striped envelope, a rope, a basket, and a burner that flares
-    1: [['.lal.', '.lal.', '..s..'], ['.lal.', '.lal.', '..f..']],
-    2: [['.lalad.', '.lalad.', '..dsd..', '...k...', '..ppp..'], ['.lalad.', '.lalad.', '..dfd..', '...k...', '..ppp..']],
-    3: [['...lalad...', '..lalalad..', '..lalalad..', '....dsd....', '.....k.....', '....ppp....'], ['...lalad...', '..lalalad..', '..lalalad..', '....dfd....', '.....k.....', '....ppp....']],
-    4: [
-      ['.....lalad.....', '....lalalad....', '...lalalaladd..', '....lalalad....', '.....d.s.d.....', '......k.k......', '......ppp......'],
-      ['.....lalad.....', '....lalalad....', '...lalalaladd..', '....lalalad....', '.....d.f.d.....', '......k.k......', '......ppp......'],
-    ],
-  } },
+  countryside: { name: 'carp streamer', wave: carp },
   forest: { name: 'lantern string', cycles: 1, art: { // round lanterns on one thread, bobbing turn and turn about
     1: [['.la..', '.sa..', '.p...'], ['.la..', '.sa..', '..p..']],
     2: [['..d....', '.laad..', '.lsad..', '..ad...', '..p....'], ['.......', '..d....', '.laad..', '.lsad..', '..ad...']],
@@ -125,10 +128,13 @@ const CRAFTS: Record<WakePreset, Craft> = {
   tundra: { name: 'paper star', cycles: 1, art: { // a folded star with a lit heart: its long points turn from a cross to a saltire
     1: [['..l..', '.asd.', '..d..'], ['.l.d.', '..s..', '.l.d.']],
     2: [['...l...', 'llasadd', '...d...', '...p...', '.......'], ['.l...d.', '..asa..', '.l.p.d.', '.......', '.......']],
-    3: [['.....l.....', '....lad....', '.llasssadd.', '....lad....', '.....d.....', '.....p.....'], ['..l.....d..', '...la.ad...', '...asfsa...', '...la.ad...', '..d..p..d..', '...........']],
-    4: [
-      ['.......l.......', '.......a.......', '.....laaad.....', '..llaasssaadd..', '.....laaad.....', '.......d.......', '.......p.......'],
-      ['...l.......d...', '....la...ad....', '.....laaad.....', '....aasfsaa....', '.....laaad.....', '....ad...ad....', '...d...p...d...'],
+    3: [
+      ['.....l.....', '..l.lsd.d..', '.llasssadd.', '..l.dsd.d..', '.....d.....', '.....p.....'],
+      ['.l...l...d.', '..la.s.ad..', '...asfsa...', '..la.s.ad..', '.d...d...d.', '.....p.....'],
+    ],
+    4: [ // eight folded points round a lit heart: the long ones and the short ones change places as it turns
+      ['.......l.......', '...l..lad..d...', '....lalsdad....', '.llaasssssaadd.', '....ladsdad....', '...l..dad..d...', '.......p.......'],
+      ['..l....l....d..', '...la.lad.ad...', '....lassdad....', '..laasfffsaad..', '....lassdad....', '...la.dad.ad...', '..d....p....d..'],
     ],
   } },
 }
