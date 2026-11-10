@@ -7,14 +7,14 @@ import { accountToolBackend, applyMeasured, makerOf, modelTier, quotaDetails, sc
 import { extractCalls, writeRecap } from './sources/recap'
 import { scanTidy, tidyRequest } from './sources/tidy'
 import { type BandState, passageStamps, sceneInput } from './band'
-import { EFFECT_FRAMES, MIN_SCENE_ROWS, SCENE_ROWS, type SceneEffect, type SceneHitMap, type SceneSelection, readScenePointer, sceneCardBounds, sceneFrame, sceneHitAt } from './scene'
+import { EFFECT_FRAMES, MIN_SCENE_ROWS, SCENE_ROWS, type SceneInput, type SceneEffect, type SceneHitMap, type SceneSelection, readScenePointer, sceneCardBounds, sceneFrame, sceneHitAt } from './scene'
 import { PRESETS, nextRain, skyOf } from './sources/weather'
 import { lookAround, namePlace, pinPreset } from './surroundings'
 import { CHARACTERS, CHARACTER_IDS, type CharacterId, asCharacter, isCharacter } from './mochi'
 import { summaryOf } from './summary'
-import { EXIT_MS } from './exits'
+import { ARRIVE_MS, EXIT_MS } from './exits'
 import { COLOR, readable, clock, commandHead, hash, isAnswerText, isTestCommand, lines, patchCounts, shortPath, span } from './util'
-import { CLASS_GLYPH, STATE_GLYPHS, stateOf, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, crewLayout, crewJobs, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
+import { CLASS_GLYPH, STATE_GLYPHS, TURN_LEAD_MS, stateOf, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, crewLayout, crewJobs, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
 import { type EffortLevels, effortDots, levelsFor, scanEfforts } from './sources/efforts'
 import { messagePreview, messageStatus, PeerMessageTracker } from './peer-messages'
 import { LOGOS, modelLogo } from './logos'
@@ -178,22 +178,44 @@ let frameNo = 0
 let labelClockBucket: number | null = null
 const peerMessages = new PeerMessageTracker()
 let effect: { kind: SceneEffect['kind']; start: number } | null = null
-let tour: { start: number } | null = null // /wake tour: every landscape in turn, a whole day in each
+let tour: { start: number; crew?: boolean } | null = null
 const TOUR_FRAMES = 120 // 12 s a landscape
+const CREW_TIMELINE = [
+  { frames: Math.ceil(ARRIVE_MS / 100), tier: 1, state: 'arrive' },
+  { frames: 30, tier: 1, state: 'work' }, { frames: 30, tier: 2, state: 'work' },
+  { frames: 30, tier: 3, state: 'work' }, { frames: 30, tier: 4, state: 'work' },
+  { frames: Math.ceil((packetWindow(1) + TURN_LEAD_MS * 2) / 100), tier: 4, state: 'message' },
+  { frames: Math.ceil(EXIT_MS / 100), tier: 4, state: 'strike' },
+  { frames: Math.ceil(EXIT_MS / 100), tier: 4, state: 'leave' },
+] as const
+const CREW_FRAMES = CREW_TIMELINE.reduce((sum, step) => sum + step.frames, 0)
 
 /** The landscape and hour the tour shows at a frame, or null when no tour plays. */
 function tourAt(frame: number): { preset: WakePreset; hour: number; index: number } | null {
   if (!tour) return null
   const t = frame - tour.start
-  const index = Math.floor(t / TOUR_FRAMES)
-  if (index >= PRESETS.length) return null
-  return { preset: PRESETS[index]!, hour: (4 + ((t % TOUR_FRAMES) / TOUR_FRAMES) * 24) % 24, index }
+  const duration = tour.crew ? CREW_FRAMES : TOUR_FRAMES
+  const index = Math.floor(t / duration)
+  if (index < 0 || index >= PRESETS.length * (tour.crew ? 2 : 1)) return null
+  return { preset: PRESETS[index % PRESETS.length]!, hour: tour.crew ? (index < PRESETS.length ? 14 : 22) : (4 + ((t % duration) / duration) * 24) % 24, index }
 }
 
 /** The scene input with the tour's landscape and hour laid over, while a tour plays. */
-function toured<T extends { preset: WakePreset; hour: number }>(input: T): T {
+function toured(input: SceneInput): SceneInput {
   const at = tourAt(frameNo)
-  return at ? { ...input, preset: at.preset, hour: at.hour } : input
+  if (!at) return input
+  if (!tour?.crew) return { ...input, preset: at.preset, hour: at.hour }
+  let elapsed = (frameNo - tour.start) % CREW_FRAMES
+  const step = CREW_TIMELINE.find(item => { if (elapsed < item.frames) return true; elapsed -= item.frames; return false })!
+  const ms = Math.max(1, elapsed * 100)
+  const families = ['codex', 'claude', 'agy', 'opencode'] as const
+  const jobs = families.map((kind, i) => ({ kind, tier: step.tier, seed: i + 6, isStale: false, pace: 0.8,
+    hit: { id: `demo-${kind}`, title: kind, details: [] },
+    ...(step.state === 'arrive' ? { arriving: ms } : {}),
+    ...(step.state === 'strike' || step.state === 'leave' ? { leaving: ms, struck: step.state === 'strike' } : {}),
+  }))
+  const peerEdges = step.state === 'message' ? [{ source: 'demo-codex', target: 'mochi', strength: 0.9, count: 1, family: 'codex' as const, arriving: ms, fresh: 1, lead: TURN_LEAD_MS }] : []
+  return { ...input, preset: at.preset, hour: at.hour, jobs, agents: [], peerEdges, mail: undefined }
 }
 let band: { id: string; width: number; rows: number } | null = null // where the scene is mounted, for blits
 let sceneHitMap: SceneHitMap | null = null
@@ -621,7 +643,7 @@ export const register: Register = on => {
     peerMessages.reset()
     await safely(async () => {
       resetSceneSelection()
-      await $.command.register({ name: 'wake', description: 'What Wake knows; /wake legend, detail, tour, scene or place', argumentHint: '[legend|detail|tour|scene <name>|place <city>]' })
+      await $.command.register({ name: 'wake', description: 'What Wake knows; /wake legend, detail, tour, crew, scene or place', argumentHint: '[legend|detail|tour|crew|scene <name>|place <city>]' })
       await $.tool.register({
         name: 'tidy_scan',
         description:
@@ -667,10 +689,15 @@ export const register: Register = on => {
       const target = sceneSelection?.target ?? lastSceneTarget
       return { text: target ? [target.title, ...target.details].join('\n') : 'No scene object has been selected.' }
     }
-    if (verb === 'legend') return { text: 'Crew: harness logos identify Codex, agy, Claude and OpenCode; unsupported terminals show text instead. The circle fills with model size, ◔ small to ◉ largest. Hover crew marks for harness or model details; model IDs appear only when known. In the scene, hover a building for its turn and tool kinds, or a sprite for its worker; /wake detail shows its full details. Colour names the harness (Codex teal, agy mauve, Claude pink, OpenCode warm paper lanterns) and a larger sprite means a larger model class; each landscape gives every family a body of its own (Codex builds a clockwork dragon over the city, with whelps beside the bigger ones, and a different slim machine in each other place; Claude is a winged creature native to the place; agy is a flowing light; OpenCode hangs a garland of lanterns). A busier worker roams wider and moves faster, its structure beats at the pace of the worker, and the wind carries trails and smoke; at dusk and night planes show navigation lights, lanterns glow from their flame and the eyes of owls shine. A worker with a message for Mochi brakes to a hover, turns to face her, sends it and turns back; one whose turn is interrupted is struck down; one that is done leaves, and a reply wakes it to arrive again. Their windows mark read, search, edit, run, test, agent, web and failed calls. Lamps show plan progress; fireworks mark passing tests, storms mark failed commands, shooting stars mark finished jobs, lanterns rise when a plan is complete and a rainbow follows tests that pass right after a failed turn. ● running · ⌁ heavy queue · = paused · ↻ retrying · ? needs answer · ! stalled · ✓ done · ○ idle. Signal bars (five rising bars as an image, ▁▃▄▆█ as text) show thinking effort, for Bridge jobs and Claude subagents alike; the number is time since the last event; ▣▰▱ is Bridge scope use against the job cap; native Claude rN is admitted local-command need, ⌁N is queued need, and r? means unavailable. Native hovers show command and queue reason, never total agent RAM or a cap. Colored peer lanes join workers; ← points to the recipient, ─/━/═ means 1/2–4/5+ messages. The root sits at the right edge of the crew rows: ◉ is the root, a spine runs down to the last worker with a tie to it, ─┤ and ─┘ are the branches of workers, ↑ means the last message went to the root, ↓ came from it and · means the worker simply works for it. A bright packet runs each lane and the spine (two for a stream of five or more, faster when new); in the scene a trail behind everything joins workers to one another and to Mochi, and a comet with a short, quickly fading tail runs along it when a message arrives, and an envelope hops over Mochi when a message reaches or leaves the root. Message links pulse, then melt away gradually over 15 minutes. Narrow rows use ↗/↙ and the peer name instead. One logo opens the accounts of each CLI in the quota line, │ divides CLIs and idle accounts with the same numbers fold into a range (02–04). Quota bars show remaining per account/window; hover an account mark for percentages and source reset text when available. ✕ marks signed-out or expired accounts, ? means unknown, ~ means stale numbers.' }
+    if (verb === 'legend') return { text: 'Crew: harness logos identify Codex, agy, Claude and OpenCode; unsupported terminals show text instead. The circle fills with model size, ◔ small to ◉ largest. Hover crew marks for harness or model details; model IDs appear only when known. In the scene, hover a building for its turn and tool kinds, or a sprite for its worker; /wake detail shows its full details. Colour names the harness (Codex teal, agy mauve, Claude pink, OpenCode warm paper lanterns) and a larger sprite means a larger model class; each landscape gives every family a body of its own (Codex builds a clockwork dragon over the city, with whelps beside the bigger ones, and a different slim machine in each other place; Claude is a winged creature native to the place; agy is a flowing light; OpenCode flies a lit paper craft). /wake crew shows a demo of the crew in each landscape by day and night. A busier worker roams wider and moves faster, its structure beats at the pace of the worker, and the wind carries trails and smoke; at dusk and night planes show navigation lights, lanterns glow from their flame and the eyes of owls shine. A worker with a message for Mochi brakes to a hover, turns to face her, sends it and turns back; one whose turn is interrupted is struck down; one that is done leaves, and a reply wakes it to arrive again. Their windows mark read, search, edit, run, test, agent, web and failed calls. Lamps show plan progress; fireworks mark passing tests, storms mark failed commands, shooting stars mark finished jobs, lanterns rise when a plan is complete and a rainbow follows tests that pass right after a failed turn. ● running · ⌁ heavy queue · = paused · ↻ retrying · ? needs answer · ! stalled · ✓ done · ○ idle. Signal bars (five rising bars as an image, ▁▃▄▆█ as text) show thinking effort, for Bridge jobs and Claude subagents alike; the number is time since the last event; ▣▰▱ is Bridge scope use against the job cap; native Claude rN is admitted local-command need, ⌁N is queued need, and r? means unavailable. Native hovers show command and queue reason, never total agent RAM or a cap. Colored peer lanes join workers; ← points to the recipient, ─/━/═ means 1/2–4/5+ messages. The root sits at the right edge of the crew rows: ◉ is the root, a spine runs down to the last worker with a tie to it, ─┤ and ─┘ are the branches of workers, ↑ means the last message went to the root, ↓ came from it and · means the worker simply works for it. A bright packet runs each lane and the spine (two for a stream of five or more, faster when new); in the scene a trail behind everything joins workers to one another and to Mochi, and a comet with a short, quickly fading tail runs along it when a message arrives, and an envelope hops over Mochi when a message reaches or leaves the root. Message links pulse, then melt away gradually over 15 minutes. Narrow rows use ↗/↙ and the peer name instead. One logo opens the accounts of each CLI in the quota line, │ divides CLIs and idle accounts with the same numbers fold into a range (02–04). Quota bars show remaining per account/window; hover an account mark for percentages and source reset text when available. ✕ marks signed-out or expired accounts, ? means unknown, ~ means stale numbers.' }
     if (verb === 'tour') {
       tour = { start: frameNo }
       return { text: `Touring ${PRESETS.length} landscapes, 12 s each, a whole day in each; your own scene comes back after.` }
+    }
+    if (verb === 'crew') {
+      tour = { start: frameNo, crew: true }
+      await update($, tick, n => n + 1)
+      return { text: 'Touring demo crew in every landscape, by day and night; your own scene comes back after.' }
     }
     if (verb === 'scene') {
       const text = await pinPreset($, await read($, surroundings), arg)
@@ -1046,7 +1073,7 @@ export const register: Register = on => {
         <Text wrap="truncate-end">
           <Text color={ink.mauve}>{G.pin} </Text>
           <Text color={ink.text} weight="bold">touring · {PRESET_LABEL[touring.preset]}</Text>
-          <Text color={ink.subtle}> {touring.index + 1}/{PRESETS.length} · dawn to night</Text>
+          <Text color={ink.subtle}> {touring.index + 1}/{PRESETS.length * (tour?.crew ? 2 : 1)} · {tour?.crew ? (touring.hour === 14 ? 'day' : 'night') : 'dawn to night'}</Text>
         </Text>
       )
       clockNote = ''

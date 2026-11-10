@@ -356,7 +356,7 @@ interactive session reloads it when its files change, so edits here apply live.
 independently of Wake. Setup, delivery receipts and limits belong to
 `agent-bridge guide messages`; no extra mod or UI input is involved.
 
-- `/wake` summarises; `/wake legend` explains the crew; `/wake tour` plays every landscape for 12 s, a whole day in each; `/wake scene <city|harbor|beach|mountains|countryside|forest|desert|tundra|auto>`
+- `/wake` summarises; `/wake legend` explains the crew; `/wake tour` plays every landscape for 12 s, a whole day in each; `/wake crew` shows demo workers arriving, working at each class, sending a message, being interrupted and leaving in each landscape by day and night; `/wake scene <city|harbor|beach|mountains|countryside|forest|desert|tundra|auto>`
   pins a landscape to the current place; `/wake place <city|auto>` overrides the
   IP-based location (GeoJS, then ipwho.is; weather from Open-Meteo; all keyless).
 - `/wake mochi <mochi|tabby|tuxedo|bun>` chooses who stands in Mochi's place: Mochi (lavender, belled collar),

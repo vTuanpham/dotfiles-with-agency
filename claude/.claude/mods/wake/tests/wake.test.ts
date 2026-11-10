@@ -79,6 +79,16 @@ test('idle scene advances over time without input', async ($, on) => {
   await bar.unmount()
 })
 
+test('/wake crew starts the demo and shows its tour label', async ($, on) => {
+  const clock = engine(on)
+  const bar = await mount($, 'AbovePrompt', false, 100, 16)
+  const result = await $.command.run({ command: 'wake', args: 'crew', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as never)
+  expect(result.text).toContain('demo')
+  await clock.advance(1_000)
+  expect(flat((await bar.drawn()) as Node)).toContain('touring')
+  await bar.unmount()
+})
+
 test('native subagent resource commands keep native execution and show their own admission state', async ($, on) => {
   engine(on)
   on('session.id', () => ({ value: 'root-a' }))
