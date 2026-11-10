@@ -187,3 +187,6 @@ export const lanternFrames = (place: WakePreset = 'city', tier: Tier) => ALL_LAN
 export const lanternNose = (place: WakePreset, tier: Tier, beat: number) => lanternPose(place, tier, beat).flame
 /** The craft with every window flaring: the instant it sends. */
 export const lanternFlare = (place: WakePreset, tier: Tier, beat: number) => lanternPose(place, tier, beat).rows.map(row => row.replaceAll('s', 'f'))
+
+/** At night the lit edge of the paper glows with its flame. */
+export const emissive = 'l'

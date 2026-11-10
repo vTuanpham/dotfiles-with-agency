@@ -118,3 +118,6 @@ export const agyOrbit = (place: WakePreset, tier: Tier, beat: number, offset = 0
   const [x, y] = agyCore(place, tier, Math.floor(beat)), p = beat * TAU / BEATS + offset
   return [x + 2.6 * Math.cos(p), y + 2.2 * Math.sin(p)]
 }
+
+/** Stars, the shot of light and the core rays shine at night; only the dim lines between them fade. */
+export const emissive = 'Wal'
