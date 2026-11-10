@@ -1,10 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { WakeChip } from '../types'
-import { type BandState, passageStamps, sceneInput } from '../hooks/band'
+import { type BandState, crewLifts, passageStamps, sceneInput } from '../hooks/band'
 import { ARRIVE_MS, EXIT_MS } from '../hooks/exits'
 import { styleFor } from '../hooks/exit-styles'
 import { canvas } from '../hooks/pixels'
+import { TURN_LEAD_MS } from '../hooks/crew-row'
 
 // A worker's arrival and exit run on Wake's own clock. Bridge is read every few seconds, and its own start and finish
 // times are already old by then; a passage measured from them would be over before the scan that finds it.
@@ -95,6 +96,20 @@ test('a native subagent that messages the root, or is messaged by her, shows a t
   }
   // a message to a subagent that is no longer on the crew draws nothing
   expect(sceneInput({ ...withMessage('a1', 'root'), subagents: [] }, 120, 0, null, T + 600).peerEdges!.some(e => e.preview === 'Found two issues')).toBe(false)
+})
+
+test('a worker-to-worker message retains the turn lead', () => {
+  const subagents = ['a', 'b'].map(id => ({ id, name: id, description: id, type: 'general', tier: 2 as const, since: T - 60_000 }))
+  const scene = sceneInput({ ...state({}), chips: [], subagents, messages: [{ from: 'a', to: 'b', at: T, preview: 'peer' }] }, 120, 0, null, T + 500)
+  const edge = scene.peerEdges!.find(e => e.preview === 'peer')!
+  expect(edge.lead).toBe(TURN_LEAD_MS)
+  expect(edge.arriving).toBe(500)
+  const after = sceneInput({ ...state({}), chips: [], subagents, messages: [{ from: 'a', to: 'b', at: T, preview: 'peer' }] }, 120, 0, null, T + 3000).peerEdges!.find(e => e.preview === 'peer')!
+  expect(after.arriving).toBeUndefined()
+  expect(after.turning).toBe(3000)
+  const chips = state({ peers: [{ target: 'other', count: 1, lastAt: T, observedAt: T, outgoing: true }] }).chips
+  expect(crewLifts(chips, T + TURN_LEAD_MS - 1).has('o/j')).toBe(false)
+  expect(crewLifts(chips, T + TURN_LEAD_MS).get('o/j')).toBe(1)
 })
 
 test('a worker waiting for the root stays in the scene until its runner ends', () => {

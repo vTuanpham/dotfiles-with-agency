@@ -102,7 +102,7 @@ export type SceneInput = {
   jobs: Job[]
   /** A message in flight: who to whom, how fresh (strength), how many (count, as the crew rows' ─ ━ ═ weights) and whose colour it carries. */
   /** arriving: ms since the edge's newest message reached this view, only while its packets run; fresh: one packet each */
-  peerEdges?: { source: string; target: string; strength: number; preview?: string | null; messageState?: 'observed' | 'sent'; relationship?: boolean; count?: number; family?: NonNullable<Job['kind']>; arriving?: number; /** ms the sender spends turning to face the root before the message leaves (it sends after that) */ lead?: number; fresh?: number }[]
+  peerEdges?: { source: string; target: string; strength: number; preview?: string | null; messageState?: 'observed' | 'sent'; relationship?: boolean; count?: number; family?: NonNullable<Job['kind']>; arriving?: number; turning?: number; /** ms the sender spends turning before the message leaves */ lead?: number; fresh?: number }[]
   /** A message to (in) or from (out) the root is passing: Mochi shows an envelope. */
   mail?: 'in' | 'out'
   /** Who stands in Mochi's place (see mochi.ts); the default is Mochi herself. */
@@ -662,6 +662,10 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   look.crewZones = []
   look.crewMessagePoints = {}
   look.crewBoxes = {}
+  if ((input.peerEdges ?? []).some(edge => (edge.turning ?? edge.arriving) !== undefined && edge.source !== 'mochi' && edge.target !== 'mochi')) {
+    look.crewDeferred = []
+    look.crewPaths = {}
+  }
   look.crewGround = ground
   look.crewSurface = { ground: { y: ground, x0: 0, x1: right }, ...(land.water === undefined || look.snowy && land.waterFreezes ? {} : { water: { y: land.water, spans: [{ x0: land.waterStart ?? 0, x1: right }] } }), perches: terrainPerches }
   look.crewAnchors = crewAnchors
@@ -776,12 +780,19 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   look.crewRoam = roamOf([...jobs, ...agents], right)
   look.crewCount = jobs.length + agents.length
   for (const [member, lane] of lanes([...jobs, ...agents], right)) member.lane = lane // each flyer owns a stretch of the whole sky
-  for (const edge of input.peerEdges ?? []) { // a message to or from the root turns a worker toward Mochi, and a sender shouts it at her
-    if (edge.arriving === undefined || (edge.source !== 'mochi' && edge.target !== 'mochi')) continue
-    const sending = edge.target === 'mochi', worker = [...jobs, ...agents].find(job => job.hit?.id === (sending ? edge.source : edge.target)) // (a Bridge job or a native subagent)
-    // after the message is done the worker is still facing her: it turns back to its own course before going on
-    const done = edge.arriving - (packetWindow(edge.fresh ?? 1) + (edge.lead ?? 0))
-    if (worker) worker.talk = { ms: edge.arriving, sending, ...(done >= 0 ? { over: done } : {}) }
+  const targets = new Map<Job, string>()
+  for (const edge of input.peerEdges ?? []) {
+    const elapsed = edge.turning ?? edge.arriving
+    if (elapsed === undefined) continue
+    const done = elapsed - (packetWindow(edge.fresh ?? 1) + (edge.lead ?? 0))
+    for (const [id, other, sending] of [[edge.source, edge.target, true], [edge.target, edge.source, false]] as const) {
+      if (id === 'mochi') continue
+      const worker = [...jobs, ...agents].find(job => job.hit?.id === id)
+      if (worker && (!worker.talk || elapsed < worker.talk.ms)) {
+        worker.talk = { ms: elapsed, sending, targetX: other === 'mochi' ? catX + 4 : undefined, ...(done >= 0 ? { over: done } : {}) }
+        targets.set(worker, other)
+      }
+    }
   }
   windLayer(c, look) // gusts and what the wind carries here: over the scenery, under the crew
   land.jobs(c, look, jobs, right)
@@ -792,6 +803,18 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
     const x = Math.round(8 + ((j + 0.5) * (right - 16)) / 5)
     const y = 3 + (j % 3)
     placeFly(c, look, x, y, bird, right)
+  }
+  if (look.crewDeferred) {
+    for (const [worker, target] of targets) {
+      if (!worker.talk || target === 'mochi') continue
+      const atMessage = (id: string) => {
+        const point = look.crewMessagePoints![id], path = look.crewPaths?.[id]
+        return point && (path ? point.x + path(worker.talk!.ms / 1000)[0] - path(0)[0] : point.x)
+      }
+      worker.talk.targetX = atMessage(target)
+      worker.talk.sourceX = worker.hit ? atMessage(worker.hit.id) : undefined
+    }
+    for (const draw of look.crewDeferred) draw()
   }
   const rootJump = input.effect?.kind === 'fireworks' && input.effect.age < 28 && look.frame % 6 < 3 ? 1 : 0
   const rootPoint = { x: catX + 4, y: ground - MOCHI_ROWS - rootJump + 5 }

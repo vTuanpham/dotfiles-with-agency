@@ -31,6 +31,7 @@ const SPRITES = { codex: craftSprite, claude: creatureSprite, agy: agySprite, op
 const TEMPO: Record<Kind, number> = { codex: 4, claude: 3, agy: 4, opencode: 5 }
 
 const drawWithHit = <T>(c: Canvas, job: Job, draw: () => T): T => job.hitOwner ? c.withHit(job.hitOwner, draw) : draw()
+const schedule = (look: Look, draw: () => void) => { if (look.crewDeferred) look.crewDeferred.push(draw); else draw() }
 /** How far a flyer patrols each way from its home, when the sky there is clear: about half a sky slot. */
 const PATROL = 9
 
@@ -137,14 +138,37 @@ const gaitKind = (job: Job, look: Look) => designFor(job.kind ?? 'codex', look.p
 
 /** Seconds to coil a flexible body or wheel a rigid one through edge-on. */
 const TURN = TURN_LEAD_MS / 1000 // (a sender sends only after this: crew-row.ts)
+/** A reversal this close is not worth a turn back after a message. */
+export const TURN_SOON_SECONDS = 4
+export const MIN_TURN_GAP_MS = 3000
+
+/** Sample the actual route ahead until its next horizontal reversal. */
+export function runAhead(path: (ago: number) => Vec, ago: number, roam: number): { seconds: number; distance: number; enough: boolean } {
+  const start = path(ago)[0], step = 0.5
+  let previous = start, direction = 0, low = start, high = start
+  for (let seconds = step; seconds <= 60; seconds += step) {
+    const x = path(ago - seconds)[0], delta = x - previous
+    low = Math.min(low, x); high = Math.max(high, x)
+    if (Math.abs(delta) > 0.002) {
+      const next = Math.sign(delta)
+      if (direction && next !== direction) {
+        const distance = Math.abs(previous - start)
+        return { seconds: seconds - step, distance, enough: seconds - step > TURN_SOON_SECONDS && distance > 2 * roam / 3 }
+      }
+      direction = next
+    }
+    previous = x
+  }
+  const distance = Math.max(Math.abs(high - start), Math.abs(low - start))
+  return { seconds: Infinity, distance, enough: direction !== 0 && distance > 2 * roam / 3 }
+}
 
 /**
  * How a craft that faces one way is turned `ago` seconds back: which way it is mirrored (1 as drawn, -1 reversed) and, while it
  * turns, how far through its turn it is (`roll`, 0..1). The design's shape controls the projection; the craft reverses halfway,
- * when coiled or edge-on. It faces where it is going, judged over the half second round that moment, and (with a message for the root)
- * Mochi, who is at the right edge. `since` is how long ago the roll began, in ms, while one is under way.
+ * when coiled or edge-on. It faces its course or the other message endpoint. `since` is how long ago the roll began, in ms.
  */
-function orient(path: (ago: number) => Vec, drawn: 'left' | 'right', ago: number, talk?: { ms: number; over?: number }): { mirror: 1 | -1; roll?: number; since?: number } {
+export function orient(path: (ago: number) => Vec, drawn: 'left' | 'right', ago: number, talk?: { ms: number; over?: number; targetX?: number; sourceX?: number }, roam = 9): { mirror: 1 | -1; roll?: number; since?: number } {
   const side = (heading: 'left' | 'right'): 1 | -1 => (heading === drawn ? 1 : -1)
   const heading = (back: number): 'left' | 'right' => {
     const x = path(back)[0]
@@ -157,17 +181,31 @@ function orient(path: (ago: number) => Vec, drawn: 'left' | 'right', ago: number
   const turn = (from: 1 | -1, to: 1 | -1, elapsed: number): { mirror: 1 | -1; roll?: number; since?: number } => elapsed >= TURN
     ? { mirror: to }
     : { mirror: elapsed / TURN < 0.5 ? from : to, roll: elapsed / TURN, since: elapsed * 1000 }
-  if (talk?.over !== undefined) { // the message is done: it turns back to the course it is about to fly, then sets off (never slid round in one frame)
-    const ahead = (): 'left' | 'right' => {
-      const x = path(ago)[0]
-      for (const span of [0.6, 1.2, 2.4]) { const later = path(ago - span)[0]; if (Math.abs(later - x) > 0.03) return later > x ? 'right' : 'left' }
-      return drawn
+  if (talk) {
+    const started = ago + talk.ms / 1000, startHeading = heading(started)
+    for (let seconds = 0.5; seconds <= MIN_TURN_GAP_MS / 1000; seconds += 0.5) {
+      if (heading(started + seconds) !== startHeading) return { mirror: side(heading(ago)) }
     }
-    const from = side('right'), to = side(ahead())
-    return from === to ? { mirror: to } : turn(from, to, talk.over / 1000)
+  }
+  if (talk?.over !== undefined) { // decide from the course and remaining run at the end of the message
+    const atEnd = ago + talk.over / 1000, course = heading(atEnd)
+    const from = side((talk.targetX ?? Infinity) >= (talk.sourceX ?? path(ago)[0]) ? 'right' : 'left'), to = side(course)
+    if (from === to) return orient(path, drawn, ago, undefined, roam)
+    const run = runAhead(path, atEnd, roam)
+    if (run.distance === 0) return { mirror: from }
+    const returning = run.enough
+    let previous = course, reversals = 0
+    for (let seconds = 0.5; seconds <= talk.over / 1000; seconds += 0.5) {
+      const next = heading(atEnd - seconds)
+      if (next !== previous) { reversals++; previous = next; if (reversals >= 2) break }
+    }
+    if (reversals) return !returning && reversals === 1 ? { mirror: side(heading(ago)) } : orient(path, drawn, ago, undefined, roam)
+    if (!returning) return { mirror: from }
+    const wait = Math.max(0, MIN_TURN_GAP_MS - (talk.ms - talk.over))
+    return turn(from, to, Math.max(0, talk.over - wait) / 1000)
   }
   if (talk) {
-    const seconds = talk.ms / 1000, from = side(heading(ago + seconds)), to = side('right')
+    const seconds = talk.ms / 1000, from = side(heading(ago + seconds)), to = side((talk.targetX ?? Infinity) >= (talk.sourceX ?? path(ago)[0]) ? 'right' : 'left')
     return from === to ? { mirror: to } : turn(from, to, seconds) // already facing her: no turn
   }
   const now = heading(ago)
@@ -234,7 +272,7 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   const design = designFor(kind, look.place)
   // Every family's design declares its front and its own turn; a symmetric body never mirrors.
   const drawn = !compact ? design.facing : null
-  const turning: { mirror: 1 | -1; roll?: number; since?: number } = drawn ? orient(path, drawn, 0, job.talk) : { mirror: 1 }
+  const turning: { mirror: 1 | -1; roll?: number; since?: number } = drawn ? orient(path, drawn, 0, job.talk, job.lane?.roam) : { mirror: 1 }
   const facingRight = !drawn ? false : drawn === 'right' ? turning.mirror > 0 : turning.mirror < 0 // effects are written facing left
   const beat = (Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length
   const blast = kind === 'opencode' && !compact && !look.crewRest && job.talk?.sending && job.talk.over === undefined && job.talk.ms >= TURN_LEAD_MS && job.talk.ms < TURN_LEAD_MS + 300
@@ -254,6 +292,10 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   // The worker's own sprite, for what happens ON it (the send pulse, the receive ring): not its escorts, nor the trail and air it
   // leaves, which are painted under the same hit owner and would stretch its box across half the screen.
   if (job.hit && !compact) (look.crewBoxes ??= {})[job.hit.id] = { x0, y0, x1: x0 + art[0]!.length - 1, y1: y0 + art.length - 1 }
+  if (look.crewLocateOnly) {
+    if (job.hit) (look.crewPaths ??= {})[job.hit.id] = path
+    return
+  }
   const quietMachine = kind === 'agy' || kind === 'claude' || kind === 'opencode' || kind === 'codex' && look.place !== undefined && look.place !== 'city'
   const nose: Vec = [(point[0] - (art[0]!.length >> 1)) * (facingRight ? -1 : 1), point[1] - (art.length >> 1)]
   const lightPoints = look.effects === false ? undefined : lamps[kind]?.(look.place ?? 'city', job.tier ?? 1, beat).lamps.map(lamp => {
@@ -262,6 +304,20 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   })
   const air = () => {
     if (!compact) crewFx(c, look, { x0, y0, w: art[0]!.length, h: art.length, cx, cy, kind, tier: job.tier ?? 1, seed: job.seed, pace: job.pace ?? 0.6, phase: job.phase ?? look.frame, path, lift: job.lift ?? 0, ground: look.crewGround ?? c.H, flip: facingRight, talk: job.talk, turn: design.turn === 'coil' ? turning.since : undefined, nose, lamps: lightPoints })
+    if (!drawn && job.talk && job.talk.over === undefined && look.effects !== false) {
+      const direction = (job.talk.targetX ?? Infinity) >= x0 + point[0] ? 1 : -1
+      for (let distance = 1; distance <= art[0]!.length + art.length; distance++) {
+        let painted = false
+        for (let dx = 1; dx <= distance && !painted; dx++) for (const dy of [distance - dx, -(distance - dx)]) {
+          const x = point[0] + direction * dx, y = point[1] + dy
+          if ((art[y]?.[x] ?? '.') !== '.') continue
+          c.glow(x0 + x, y0 + y, pal.colors.M!, 0.7)
+          painted = true
+          break
+        }
+        if (painted) break
+      }
+    }
   }
   // Air stays behind solid machines and plumage: no particle can repaint a body cell.
   if (quietMachine) air()
@@ -306,9 +362,9 @@ function placeSurface(c: Canvas, look: Look, x: number, job: Job, right: number)
   const pose = frames[beat]!
   const turning = design.facing ? orient(() => [0, 0], design.facing, 0, job.talk) : undefined
   const shown = turning ? shape(pose, turning.mirror, turning.roll, design.turn) : pose
-  const bottom = Math.max(...shown.flatMap((row, y) => /[^.]/.test(row) ? [y] : []))
+  const initialBottom = Math.max(...shown.flatMap((row, y) => /[^.]/.test(row) ? [y] : []))
   const bottoms = frames.map(frame => Math.max(...frame.flatMap((row, y) => /[^.]/.test(row) ? [y] : [])))
-  const minBottom = Math.min(bottom, ...bottoms), maxBottom = Math.max(bottom, ...bottoms)
+  const minBottom = Math.min(initialBottom, ...bottoms), maxBottom = Math.max(initialBottom, ...bottoms)
   const spans = habit === 'water' ? surface.water!.spans : [surface.ground]
   const options: { cx: number; foot: number }[] = []
   for (const span of spans) for (let cx = span.x0 + (w >> 1); cx + (w - (w >> 1)) <= span.x1; cx++) options.push({ cx, foot: habit === 'water' ? surface.water!.y + 1 : surface.ground.y })
@@ -328,7 +384,7 @@ function placeSurface(c: Canvas, look: Look, x: number, job: Job, right: number)
   let chosen = free, best = Infinity
   if (!chosen) for (const requireNewColumn of [true, false]) {
     for (const candidate of options) {
-      if (!fits(candidate.cx, candidate.foot, hard) || prior.includes((candidate.foot + bob - bottom + (h >> 1)) * c.W + candidate.cx) || (requireNewColumn && prior.some(anchor => anchor % c.W === candidate.cx))) continue
+      if (!fits(candidate.cx, candidate.foot, hard) || prior.includes((candidate.foot + bob - initialBottom + (h >> 1)) * c.W + candidate.cx) || (requireNewColumn && prior.some(anchor => anchor % c.W === candidate.cx))) continue
       const penalty = cost(candidate)
       if (penalty < best) { chosen = candidate; best = penalty }
     }
@@ -342,14 +398,23 @@ function placeSurface(c: Canvas, look: Look, x: number, job: Job, right: number)
   while (!rest && rightReach < maxReach && fits(chosen.cx + rightReach + 1, chosen.foot, travelZones)) rightReach++
   const g = gait(gaitKind(job, look), job.tier ?? 1, job.seed, phase, Math.max(leftReach, rightReach))
   let cx = chosen.cx + Math.round((g.u < 0 ? leftReach : rightReach) * roamShare(job.pace ?? 0.6) * g.u)
-  const anchorY = chosen.foot + bob - bottom + (h >> 1)
+  const anchorY = chosen.foot + bob - initialBottom + (h >> 1)
   if (prior.includes(anchorY * c.W + cx)) {
-    const alternate = options.find(p => fits(p.cx, p.foot, hard) && !prior.includes((p.foot + bob - bottom + (h >> 1)) * c.W + p.cx))
+    const alternate = options.find(p => fits(p.cx, p.foot, hard) && !prior.includes((p.foot + bob - initialBottom + (h >> 1)) * c.W + p.cx))
     if (!alternate) return undefined
     chosen = alternate
     cx = alternate.cx
     leftReach = rightReach = 0
   }
+  const home = chosen, reach = Math.max(leftReach, rightReach), roam = (leftReach + rightReach) / 2
+  const route = (ago: number): Vec => {
+    if (!job.talk) return [cx, home.foot]
+    const next = gait(gaitKind(job, look), job.tier ?? 1, job.seed, phase - ago * 10 * clockRate(job.pace ?? 0.6), reach)
+    return [home.cx + (next.u < 0 ? leftReach : rightReach) * roamShare(job.pace ?? 0.6) * next.u, home.foot]
+  }
+  const actualTurn = design.facing ? orient(route, design.facing, 0, job.talk, roam) : undefined
+  const actual = actualTurn ? shape(pose, actualTurn.mirror, actualTurn.roll, design.turn) : pose
+  const bottom = Math.max(...actual.flatMap((row, y) => /[^.]/.test(row) ? [y] : []))
   const top = chosen.foot + bob - bottom, left = cx - (w >> 1)
   const zone = { x: left, y: top, w, h }
   const reserved = { x: chosen.cx - (w >> 1) - leftReach, y: chosen.foot - maxBottom - Number(habit === 'water'), w: w + leftReach + rightReach, h: h + maxBottom - minBottom + Number(habit === 'water') }
@@ -357,13 +422,21 @@ function placeSurface(c: Canvas, look: Look, x: number, job: Job, right: number)
   ;(look.crewSpriteZones ??= []).push(reserved)
   ;(look.crewAnchors ??= []).push((top + (h >> 1)) * c.W + cx)
   const centerY = top + (h >> 1), kind = job.kind ?? 'codex'
-  if (habit === 'water' && look.effects !== false) for (let d = 1; d <= 3; d++) c.glow(cx + (w >> 1) + d, surface.water!.y, P.white, 0.25 / d)
-  if (habit === 'ground' && !rest) groundStep(c, look, kind, cx, chosen.foot, job.seed, phase)
-  drawWithHit(c, job, () => fly(c, state, cx, centerY, job, kind, false, () => [cx, centerY], []))
-  if (habit === 'water') for (let dx = 0; dx < w; dx++) for (let dy = 1; dy <= 2; dy++) {
-    const yy = surface.water!.y + dy + 1, sy = top + bottom - dy
-    if (yy < c.H && sy >= top) c.glow(left + dx, yy, c.get(left + dx, sy), 0.12)
-  }
+  const member = { ...job, lane: { x: chosen.cx, roam } }
+  if (look.crewDeferred) fly(c, { ...state, crewLocateOnly: true }, cx, centerY, { ...member, talk: undefined }, kind, false, ago => [route(ago)[0], centerY], [])
+  schedule(look, () => {
+    const turn = design.facing ? orient(route, design.facing, 0, job.talk, roam) : undefined
+    const frame = turn ? shape(pose, turn.mirror, turn.roll, design.turn) : pose
+    const base = Math.max(...frame.flatMap((row, y) => /[^.]/.test(row) ? [y] : []))
+    const drawTop = chosen.foot + bob - base, drawY = drawTop + (h >> 1)
+    if (habit === 'water' && look.effects !== false) for (let d = 1; d <= 3; d++) c.glow(cx + (w >> 1) + d, surface.water!.y, P.white, 0.25 / d)
+    if (habit === 'ground' && !rest) groundStep(c, look, kind, cx, chosen.foot, job.seed, phase)
+    drawWithHit(c, job, () => fly(c, state, cx, drawY, member, kind, false, ago => [route(ago)[0], drawY], []))
+    if (habit === 'water') for (let dx = 0; dx < w; dx++) for (let dy = 1; dy <= 2; dy++) {
+      const yy = surface.water!.y + dy + 1, sy = drawTop + base - dy
+      if (yy < c.H && sy >= drawTop) c.glow(left + dx, yy, c.get(left + dx, sy), 0.12)
+    }
+  })
   return zone
 }
 
@@ -390,7 +463,8 @@ function placeRest(c: Canvas, look: Look, job: Job, x: number, y: number, right:
     ;(look.crewAnchors ??= []).push(cy * c.W + cx)
     look.crewBoxes ??= {}
     look.crewMessagePoints ??= {}
-    drawWithHit(c, job, () => fly(c, { ...look, crewRest: amount >= 1 }, cx, cy, job, kind, false, () => [cx, cy], []))
+    if (look.crewDeferred) fly(c, { ...look, crewRest: amount >= 1, crewLocateOnly: true }, cx, cy, { ...job, talk: undefined }, kind, false, () => [cx, cy], [])
+    schedule(look, () => drawWithHit(c, job, () => fly(c, { ...look, crewRest: amount >= 1 }, cx, cy, job, kind, false, () => [cx, cy], [])))
     return zone
   }
   return undefined
@@ -519,7 +593,9 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
         // Keep the path continuous for heading and effects; rasterising it here makes slow craft turn at every pixel step.
         return [candidate.x + rx * share * g.u, candidate.y - share * (g.v > 0 ? g.v * up : g.v * down) - hop]
       }
-      drawWithHit(c, job, () => fly(c, look, candidate.x + drift, candidate.y + offset, job, kind, false, path, company))
+      const member = { ...job, lane: { x: candidate.x, roam: rx * share } }
+      if (look.crewDeferred) fly(c, { ...look, crewLocateOnly: true }, candidate.x + drift, candidate.y + offset, { ...member, talk: undefined }, kind, false, path, company)
+      schedule(look, () => drawWithHit(c, job, () => fly(c, look, candidate.x + drift, candidate.y + offset, member, kind, false, path, company)))
       return zone
     }
   }
@@ -539,8 +615,8 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
     anchors.push((py + 2 + lift) * c.W + px + 1 + drift)
     art.forEach((row, dy) => [...row].forEach((ch, dx) => { if (ch !== '.') zones.push({ x: px + dx - reach, y: py + dy, w: 1 + 2 * reach, h: 1 }) }))
     sprites.push({ ...zone, x: zone.x - reach, w: zone.w + 2 * reach })
-    drawWithHit(c, job, () => draw(c, look, px + drift, py + lift, art, paint(job, look), false))
     rememberPoint(look, job, art, px + drift, py + lift)
+    schedule(look, () => drawWithHit(c, job, () => draw(c, look, px + drift, py + lift, art, paint(job, look), false)))
     return zone
   }
   return undefined
@@ -666,8 +742,8 @@ function packCompact(c: Canvas, look: Look, jobs: Job[]): boolean {
     look.crewZones!.push({ x, y, w: 3, h: 3 })
     look.crewSpriteZones!.push({ x, y, w: 3, h: 3 })
     look.crewAnchors!.push((y + 2) * c.W + x + 1)
-    drawWithHit(c, job, () => draw(c, look, x, y, art, paint(job, look), false))
     rememberPoint(look, job, art, x, y)
+    schedule(look, () => drawWithHit(c, job, () => draw(c, look, x, y, art, paint(job, look), false)))
   })
   return true
 }
@@ -681,6 +757,7 @@ export function airJobs(c: Canvas, look: Look, jobs: Job[], right: number) {
   const zones = look.crewZones ??= [], sprites = look.crewSpriteZones ??= [], anchors = look.crewAnchors ??= []
   const perches = look.crewPerchesUsed ??= []
   const counts = [zones.length, sprites.length, anchors.length, perches.length]
+  const deferredCount = look.crewDeferred?.length ?? 0
   if (jobs.length * 9 > right * Math.max(1, (look.crewGround ?? c.H) - 3) && packCompact(c, look, ordered.map(([member]) => member))) return
   for (const [job, slot] of ordered) {
     const [x, y] = hover(c, look, job, slot, count, right)
@@ -691,7 +768,10 @@ export function airJobs(c: Canvas, look: Look, jobs: Job[], right: number) {
     sprites.length = counts[1]!
     anchors.length = counts[2]!
     perches.length = counts[3]!
+    if (look.crewDeferred) look.crewDeferred.length = deferredCount
     if (look.crewBoxes) for (const [member] of ordered) if (member.hit) delete look.crewBoxes[member.hit.id]
+    if (look.crewMessagePoints) for (const [member] of ordered) if (member.hit) delete look.crewMessagePoints[member.hit.id]
+    if (look.crewPaths) for (const [member] of ordered) if (member.hit) delete look.crewPaths[member.hit.id]
     if (packCompact(c, look, ordered.map(([member]) => member))) return
     for (const [member, memberSlot] of ordered) {
       const [cx, cy] = hover(c, look, member, memberSlot, count, right)

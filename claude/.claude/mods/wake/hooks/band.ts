@@ -1,5 +1,5 @@
 import type { WakeChip, WakeMood, WakeNativeMessage, WakePulse, WakeStep, WakeSurroundings, WakeTally, WakeWeather } from '../types'
-import { PACKET_RUN_MS, TURN_LEAD_MS, activityFlash, messageFade, packetWindow } from './crew-row'
+import { PACKET_RUN_MS, TURN_HOLD_MS, TURN_LEAD_MS, activityFlash, messageFade, packetWindow } from './crew-row'
 import type { Season } from './landscapes/kit'
 import { seedOf } from './pixels'
 import { PhaseClock, paceOf, routeRate } from './landscapes/gait'
@@ -110,10 +110,10 @@ export function crewLifts(chips: WakeChip[], now: number): Map<string, number> {
     raise(job.id, activityFlash(job.activitySeenAt, now))
     for (const peer of job.peers ?? []) {
       if (peer.observedAt === undefined || now < peer.observedAt) continue
-      const t = now - peer.observedAt
-      if (t > packetWindow(peer.fresh ?? 1) + 500) continue
       const sender = peer.outgoing ? job.id : peer.target === 'root' ? undefined : peer.target
       const recipient = peer.outgoing ? (peer.target === 'root' ? undefined : peer.target) : job.id
+      const t = now - peer.observedAt - (sender ? TURN_LEAD_MS : 0)
+      if (t < 0 || t > packetWindow(peer.fresh ?? 1) + 500) continue
       raise(sender, t < 500 ? 1 - t / 500 : 0)
       const landing = t - PACKET_RUN_MS
       raise(recipient, landing > -150 && landing < 500 ? 1 - Math.abs(landing - 100) / 400 : 0)
@@ -177,7 +177,7 @@ const gaitOf = (id: string, pace: number, now: number, rate = 1, stale = false) 
 function nativeEdges(state: BandState, now: number) {
   const live = new Set(state.subagents.filter(a => a.leftAt === undefined).map(a => a.id))
   return (state.messages ?? []).filter(m => now >= m.at && now - m.at <= 900_000 && (m.from === 'root' || live.has(m.from)) && (m.to === 'root' || live.has(m.to))).map(m => {
-    const toRoot = m.to === 'root', fromRoot = m.from === 'root', lead = toRoot ? TURN_LEAD_MS : 0, since = now - m.at
+    const toRoot = m.to === 'root', fromRoot = m.from === 'root', lead = fromRoot ? 0 : TURN_LEAD_MS, since = now - m.at
     return {
       source: fromRoot ? 'mochi' : m.from,
       target: toRoot ? 'mochi' : m.to,
@@ -186,6 +186,7 @@ function nativeEdges(state: BandState, now: number) {
       messageState: toRoot || fromRoot ? 'sent' as const : undefined,
       count: 1,
       arriving: since <= packetWindow(1) + lead + (toRoot || fromRoot ? TURN_LEAD_MS : 0) ? since : undefined,
+      turning: since <= packetWindow(1) + lead + TURN_HOLD_MS ? since : undefined,
       lead: lead || undefined,
       fresh: 1,
       family: 'claude' as const,
@@ -195,14 +196,14 @@ function nativeEdges(state: BandState, now: number) {
 
 /** How fast a native subagent's route runs just now: it hovers to talk to the root just as a Bridge worker does (routeFor). */
 const agentRouteFor = (id: string, messages: readonly WakeNativeMessage[] | undefined, now: number): number => {
-  const m = [...(messages ?? [])].filter(x => (x.from === id && x.to === 'root') || (x.to === id && x.from === 'root')).sort((a, b) => b.at - a.at)[0]
+  const m = [...(messages ?? [])].filter(x => x.from === id || x.to === id).sort((a, b) => b.at - a.at)[0]
   if (!m || now < m.at) return 1
   return routeRate(now - m.at, packetWindow(1) + (m.from === id ? TURN_LEAD_MS : 0), TURN_LEAD_MS)
 }
 
 /** How fast this worker's route runs just now: it brakes, hovers while it turns to the root, sends and turns back, then sets off again (routeRate). */
 const routeFor = (job: WakeChip, now: number): number => {
-  const message = [...(job.peers ?? [])].filter(p => p.target === 'root' && p.observedAt !== undefined && now >= p.observedAt).sort((a, b) => b.observedAt! - a.observedAt!)[0]
+  const message = [...(job.peers ?? [])].filter(p => p.observedAt !== undefined && now >= p.observedAt).sort((a, b) => b.observedAt! - a.observedAt!)[0]
   if (!message) return 1
   const window = packetWindow(message.fresh ?? 1) + (message.outgoing ? TURN_LEAD_MS : 0)
   return routeRate(now - message.observedAt!, window, TURN_LEAD_MS)
@@ -240,7 +241,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
         const age = now - peer.lastAt
         const pulse = peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt < 2_000
         const rootMessage = peer.target === 'root'
-        const lead = rootMessage && peer.outgoing ? TURN_LEAD_MS : 0 // a worker turns to face the root before it sends to her
+        const lead = peer.outgoing ? TURN_LEAD_MS : 0
         return {
           source: rootMessage && !peer.outgoing ? 'mochi' : job.id!,
           target: rootMessage ? peer.outgoing ? 'mochi' : job.id! : peer.target,
@@ -251,6 +252,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
           // packets run only for messages arriving in view right now, one per new message
           arriving: peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1) + lead + (rootMessage ? TURN_LEAD_MS : 0) // (a root message adds the turn back to its own course)
             ? now - peer.observedAt : undefined,
+          turning: peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1) + lead + TURN_HOLD_MS ? now - peer.observedAt : undefined,
           lead: lead || undefined,
           fresh: peer.fresh,
           family: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const),

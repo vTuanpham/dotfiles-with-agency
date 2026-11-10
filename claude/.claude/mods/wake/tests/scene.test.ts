@@ -140,7 +140,9 @@ test('message trails live in the background: nothing painted over them changes, 
       // it takes no hover cell from anything real: only the sky (with its sun and moon), the ground and the weather are behind it
       for (let cell = 0; cell < bare.hits.owners.length; cell++) {
         const id = bare.hits.targets[bare.hits.owners[cell]! - 1]?.id
-        if (!id || ['sky', 'scenery', 'weather', 'sun', 'moon'].includes(id)) continue
+        if (!id || ['sky', 'scenery', 'weather', 'sun', 'moon', 'a', 'b'].includes(id)) continue // the message turns its endpoints
+        if (['a', 'b'].includes(drawn.hits.targets[drawn.hits.owners[cell]! - 1]?.id ?? '')) continue
+        if (!drawn.hits.owners[cell]) continue // a turned sprite may share the terminal cell with the original owner
         expect(drawn.hits.targets[drawn.hits.owners[cell]! - 1]?.id, `${preset} cell ${cell}`).toBe(id)
       }
     }

@@ -32,7 +32,7 @@ test('every character is drawn on the same grid, with a colour for each letter i
     }
   }
 })
-import { airJobs, fly, placeFly, shape } from '../hooks/landscapes/crew'
+import { airJobs, fly, MIN_TURN_GAP_MS, orient, placeFly, runAhead, shape, TURN_SOON_SECONDS } from '../hooks/landscapes/crew'
 import { ALL_CRAFT, CRAFT_MAX, MACHINE_SIZE, craftFrames, craftNose, craftPush, dragonCrests } from '../hooks/landscapes/craft'
 import { DESIGNS } from '../hooks/landscapes/design'
 import { type Job, type Look, P } from '../hooks/landscapes/kit'
@@ -41,6 +41,43 @@ import { canvas } from '../hooks/pixels'
 const look = { frame: 0, night: 1, effects: false } as Look // bare sprites: these tests are about shape, not about the air round it
 const kinds = ['codex', 'agy', 'claude', 'opencode'] as const
 const tiers = [1, 2, 3, 4] as const
+
+test('message heading uses the recipient and the next natural reversal', () => {
+  const linear = (ago: number) => [-ago, 0] as const // heading right
+  expect(orient(linear, 'left', 0, { ms: 300, targetX: 20 })).toEqual({ mirror: -1 })
+  expect(orient(linear, 'left', 0, { ms: 300, targetX: -20 }).roll).toBeDefined()
+  const near = (ago: number) => [10 - (ago + 1) ** 2, 0] as const // reversal one second ahead
+  expect(runAhead(near, 0, 10).seconds).toBeLessThanOrEqual(TURN_SOON_SECONDS)
+  expect(orient(near, 'left', 0, { ms: 2000, over: 500, targetX: -20 }, 10)).toEqual({ mirror: 1 })
+  const afterReversal = (ago: number) => [10 - (ago - 1) ** 2, 0] as const
+  expect(orient(afterReversal, 'left', 0, { ms: 4000, over: 2000, targetX: -20 }, 10)).toEqual({ mirror: 1 }) // already facing the new course: no second turn
+  const far = (ago: number) => [100 - (ago + 10) ** 2, 0] as const
+  expect(runAhead(far, 0, 10).enough).toBe(true)
+  expect(orient(far, 'left', 0, { ms: 2000, over: 300, targetX: -20 }, 10).roll).toBeDefined()
+  const laterOnFarRun = (ago: number) => [100 - (ago + 2) ** 2, 0] as const
+  expect(orient(laterOnFarRun, 'left', 0, { ms: 11000, over: 8000, targetX: -20 }, 10)).toEqual({ mirror: -1 })
+  const little = (ago: number) => [-0.01 * (ago + 10) ** 2, 0] as const
+  expect(runAhead(little, 0, 10).seconds).toBeGreaterThan(TURN_SOON_SECONDS)
+  expect(runAhead(little, 0, 10).enough).toBe(false)
+  expect(orient(far, 'left', 0, { ms: 1600, over: 100, targetX: -20 }, 10).roll).toBe(0)
+  expect(orient(far, 'left', 0, { ms: MIN_TURN_GAP_MS + 300, over: MIN_TURN_GAP_MS - 1200, targetX: -20 }, 10).roll).toBeGreaterThan(0)
+  const recentlyTurned = (ago: number) => [10 - (ago - 0.5) ** 2, 0] as const
+  expect(orient(recentlyTurned, 'left', 0, { ms: 0, targetX: 20 }, 10).roll).toBeUndefined()
+})
+
+test('face-on designs direct their light without turning the body', () => {
+  for (const kind of kinds) for (const place of Object.keys(DESIGNS[kind]) as (keyof typeof DESIGNS[typeof kind])[]) {
+    if (DESIGNS[kind][place].facing !== null) continue
+    const paint = (targetX: number, effects: boolean) => {
+      const c = canvas(60, 24), state = { ...look, place, night: 0, effects, crewMessagePoints: {} } as Look
+      fly(c, state, 30, 12, { kind, tier: 2, seed: 0, isStale: false, talk: { ms: 500, sending: false, targetX }, hit: { id: 'a', title: 'a', details: [] } }, kind, false, () => [30, 12], [])
+      return c
+    }
+    const left = paint(0, true), right = paint(60, true), body = paint(0, false)
+    expect(Array.from(left.px), `${kind}.${place} directs light`).not.toEqual(Array.from(right.px))
+    for (let i = 0; i < body.px.length; i++) if (body.px[i]) expect(left.px[i], `${kind}.${place} body`).toBe(right.px[i])
+  }
+})
 
 test('message points stay on the leader body for every design, beat, heading and turn', () => {
   for (const place of Object.keys(ALL_CRAFT) as (keyof typeof ALL_CRAFT)[]) for (const kind of kinds) for (const tier of tiers)
@@ -354,7 +391,11 @@ test('failed initial placements leave no invisible hit owners', () => {
 
 test('after a message the worker turns back to its own course (a coil), instead of being slid round in one frame', () => {
   const job: Job = { kind: 'codex', tier: 4, seed: 0, isStale: false }
-  const at = (over?: number) => render({ ...job, talk: over === undefined ? undefined : { ms: 3000, sending: true, over } }, 0)
+  const at = (over?: number) => {
+    const c = canvas(40, 20)
+    fly(c, look, 20, 10, { ...job, talk: over === undefined ? undefined : { ms: 4000 + over, sending: true, over } }, 'codex', false, ago => [20 + ago, 10], [])
+    return Array.from(c.px)
+  }
   const facingHer = at(0), turning = at(450), home = at(1000)
   expect(turning).not.toEqual(facingHer) // mid-turn it is coiled up, neither facing her nor facing home
   expect(turning).not.toEqual(home)

@@ -106,6 +106,26 @@ test('resting workers claim distinct scenery perches', () => {
   expect(look.crewSurface!.perches.some(p => p.x === second.x + (second.w >> 1))).toBe(true)
 })
 
+test('each resting design records its own painted message point and box', () => {
+  for (const kind of ['codex', 'claude', 'agy', 'opencode'] as const) for (const place of Object.keys(DESIGNS[kind]) as (keyof typeof DESIGNS[typeof kind])[]) {
+    if (!DESIGNS[kind][place].rests) continue
+    for (const tier of [1, 2, 3, 4] as const) {
+      const c = canvas(120, 20, true)
+      const look = { place, frame: 0, night: 0, top: 0, wind: 0, effects: false, crewGround: 17,
+        crewSurface: { ground: { y: 17, x0: 0, x1: 105 }, perches: [{ x: 55, y: 13 }] },
+        crewZones: [], crewSpriteZones: [], crewHard: [] } as unknown as Look
+      const job: Job = { kind, tier, seed: 0, isStale: true, settle: 1, hit: { id: 'one', title: 'one', details: [] }, hitOwner: 1 }
+      const placed = placeFly(c, look, 55, 5, job, 105)!
+      const point = look.crewMessagePoints!.one!, box = look.crewBoxes!.one!
+      expect(look.crewPerchesUsed?.length, `${kind}.${place} class ${tier} rests`).toBe(1)
+      expect(point, `${kind}.${place} class ${tier}`).toBeDefined()
+      expect(c.hitOwners![point.y * c.W + point.x]).toBe(1)
+      expect(box.x0).toBe(placed.x)
+      expect(box.y0).toBe(placed.y)
+    }
+  }
+})
+
 test('landing and takeoff interpolate between flight and the perch', () => {
   const at = (settle: number) => {
     const c = canvas(100, 20)
