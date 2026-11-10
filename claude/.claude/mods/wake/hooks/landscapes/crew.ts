@@ -5,6 +5,10 @@ import { agyFrames } from './agy'
 import { lanternFlare, lanternFrames, lanternInk, lanternPaper } from './lantern'
 import { designFor, type Design, type Tier, type Turn } from './design'
 import { creatureFrames } from './creatures'
+import * as craftSprite from './craft'
+import * as creatureSprite from './creatures'
+import * as agySprite from './agy'
+import * as lanternSprite from './lantern'
 import { boatFx, crewFx } from './fx'
 import type { Vec } from './particles'
 import { clockRate, gait, roamShare } from './gait'
@@ -21,6 +25,8 @@ import { type Job, jobAccent, type Look, P } from './kit'
 
 type Kind = NonNullable<Job['kind']>
 type Frames = readonly (readonly string[])[]
+// A sprite module may export `emissive: string` for additional glowing cell letters.
+const SPRITES = { codex: craftSprite, claude: creatureSprite, agy: agySprite, opencode: lanternSprite } as Record<Kind, { emissive?: string }>
 
 const drawWithHit = <T>(c: Canvas, job: Job, draw: () => T): T => job.hitOwner ? c.withHit(job.hitOwner, draw) : draw()
 /** How far a flyer patrols each way from its home, when the sky there is clear: about half a sky slot. */
@@ -46,9 +52,9 @@ function paint(job: Job, look: Look) {
   const base = job.signal ? mix(family, P.white, 0.65) : family
   const mark = job.maker && job.maker !== job.kind && !job.isStale ? jobAccent({ ...job, kind: job.maker }, P.teal) : undefined
   const paper = job.kind === 'opencode'
-  const a = paper ? lanternPaper(base, look.night) : base
+  const a = paper ? lanternPaper(base, 0) : base
   const W = job.isStale ? P.yellow : mix(base, P.white, 0.7)
-  return {
+  const colors: Record<string, number> = {
     a,
     W,
     m: mark ?? a,
@@ -62,16 +68,28 @@ function paint(job: Job, look: Look) {
     r: job.isStale ? P.peach : P.red, // a beacon, a tail fin
     g: job.isStale ? mix(P.peach, P.white, 0.4) : mix(P.sapphire, P.white, 0.35), // glass
     h: job.isStale ? mix(P.peach, P.woodDark, 0.5) : P.wood,
-  } as Record<string, number>
+  }
+  const shade = Math.max(0, Math.min(1, look.night)) * 0.45
+  const body = shade ? Object.fromEntries(Object.entries(colors).map(([ch, color]) => [ch, mix(color, look.top, shade)])) : colors
+  return { colors, body, extra: SPRITES[job.kind ?? 'codex'].emissive ?? '' }
 }
 
-function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly string[], pal: Record<string, number>, glow: boolean) {
+function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly string[], pal: ReturnType<typeof paint>, glow: boolean) {
+  const emissive = (ch: string, x: number, y: number) => 'sfgMr'.includes(ch) || pal.extra.includes(ch) || ch === 'W' && (art[y]?.[x - 1] === 'g' || art[y]?.[x + 1] === 'g' || art[y - 1]?.[x] === 'g' || art[y + 1]?.[x] === 'g')
+  if (look.night > 0) art.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const ch = row[x]!
+      if (ch !== '.' && emissive(ch, x, y)) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(x0 + x + dx, y0 + y + dy, pal.colors[ch]!, 0.3 * look.night)
+    }
+  })
+  if (glow) art.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) if ('WMs'.includes(row[x]!)) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(x0 + x + dx, y0 + y + dy, pal.body.a!, 0.25 * (0.4 + look.night))
+  })
   art.forEach((row, r) => {
     for (let i = 0; i < row.length; i++) {
       const ch = row[i]!
       if (ch === '.') continue
-      c.set(x0 + i, y0 + r, pal[ch]!)
-      if (glow && (ch === 'W' || ch === 'M' || ch === 's')) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(x0 + i + dx, y0 + r + dy, pal.a!, 0.25 * (0.4 + look.night))
+      c.set(x0 + i, y0 + r, (emissive(ch, i, r) ? pal.colors : pal.body)[ch]!)
     }
   })
 }

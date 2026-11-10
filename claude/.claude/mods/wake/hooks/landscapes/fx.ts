@@ -26,11 +26,15 @@ type Anchor = 'centre' | 'above' | 'below' | 'left' | 'right' | 'nose' | 'tail' 
 export type Stream = { at: Anchor; dx?: number; dy?: number; emitter: Emitter; follow?: boolean; tiers?: readonly number[]; from?: number; /** Eight-beat mechanical stroke(s) that drive the effect. */ beats?: readonly number[] }
 export type LightAt = { at: Anchor; dx?: number; dy?: number; light: Light; tiers?: readonly number[]; /** a pool of light where a cone lands */ lands?: Light; /** a column or cone that runs down to the ground */ toGround?: boolean; /** shown whatever the hour (true), or in proportion to daylight ('day'): a shadow, not a lamp */ always?: boolean | 'day' }
 /** `talking` streams are bursts shown while the worker is sending a message to the root; written facing left, the way a sprite is drawn. */
-export type Cell = { streams?: readonly Stream[]; lights?: readonly LightAt[]; talking?: readonly Stream[] }
+export type Cell = { streams?: readonly Stream[]; lights?: readonly LightAt[]; talking?: readonly Stream[]; /** Added to this family or place only after dusk. */ night?: Cell }
+type FamilyCells = Partial<Record<WakePreset | 'any' | 'night', Cell>>
 
 const TAU = Math.PI * 2
 const UP = -Math.PI / 2, DOWN = Math.PI / 2
 const clamp = (v: number, lo = 0, hi = 1) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : lo)
+const NIGHT_GAIN = 0.4 // full night adds 40% brightness and reach
+const NIGHT_FROM = 0.12
+const nightLight = (color: number): Cell => ({ lights: [{ at: 'centre', light: { shape: 'halo', color, alpha: 0.25, reach: 2, from: NIGHT_FROM } }] })
 
 // ── the crew ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -63,7 +67,8 @@ const WORKS = (colors: readonly number[], extra: Partial<Emitter> = {}): Stream 
 const EYE = (color: number): LightAt => ({ at: 'nose', light: { shape: 'halo', color, alpha: 0.45, reach: 1, modulate: 'pulse', from: 0.05 } })
 
 /** The eye and pulse are in the art; additional lights belong only to actual lamps. */
-const CODEX: Partial<Record<WakePreset | 'any', Cell>> = {
+const CODEX: FamilyCells = {
+  night: nightLight(P.sky),
   any: { lights: SHADOW },
   city: {
     // The dragon's roar, when it turns to Mochi with a message: a cone of sound rings from its jaws, and the message itself
@@ -125,7 +130,8 @@ const FEATHER: Stream = { at: 'below', follow: true, emitter: { count: 2, life: 
 const BIRD_WASH = (color: number): readonly Stream[] => [{ at: 'ground', emitter: { count: 1, life: 0.4, speed: [1, 2], angle: [UP - 0.5, UP + 0.5], gravity: 5, wind: 0.6, colors: [color, P.white], alpha: 0.14, envelope: 'fade' } }]
 /** What a creature leaves in its wake, shed from its wing on each downstroke: as present as the dragon's packets, in its own stuff. */
 const SHED = (colors: readonly number[], extra: Partial<Emitter> = {}): Stream => ({ at: 'below', follow: true, emitter: { count: 7, life: 1.1, speed: [0.3, 1], angle: [DOWN - 0.6, DOWN + 0.6], gravity: 1.2, swirl: 0.6, wind: 0.6, colors, alpha: 0.5, envelope: 'fade', ...extra } })
-const CLAUDE: Partial<Record<WakePreset | 'any', Cell>> = {
+const CLAUDE: FamilyCells = {
+  night: nightLight(P.pink),
   any: { lights: SHADOW, streams: [FEATHER] },
   city: { talking: CALL(11), streams: [SHED([P.white, P.overlay1]), ...BIRD_WASH(P.overlay1)] }, // the pigeon's grey down
   harbor: { talking: CALL(8), streams: [SHED([P.sky, P.white], { count: 9, life: 0.7, speed: [1, 3], angle: [UP - 0.7, UP + 0.7], gravity: 7, swirl: 0 })] }, // spray thrown up by the dolphin's fluke
@@ -150,7 +156,8 @@ const STARS = (echo: Cell, colors: readonly number[], extra: Partial<Emitter> = 
   ...echo,
   streams: [...echo.streams!, { at: 'tail', follow: true, emitter: { count: 6, life: 1.4, speed: [0.2, 0.7], angle: [0, TAU], wind: 0.4, colors, alpha: 0.55, envelope: 'twinkle', ...extra } }],
 })
-const AGY: Partial<Record<WakePreset | 'any', Cell>> = {
+const AGY: FamilyCells = {
+  night: nightLight(P.lavender),
   any: {
     streams: [
       ...[0, 1].map((): Stream => ({ at: 'centre', emitter: { count: 1, life: 1.2, speed: [0, 0], angle: [0, 0], colors: [P.white], alpha: 0.6, envelope: 'pulse', size: 2 } })), // two satellites circling the core
@@ -173,7 +180,8 @@ const AGY: Partial<Record<WakePreset | 'any', Cell>> = {
 
 /** A paper craft's own trail in its place, twinkling out behind it. */
 const PAPER = (colors: readonly number[], extra: Partial<Emitter> = {}): Stream => ({ at: 'above', follow: true, emitter: { count: 6, life: 1.2, speed: [0.2, 0.8], angle: [0, TAU], gravity: 1, swirl: 0.5, wind: 0.5, colors, alpha: 0.5, envelope: 'twinkle', ...extra } })
-const OPENCODE: Partial<Record<WakePreset | 'any', Cell>> = {
+const OPENCODE: FamilyCells = {
+  night: nightLight(P.yellow),
   any: {
     streams: [
       { at: 'above', follow: true, emitter: { count: 7, life: 1.2, speed: [0.5, 1.5], angle: [UP - 0.4, UP + 0.4], swirl: 0.6, wind: 0.4, colors: [P.yellow, P.peach, P.red], alpha: 0.6, envelope: 'twinkle' } }, // embers rising off the flame and trailing behind
@@ -199,7 +207,7 @@ const OPENCODE: Partial<Record<WakePreset | 'any', Cell>> = {
   tundra: { streams: [PAPER([P.snow, P.white, P.sky], { gravity: 0.6, swirl: 1 })] }, // frost glittering off the star
 }
 
-export const CREW: Record<Kind, Partial<Record<WakePreset | 'any', Cell>>> = { codex: CODEX, claude: CLAUDE, agy: AGY, opencode: OPENCODE }
+export const CREW: Record<Kind, FamilyCells> = { codex: CODEX, claude: CLAUDE, agy: AGY, opencode: OPENCODE }
 
 /** The sprite's own box and where its centre was `ago` seconds ago, as `fly` knows them. */
 export type Aura = {
@@ -241,7 +249,10 @@ const mirrored = (e: Emitter): Emitter => ({ ...e, angle: [Math.PI - e.angle[1],
 
 
 /** The cells that apply to one sprite: the family's, then the place's. */
-const cellsFor = (kind: Kind, place: WakePreset) => [CREW[kind].any, CREW[kind][place]].filter((cell): cell is Cell => !!cell)
+const cellsFor = (kind: Kind, place: WakePreset, dark: number) => {
+  const family = CREW[kind].any, local = CREW[kind][place]
+  return [family, local, ...(dark >= NIGHT_FROM ? [CREW[kind].night, family?.night, local?.night] : [])].filter((cell): cell is Cell => !!cell)
+}
 
 /** Draw everything one crew member stirs up and lights. */
 export function crewFx(c: Canvas, look: Look, a: Aura): void {
@@ -265,6 +276,9 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
   }
   const dark = clamp(look.night + (look.blend?.dusk ?? 0) * 0.6 + (look.blend?.dawn ?? 0) * 0.4) // dusk and dawn count as half dark
+  const gain = 1 + NIGHT_GAIN * dark
+  const boostEmitter = (e: Emitter): Emitter => dark ? { ...e, alpha: e.alpha * gain, speed: [e.speed[0] * gain, e.speed[1] * gain] } : e
+  const boostLight = (l: Light): Light => dark ? { ...l, alpha: l.alpha * gain, reach: Math.round(l.reach * gain) } : l
   const strength = 0.35 + 0.65 * a.pace + 0.5 * a.lift
   const t = a.phase / 10
   if (a.kind === 'codex' && place === 'city' && a.turn === undefined) {
@@ -278,7 +292,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
     }
   }
   if (a.turn !== undefined && a.kind !== 'agy') emit(c, ROLL, { at: () => [a.cx, a.cy], t: a.turn / 1000, seed: a.seed * 13, strength: 1, wind })
-  for (const cell of cellsFor(a.kind, place)) {
+  for (const cell of cellsFor(a.kind, place, dark)) {
     for (const [i, s] of (cell.streams ?? []).entries()) {
       if ((s.tiers && !s.tiers.includes(a.tier)) || (s.from !== undefined && dark < s.from)) continue
       const [ox, oy] = anchorOf(a, s.at, s.dx, s.dy)
@@ -315,20 +329,22 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
       }
       const beat = (a.phase / 1.5 + a.seed) % 8
       const stroke = a.kind === 'agy' && s.at === 'tail' ? agyPulse(place, a.tier as Tier, Math.floor(beat)).force : machine ? pose(0).force : s.beats ? 0.2 + 0.8 * Math.max(...s.beats.map(b => Math.max(0, Math.cos((beat - b) * Math.PI / 4)) ** 6)) : 1
-      emit(c, a.flip ? mirrored(s.emitter) : s.emitter, { at: origin, t, seed: a.seed * 31 + i, strength: strength * stroke, ...(creature ? { strengthAtBirth: (ago: number) => pose(ago).force } : a.kind === 'opencode' ? { strengthAtBirth: (ago: number) => lanternPose(place, a.tier as Tier, Math.floor((a.phase - ago * 10) / 1.5) + a.seed).force } : {}), wind })
+      const emitter = boostEmitter(s.emitter)
+      emit(c, a.flip ? mirrored(emitter) : emitter, { at: origin, t, seed: a.seed * 31 + i, strength: strength * stroke, ...(creature ? { strengthAtBirth: (ago: number) => pose(ago).force } : a.kind === 'opencode' ? { strengthAtBirth: (ago: number) => lanternPose(place, a.tier as Tier, Math.floor((a.phase - ago * 10) / 1.5) + a.seed).force } : {}), wind })
     }
     if (a.talk?.sending && a.talk.over === undefined) for (const [i, s] of (cell.talking ?? []).entries()) { // shouting a message at the root: a burst on the message's own clock
       if (s.tiers && !s.tiers.includes(a.tier)) continue
       const [ox, oy] = anchorOf(a, s.at, s.dx, s.dy)
       // Every sender finishes turning to face the root before it speaks, on the same clock as the packet leaving (scene.ts).
       const spoken = a.talk.ms / 1000 - TURN_LEAD_MS / 1000
-      emit(c, a.flip ? mirrored(s.emitter) : s.emitter, { at: () => [a.cx + ox, a.cy + oy], t: spoken, seed: a.seed * 17 + i, strength: 1, wind })
+      const emitter = boostEmitter(s.emitter)
+      emit(c, a.flip ? mirrored(emitter) : emitter, { at: () => [a.cx + ox, a.cy + oy], t: spoken, seed: a.seed * 17 + i, strength: 1, wind })
     }
     for (const l of cell.lights ?? []) {
       if (l.tiers && !l.tiers.includes(a.tier)) continue
       if (a.kind === 'opencode' && l.at === 'nose') {
         for (const lamp of lanternPose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed).lamps) {
-          shine(c, l.light, a.cx + (a.flip ? (a.w >> 1) - lamp.flame[0] : lamp.flame[0] - (a.w >> 1)) + 0.5, a.cy + lamp.flame[1] - (a.h >> 1) + 0.5,
+          shine(c, boostLight(l.light), a.cx + (a.flip ? (a.w >> 1) - lamp.flame[0] : lamp.flame[0] - (a.w >> 1)) + 0.5, a.cy + lamp.flame[1] - (a.h >> 1) + 0.5,
             t, dark * (0.65 + 0.35 * lamp.force), a.seed)
         }
         continue
@@ -337,11 +353,11 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
         ? craftLamp(place, a.tier as Tier, ((Math.floor(a.phase / 1.5) + a.seed) % 8 + 8) % 8) : undefined
       const [ox, oy] = lamp ? [a.flip ? (a.w >> 1) - lamp[0] : lamp[0] - (a.w >> 1), lamp[1] - (a.h >> 1)] : anchorOf(a, l.at, l.dx, l.dy)
       const x = a.cx + ox, y = a.cy + oy
-      const light = l.toGround ? { ...l.light, reach: Math.max(1, (look.crewGround ?? c.H) - Math.round(y)) } : l.light
+      const light = boostLight(l.toGround ? { ...l.light, reach: Math.max(1, (look.crewGround ?? c.H) - Math.round(y)) } : l.light)
       const burner = a.kind === 'opencode' && !l.always ? 0.25 + 0.75 * lanternPose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed).force : 1
       const level = (l.always === 'day' ? 1 - look.night : l.always || l.toGround ? 1 : dark) * burner
       shine(c, light, x, y, t, level, a.seed)
-      if (l.lands) { const [ex, ey] = coneEnd(light, x, y, t, a.seed); shine(c, l.lands, ex, Math.min((look.crewGround ?? c.H) - 1, ey), t, dark, a.seed) }
+      if (l.lands) { const [ex, ey] = coneEnd(light, x, y, t, a.seed); shine(c, boostLight(l.lands), ex, Math.min((look.crewGround ?? c.H) - 1, ey), t, dark, a.seed) }
     }
   }
 }

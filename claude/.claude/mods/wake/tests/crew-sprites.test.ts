@@ -184,8 +184,8 @@ test('non-city machine effects cannot repaint the body, including its lit plates
     for (const tier of tiers) for (const beat of [0, 3]) {
       const job: Job = { kind: 'codex', tier, seed: 0, isStale: false, phase: beat * 1.5, talk: { ms: 400, sending: true } }
       const bare = canvas(40, 20), air = canvas(40, 20)
-      fly(bare, { ...look, place, crewGround: 18 }, 20, 10, job, 'codex', false, () => [20, 10], [])
-      fly(air, { ...look, place, crewGround: 18, effects: true }, 20, 10, job, 'codex', false, () => [20, 10], [])
+      fly(bare, { ...look, night: 0, place, crewGround: 18 }, 20, 10, job, 'codex', false, () => [20, 10], [])
+      fly(air, { ...look, night: 0, place, crewGround: 18, effects: true }, 20, 10, job, 'codex', false, () => [20, 10], [])
       const frames = craftFrames(place, tier), art = frames[beat % frames.length]!
       const left = 20 - (art[0]!.length >> 1), top = 10 - (art.length >> 1)
       // A message mirrors a left-facing machine toward Mochi. Compare the actual solid pixels, whichever way it faces.
@@ -194,6 +194,16 @@ test('non-city machine effects cannot repaint the body, including its lit plates
       }
     }
   }
+})
+
+test('night shades the body but keeps glass and its highlight bright and blooming', () => {
+  const job: Job = { kind: 'codex', tier: 1, seed: 0, isStale: false, phase: 0 }
+  const day = canvas(40, 20), night = canvas(40, 20)
+  for (const [c, darkness] of [[day, 0], [night, 1]] as const) fly(c, { ...look, top: 0x101020, night: darkness, place: 'harbor' }, 20, 10, job, 'codex', false, () => [20, 10], [])
+  expect(night.get(20, 11)).not.toBe(day.get(20, 11)) // body
+  expect(night.get(19, 10)).toBe(day.get(19, 10)) // W next to glass
+  expect(night.get(20, 10)).toBe(day.get(20, 10)) // glass
+  expect(night.get(18, 10)).not.toBe(day.get(18, 10)) // bloom outside the body
 })
 
 test('the low non-city flight formation keeps its companions separate from the leader in both directions', () => {

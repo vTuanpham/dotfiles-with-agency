@@ -5,7 +5,9 @@ import { styleFor } from '../hooks/exit-styles'
 import { ALL_CRAFT } from '../hooks/landscapes/craft'
 import { ALL_LANTERNS } from '../hooks/landscapes/lantern'
 import { ALL_CREATURES } from '../hooks/landscapes/creatures'
-import { CARRIED, CREW } from '../hooks/landscapes/fx'
+import { CARRIED, CREW, crewFx } from '../hooks/landscapes/fx'
+import { canvas } from '../hooks/pixels'
+import type { Look } from '../hooks/landscapes/kit'
 import { LANDSCAPES } from '../hooks/landscapes'
 import { DESIGNS } from '../hooks/landscapes/design'
 
@@ -72,11 +74,39 @@ test('every family leaves every place in a style of its own', () => {
 
 test('effect tables name only anchors, tiers and places that exist', () => {
   for (const kind of families) for (const [place, cell] of Object.entries(CREW[kind])) {
-    expect(place === 'any' || places.includes(place as WakePreset), `${kind}.${place}`).toBe(true)
+    expect(place === 'any' || place === 'night' || places.includes(place as WakePreset), `${kind}.${place}`).toBe(true)
     for (const s of [...(cell?.streams ?? []), ...(cell?.lights ?? [])]) {
       expect(s.at, `${kind}.${place}`).toBeTruthy()
       for (const tier of s.tiers ?? []) expect([1, 2, 3, 4]).toContain(tier)
     }
+  }
+})
+
+test('each family supplies a night-only effect', () => {
+  for (const kind of families) expect((CREW[kind].night?.streams?.length ?? 0) + (CREW[kind].night?.lights?.length ?? 0)).toBeGreaterThan(0)
+})
+
+test('night cells paint only after dusk', () => {
+  for (const kind of families) {
+    const cell = CREW[kind].night!
+    const render = (night: number) => {
+      const c = canvas(40, 20)
+      crewFx(c, { night, place: 'city', frame: 25, wind: 0 } as Look, { x0: 15, y0: 7, w: 10, h: 6, cx: 20, cy: 10, kind, tier: 1, seed: 1, pace: 0.6, phase: 25, path: () => [20, 10], lift: 0, ground: 19 })
+      return Array.from(c.px)
+    }
+    const day = render(0), night = render(1)
+    try {
+      delete CREW[kind].night
+      expect(render(0), `${kind} day`).toEqual(day)
+      const without = render(1)
+      expect(without, `${kind} night`).not.toEqual(night)
+      const local = CREW[kind].city!
+      local.night = cell
+      try {
+        expect(render(0), `${kind} place by day`).toEqual(day)
+        expect(render(1), `${kind} place at night`).toEqual(night)
+      } finally { delete local.night }
+    } finally { CREW[kind].night = cell }
   }
 })
 
