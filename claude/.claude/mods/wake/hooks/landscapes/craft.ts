@@ -129,15 +129,16 @@ const AUTOMATA: Record<Exclude<WakePreset, 'city'>, Machine> = {
     ],
   } },
   forest: { name: 'probe', strokes: 2, art: { // a probe droid, face on: aerials, one glass eye between two lamps, and jointed arms that reach and tuck
-    1: [['lWgl.', 'dakad', 'k.d.k'], ['lWgl.', 'dakad', '.kdk.']],
-    2: [['.k...k.', 'lsWgsl.', '.dkpkd.', 'k.d.d.k', 'k..d..k'], ['.k...k.', 'lsWgsl.', '.dkpkd.', '.kd.dk.', '.k.d.k.']],
+    // Its arms are body-coloured with lit claw tips: dark ones vanished against the trees it works among.
+    1: [['lWgl.', 'dakad', 'l.d.l'], ['lWgl.', 'dakad', '.ldl.']],
+    2: [['.k...k.', 'lsWgsl.', '.dkpkd.', 'a.d.d.a', 'l..d..l'], ['.k...k.', 'lsWgsl.', '.dkpkd.', '.ad.da.', '.l.d.l.']],
     3: [
-      ['...k...k...', '..lllllll..', '.asaWgasad.', '..dkpppkd..', '.k.d.d.d.k.', 'k....d....k'],
-      ['...k...k...', '..lllllll..', '.asaWgasad.', '..dkpppkd..', '..kd.d.dk..', '..k..d..k..'],
+      ['...k...k...', '..lllllll..', '.asaWgasad.', '..dkpppkd..', '.a.d.d.d.a.', 'l....d....l'],
+      ['...k...k...', '..lllllll..', '.asaWgasad.', '..dkpppkd..', '..ad.d.da..', '..l..d..l..'],
     ],
     4: [
-      ['.....k...k.....', '....lllllll....', '...asaWgasad...', '....dkpppkd....', '...k.d.d.d.k...', '..k..d.d.d..k..', '..k....d....k..'],
-      ['.....k...k.....', '....lllllll....', '...asaWgasad...', '....dkpppkd....', '....kd.d.dk....', '....k..d..k....', '...k...d...k...'],
+      ['.....k...k.....', '....lllllll....', '...asaWgasad...', '....dkpppkd....', '...a.d.d.d.a...', '..a..d.d.d..a..', '..l....d....l..'],
+      ['.....k...k.....', '....lllllll....', '...asaWgasad...', '....dkpppkd....', '....ad.d.da....', '....a..d..a....', '...l...d...l...'],
     ],
   } },
   desert: { name: 'sun skiff', strokes: 4, art: { // a long low hull under a tall sail of solar glass that shimmers, a pennant astern, a jet that stutters
