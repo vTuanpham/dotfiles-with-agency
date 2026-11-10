@@ -235,8 +235,8 @@ every new design is held to.
 [`hooks/landscapes/CREW.md`](.claude/mods/wake/hooks/landscapes/CREW.md)). Every effect is an emitter or a light
 described in a table, stateless, so any frame draws alone and a trail is exactly the sprite's own path:
 
-- **They touch their place.** The dragon trails data packets and a booster jet; an autogyro whirls the forest's leaves, a
-  duster throws chaff, a yacht sand, a ski plane snow; feathers shake loose off wings; everything that flies throws a shadow by day.
+- **They touch their place.** The dragon trails data packets and a booster jet; the whale throws spray, the spider sheds silk
+  glints and the scarab kicks up dust; feathers shake loose off wings and paper scraps trail the crane.
 - **Dusk and night change the crew, only where the design motivates it.** The dragon's head glows, planes show navigation
   lights, lanterns glow from the flame and light the ground under them, agy's light lights its halo, owls have eyeshine.
 - **Wind is real.** Gusts cross the whole sky faster the harder it blows, each place blows its own things about (dust, spray,
