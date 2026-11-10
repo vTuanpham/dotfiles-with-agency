@@ -55,10 +55,13 @@ const CREATURES: Record<WakePreset, Creature> = {
   mountains: { name: 'eagle', strokes: 1, face: 'left', art: { // white head and tail, a yellow bill, broad fingered wings held out to soar
     1: [['..d.k', 'sWaaW', '.d...'], ['.....', 'sWadk', '.daW.']],
     2: [['....k.k', '...ad..', 'sWaaaWW', '.ddad..', '.......'], ['.......', '.......', 'sWaaadk', '.daaaWW', '..dd...']],
-    3: [['.......k.k.', '......ddd..', '.W..aaad...', 'sWaaaaaaaWW', '..ddaaadW..', '....dd.....'], ['...........', '...........', '.W...aaadkk', 'sWaaaaaadk.', '..daaaaaaWW', '...dddd.W..']],
-    4: [
-      ['..........k.k.k', '.........ddddd.', '.......aaaad...', '.WW..aaaaa.....', 'sWWaaaaaaaaaWWW', '...ddaaaaaddWW.', '.....dddd......'],
-      ['...............', '...............', '.WW....aaaadk.k', 'sWWaaaaaaaaddk.', '...daaaaaaaaWWW', '....dddddd.WW..', '...............'],
+    3: [
+      ['......dkk..', '.....daa...', '.W..daa....', 'sWaaaaaaWW.', '..llaaadWW.', '....s.s....'],
+      ['...........', '.W.........', 'sWaaaaaaWW.', '..ldaadaWW.', '....daak...', '.....dkk...'],
+    ],
+    4: [ // one long wing swept up to its dark tip, then driven down under the body; a pale breast, yellow talons, a white fan of tail
+      ['.........dkk...', '.......daak....', '......daaa.....', '.WW..daaa......', 'sWWaaaaaaaaaWW.', '...lllaaaadWWW.', '......s.s......'],
+      ['...............', '...............', '.WW............', 'sWWaaaaaaaaaWW.', '...ldaaaadaWWW.', '.....daaak.....', '......dakk.....'],
     ],
   } },
   countryside: { name: 'butterfly', strokes: 3, face: 'centre', art: { // seen face on: two pairs of wings that open wide and shut
