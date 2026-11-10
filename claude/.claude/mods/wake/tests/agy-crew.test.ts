@@ -45,7 +45,7 @@ test('agy has eight shaded beats of a few stars within the shared footprint, gro
         expect(rows.every(row => row.length === w)).toBe(true)
         expect(new Set(rows.join('').replaceAll('.', '')).size).toBeGreaterThanOrEqual(3)
         const stars = [...rows.join('')].filter(ch => ch === 'W' || ch === 'M').length
-        expect(stars >= 3 && stars <= 9, `${place} ${tier} beat ${beat}: a few bright stars, not a cloud of them`).toBe(true)
+        expect(stars >= 2 && stars <= 9, `${place} ${tier} beat ${beat}: the core and the stars the light is passing between, not a cloud of them`).toBe(true)
         const [x, y] = agyCore(place, tier, beat), pulse = agyPulse(place, tier, beat)
         expect(rows[y]![x], `${place} visible light core`).toBe('M')
         expect(rows[pulse.y]![pulse.x], `${place} physical shedding point`).not.toBe('.')
@@ -86,7 +86,7 @@ test('agy sends from its current luminous face and preserves solid light under e
       const mirror = facing ? orient(() => [25, 10], facing, 0, job.talk).mirror : 1
       const solid = shape(ALL_AGY[place][tier][beat]!, mirror, undefined, DESIGNS.agy[place].turn)
       solid.forEach((row, y) => [...row].forEach((ch, x) => {
-        if (ch !== '.' && ch !== 'e') {
+        if (ch !== '.' && ch !== 'e' && ch !== 'E') {
           const i = (10 - (solid.length >> 1) + y) * 50 + 25 - (row.length >> 1) + x
           expect(lit.px[i], `${place} ${tier} solid star stays solid`).toBe(bare.px[i])
         }

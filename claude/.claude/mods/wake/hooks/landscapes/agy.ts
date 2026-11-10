@@ -76,15 +76,15 @@ function generate(place: WakePreset, tier: Tier, beat: number): Pose {
   // The figure holds still, as a constellation does. What moves is light: a shot runs along the lines from star to star.
   const { stars, links } = figure(place, w - 1, 0, tier >= 3)
   const at = stars.map(([x, y]): Vec => [clamp(Math.round(x), 0, w - 1), clamp(Math.round(y), 0, H - 1)])
-  const wire: Vec[] = [] // every cell of every line, in the order the shot travels them
-  for (const [from, to] of links) {
+  // Light passes from star to star, one line each beat: that line warms (`E`), the star it reaches flares white and the rest
+  // rest pale. The other lines are only a tint of the sky (`e`). Beats cross-fade, so the light flows instead of hopping cells.
+  // A seven-line figure would light its first line twice running at the loop's seam: the spare beat goes to a middle line.
+  const live = BEATS % links.length === 1 && beat === BEATS - 1 ? links.length >> 1 : beat % links.length
+  for (const [n, [from, to]] of links.entries()) {
     const [ax, ay] = at[from]!, [bx, by] = at[to]!, steps = Math.max(Math.abs(bx - ax), Math.abs(by - ay))
-    for (let i = 1; i < steps; i++) wire.push([Math.round(ax + (bx - ax) * i / steps), Math.round(ay + (by - ay) * i / steps)])
+    for (let i = 1; i < steps; i++) put(Math.round(ax + (bx - ax) * i / steps), Math.round(ay + (by - ay) * i / steps), n === live ? 'E' : 'e', n === live)
   }
-  const head = Math.floor(beat * wire.length / BEATS)
-  // The lines are only a tint of the sky (`e`), enough to hold the figure together; what shows is the shot and its fading tail.
-  for (const [i, [x, y]] of wire.entries()) put(x, y, i === head ? 'l' : 'e')
-  for (const [i, [x, y]] of at.entries()) if (i) put(x, y, (i + beat) % 4 ? 'W' : 'a')
+  for (const [i, [x, y]] of at.entries()) if (i) put(x, y, i === links[live]![1] || i === links[live]![0] ? 'W' : 'l')
   const [cx, cy] = at[0]!
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) put(cx + dx, cy + dy, 'l', false) // the core's four rays
   put(cx, cy, 'M')

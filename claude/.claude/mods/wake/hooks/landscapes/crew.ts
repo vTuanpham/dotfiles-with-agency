@@ -68,7 +68,8 @@ function paint(job: Job, look: Look) {
   const body = shade ? Object.fromEntries(Object.entries(colors).map(([ch, color]) => [ch, mix(color, look.top, shade)])) : colors
   const kind = job.kind ?? 'codex'
   const lit = kind === 'codex' ? 'sfgMr' + (look.place === 'city' ? 'W' : '') : kind === 'opencode' ? 'sfM' : 'M'
-  return { colors, body, extra: lit + (SPRITES[kind].emissive ?? '') }
+  // Stars have no body to stand out with by day: a deep ring round each one sets it off from a bright sky, cloud or snow.
+  return { colors, body, extra: lit + (SPRITES[kind].emissive ?? ''), ...(kind === 'agy' ? { ring: mix(base, P.ink, 0.7) } : {}) }
 }
 
 function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly string[], pal: ReturnType<typeof paint>, glow: boolean) {
@@ -79,6 +80,9 @@ function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly strin
       if (ch !== '.' && emissive(ch, x, y)) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(x0 + x + dx, y0 + y + dy, pal.colors[ch]!, 0.3 * look.night)
     }
   })
+  if (pal.ring !== undefined && look.night < 1) art.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) if ('WM'.includes(row[x]!)) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]] as const) c.glow(x0 + x + dx, y0 + y + dy, pal.ring!, (dx && dy ? 0.22 : 0.42) * (1 - look.night))
+  })
   if (glow) art.forEach((row, y) => {
     for (let x = 0; x < row.length; x++) if ('WMs'.includes(row[x]!)) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(x0 + x + dx, y0 + y + dy, pal.body.a!, 0.25 * (0.4 + look.night))
   })
@@ -86,7 +90,7 @@ function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly strin
     for (let i = 0; i < row.length; i++) {
       const ch = row[i]!
       if (ch === '.') continue
-      if (ch === 'e') { c.glow(x0 + i, y0 + r, pal.colors.a!, 0.07); continue } // a faint line: a tint of the sky behind it, never a solid cell
+      if (ch === 'e' || ch === 'E') { c.glow(x0 + i, y0 + r, ch === 'E' ? pal.colors.W! : pal.colors.a!, ch === 'E' ? 0.38 + 0.2 * look.night : 0.07); continue } // a line is a tint of the sky behind it, never a solid cell; the one carrying light warms
       c.set(x0 + i, y0 + r, (emissive(ch, i, r) ? pal.colors : pal.body)[ch]!)
     }
   })
@@ -343,7 +347,7 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
       const from = art[y]![x]!, to = next[y]![x]!
       if (from === '.' && to === '.') continue
       const sky = c.get(x0 + x, y0 + y)
-      const color = (ch: string) => ch === '.' ? sky : ch === 'e' ? mix(sky, pal.colors.a!, .07) : (pal.extra.includes(ch) ? pal.colors : pal.body)[ch]!
+      const color = (ch: string) => ch === '.' ? sky : ch === 'e' ? mix(sky, pal.colors.a!, .07) : ch === 'E' ? mix(sky, pal.colors.W!, .38 + .2 * look.night) : (pal.extra.includes(ch) ? pal.colors : pal.body)[ch]!
       c.set(x0 + x, y0 + y, mix(color(from), color(to), blend))
     }
   } else draw(c, look, x0, y0, art, pal, false)
