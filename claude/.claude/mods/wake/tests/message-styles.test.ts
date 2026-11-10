@@ -58,6 +58,26 @@ test('night strengthens the landing glow', () => {
   expect(brightness(draw(1))).toBeGreaterThan(brightness(draw(0)))
 })
 
+test('styled releases leave the emitter in the launch direction and fade without changing hit targets', () => {
+  const signatures = new Set<string>()
+  for (const kind of ['codex', 'claude', 'agy', 'opencode'] as const) {
+    const draw = (t: number, direction: 1 | -1) => {
+      const c = canvas(40, 24, true)
+      c.withHit(1, () => c.rect(17, 17, 6, 4, P.ink))
+      const owners = c.hitOwners!.slice()
+      react(c, [{ id: 'worker' }], [{ id: 'worker', role: 'send', v: Math.exp(-t / 320), t, style: CREW[kind].message, point: { x: 20, y: 6 }, direction: { x: direction, y: 0 } }], () => kind)
+      expect(Array.from(c.hitOwners!)).toEqual(Array.from(owners))
+      return c
+    }
+    const forward = draw(150, 1), backward = draw(150, -1)
+    expect(Array.from(forward.px.subarray(0, 40 * 10)).some(Boolean), kind).toBe(true)
+    signatures.add(Array.from(forward.px).join(','))
+    for (let y = 0; y <= 12; y++) for (let x = 2; x < 39; x++) expect(forward.get(x, y), kind).toBe(backward.get(40 - x, 12 - y))
+    expect(Array.from(draw(800, 1).px.subarray(0, 40 * 10)).some(Boolean)).toBe(false)
+  }
+  expect(signatures.size).toBe(4)
+})
+
 test('the scene keeps a peer arrival long enough for the starfall landing', () => {
   const now = 10_000
   const state: BandState = {

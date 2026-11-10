@@ -142,7 +142,7 @@ const FLIGHT: Record<string, Flight> = {
   beach: { path: (p, k) => ({ dx: dirOf(k) * p * 16 + Math.sin(p * 4 * Math.PI) * 4, dy: -p * 7 - (1 - Math.cos(p * 4 * Math.PI)) * 2.5 }), dissolveFrom: 0.65, shed: 'spray' }, // a looping gull
   mountains: { path: (p, k) => ({ dx: dirOf(k) * p * 10 + Math.sin(p * 9) * 6, dy: -p * 13 + Math.cos(p * 9) * 2 }), dissolveFrom: 0.6, shed: 'feather' }, // an eagle spiralling up a thermal
   countryside: { path: (p, k) => ({ dx: dirOf(k) * p * k.c.W * 0.4, dy: p < 0.3 ? Math.sin((p / 0.3) * Math.PI) * 3 : -((p - 0.3) ** 1.4) * 18 }), dissolveFrom: 0.62, shed: 'feather' }, // a swoop, then up
-  forest: { path: (p, k) => ({ dx: dirOf(k) * p * k.c.W * 0.2, dy: -Math.abs(Math.sin(p * 14)) * 3 - p * 6 }), dissolveFrom: 0.5, shed: 'leaf' }, // flits up into the canopy
+  forest: { path: (p, k) => ({ dx: dirOf(k) * p * p * (dirOf(k) > 0 ? k.c.W - k.x0 + 1 : k.x1 + 1), dy: -Math.sin(p * Math.PI) * Math.min(2, k.y0) }), dissolveFrom: .94, shed: 'leaf' }, // glides in along the canopy, wings visible throughout the approach
   desert: { path: (p, k) => ({ dx: dirOf(k) * p * 6 + Math.sin(p * 14) * 3, dy: -p * 14 }), dissolveFrom: 0.6, shed: 'shimmer' }, // a hawk circling up in the heat
   tundra: { path: (p, k) => ({ dx: dirOf(k) * p * k.c.W * 0.25, dy: -p * 3 }), dissolveFrom: 0.3, shed: 'snow', ghost: true }, // an owl, silent, fading as it goes
 }

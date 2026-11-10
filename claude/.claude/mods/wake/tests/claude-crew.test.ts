@@ -54,10 +54,6 @@ test('Claude fronts, turns, cruise and flock belong to every species', () => {
     const flocking = ['city', 'countryside', 'tundra'].includes(place)
     expect(d.escorts[3]?.length ?? 0).toBe(flocking ? 1 : 0); expect(d.escorts[4]?.length ?? 0).toBe(flocking ? 2 : 0)
     expect(CREW.claude[place]!.talking![0]!.emitter.arc).toBe(true)
-    for (const stream of CREW.claude.any!.streams!) {
-      expect(stream.emitter.count).toBeLessThanOrEqual(2)
-      expect(stream.emitter.colors).not.toContain(0xf5c2e7)
-    }
   }
 })
 
@@ -85,7 +81,7 @@ test('a call arc has a curved three-cell profile and waits for its burst', () =>
 
 test('a feather keeps its birth stroke while it drifts after the wing has risen', () => {
   const ages: number[] = [], dots: number[][] = []
-  const emitter = CREW.claude.any!.streams![0]!.emitter
+  const emitter = CREW.claude.beach!.streams![0]!.emitter
   const c = { glow: (x: number, y: number) => { dots.push([x, y]) } }
   emit(c, emitter, { at: () => [10, 10], t: 0.75, seed: 0, strength: 1, wind: 0, strengthAtBirth: age => { ages.push(age); return age > 0.05 ? 1 : 0 } })
   expect(ages.length).toBe(2); expect(ages.every(age => age > 0)).toBe(true)

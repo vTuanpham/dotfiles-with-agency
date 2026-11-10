@@ -44,7 +44,7 @@ const server = Bun.serve({
             || !['codex', 'claude', 'agy', 'opencode'].includes(String(c.family))
             || ![1, 2, 3, 4].includes(c.tier as number) || ![14, 22].includes(c.hour as number)
             || ![72, 120, 190].includes(c.width as number)
-            || !['cruise', 'to', 'from', 'peer', 'burst', 'arrive', 'leave', 'strike', 'rest', 'crowd', 'depth'].includes(String(c.mode))) throw new Error('Invalid scene')
+            || !['cruise', 'to', 'from', 'peer', 'burst', 'arrive', 'leave', 'strike', 'rest', 'crowd', 'depth', 'overcast'].includes(String(c.mode))) throw new Error('Invalid scene')
       }
       const at = new Date().toISOString()
       // Serialize writes so a slow autosave cannot overwrite a later submission on disk.

@@ -97,7 +97,7 @@ const CODEX: FamilyCells = {
     lights: [EYE(P.teal), { at: 'below', light: { shape: 'halo', color: P.yellow, alpha: 0.4, reach: 1, from: 0.05 } }],
     talking: SIGNAL('nose', 0, 0, { speed: [6, 10] }),
   },
-  countryside: { streams: [WORKS([P.sky, P.white], { gravity: 1.2, envelope: 'fade' })], lights: [EYE(P.teal), { at: 'left', light: { shape: 'halo', color: P.yellow, alpha: 0.4, reach: 1, from: 0.05 } }], talking: SIGNAL('nose') }, // the strider: chaff kicked up by its feet, and its headlamp
+  countryside: { streams: [{ at: 'below', follow: true, emitter: { count: 6, life: .7, spawn: { w: 5 }, speed: [1, 2], angle: [DOWN - .2, DOWN + .2], gravity: 2, colors: [P.sky, P.white], alpha: .35, envelope: 'fade' } }], lights: [EYE(P.teal)], talking: SIGNAL('nose') }, // mist falls from the crop drone's spray boom
   forest: { // the probe: sparks off its working arms
     streams: [WORKS([P.white, P.teal], { count: 5, life: 0.8, speed: [0.3, 1], gravity: 2, envelope: 'fade' })], lights: [EYE(P.teal)],
     talking: SIGNAL('nose', 0, 0, { angle: [Math.PI - 0.2, Math.PI + 0.2] }),
@@ -125,10 +125,10 @@ const SHED = (colors: readonly number[], extra: Partial<Emitter> = {}): Stream =
 const CLAUDE: FamilyCells = {
   message: 'song',
   night: nightLight(P.pink),
-  any: { lights: SHADOW, streams: [FEATHER] },
-  city: { talking: CALL(11), streams: [SHED([P.white, P.overlay1]), ...BIRD_WASH(P.overlay1)] }, // the pigeon's grey down
+  any: { lights: SHADOW },
+  city: { talking: CALL(11), streams: [SHED([P.overlay1, P.sky], { count: 3, life: .4, speed: [1, 2], gravity: 0, alpha: .2 })] }, // air stirred by the bat's wings
   harbor: { talking: CALL(8), streams: [SHED([P.sky, P.white], { count: 4, life: 0.9, speed: [0.3, 1], angle: [UP - 0.4, UP + 0.4], gravity: -0.8, swirl: 0.6, envelope: 'twinkle' })] }, // bubbles blown by the crab
-  beach: { talking: CALL(9, 0.06), streams: [SHED([P.sky, P.white], { count: 4, life: 0.6, speed: [0.5, 1.5], angle: [UP - 0.8, UP + 0.8], gravity: 5, swirl: 0 })] }, // splashes round the flamingo's legs
+  beach: { talking: CALL(9, 0.06), streams: [FEATHER, SHED([P.pink, P.snow], { count: 3, life: .5, speed: [1, 2], gravity: .3, alpha: .25, streak: 1 })] }, // trailing air at the flamingo's black wingtips
   mountains: { talking: CALL(6, 0.08), streams: [SHED([P.white, P.snow], { count: 5, life: 0.4, speed: [3, 6], angle: [-0.1, 0.1], gravity: 0, swirl: 0, alpha: 0.35, streak: 2 }), ...BIRD_WASH(P.snow)] }, // the air streaming off the eagle's wingtip
   countryside: { talking: CALL(12), streams: [SHED([P.yellow, P.white], { count: 9, speed: [0.1, 0.5], angle: [0, TAU], gravity: 0.3, envelope: 'twinkle' }), ...BIRD_WASH(P.yellow)] }, // pollen off the butterfly's wings
   forest: {

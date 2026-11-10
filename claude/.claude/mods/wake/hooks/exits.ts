@@ -9,7 +9,7 @@
 // that burst gather into a star.
 import { type Ctx, type Dot, styleFor } from './exit-styles'
 import { type Canvas, hash, mix } from './pixels'
-import type { SurfaceLight } from './landscapes/kit'
+import type { CrewBox, SurfaceLight } from './landscapes/kit'
 
 export const EXIT_MS = 3200
 export const ARRIVE_MS = 2400
@@ -23,7 +23,7 @@ const clamp = (v: number) => Math.max(0, Math.min(1, v))
  * Play every passage (a job arriving or leaving) over the finished scene. `owners` are the scene's hit targets, so a job's id
  * finds its pixels through the canvas's hit owners. Hit owners are never changed: hover stays where the job stands.
  */
-export function passages(c: Canvas, owners: { id: string }[], list: Passage[], background?: Uint32Array, boxes?: Record<string, { x0: number; y0: number; x1: number; y1: number }>, points?: Record<string, { x: number; y: number }>, lights?: SurfaceLight[], surfaceAt?: (x: number, below: number) => number | undefined): void {
+export function passages(c: Canvas, owners: { id: string }[], list: Passage[], background?: Uint32Array, boxes?: Record<string, CrewBox>, points?: Record<string, { x: number; y: number }>, lights?: SurfaceLight[], surfaceAt?: (x: number, below: number) => number | undefined): void {
   const playing = list.filter(job => job.age >= 0 && job.age < (job.arriving ? ARRIVE_MS : EXIT_MS))
   if (!c.hitOwners || playing.length === 0) return
   const wanted = new Map(playing.map(job => [owners.findIndex(owner => owner.id === job.id) + 1, job]))
@@ -43,7 +43,6 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[], b
     if (!painted?.length) continue
     const box = boxes?.[job.id]
     // Shadows and flight trails belong to the scenery; moving them would carry pieces of its background along.
-    const sprite = box ? painted.filter(d => d.x >= box.x0 && d.x <= box.x1 && d.y >= box.y0 && d.y <= box.y1) : painted
     const rows = new Map<number, [number, number]>() // each row's left and right edge of the sprite
     for (const d of painted) { const edge = rows.get(d.y); rows.set(d.y, edge ? [Math.min(edge[0], d.x), Math.max(edge[1], d.x)] : [d.x, d.x]) }
     for (const d of painted) {
@@ -52,36 +51,42 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[], b
       const index = d.y * c.W + d.x
       c.px[index] = background?.[index] ?? c.px[d.y * c.W + from]!
     }
-    if (!sprite.length) continue
-    const xs = sprite.map(d => d.x), ys = sprite.map(d => d.y)
-    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys)
-    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2
-    const p = job.arriving ? 1 - job.age / ARRIVE_MS : job.age / EXIT_MS // an arrival is the exit played backwards
-    const ctx: Ctx = {
-      c, p, seed: job.seed, arriving: job.arriving, cx, cy, x0, x1, y0, y1, lit, surfaceAt,
-      heading: points?.[job.id] && points[job.id]!.x !== cx ? points[job.id]!.x < cx ? -1 : 1 : undefined,
-      behind: (i, step) => (job.arriving ? p + i * step : p - i * step),
-      flip: job.arriving ? -1 : 1,
-      sprite: ({ dx = 0, dy = 0, sx = 1, sy = 1, dissolve = 0, tint, tintBy = 0, filter, offset, clipBelow }) => {
-        for (const light of lights ?? []) if (light.id === job.id) {
-          light.x += dx
-          light.y = cy + dy + (light.y - cy) * sy
-          light.alpha *= 1 - dissolve
-        }
-        for (const d of sprite) {
-          if (filter && !filter(d)) continue
-          if (dissolve > 0 && (hash(d.x * 31 + d.y * 17 + job.seed) % 1000) / 1000 < dissolve) continue
-          const [ox, oy] = offset?.(d) ?? [0, 0]
-          const x = cx + dx + ox + (d.x - cx) * sx, y = Math.round(cy + dy + oy + (d.y - cy) * sy)
-          if (clipBelow !== undefined && y > clipBelow) continue
-          const color = tint === undefined ? d.color : mix(d.color, tint, tintBy)
-          for (let i = 0; i < Math.max(1, Math.ceil(sx)); i++) {
-            const px = Math.floor(x) + i
-            if (px >= 0 && px < c.W && y >= 0 && y < c.H) c.px[y * c.W + px] = color
+    const parts = box ? [box, ...box.companions ?? []] : [undefined]
+    const center = box ? (box.x0 + box.x1) / 2 : undefined
+    const heading = center !== undefined && points?.[job.id] && points[job.id]!.x !== center ? points[job.id]!.x < center ? -1 as const : 1 as const : undefined
+    for (const part of parts) {
+      const sprite = part ? painted.filter(d => d.x >= part.x0 && d.x <= part.x1 && d.y >= part.y0 && d.y <= part.y1) : painted
+      if (!sprite.length) continue
+      const xs = sprite.map(d => d.x), ys = sprite.map(d => d.y)
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys)
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2
+      const p = job.arriving ? 1 - job.age / ARRIVE_MS : job.age / EXIT_MS // an arrival is the exit played backwards
+      const ctx: Ctx = {
+        c, p, seed: job.seed, arriving: job.arriving, cx, cy, x0, x1, y0, y1, lit, surfaceAt,
+        heading,
+        behind: (i, step) => (job.arriving ? p + i * step : p - i * step),
+        flip: job.arriving ? -1 : 1,
+        sprite: ({ dx = 0, dy = 0, sx = 1, sy = 1, dissolve = 0, tint, tintBy = 0, filter, offset, clipBelow }) => {
+          for (const light of lights ?? []) if (part === box && light.id === job.id) {
+            light.x += dx
+            light.y = cy + dy + (light.y - cy) * sy
+            light.alpha *= 1 - dissolve
           }
-        }
-      },
+          for (const d of sprite) {
+            if (filter && !filter(d)) continue
+            if (dissolve > 0 && (hash(d.x * 31 + d.y * 17 + job.seed) % 1000) / 1000 < dissolve) continue
+            const [ox, oy] = offset?.(d) ?? [0, 0]
+            const x = cx + dx + ox + (d.x - cx) * sx, y = Math.round(cy + dy + oy + (d.y - cy) * sy)
+            if (clipBelow !== undefined && y > clipBelow) continue
+            const color = tint === undefined ? d.color : mix(d.color, tint, tintBy)
+            for (let i = 0; i < Math.max(1, Math.ceil(sx)); i++) {
+              const px = Math.floor(x) + i
+              if (px >= 0 && px < c.W && y >= 0 && y < c.H) c.px[y * c.W + px] = color
+            }
+          }
+        },
+      }
+      styleFor(job.kind, job.place, job.struck && !job.arriving, job.arriving)(ctx)
     }
-    styleFor(job.kind, job.place, job.struck && !job.arriving, job.arriving)(ctx)
   }
 }

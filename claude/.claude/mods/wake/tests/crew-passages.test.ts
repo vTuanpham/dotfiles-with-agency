@@ -72,3 +72,43 @@ test('a departing body does not take its ground shadow or wake into the sky', ()
   expect(c.px.includes(0xff9988)).toBe(true)
   for (let x = 25; x < 50; x++) expect(c.get(x, 20)).toBe(background[20 * c.W + x])
 })
+
+test('owl enters through the side with a visible body during its first half second', () => {
+  for (const seed of [1, 2]) for (const tier of [1, 2, 3, 4] as const) {
+    const c = canvas(100, 24, true)
+    const look = { place: 'forest', frame: 20, night: 0, top: 0x223344, wind: 0, effects: false, crewGround: 21, crewBoxes: {} } as Look
+    const job = { kind: 'claude' as const, tier, seed, isStale: false, hit: { id: 'owl', title: 'owl', details: [] } }
+    c.withHit(1, () => fly(c, look, 40, 4, job, 'claude', false, () => [40, 4], []))
+    passages(c, [job.hit], [{ id: 'owl', kind: 'claude', place: 'forest', seed, age: 450, arriving: true }], new Uint32Array(c.px.length), look.crewBoxes)
+    expect(Array.from(c.px).filter(Boolean).length > 3, `owl class ${tier}, side ${seed}`).toBe(true)
+  }
+})
+
+test('companions use the same passage as their leader while scenery effects stay behind', () => {
+  for (const arriving of [true, false]) {
+    const c = canvas(100, 24, true), background = c.px.slice()
+    c.withHit(1, () => {
+      c.rect(46, 10, 8, 4, 0xaa3300)
+      c.rect(28, 9, 4, 2, 0x33aa00)
+      c.rect(25, 21, 40, 1, 0x112233)
+    })
+    passages(c, [{ id: 'crew' }], [{ id: 'crew', kind: 'codex', place: 'city', seed: 1, age: arriving ? 2100 : 400, arriving }], background,
+      { crew: { x0: 46, y0: 10, x1: 53, y1: 13, companions: [{ x0: 28, y0: 9, x1: 31, y1: 10 }] } })
+    expect(c.px.includes(0xaa3300)).toBe(true)
+    expect(c.px.includes(0x33aa00)).toBe(true)
+    expect(c.px.includes(0x112233)).toBe(false)
+  }
+})
+
+test('every companion-bearing design exposes its bodies for lifecycle effects, including rest poses', () => {
+  for (const kind of families) for (const [place, design] of Object.entries(DESIGNS[kind])) for (const tier of [3, 4] as const) {
+    const escorts = design.escorts[tier]
+    if (!escorts?.length) continue
+    for (const crewRest of [false, true]) {
+      const c = canvas(160, 24, true)
+      const look = { place, frame: 20, night: 0, top: 0x223344, wind: 0, effects: false, crewGround: 23, crewRest, crewBoxes: {} } as Look
+      c.withHit(1, () => fly(c, look, 80, 11, { kind, tier, seed: 2, isStale: false, hit: { id: 'crew', title: 'crew', details: [] } }))
+      expect(look.crewBoxes!.crew!.companions?.length, `${kind}/${place}/${tier}/${crewRest}`).toBe(escorts.length)
+    }
+  }
+})

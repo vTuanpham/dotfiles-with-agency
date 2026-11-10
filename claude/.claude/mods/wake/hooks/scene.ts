@@ -161,7 +161,7 @@ function drawSky(c: Canvas, look: Look, input: SceneInput, celestialOwner = 0) {
   const cloud = input.weather?.cloud ?? 0.2
   const grey = Math.min(0.55, Math.max(0, cloud - 0.5) * 1.1 + (input.weather && input.weather.rain + input.weather.snow > 0 ? 0.2 : 0))
   // overcast greys the sky: light by day, dark by night
-  const top = mix(look.top, mix(0x8a90a8, P.surface1, look.night), grey)
+  const top = mix(look.top, mix(0x8a90a8, P.surface1, look.night), grey * (1 - look.night * .65))
   const low = mix(look.horizon, mix(0xa6adc8, P.surface0, look.night), grey)
   for (let y = 0; y < H; y++) {
     const row = mix(top, low, (y / (H - 1)) ** 1.4)
@@ -216,17 +216,22 @@ function drawSky(c: Canvas, look: Look, input: SceneInput, celestialOwner = 0) {
   // The clouds fill the whole sky, not only its top: high ones small and slow, low ones nearer, longer and quicker.
   const n = Math.round((c.W / 30) * (0.2 + cloud * 1.6) * 1.1)
   const speed = 0.03 + (input.weather?.wind ?? 8) * 0.004
-  const tone = mix(mix(P.overlay1, P.surface1, grey), top, look.night * 0.65)
+  const tone = mix(mix(P.overlay1, P.surface1, grey), top, look.night * 0.35)
   for (let k = 0; k < n; k++) {
     const span = c.W + 40
     const cy = 1 + (hash(k * 7) % Math.round(H * 0.7))
     const altitude = cy / (H * 0.7) // 0 high .. 1 low
     const cx = Math.round((((hash(k + input.seed) % span) + look.frame * speed * (0.7 + altitude * 0.6) * (1 + (k % 3) * 0.3)) % span) - 20)
     const len = 6 + (hash(k * 13) % 10) + Math.round(altitude * 6)
+    // Rounded, overlapping lobes keep overcast textured instead of drawing flat horizontal slabs.
     for (let i = 0; i < len; i++) {
-      c.glow(cx + i, cy, tone, 0.35 + grey * 0.3)
-      if (i > 1 && i < len - 2) c.glow(cx + i, cy - 1, tone, 0.25 + grey * 0.3)
-      if (cloud > 0.6 && i > 2 && i < len - 3) c.glow(cx + i, cy + 1, tone, 0.2)
+      const edge = Math.sin(Math.PI * (i + .5) / len)
+      const crown = Math.round(edge * (1 + cloud * 2) + Math.sin(i * .6 + k) * .5)
+      for (let dy = -crown; dy <= 1; dy++) {
+        const rim = dy === -crown ? .22 : dy === 1 ? -.15 : 0
+        const color = mix(tone, rim > 0 ? look.horizon : top, Math.abs(rim))
+        c.glow(cx + i, cy + dy, color, edge * (dy === 1 ? .15 : .4 + grey * .35))
+      }
     }
   }
 }
@@ -643,10 +648,10 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   const skyBeforeBackdrop = c.px.slice()
   if (localHits) skyPixels = skyBeforeBackdrop
   land.backdrop(c, look)
-  // Aurora and other translucent night effects are not surfaces. Sample the same terrain in daylight for its solid contour.
-  const terrain = look.night > 0 ? canvas(c.W, c.H) : undefined
-  if (terrain) land.backdrop(terrain, { ...look, night: 0, isDay: true, phase: 'noon', blend: { dawn: 0, morning: 0, noon: 1, afternoon: 0, dusk: 0, night: 0 } })
-  const solid = (x: number, y: number) => terrain ? terrain.get(x, y) !== 0 : c.px[y * c.W + x] !== skyBeforeBackdrop[y * c.W + x]
+  // Stable daylight geometry excludes aurora and prevents passing boats or crane lights from moving crew homes.
+  const terrain = canvas(c.W, c.H)
+  land.backdrop(terrain, { ...look, frame: 0, night: 0, isDay: true, phase: 'noon', blend: { dawn: 0, morning: 0, noon: 1, afternoon: 0, dusk: 0, night: 0 } })
+  const solid = (x: number, y: number) => terrain.get(x, y) !== 0
   const terrainPerches: { x: number; y: number }[] = []
   for (let x = 2; x < right - 2; x++) {
     let y = 1
@@ -764,6 +769,7 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   look.crewSurfaceObstacles = look.crewZones.slice(foregroundStart)
   const surfaces = new Uint8Array(c.W * c.H)
   for (let y = 0; y < c.H; y++) for (let x = 0; x < c.W; x++) surfaces[y * c.W + x] = y >= ground || solid(x, y) || reference.get(x, y) !== 0 ? 1 : 0
+  look.crewOcclusion = surfaces
   look.crewSurfaceAt = (x, below) => {
     if (x < 0 || x >= c.W) return undefined
     for (let y = Math.max(0, Math.ceil(below)); y < c.H; y++) if (surfaces[y * c.W + x]) return y
@@ -953,7 +959,10 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
         const head = (t / PACKET_RUN_MS) * (length + 4 * tail) // the head runs on past the end so the tail finishes crossing
         trails.visit(edge, packet, Math.min(length - 1, Math.floor(head)))
         // the sender pulses as the comet leaves; the receiver as its head reaches the end
-        reactions.push({ id: edge.source, role: 'send', v: Math.exp(-t / 320), t, style, point: from })
+        const start = path[0]!, next = path[Math.min(3, length - 1)]!
+        const dx = next % c.W - start % c.W, dy = Math.floor(next / c.W) - Math.floor(start / c.W), distance = Math.hypot(dx, dy) || 1
+        reactions.push({ id: edge.source, role: 'send', v: Math.exp(-t / 320), t, style,
+          point: { x: start % c.W, y: Math.floor(start / c.W) }, direction: { x: dx / distance, y: dy / distance } })
         const landsAt = (PACKET_RUN_MS * (length - 1)) / (length + 4 * tail)
         const age = t - landsAt
         if (age >= 0) {

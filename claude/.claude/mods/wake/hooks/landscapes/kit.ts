@@ -26,6 +26,8 @@ export const SCENE_H = 20 // ten terminal rows: landscapes stand on the ground a
 
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter'
 export type SurfaceLight = { id?: string; x: number; y: number; color: number; radius: number; alpha: number }
+export type SpriteBox = { x0: number; y0: number; x1: number; y1: number }
+export type CrewBox = SpriteBox & { companions?: SpriteBox[] }
 
 /**
  * The part of the day, from the real sunrise and sunset where the person is. Every
@@ -60,7 +62,8 @@ export type Look = {
   /** The sprite zones that are hard boundaries (Mochi and her laptop); every other zone in `crewSpriteZones` is crew, a soft one. */
   crewHard?: { x: number; y: number; w: number; h: number }[]
   /** Each worker's own sprite box this pass, by its hit id (crew.ts `fly`): where a send pulse or a receive ring is centred. */
-  crewBoxes?: Record<string, { x0: number; y0: number; x1: number; y1: number }>
+  crewBoxes?: Record<string, CrewBox>
+  crewOcclusion?: Uint8Array
   /** Current message point on the leader's painted body, in scene coordinates. */
   crewMessagePoints?: Record<string, { x: number; y: number }>
   crewMessageStars?: Record<string, { x: number; y: number }[]>

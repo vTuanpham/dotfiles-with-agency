@@ -391,8 +391,11 @@ independently of Wake. Setup, delivery receipts and limits belong to
   scrubbable scenes, design assessments and feedback boxes. Drafts and submitted
   batches stay in the ignored `feedback.local/wake-review/` folder. Run this
   long-lived server through `agent-resources`; stop it when the review is finished.
-  `bun dev/review-sheet.ts <place> <mode> [out.png] [width] [hour] [class]` samples
-  the same timeline into a four-family comparison sheet. Test the feedback server
+  `bun dev/review-sheet.ts <place> <mode> [out.png] [width] [hour] [class] [family]` samples
+  the same timeline into a comparison sheet; select one family for a closer view.
+  `bun dev/reactions.ts [out.png] [day|night]` shows each crew and root character charging,
+  releasing and receiving. The review's overcast action compares idle and working skies.
+  Test the feedback server
   separately with `bun test dev/review-server.spec.ts`.
   `bun dev/roam.ts [place]` prints how far each family travels and its largest step per paint; `bun dev/perf.ts` prints
   milliseconds a painted frame (the scene repaints twenty times a second, a 50 ms budget; it runs 1 to 6 ms: compare before and

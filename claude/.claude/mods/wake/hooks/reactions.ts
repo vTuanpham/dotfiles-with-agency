@@ -5,16 +5,16 @@
 // `Effect` below and list it in EFFECTS under its kind. The scene knows nothing about the individual effects: it only
 // reports who sent or received and how strongly (see `Reaction`), and `react` paints.
 import type { CharacterId } from './mochi'
-import { P } from './landscapes/kit'
+import { P, type CrewBox, type SpriteBox } from './landscapes/kit'
 import { type Canvas, hash, mix } from './pixels'
 import { NIGHT_GAIN, type MessageStyle } from './landscapes/fx'
 
 export type ReactionKind = 'codex' | 'claude' | 'agy' | 'opencode' | CharacterId
 
 /** One worker reacting: `v` is its strength now (1 at the moment, fading to 0), `t` the ms since the message arrived in view. */
-export type Reaction = { id: string; role: 'charge' | 'send' | 'land'; v: number; t: number; style?: MessageStyle; point?: { x: number; y: number } }
+export type Reaction = { id: string; role: 'charge' | 'send' | 'land'; v: number; t: number; style?: MessageStyle; point?: { x: number; y: number }; direction?: { x: number; y: number } }
 
-export type Box = { x0: number; y0: number; x1: number; y1: number }
+export type Box = SpriteBox
 /** Light one pixel toward the effect's colour (or `color`) by `strength`, 0..1. Out of bounds is ignored. */
 type Paint = (x: number, y: number, strength: number, color?: number) => void
 /** `v` is the strength now (already quieter for a sender), `t` ms since the message arrived, `role` which end of it this is. */
@@ -92,10 +92,15 @@ const dish: Effect = (paint, b, v, t, role) => {
   const stalk = Math.round(1 + 2 * pop(v))
   for (let i = 0; i < stalk; i++) paint(cx, base - i, 1, P.overlay1)
   const top = base - stalk
-  stamp(paint, ['.XXXXX.', '..XSX..'], cx - 3, top - 1, { X: P.overlay2, S: P.overlay0 }, 1)
+  stamp(paint, ['X.....X', '.XXXXX.', '..XSX..'], cx - 3, top - 2, { X: P.overlay2, S: P.overlay0 }, pop(v))
   paint(cx - 1, top - 2, 1, P.snow) // the dish's lit rim
   if (Math.floor(t / 120) % 2 === 0) paint(cx + 1, top - 3, 1, P.red) // the feed's blink
   arcs(paint, cx + 1, top - 3, v, role, P.white)
+  if (role === 'land' && t < 450) {
+    const scan = Math.floor(t / 90) % 5
+    paint(cx - 2 + scan, top - 1, 1, P.teal)
+    paint(cx, base, v, P.teal)
+  }
 }
 
 /** Tabby: ears prick up and whiskers turn to radar, rings of signal sliding in along them. */
@@ -104,11 +109,12 @@ const radar: Effect = (paint, b, v, t, role) => {
   const y = b.y0 + 4
   for (const side of [-1, 1]) {
     const edge = side < 0 ? b.x0 - 1 : b.x1 + 2
+    for (let i = 1; i <= 4; i++) paint(edge + side * i, y - Math.sin(t * .006) * i * .65, v * (1 - i / 6), P.teal)
     for (let ring = 0; ring < 3; ring++) {
       const flow = ((t * 0.012 + ring * 2) % 6)
       const d = role === 'land' ? 6 - flow : flow // closing in on the whiskers, or leaving them
       const s = v * (1 - d / 7)
-      for (const dy of [-1, 0, 1]) paint(edge + side * d, y + dy, (dy ? s * 0.6 : s) * 1.3, P.white)
+      for (const dy of [-1, 0, 1]) paint(edge + side * d, y + dy * (1 + d * .35), (dy ? s * 0.6 : s), P.white)
     }
   }
 }
@@ -120,25 +126,68 @@ const trumpet: Effect = (paint, b, v, t, role) => {
   stamp(paint, ['....OY', '...OYY', '.OOY..', 'OO....'], cx - 2, base - 3 - lift + 2, { O: P.peach, Y: P.yellow }, 1)
   for (let i = 0; i < 2; i++) { // notes rise to the bell for a message caught, leave it for one sent
     const along = role === 'land' ? 1 - ((t * 0.0014 + i * 0.5) % 1) : (t * 0.0014 + i * 0.5) % 1
-    paint(cx + 5 + i * 2 + Math.sin(along * 6) * 1.2, base - 6 - lift - along * 5, v * (1 - along * 0.6), P.snow)
+    const x = cx + 5 + i * 2 + Math.sin(along * 6) * 1.2, y = base - 6 - lift - along * 5
+    paint(x, y, v * (1 - along * .6), P.snow)
+    paint(x + 1, y - 1, v * .7, P.yellow); paint(x + 1, y - 2, v * .5, P.yellow)
   }
 }
 
 /** Bun: ears stretch into rabbit-ear antennae with glowing tips and a haze of TV static between them. */
-const antenna: Effect = (paint, b, v, t) => {
+const antenna: Effect = (paint, b, v, t, role) => {
   const reach = Math.round(1 + 2 * pop(v))
   for (const x of [b.x0 + 1, b.x1 - 1]) {
     for (let i = 1; i <= reach; i++) paint(x, b.y0 - i, 1, P.overlay2)
     paint(x, b.y0 - reach - 1, 1, Math.floor(t / 150) % 2 ? P.red : P.yellow) // the tips blink in turn
   }
   for (let i = 0; i < 9; i++) { // static in the gap between the ears
-    if (hash(i * 17 + Math.floor(t / 70)) % 3 === 0) paint(b.x0 + 3 + (i % 3), b.y0 - 1 - Math.floor(i / 3) + 1, v, hash(i + Math.floor(t / 70)) % 2 ? P.white : P.overlay2)
+    if (t < 240 && hash(i * 17 + Math.floor(t / 70)) % 3 === 0) paint(b.x0 + 3 + (i % 3), b.y0 - 1 - Math.floor(i / 3) + 1, v, hash(i + Math.floor(t / 70)) % 2 ? P.white : P.overlay2)
   }
+  const cx = (b.x0 + b.x1) / 2
+  arcs(paint, cx, b.y0 - reach - 1, v, role, P.pink)
+  if (t >= 240) stamp(paint, ['.G.', 'G.G', '.G.'], Math.round(cx) - 1, b.y0 - 3, { G: P.teal }, v)
 }
 
 const EFFECTS: Record<ReactionKind, Effect> = {
   codex: ring, claude: sparkles, agy: risingSparks, opencode: confetti,
   mochi: dish, tabby: radar, tuxedo: trumpet, bun: antenna,
+}
+
+/** Release in emitter coordinates: forward follows the first flight segment, across is perpendicular to it. */
+const RELEASE: Record<'codex' | 'claude' | 'agy' | 'opencode', (paint: Paint, age: number) => void> = {
+  codex(paint, age) {
+    const q = Math.min(1, age / 380), fade = 1 - q
+    for (let i = 0; i < 4; i++) {
+      paint(1 + q * 3, (i - 1.5) * (.6 + q * 3), fade, i === 1 || i === 2 ? P.white : P.sky)
+      paint(-q * 2, (i < 2 ? -1 : 1) * (1 + q * 2), fade * .6, P.teal)
+    }
+    paint(0, 0, fade, P.white)
+  },
+  claude(paint, age) {
+    const q = Math.min(1, age / 650), fade = 1 - q
+    for (const delay of [0, .22]) {
+      const p = q - delay
+      if (p < 0) continue
+      for (let a = -1; a <= 1; a += .4) paint(1 + p * 4 + Math.cos(a) * 1.5, Math.sin(a) * (1 + p * 4), fade * .8, delay ? P.pink : P.snow)
+    }
+  },
+  agy(paint, age) {
+    const q = Math.min(1, age / 700), fade = 1 - q, r = 1 + Math.sin(q * Math.PI) * 3
+    for (let i = 0; i < 4; i++) {
+      const a = i * Math.PI / 2 + q * 1.2
+      const x = Math.cos(a) * r * .65, y = Math.sin(a) * r
+      paint(x, y, fade, P.white); paint(x - .8, y, fade * .55, P.lavender)
+    }
+    paint(0, 0, fade, P.white)
+  },
+  opencode(paint, age) {
+    const q = Math.min(1, age / 650), fade = 1 - q
+    for (let i = 0; i < 4; i++) {
+      const x = -q * (2 + i), y = (i % 2 ? 1 : -1) * q * (1 + i) + q * q * 2
+      paint(x, y, fade, i % 2 ? P.peach : P.yellow)
+      if (i % 2 === 0 && q < .65) paint(x - 1, y, fade * .55, P.snow)
+    }
+    paint(1, 0, fade, P.white)
+  },
 }
 
 /**
@@ -147,7 +196,7 @@ const EFFECTS: Record<ReactionKind, Effect> = {
  * stand (the root's, so marks drawn above her never move her gadget). Several packets in flight leave several reactions for
  * one worker: the strongest of each role wins. Hit owners are never changed, so hover stays exactly where it was.
  */
-export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[], kindOf: (id: string) => ReactionKind, fixed: Record<string, Box> = {}, stars: Record<string, { x: number; y: number }[]> = {}, night = 0, occluded?: (id: string, x: number, y: number) => boolean): void {
+export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[], kindOf: (id: string) => ReactionKind, fixed: Record<string, CrewBox> = {}, stars: Record<string, { x: number; y: number }[]> = {}, night = 0, occluded?: (id: string, x: number, y: number) => boolean): void {
   if (!c.hitOwners || reactions.length === 0) return
   const best = new Map<string, Reaction>()
   for (const reaction of reactions) {
@@ -176,6 +225,11 @@ export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[]
     const kind = kindOf(reaction.id), accent = ACCENT[kind]
     const v = reaction.v * (reaction.role === 'send' ? SOFTER_SEND : 1)
     const paint: Paint = (x, y, strength, color) => { if (!occluded?.(reaction.id, Math.round(x), Math.round(y))) lit(Math.round(x), Math.round(y), color ?? accent, strength * (1 + NIGHT_GAIN * night)) }
+    const root = kind === 'mochi' || kind === 'tabby' || kind === 'tuxedo' || kind === 'bun'
+    if (root && reaction.role === 'charge') {
+      EFFECTS[kind](paint, box, v, reaction.t, reaction.role)
+      continue
+    }
     if (reaction.role === 'charge' && reaction.point) {
       const { x, y } = reaction.point
       // Light gathers at the source before release; nothing previews the flight path.
@@ -210,11 +264,15 @@ export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[]
       }
       continue
     }
-    // only the worker's own sprite glows (its box): not the escorts, trail and air painted under the same hit owner
-    for (let y = Math.max(scanned.y0, box.y0); y <= Math.min(scanned.y1, box.y1); y++) for (let x = Math.max(scanned.x0, box.x0); x <= Math.min(scanned.x1, box.x1); x++) {
+    // Bodies react together; trails and air under the same owner stay untouched.
+    for (const part of [box, ...fixed[reaction.id]?.companions ?? []]) for (let y = Math.max(scanned.y0, part.y0); y <= Math.min(scanned.y1, part.y1); y++) for (let x = Math.max(scanned.x0, part.x0); x <= Math.min(scanned.x1, part.x1); x++) {
       if (c.hitOwners[y * c.W + x] === owner) c.px[y * c.W + x] = mix(c.px[y * c.W + x]!, mix(accent, P.white, 0.7), v * SPRITE_GLOW)
     }
-    if (!reaction.style || ['mochi', 'tabby', 'tuxedo', 'bun'].includes(kind)) EFFECTS[kind](paint, box, v, reaction.t, reaction.role)
+    if (!reaction.style || root) EFFECTS[kind](paint, box, v, reaction.t, reaction.role)
+    if (reaction.role === 'send' && reaction.point && !root) {
+      const { x, y } = reaction.point, dir = reaction.direction ?? { x: 1, y: 0 }
+      RELEASE[kind]((forward, across, strength, color) => paint(x + forward * dir.x - across * dir.y, y + forward * dir.y + across * dir.x, strength, color), reaction.t)
+    }
     if (reaction.role !== 'land' || !reaction.style || !reaction.point) continue
     const { x, y } = reaction.point
     const pixel = y * c.W + x

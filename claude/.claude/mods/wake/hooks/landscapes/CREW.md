@@ -54,6 +54,8 @@ separate launches. Codex harbor darts rise from the tug before curving toward th
 recipient. Flights pass above atmospheric effects. A worker turns when its heading
 requires it and may keep its new heading after a message. Face-on workers direct
 light from their node or lamp. The receiver has its own reaction.
+Releases follow the recorded launch direction: a machine's muzzle vents, a
+creature's paired sound waves, stellar diffraction, or a paper craft's glowing shed.
 
 Passages follow the body and habitat. The dragon charges and warps, the saucer and
 probe lift through a beam, the airship climbs and the skiff accelerates away. Boats
@@ -67,7 +69,10 @@ Escorts are explicit in `design.ts`, not automatic for large classes: the dragon
 has whelps, the bat, butterfly and puffin flock, and the sky lantern and
 paper star have sisters. Other designs, including every agy constellation, have
 none. Each escort follows the patrol with its own wing clock and bounded lateral
-and vertical drift; its heading follows that path.
+and vertical drift; its heading follows that path and joins the leader's aim.
+Each companion keeps its own body bounds for the same arrival, departure and
+interruption style. Rest poses retain the formation, and message light reaches
+its bodies without lighting the old trail.
 
 `crew.ts` places and paints bodies, `gait.ts` owns movement and clocks,
 `particles.ts` draws effects, `peer-messages.ts` tracks messages, and

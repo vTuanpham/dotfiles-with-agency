@@ -20,6 +20,8 @@ const findings: Item[] = [
   item('density', '08 · Mixed crews at terminal width', 'Composition check', 'Effects, companions and bodies need to remain readable together. A clear isolated sprite can become an indistinct bright mass beside three other workers.', 'Keep silhouettes distinct, companions subordinate and scenery legible. Check the narrow width and night treatment as well.', 'scene.ts · shared lanes; crew.ts · escorts, effects and body layering.', { width: 72, mode: 'crowd', tier: 4 }, 5000),
   item('distant-crew', '09 · Distant crews behind the skyline', 'Revised', 'Celestial figures, the mountain airship and sky lanterns use the distant layer. Buildings and terrain occlude their bodies and arrival effects. They cast no local ground light.', 'Follow the stars behind a rooftop. Their connecting lines are faint, with slower light and brighter local bloom.', 'design.ts · depth; scene.ts · scenery occlusion.', { family: 'agy', mode: 'depth', width: 72, tier: 4 }, 3500),
   item('surface-light', '10 · Light belongs to the surface', 'Revised', 'Crew light projects onto the nearest roof or terrain and weakens with distance. Water breaks it into ripples. A warp moves the light source; it does not carry the illuminated surface into the sky.', 'Watch the dragon lift and leave, then compare the harbor and the dry landscapes.', 'fx.ts · surfaceLights; exits.ts · light source movement.', { family: 'codex', mode: 'leave', tier: 4 }, 4100),
+  item('companion-passage', '11 · The whole formation arrives', 'Revised', 'Companions use the leader’s arrival, departure and strike effect around their own bodies. They retain their individual flight motion and stay with the leader at rest.', 'Step through the first two seconds, then compare leave, strike and rest. Every companion should travel through the effect rather than appear at its end.', 'crew.ts · companion bounds; exits.ts · passages.', { family: 'codex', mode: 'arrive', tier: 4 }, 900),
+  item('overcast-sky', '12 · Overcast sky retains depth', 'Revised', 'Rounded cloud banks sit within the sky gradient. Night keeps a darker upper sky instead of a flat grey layer.', 'Compare day and night, including the transition from idle to working at four seconds.', 'scene.ts · drawSky.', { mode: 'overcast', hour: 22 }, 4500),
 ]
 const names: Record<Family, string[]> = {
   codex: ['Mechanical dragon', 'Tug', 'Saucer', 'Airship', 'Crop drone', 'Forest probe', 'Sun skiff', 'Snowcat'],
@@ -79,6 +81,7 @@ const requirements = [
   'Four distinct family identities: mechanical Codex, creature Claude, celestial AGY and paper / lantern OpenCode.',
   'A deliberate design for each scene and every size. Avoid big undifferentiated bodies and generic winged shapes.',
   'Use the dragon as a quality reference, not as a template for flexibility, escorts or effects everywhere.',
+  'Companions share their leader’s arrival, departure and strike effects, aim and rest behavior.',
   'Movement belongs to the habitat: water, ground, perches and sky. Distant crews pass behind nearer scenery; brief effects may overlap.',
   'Brake, aim from the body, send or receive, then continue with momentum and a sensible heading.',
   'Keep constellations stable, blend links with the sky, and animate the light moving between star nodes.',

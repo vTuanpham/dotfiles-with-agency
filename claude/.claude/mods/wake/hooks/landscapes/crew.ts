@@ -370,13 +370,14 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
       }
       const small = airFrames(look, kind, e.tier), [px, py] = ownPath(0)
       const next = small[(Math.floor((job.phase ?? look.frame) / (tempo * (0.83 + i * .11))) + job.seed + 3 * i) % small.length]!
-      const o = drawn ? orient(ownPath, drawn, 0) : undefined
+      const o = drawn ? orient(ownPath, drawn, 0, job.talk ? { ...job.talk, sourceX: px } : undefined, job.lane?.roam) : undefined
       const piece = o ? shape(next, o.mirror, o.roll, design.turn, SPRITES[kind].turnPose?.[look.place ?? 'city']?.[e.tier]) : next
       const floor = (look.crewGround ?? c.H) - piece.length
       if (floor < 0) continue
       const top = Math.max(0, Math.min(floor, Math.round(py) - (piece.length >> 1))) // a roaming companion is held inside the sky, never blinked out at its edge
       const left = Math.round(px) - (piece[0]!.length >> 1)
       if (left < 0 || left + piece[0]!.length > c.W) continue
+      if (job.hit && look.crewBoxes?.[job.hit.id]) (look.crewBoxes[job.hit.id]!.companions ??= []).push({ x0: left, y0: top, x1: left + piece[0]!.length - 1, y1: top + piece.length - 1 })
       draw(c, look, left, top, piece, pal, false)
     }
   }
@@ -485,7 +486,7 @@ function placeSurface(c: Canvas, look: Look, x: number, job: Job, right: number)
   return zone
 }
 
-function placeRest(c: Canvas, look: Look, job: Job, x: number, y: number, right: number): { x: number; y: number; w: number; h: number } | undefined {
+function placeRest(c: Canvas, look: Look, job: Job, x: number, y: number, right: number, company?: Design['escorts'][Tier]): { x: number; y: number; w: number; h: number } | undefined {
   const resting = job.isStale || (job.pace !== undefined && job.pace <= 0.15)
   const amount = job.settle ?? Number(resting)
   if (!designFor(job.kind ?? 'codex', look.place).rests || amount <= 0) return undefined
@@ -511,8 +512,8 @@ function placeRest(c: Canvas, look: Look, job: Job, x: number, y: number, right:
     ;(look.crewAnchors ??= []).push(cy * c.W + cx)
     look.crewBoxes ??= {}
     look.crewMessagePoints ??= {}
-    if (look.crewDeferred) fly(c, { ...look, crewRest: amount >= 1, crewLocateOnly: true }, cx, cy, { ...job, talk: undefined }, kind, false, () => [cx, cy], [])
-    schedule(look, job, () => drawWithHit(c, job, () => fly(c, { ...look, crewRest: amount >= 1 }, cx, cy, job, kind, false, () => [cx, cy], [])))
+    if (look.crewDeferred) fly(c, { ...look, crewRest: amount >= 1, crewLocateOnly: true }, cx, cy, { ...job, talk: undefined }, kind, false, () => [cx, cy], company)
+    schedule(look, job, () => drawWithHit(c, job, () => fly(c, { ...look, crewRest: amount >= 1 }, cx, cy, job, kind, false, () => [cx, cy], company)))
     return zone
   }
   return undefined
@@ -590,8 +591,11 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       const zx = k.x - (w >> 1), zy = k.y - (h >> 1)
       if (!pixels.every(([dx, dy]) => !padded[(zy + dy) * c.W + zx + dx])) continue
       if (zy + h > skyFloor && pixels.some(([dx, dy]) => crowd[(zy + dy) * c.W + zx + dx])) continue
-      let hidden = 0 // the cost of this spot: scenery it hides, and (a little more) other workers it would overlap
-      for (const [dx, dy] of pixels) hidden += soft[(zy + dy) * c.W + zx + dx]! + 3 * crowd[(zy + dy) * c.W + zx + dx]!
+      let hidden = design.altitude === 'high' ? Math.max(0, k.y - Math.max(h >> 1, y)) * pixels.length * 2 : 0
+      for (const [dx, dy] of pixels) {
+        const i = (zy + dy) * c.W + zx + dx
+        hidden += soft[i]! + 3 * crowd[i]! + (design.depth === 'far' ? 3 * (look.crewOcclusion?.[i] ?? 0) : 0)
+      }
       if (!best || hidden < best.hidden) best = { k, hidden }
       if (hidden === 0) break
     }
@@ -616,7 +620,7 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       const rowFree = (sy: number) => across.every(sx => free(sx, sy))
       let up = 0, down = 0
       while (up < maxY && rowFree(-(up + 1))) up++
-      while (down < maxY && rowFree(down + 1)) down++
+      while (design.altitude !== 'high' && down < maxY && rowFree(down + 1)) down++
       // A hop of up to two rows more when something real happens to this worker (it acted, sent or received a message).
       let hopRoom = 0
       while (hopRoom < 2 && rowFree(-(up + hopRoom + 1))) hopRoom++
@@ -630,7 +634,7 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       // Crew may overlap (a soft boundary), but every worker keeps an anchor of its own, so a message wire finds only one of them.
       // (only this pass's anchors count: the array is shared across the passes of one scene)
       for (let tries = 0; tries < 8 && anchors.indexOf((candidate.y + offset) * c.W + candidate.x + drift, look.crewAnchorsFrom ?? 0) >= 0; tries++) drift += tries % 2 ? -tries : tries + 1
-      const settled = placeRest(c, look, job, candidate.x + drift, candidate.y + offset, right)
+      const settled = placeRest(c, look, job, candidate.x + drift, candidate.y + offset, right, company)
       if (settled) return settled
       const reserved = { x: zone.x + formation.left - rx, y: zone.y + formation.top - up - hopRoom, w: formation.right - formation.left + 2 * rx, h: formation.bottom - formation.top + up + down + hopRoom }
       zones.push(reserved)
