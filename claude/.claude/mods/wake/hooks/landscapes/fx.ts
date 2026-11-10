@@ -124,7 +124,7 @@ const CLAUDE: FamilyCells = {
   night: nightLight(P.pink),
   any: { lights: SHADOW, streams: [FEATHER] },
   city: { talking: CALL(11), streams: [SHED([P.white, P.overlay1]), ...BIRD_WASH(P.overlay1)] }, // the pigeon's grey down
-  harbor: { talking: CALL(8), streams: [SHED([P.sky, P.white], { count: 9, life: 0.7, speed: [1, 3], angle: [UP - 0.7, UP + 0.7], gravity: 7, swirl: 0 })] }, // spray thrown up by the dolphin's fluke
+  harbor: { talking: CALL(8), streams: [SHED([P.sky, P.white], { count: 4, life: 0.9, speed: [0.3, 1], angle: [UP - 0.4, UP + 0.4], gravity: -0.8, swirl: 0.6, envelope: 'twinkle' })] }, // bubbles blown by the crab
   beach: { talking: CALL(9, 0.06), streams: [SHED([P.sky, P.white], { count: 4, life: 0.6, speed: [0.5, 1.5], angle: [UP - 0.8, UP + 0.8], gravity: 5, swirl: 0 })] }, // splashes round the flamingo's legs
   mountains: { talking: CALL(6, 0.08), streams: [SHED([P.white, P.snow], { count: 5, life: 0.4, speed: [3, 6], angle: [-0.1, 0.1], gravity: 0, swirl: 0, alpha: 0.35, streak: 2 }), ...BIRD_WASH(P.snow)] }, // the air streaming off the eagle's wingtip
   countryside: { talking: CALL(12), streams: [SHED([P.yellow, P.white], { count: 9, speed: [0.1, 0.5], angle: [0, TAU], gravity: 0.3, envelope: 'twinkle' }), ...BIRD_WASH(P.yellow)] }, // pollen off the butterfly's wings

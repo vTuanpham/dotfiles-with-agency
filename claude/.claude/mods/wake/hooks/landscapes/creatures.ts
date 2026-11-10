@@ -19,25 +19,28 @@ export const CREATURE_SIZE: Record<Tier, { w: number; h: number }> = {
 type Creature = { name: string; strokes: 1 | 2 | 3 | 6; face: 'left' | 'centre'; art: Record<Tier, readonly [up: readonly string[], down: readonly string[]]> }
 
 const CREATURES: Record<WakePreset, Creature> = {
-  city: { name: 'pigeon', strokes: 3, face: 'left', art: { // plump and small-headed, beating fast
-    1: [['..l..', 'saaad', '.dd..'], ['.....', 'saaad', '.ld..']],
-    2: [['...ll..', '.s.la..', 'Waaaaad', '.daadd.', '.......'], ['.......', '.s.....', 'Waaaaad', '.dlaad.', '...ld..']],
-    3: [['.....ll....', '....lda....', '.sa.lda....', 'Wkaaaadaadk', '.llaaaadd..', '...lll.....'], ['...........', '.sa........', 'Wkaaaaaaadk', '.llldaadd..', '....lda....', '.....ld....']],
-    4: [ // a dark collar, two wing bars, a pale belly and a banded tail
-      ['.......ll......', '......lda......', '.sa...lad......', 'Wkaa.ldaa....k.', '.aaaaaadaaaadk.', '..llaaaaaddd...', '....lllld......'],
-      ['...............', '.sa............', 'Wkaaaaaaa....k.', '.aaaaadaaaaadk.', '..llldadaddd...', '.....ldad......', '......ld.......'],
+  city: { name: 'swallow', strokes: 3, face: 'left', art: { // sickle wings, a red throat, a white front and two long tail streamers
+    1: [['..a.d', 'ksad.', '.W..d'], ['....d', 'ksad.', '.Wa.d']],
+    2: [['....d..', '...ad.d', 'ksaaad.', '.rWl..d', '.......'], ['.......', '......d', 'ksaaad.', '.rWa..d', '...ad..']],
+    3: [
+      ['......dd...', '....aad...d', 'ksaaaaaad..', '.rWWWl....d', '...........', '...........'],
+      ['...........', '..........d', 'ksaaaaaad..', '.rWWaa....d', '.....aad...', '.......dd..'],
+    ],
+    4: [
+      ['.........dd....', '.......aad.....', '......aaa....dd', 'ksaaaaaaaaaad..', '.rWWWWWll....dd', '...............', '...............'],
+      ['...............', '...............', '.............dd', 'ksaaaaaaaaaad..', '.rWWWaaa.....dd', '.......aad.....', '.........dd....'],
     ],
   } },
-  harbor: { name: 'dolphin', strokes: 1, face: 'left', art: { // it leaps: arched up out of the water, then nose down and fluke high
-    1: [['kaad.', 'lW.ad', '...d.'], ['...dd', 'kaaa.', 'lW...']],
-    2: [['...d...', 'kaaaaa.', 'lWWl.ad', '....d.d', '.......'], ['....d.d', '...d.ad', 'kaaaaa.', 'lWWl...', '.......']],
+  harbor: { name: 'crab', strokes: 2, face: 'centre', art: { // seen face on, on the quay: eyes on stalks, two claws that lift and snap, a marked shell, legs that scuttle
+    1: [['d.s.d', '.aWa.', 'd...d'], ['..s..', 'daWad', '.d.d.']],
+    2: [['d.....d', 'a.s.s.a', '.aaWaa.', 'd.aaa.d', '.d...d.'], ['.......', 'd.s.s.d', '.aaWaa.', '.daaad.', 'd.....d']],
     3: [
-      ['.....d.....', '..aaaaaa...', 'akaaaaaaa..', 'lWWWl.daa..', '........ad.', '.......d.dd'],
-      ['.......d.dd', '.....d..ad.', '..aaaaaaa..', 'akaaaaaa...', 'lWWWWl.....', '...........'],
+      ['dd.......dd', '.a..s.s..a.', '..aaaaaaa..', '.aalaWalaa.', 'd.daaaaad.d', '.d.d...d.d.'],
+      ['...........', 'dd..s.s..dd', '.daaaaaaad.', '.aalaWalaa.', '.ddaaaaadd.', 'd.d.....d.d'],
     ],
-    4: [ // a dark eye, a pale beak and belly, a dorsal fin, a notched fluke
-      ['.......dd......', '...aaaaaaaa....', '.akaaaaaaaaaa..', 'llWWWWl..daaa..', '...........aad.', '............ad.', '...........d.dd'],
-      ['...........d.dd', '............ad.', '.......dd..aad.', '...aaaaaaaaaa..', '.akaaaaaaaaa...', 'llWWWWWl.......', '...............'],
+    4: [
+      ['.dd.........dd.', 'd..a..s.s..a..d', '.aa...a.a...aa.', '...aaaaaaaaa...', '..aaalaWalaaa..', '.d.ddaaaaadd.d.', 'd.d.d.....d.d.d'],
+      ['...............', '.dd...s.s...dd.', '.aad..a.a..daa.', '...aaaaaaaaa...', '..aaalaWalaaa..', 'd.dddaaaaaddd.d', '.d.d.......d.d.'],
     ],
   } },
   beach: { name: 'flamingo', strokes: 2, face: 'left', art: { // it wades: an S of neck, a bent black-tipped bill, one leg tucked, then a step and a bob of the head
@@ -140,17 +143,11 @@ export const creatureFrames = (place: WakePreset | undefined, tier: Tier): Frame
 /** The middle of a turn, seen head on: each creature comes round through its own front view. (The butterfly and the owl are
  *  already face on and do not turn.) */
 export const turnPose: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> = {
-  city: { // the pigeon wheeling: both wings out, the sheen of its neck in the middle
-    1: ['.ksk.', 'laaal', '.r.r.'],
-    2: ['.......', '..ksk..', 'l.aaa.l', '.ldadl.', '..r.r..'],
-    3: ['....aaa....', '....ksk....', 'l..apgpa..l', '.llaaaaall.', '...ddadd...', '....r.r....'],
-    4: ['...............', '......aaa......', '.....akska.....', 'l...aapgpaa...l', '.llaaaaaaaaall.', '...ddaaaaadd...', '......r.r......'],
-  },
-  harbor: { // the dolphin rolling towards you: beak and pale belly, the fin above, a flipper each side
-    1: ['..d..', '.kWk.', 'd.l.d'],
-    2: ['...d...', '..aaa..', '.akWka.', 'd.lWl.d', '.......'],
-    3: ['.....d.....', '....aaa....', '...akaka...', '..daWWWad..', '.d..lWl..d.', '...........'],
-    4: ['.......d.......', '......dad......', '.....aaaaa.....', '....akaaaka....', '...daaWWWaad...', '..d..lWWWl..d..', '......lll......'],
+  city: { // the swallow wheeling: both sickle wings out, the red throat in the middle, the fork of its tail below
+    1: ['dkskd', '.aWa.', '.d.d.'],
+    2: ['d.ksk.d', '.aaWaa.', '..d.d..', '.......', '.......'],
+    3: ['d...aaa...d', '.aa.ksk.aa.', '...arWra...', '....d.d....', '...d...d...', '...........'],
+    4: ['...............', 'd.....aaa.....d', '.aa..akska..aa.', '...aaarWraaa...', '......WWW......', '......d.d......', '.....d...d.....'],
   },
   beach: { // the flamingo face on: almost nothing but a neck, a body and two legs
     1: ['.ksk.', '.aaa.', '.r.r.'],
@@ -180,11 +177,11 @@ export const turnPose: Partial<Record<WakePreset, Record<Tier, readonly string[]
 
 /** How each creature rests when its worker waits: perched, standing, curled up or asleep on one leg. The dolphin never stops. */
 export const rest: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> = {
-  city: { // the pigeon perched: a green-and-blue sheen on its neck, a wing bar, red feet
-    1: ['sk...', '.aad.', '.r.r.'],
-    2: ['.......', 'sak....', '.paaad.', '..aadk.', '..r.r..'],
-    3: ['...........', '..aa.......', '.saka......', '..pgaaad...', '...aaaddk..', '...r.r.....'],
-    4: ['...............', '....aa.........', '...saka........', '....pgaaaa.....', '....aalaaaad...', '.....aaaadddk..', '......r.r......'],
+  city: { // the swallow perched upright: red throat, white front, its long tail hanging below the wire
+    1: ['ksa..', '.Wa..', '.r.d.'],
+    2: ['..a....', '.ksa...', '..Wa...', '..r.d..', '.......'],
+    3: ['...........', '...aa......', '..ksa......', '...rWa.....', '...r.ad....', '......d....'],
+    4: ['...............', '.....aa........', '....ksaa.......', '.....rWaa......', '.....WWaa......', '......r.ad.....', '.........dd....'],
   },
   beach: { // the flamingo asleep: its head laid back into its feathers, balanced on one leg
     1: ['.aa..', '.aad.', '..r..'],

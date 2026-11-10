@@ -83,7 +83,8 @@ function generate(place: WakePreset, tier: Tier, beat: number): Pose {
     for (let i = 1; i < steps; i++) wire.push([Math.round(ax + (bx - ax) * i / steps), Math.round(ay + (by - ay) * i / steps)])
   }
   const head = Math.floor(beat * wire.length / BEATS)
-  for (const [i, [x, y]] of wire.entries()) put(x, y, i === head ? 'W' : i === head - 1 || i === head - 2 ? 'a' : 'd') // the shot and its tail
+  // The lines are only a tint of the sky (`e`), enough to hold the figure together; what shows is the shot and its fading tail.
+  for (const [i, [x, y]] of wire.entries()) put(x, y, i === head ? 'W' : i === head - 1 ? 'a' : i === head - 2 || i === head - 3 ? 'd' : 'e')
   for (const [i, [x, y]] of at.entries()) if (i) put(x, y, (i + beat) % 4 ? 'W' : 'a')
   const [cx, cy] = at[0]!
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) put(cx + dx, cy + dy, 'l', false) // the core's four rays

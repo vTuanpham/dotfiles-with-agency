@@ -84,6 +84,7 @@ function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly strin
     for (let i = 0; i < row.length; i++) {
       const ch = row[i]!
       if (ch === '.') continue
+      if (ch === 'e') { c.glow(x0 + i, y0 + r, pal.colors.a!, 0.2); continue } // a faint line: a tint of the sky behind it, never a solid cell
       c.set(x0 + i, y0 + r, (emissive(ch, i, r) ? pal.colors : pal.body)[ch]!)
     }
   })

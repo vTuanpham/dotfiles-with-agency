@@ -45,8 +45,8 @@ export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
   // Birds in profile cruise and bank; the butterfly and the owl are seen face on, so they have no heading and wander.
   claude: {
     // Birds that flock keep a follower at the top classes; a second dolphin, flamingo, owl or fox would read as another worker.
-    city: { facing: 'left', cruise: true, turn: 'bank', rests: true, escorts: flock }, // pigeons flock
-    harbor: { facing: 'left', cruise: true, turn: 'bank', habit: 'water', escorts: {} }, // the dolphin
+    city: { facing: 'left', cruise: true, turn: 'bank', rests: true, escorts: flock }, // swallows flock
+    harbor: { facing: null, cruise: false, turn: 'none', habit: 'ground', escorts: {} }, // the crab scuttles along the quay, face on
     beach: { facing: 'left', cruise: false, turn: 'bank', habit: 'ground', escorts: {} }, // the flamingo wades
     mountains: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the eagle soars alone
     countryside: { facing: null, cruise: false, turn: 'none', escorts: flock }, // butterflies go in pairs
