@@ -26,7 +26,9 @@ const LOOSE: Partial<Record<WakePreset, Flex>> = {
   tundra: { from: 0.7, amp: 1, wave: 0.7 },
 }
 
-type Creature = { name: string; strokes: 1 | 2 | 3 | 6; face: 'left' | 'centre'; art: Record<Tier, readonly [up: readonly string[], down: readonly string[]]> }
+type Creature = { name: string; strokes: 1 | 2 | 3 | 6; face: 'left' | 'centre'; art: Record<Tier, readonly [up: readonly string[], down: readonly string[], mid?: readonly string[]]> }
+/** With a middle pose the stroke runs up, level, down, level: the wing passes through the body's line instead of jumping it. */
+const STROKE = [0, 2, 1, 2] as const
 
 const CREATURES: Record<WakePreset, Creature> = {
   city: { name: 'swallow', strokes: 3, face: 'left', art: { // sickle wings, a red throat, a white front and two long tail streamers
@@ -35,10 +37,12 @@ const CREATURES: Record<WakePreset, Creature> = {
     3: [
       ['......dd...', '....aad...d', 'ksaaaaaad..', '.rWWWl....d', '...........', '...........'],
       ['...........', '..........d', 'ksaaaaaad..', '.rWWaa....d', '.....aad...', '.......dd..'],
+      ['...........', '..........d', 'ksaaaaaad..', '.rWWWaaad.d', '...........', '...........'],
     ],
     4: [
       ['.........dd....', '.......aad.....', '......aaa....dd', 'ksaaaaaaaaaad..', '.rWWWWWll....dd', '...............', '...............'],
       ['...............', '...............', '.............dd', 'ksaaaaaaaaaad..', '.rWWWaaa.....dd', '.......aad.....', '.........dd....'],
+      ['...............', '...............', '.............dd', 'ksaaaaaaaaaad..', '.rWWWWWaaaad.dd', '...............', '...............'],
     ],
   } },
   harbor: { name: 'crab', strokes: 2, face: 'centre', art: { // seen face on, on the quay: eyes on stalks, two claws that lift and snap, a marked shell, legs that scuttle
@@ -71,28 +75,32 @@ const CREATURES: Record<WakePreset, Creature> = {
     3: [
       ['......dkk..', '.....daa...', '.W..daa....', 'sWaaaaaaWW.', '..llaaadWW.', '....s.s....'],
       ['...........', '.W.........', 'sWaaaaaaWW.', '..ldaadaWW.', '....daak...', '.....dkk...'],
+      ['...........', '...........', '.W...daak..', 'sWaaaaaaWW.', '..llaaadWW.', '....s.s....'],
     ],
     4: [ // one long wing swept up to its dark tip, then driven down under the body; a pale breast, yellow talons, a white fan of tail
       ['.........dkk...', '.......daak....', '......daaa.....', '.WW..daaa......', 'sWWaaaaaaaaaWW.', '...lllaaaadWWW.', '......s.s......'],
       ['...............', '...............', '.WW............', 'sWWaaaaaaaaaWW.', '...ldaaaadaWWW.', '.....daaak.....', '......dakk.....'],
+      ['...............', '...............', '...............', '.WW....daaak...', 'sWWaaaaaaaaaWW.', '...lllaaaadWWW.', '......s.s......'],
     ],
   } },
   countryside: { name: 'butterfly', strokes: 3, face: 'centre', art: { // seen face on: two pairs of wings that open wide and shut
     1: [['l.s.l', 'aadaa', 'd...d'], ['..s..', '.ada.', '.....']],
     2: [['.k...k.', 'lW.s.Wl', 'aaadaaa', '.dadad.', '.......'], ['.k...k.', '.W.s.W.', '.aadaa.', '..dad..', '.......']],
-    3: [['...k...k...', 'll..k.k..ll', 'laWl.s.lWal', 'daaa.d.aaad', '.laa.d.aal.', '..d.....d..'], ['...k...k...', '....k.k....', '..Wl.s.lW..', '..aa.d.aa..', '..la.d.al..', '...........']],
+    3: [['...k...k...', 'll..k.k..ll', 'laWl.s.lWal', 'daaa.d.aaad', '.laa.d.aal.', '..d.....d..'], ['...k...k...', '....k.k....', '..Wl.s.lW..', '..aa.d.aa..', '..la.d.al..', '...........'], ['...k...k...', '.l..k.k..l.', '.aWl.s.lWa.', '.aaa.d.aaa.', '..la.d.al..', '...........']],
     4: [
       ['.....k...k.....', '.lll..k.k..lll.', 'laWal..s..laWal', 'laaaal.d.laaaal', '.daaad.d.daaad.', '..laad.d.daal..', '...dd.....dd...'],
       ['.....k...k.....', '...ll.k.k.ll...', '...lWl.s.lWl...', '...laa.d.aal...', '...daa.d.aad...', '....ld.d.dl....', '...............'],
+      ['.....k...k.....', '..ll..k.k..ll..', '.laWl..s..lWal.', '.laaal.d.laaal.', '..daad.d.daad..', '...lad.d.dal...', '....d.....d....'],
     ],
   } },
   forest: { name: 'owl', strokes: 2, face: 'centre', art: { // seen face on: two round eyes, ear tufts, broad silent wings
     1: [['l.a.l', '.sWs.', '..d..'], ['..a..', 'lsWsl', 'd.d.d']],
     2: [['l.k.k.l', '.lsasl.', '..aWa..', '..ldl..', '.......'], ['..k.k..', '..sas..', 'laaWaal', 'd.ldl.d', '.......']],
-    3: [['l...k.k...l', '.ll.aaa.ll.', '..alsasla..', '...aaWaa...', '....lll....', '....k.k....'], ['....k.k....', '....aaa....', '.llasasall.', 'laaaaWaaaal', 'd.d.lll.d.d', '....k.k....']],
+    3: [['l...k.k...l', '.ll.aaa.ll.', '..alsasla..', '...aaWaa...', '....lll....', '....k.k....'], ['....k.k....', '....aaa....', '.llasasall.', 'laaaaWaaaal', 'd.d.lll.d.d', '....k.k....'], ['....k.k....', '....aaa....', 'lllasasalll', '.aaaaWaaaa.', '....lll....', '....k.k....']],
     4: [
       ['ll...k...k...ll', '.lll.aaaaa.lll.', '..aalasasalaa..', '...aaaaWaaaa...', '....dalllad....', '.....aldla.....', '......k.k......'],
       ['.....k...k.....', '.....aaaaa.....', '..lllasasalll..', '.laaaaaWaaaaal.', 'laa.dalllad.aal', 'd.d..aldla..d.d', '......k.k......'],
+      ['.....k...k.....', '.....aaaaa.....', '.lllaasasaalll.', 'laaaaaaWaaaaaal', '....dalllad....', '.....aldla.....', '......k.k......'],
     ],
   } },
   desert: { name: 'fox', strokes: 2, face: 'left', art: { // a fennec at a trot: great dark-tipped ears, an amber eye, a pale chest, a brush with a white tip
@@ -119,8 +127,9 @@ const CREATURES: Record<WakePreset, Creature> = {
 }
 
 function pose(place: WakePreset, tier: Tier, beat: number): Pose {
-  const { w, h } = CREATURE_SIZE[tier], kind = CREATURES[place], down = Math.floor(beat * kind.strokes / 6) % 2
-  const rows = flex(Array.from({ length: h }, (_, y) => (kind.art[tier][down]![y] ?? '').padEnd(w, '.').slice(0, w)), LOOSE[place], beat, CREATURE_BEATS)
+  const { w, h } = CREATURE_SIZE[tier], kind = CREATURES[place]
+  const at = kind.art[tier][2] ? STROKE[Math.floor(beat * kind.strokes / 3) % 4]! : Math.floor(beat * kind.strokes / 6) % 2, down = at === 1 ? 1 : at === 2 ? 0.5 : 0
+  const rows = flex(Array.from({ length: h }, (_, y) => (kind.art[tier][at]![y] ?? '').padEnd(w, '.').slice(0, w)), LOOSE[place], beat, CREATURE_BEATS)
   const cells = rows.flatMap((row, y) => [...row].flatMap((ink, x) => ink === '.' ? [] : [[x, y, ink] as const]))
   const mid = w >> 1
   // The face: the foremost cell of a creature in profile, the eye or bill on the centre line of one seen face on.
