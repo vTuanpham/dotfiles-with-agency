@@ -136,3 +136,37 @@ const poseAt = (place: WakePreset, tier: Tier, beat: number) => POSES[place][tie
 export const creatureNose = (place: WakePreset, tier: Tier, beat: number): Point => poseAt(place, tier, beat).beak
 export const creatureStroke = (place: WakePreset, tier: Tier, beat: number) => poseAt(place, tier, beat).feather
 export const creatureFrames = (place: WakePreset | undefined, tier: Tier): Frames => ALL_CREATURES[place ?? 'city'][tier]
+
+/** How each creature rests when its worker waits: perched, standing, curled up or asleep on one leg. The dolphin never stops. */
+export const rest: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> = {
+  city: { // the pigeon perched: a green-and-blue sheen on its neck, a wing bar, red feet
+    1: ['sk...', '.aad.', '.r.r.'],
+    2: ['.......', 'sak....', '.paaad.', '..aadk.', '..r.r..'],
+    3: ['...........', '..aa.......', '.saka......', '..pgaaad...', '...aaaddk..', '...r.r.....'],
+    4: ['...............', '....aa.........', '...saka........', '....pgaaaa.....', '....aalaaaad...', '.....aaaadddk..', '......r.r......'],
+  },
+  beach: { // the flamingo asleep: its head laid back into its feathers, balanced on one leg
+    1: ['.aa..', '.aad.', '..r..'],
+    2: ['.......', '..aa...', '.asadk.', '...r...', '...r...'],
+    3: ['...........', '.....aa....', '....asaak..', '.....aadd..', '.....r.....', '.....r.....'],
+    4: ['...............', '...............', '.......aaa.....', '.....aasaaak...', '......aaaadd...', '.......r.......', '.......r.......'],
+  },
+  forest: { // the owl perched upright, wings folded, still watching
+    1: ['.sWs.', '.aaa.', '.k.k.'],
+    2: ['..k.k..', '.asWsa.', '.dalad.', '..k.k..', '.......'],
+    3: ['....k.k....', '....aaa....', '...asWsa...', '...alllad..', '....ada....', '....k.k....'],
+    4: ['.....k...k.....', '.....aaaaa.....', '....asaWasa....', '....aalllaa....', '....daldlad....', '.....aldla.....', '......k.k......'],
+  },
+  desert: { // the fox curled asleep, its brush laid over its nose
+    1: ['.....', 'd.aa.', 'kWaad'],
+    2: ['.......', '.......', 'd.aaa..', 'kaWaaa.', '.laad..'],
+    3: ['...........', '...........', '...........', '.d.daaaa...', 'kaaWWaaaaa.', '.llaaaaad..'],
+    4: ['...............', '...............', '...............', '......aaaaa....', '..d.daaaaaaaa..', '.kaaaWWaaaaaaa.', '..llaaaaaaaad..'],
+  },
+  tundra: { // the puffin standing on its bright feet
+    1: ['sWd..', '.Wdd.', '.s.s.'],
+    2: ['.dd....', 'sWdd...', '.WWdd..', '..s.s..', '.......'],
+    3: ['...........', '..dd.......', 'ssWdd......', '..WWdd.....', '..WWddd....', '...s.s.....'],
+    4: ['...............', '....ddd........', '..ssaWdd.......', '....WWddd......', '....WWWddd.....', '....WWWdddd....', '.....s.s.......'],
+  },
+}
