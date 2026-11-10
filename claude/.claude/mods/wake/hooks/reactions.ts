@@ -189,9 +189,25 @@ export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[]
         }
         for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (dx || dy) paint(x + dx, y + dy, v * .6 / (1 + dx * dx + dy * dy), P.lavender)
       } else if (kind === 'codex') {
-        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) paint(x + dx!, y + dy!, v * .35, P.teal)
-      } else if (kind === 'opencode') paint(x, y - 1, v * .7, P.yellow)
-      else if (kind === 'claude') paint(x, y - 1, v * .4, P.pink)
+        // A lock-on: four brackets close in on the emitter from the corners and snap shut as the charge peaks.
+        const r = Math.round(4 - 3 * v)
+        for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+          paint(x + sx * r, y + sy * r, .9, P.teal)
+          paint(x + sx * (r - 1), y + sy * r, .5, P.teal); paint(x + sx * r, y + sy * (r - 1), .5, P.teal)
+        }
+        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) paint(x + dx, y + dy, v * .6, P.sky)
+      } else if (kind === 'opencode') {
+        // The wick catches: a flame licks up from the craft, taller and hotter as it builds, shedding a spark.
+        const height = Math.round(1 + 3 * v), flick = Math.floor(reaction.t / 70) % 2
+        for (let i = 1; i <= height; i++) paint(x + (i === height ? flick * 2 - 1 : 0) * (i > 1 ? 1 : 0), y - i, 1 - i / (height + 2), i === 1 ? P.yellow : i === height ? P.red : P.peach)
+        paint(x + (hash(Math.floor(reaction.t / 90)) % 5) - 2, y - height - 1 - (Math.floor(reaction.t / 90) % 2), v * .8, P.yellow)
+      } else if (kind === 'claude') {
+        // A breath drawn in before the song: three motes spiral down onto the beak, faster as they close.
+        for (let i = 0; i < 3; i++) {
+          const a = reaction.t * .012 * (1 + v) + i * 2.1, r = 4.5 * (1 - v) + .8
+          paint(x + r * 1.4 * Math.cos(a), y + r * Math.sin(a), .5 + .5 * v, i % 2 ? P.snow : P.pink)
+        }
+      }
       continue
     }
     // only the worker's own sprite glows (its box): not the escorts, trail and air painted under the same hit owner
@@ -206,8 +222,20 @@ export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[]
       // A square flash and a brief dark blink at the eye/core.
       for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [-1, 1], [0, 1], [1, 1]] as const) paint(x + dx, y + dy, v, P.white)
       if (reaction.t >= 180 && reaction.t < 300 && pixel >= 0 && pixel < c.px.length) c.px[pixel] = mix(c.px[pixel]!, P.ink, v * 0.9)
+      // The packet unpacks: a square shockwave steps outward, drawn only at its corners and the middle of each side.
+      const r = 2 + Math.floor(reaction.t / 110)
+      if (r <= 6) for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]] as const) {
+        paint(x + sx * r * 1.4, y + sy * r * .8, (sx && sy ? 1 : .6) * (1 - r / 7), P.teal)
+        if (sx && sy) { paint(x + sx * (r * 1.4 - 1), y + sy * r * .8, .5 * (1 - r / 7), P.teal); paint(x + sx * r * 1.4, y + sy * (r * .8 - 1), .5 * (1 - r / 7), P.teal) }
+      }
     } else if (reaction.style === 'song') {
       for (const [dx, dy] of [[-2, -1], [-1, -2], [0, -1], [1, -2], [2, -1], [-1, 0], [1, 0]] as const) paint(x + dx, y + dy, v * 0.8, P.snow)
+      // The song breaks over the listener: notes fan upward, each with its stem, swaying as they rise and fade.
+      const rise = reaction.t / 130
+      if (rise < 7) for (let i = 0; i < 5; i++) {
+        const nx = x + (i - 2) * (1.2 + rise * .55) + Math.sin(rise * 1.3 + i * 2) * .8, ny = y - 1 - rise * (1 + (i % 2) * .35), s = 1 - rise / 7
+        paint(nx, ny, s, i % 2 ? P.pink : P.snow); paint(nx + 1, ny - 1, s * .7, P.snow)
+      }
     } else if (reaction.style === 'starfall') {
       // The sprite can name its stars; a root character has no star metadata, so use its nearest bright cell.
       let nearest: { x: number; y: number; d: number } | undefined
@@ -227,8 +255,21 @@ export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[]
       }
       if (nearest) for (let step = 1; step < nearest.d; step++) paint(x + (nearest.x - x) * step / nearest.d, flareY + (nearest.y - flareY) * step / nearest.d, v * 0.6, P.lavender)
       for (const [dx, dy] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]] as const) paint(x + dx, flareY + dy, v, P.white)
+      // A new star is struck: eight rays shoot out and draw back, the long ones on the axes, and the point keeps twinkling.
+      const reach = reaction.t < 240 ? reaction.t / 60 : Math.max(0, 4 - (reaction.t - 240) / 110)
+      for (let i = 1; i <= Math.round(reach); i++) {
+        const s = (1 - i / (reach + 1)) * .9
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) paint(x + dx * i * 1.5, flareY + dy * i, s, i % 2 ? P.white : P.lavender)
+        if (i <= reach / 2) for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]] as const) paint(x + dx * i, flareY + dy * i, s * .7, P.lavender)
+      }
     } else {
       for (const [dx, dy] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1]] as const) paint(x + dx, y + dy, v * (dx || dy ? 0.9 : 1), P.yellow)
+      // The coal bursts: sparks are thrown up and out and fall away under their own weight, cooling from yellow to red.
+      const age = reaction.t / 1000
+      if (age < .9) for (let i = 0; i < 7; i++) {
+        const vx = (i - 3) * 5.5 + (hash(i * 7) % 3 - 1), vy = -9 - (hash(i * 13) % 6)
+        paint(x + vx * age, y + vy * age + 22 * age * age, 1 - age / .9, age < .25 ? P.yellow : age < .55 ? P.peach : P.red)
+      }
     }
   }
 }
