@@ -274,6 +274,13 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   const design = designFor(kind, look.place)
   // Every family's design declares its front and its own turn; a symmetric body never mirrors.
   const drawn = !compact ? design.facing : null
+  // Momentum: a headed body that brakes to send carries on a little along its old course and, in the air, rises through the
+  // turn, then settles back onto its spot exactly as the shot leaves (so the launch point is where the message starts).
+  if (drawn && job.talk && job.talk.over === undefined && job.talk.ms < TURN_LEAD_MS && !look.crewRest) {
+    const s = job.talk.ms / 1000, carry = Math.sign(path(s)[0] - path(s + 0.5)[0]), swing = Math.sin(Math.PI * job.talk.ms / TURN_LEAD_MS)
+    cx += Math.round(carry * 2 * swing)
+    if ((design.habit ?? 'air') === 'air' && design.altitude !== 'low' && cy - (frames[0]!.length >> 1) >= 1) cy -= Math.round(swing)
+  }
   const turning: { mirror: 1 | -1; roll?: number; since?: number } = drawn ? orient(path, drawn, 0, job.talk, job.lane?.roam) : { mirror: 1 }
   const facingRight = !drawn ? false : drawn === 'right' ? turning.mirror > 0 : turning.mirror < 0 // effects are written facing left
   const beat = (Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length
