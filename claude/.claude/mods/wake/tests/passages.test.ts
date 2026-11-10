@@ -97,15 +97,13 @@ test('a native subagent that messages the root, or is messaged by her, shows a t
   expect(sceneInput({ ...withMessage('a1', 'root'), subagents: [] }, 120, 0, null, T + 600).peerEdges!.some(e => e.preview === 'Found two issues')).toBe(false)
 })
 
-test('a worker leaves when it is DONE (parked waiting for the root, runner still alive), not only when it is retired; a reply wakes it and it arrives again', () => {
+test('a worker waiting for the root stays in the scene until its runner ends', () => {
   const parked = { running: true, waitingForRoot: true, state: 'waiting_for_root' }
-  // seen working, then found parked: the exit starts at that moment although `running` never went false
-  expect(passageStamps({ running: true }, parked, T).leftAt).toBe(T)
-  // while parked it leaves, then is gone from the scene
+  expect(passageStamps({ running: true }, parked, T).leftAt).toBeUndefined()
   const left = { ...parked, leftAt: T, since: T - 12_000 }
-  expect(job(left, T + 1_000)!.leaving).toBe(1_000)
-  expect(job(left, T + EXIT_MS)).toBeUndefined()
-  // a reply wakes it: found working again, it arrives
-  expect(passageStamps(parked, { running: true }, T + 60_000).arrivedAt).toBe(T + 60_000)
+  expect(job(left, T + 1_000)!.leaving).toBeUndefined()
+  expect(job(left, T + EXIT_MS)).toBeDefined()
+  expect(job(left, T + EXIT_MS)!.pace).toBeLessThan(0.2)
+  expect(passageStamps(parked, { running: true }, T + 60_000).arrivedAt).toBeUndefined()
   expect(job({ running: true, arrivedAt: T }, T + 500)!.arriving).toBe(500)
 })

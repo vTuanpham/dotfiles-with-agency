@@ -209,6 +209,10 @@ function palm(c: Canvas, look: Look, x: number, ht: number, lean: number) {
 }
 
 function oasis(c: Canvas, look: Look, x: number, w: number) {
+  if (look.crewSurface) {
+    const water = look.crewSurface.water ??= { y: GROUND, spans: [] }
+    if (!water.spans.some(span => span.x0 === x + 3)) water.spans.push({ x0: x + 3, x1: x + w - 3 })
+  }
   const water = tint(look, 0x4aa8c0)
   for (let k = 1; k < w - 1; k++) {
     const glint = hash(k * 13 + Math.floor(look.frame / 4)) % 9 === 0

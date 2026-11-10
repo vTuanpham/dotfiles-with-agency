@@ -9,6 +9,9 @@ export type Design = {
   cruise: boolean
   escorts: Partial<Record<Tier, readonly { tier: Tier; lag: number; dx?: number; dy: number }[]>>
   turn: Turn
+  habit?: 'air' | 'water' | 'ground'
+  rests?: boolean
+  altitude?: 'low'
 }
 type Kind = NonNullable<Job['kind']>
 
@@ -29,27 +32,27 @@ const sisters: Design['escorts'] = {
 /** The motion contract of every family/place design. Sprite and effect owners plug into this table, never family checks. */
 export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
   codex: {
-    city: { facing: 'left', cruise: true, turn: 'coil', escorts: { 3: [{ tier: 1, lag: 0.45, dy: -5 }], 4: [{ tier: 1, lag: 0.4, dy: -5 }, { tier: 1, lag: 0.85, dy: 5 }] } },
+    city: { facing: 'left', cruise: true, turn: 'coil', rests: true, escorts: { 3: [{ tier: 1, lag: 0.45, dy: -5 }], 4: [{ tier: 1, lag: 0.4, dy: -5 }, { tier: 1, lag: 0.85, dy: 5 }] } },
     // Only the dragon keeps whelps: a second machine beside any of the others would read as another worker.
-    harbor: { facing: 'left', cruise: false, turn: 'none', escorts: {} }, // the tug
+    harbor: { facing: 'left', cruise: false, turn: 'none', habit: 'water', escorts: {} }, // the tug
     beach: { facing: null, cruise: false, turn: 'none', escorts: {} }, // the saucer is the same from every side: it hovers and drifts
     mountains: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the airship
-    countryside: { facing: 'left', cruise: false, turn: 'bank', escorts: {} }, // the strider
+    countryside: { facing: 'left', cruise: false, turn: 'bank', habit: 'ground', escorts: {} }, // the strider
     forest: { facing: null, cruise: false, turn: 'none', escorts: {} }, // the probe looks straight at you
-    desert: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the speeder
-    tundra: { facing: 'left', cruise: false, turn: 'bank', escorts: {} }, // the snowcat
+    desert: { facing: 'left', cruise: true, turn: 'bank', altitude: 'low', escorts: {} }, // the speeder
+    tundra: { facing: 'left', cruise: false, turn: 'bank', habit: 'ground', escorts: {} }, // the snowcat
   },
   // Birds in profile cruise and bank; the butterfly and the owl are seen face on, so they have no heading and wander.
   claude: {
     // Birds that flock keep a follower at the top classes; a second dolphin, flamingo, owl or fox would read as another worker.
-    city: { facing: 'left', cruise: true, turn: 'bank', escorts: flock }, // pigeons flock
-    harbor: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the dolphin
-    beach: { facing: 'left', cruise: false, turn: 'bank', escorts: {} }, // the flamingo wades
+    city: { facing: 'left', cruise: true, turn: 'bank', rests: true, escorts: flock }, // pigeons flock
+    harbor: { facing: 'left', cruise: true, turn: 'bank', habit: 'water', escorts: {} }, // the dolphin
+    beach: { facing: 'left', cruise: false, turn: 'bank', habit: 'ground', escorts: {} }, // the flamingo wades
     mountains: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the eagle soars alone
     countryside: { facing: null, cruise: false, turn: 'none', escorts: flock }, // butterflies go in pairs
-    forest: { facing: null, cruise: false, turn: 'none', escorts: {} }, // the owl
-    desert: { facing: 'left', cruise: false, turn: 'bank', escorts: {} }, // the fox
-    tundra: { facing: 'left', cruise: true, turn: 'bank', escorts: flock }, // puffins flock
+    forest: { facing: null, cruise: false, turn: 'none', rests: true, escorts: {} }, // the owl
+    desert: { facing: 'left', cruise: false, turn: 'bank', habit: 'ground', escorts: {} }, // the fox
+    tundra: { facing: 'left', cruise: true, turn: 'bank', rests: true, escorts: flock }, // puffins flock
   },
   // The coil is the dragon's turn alone. Figures with a front (the condor's arrowhead, the plough, the scorpion) bank; the rest
   // are the same from either side and simply drift.
@@ -68,11 +71,11 @@ export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
   opencode: {
     // Lanterns are released in numbers, so the sky lantern and the star keep sisters; the other crafts fly alone.
     city: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the crane
-    harbor: { facing: null, cruise: false, turn: 'none', escorts: {} }, // the paper boat
+    harbor: { facing: null, cruise: false, turn: 'none', habit: 'water', escorts: {} }, // the paper boat
     beach: { facing: 'left', cruise: false, turn: 'bank', escorts: {} }, // the kite
     mountains: { facing: null, cruise: false, turn: 'none', escorts: sisters }, // sky lanterns
     countryside: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the carp streamer
-    forest: { facing: null, cruise: false, turn: 'none', escorts: {} }, // the lantern string is already several
+    forest: { facing: null, cruise: false, turn: 'none', rests: true, escorts: {} }, // the lantern string is already several
     desert: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the carpet
     tundra: { facing: null, cruise: false, turn: 'none', escorts: sisters }, // paper stars
   },

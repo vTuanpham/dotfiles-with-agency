@@ -32,7 +32,7 @@ test('every character is drawn on the same grid, with a colour for each letter i
     }
   }
 })
-import { airJobs, boat, fly, placeBoat, placeFly, shape } from '../hooks/landscapes/crew'
+import { airJobs, fly, placeFly, shape } from '../hooks/landscapes/crew'
 import { ALL_CRAFT, CRAFT_MAX, MACHINE_SIZE, craftFrames, craftNose, craftPush, dragonCrests } from '../hooks/landscapes/craft'
 import { DESIGNS } from '../hooks/landscapes/design'
 import { type Job, type Look, P } from '../hooks/landscapes/kit'
@@ -45,8 +45,7 @@ const tiers = [1, 2, 3, 4] as const
 
 function render(job: Job, frame: number, water = false) {
   const c = canvas(40, 20)
-  if (water) boat(c, { ...look, frame }, 10, 5, job)
-  else fly(c, { ...look, frame }, 20, 10, job)
+  fly(c, { ...look, frame, ...(water ? { place: 'harbor' as const } : {}) }, 20, 10, job)
   return Array.from(c.px)
 }
 
@@ -172,8 +171,8 @@ test('mechanical wash and thrust points belong to their generated physical pose'
 
 test('a harbor machine keeps its full footprint at its berth', () => {
   const c = canvas(80, 20)
-  const state = { ...look, place: 'harbor' as const, crewZones: [{ x: 13, y: 13, w: 2, h: 1 }], crewSpriteZones: [] as { x: number; y: number; w: number; h: number }[] }
-  const placed = placeBoat(c, state, 5, 13, { kind: 'codex', tier: 4, seed: 0, isStale: false })!
+  const state = { ...look, place: 'harbor' as const, crewGround: 14, crewSurface: { ground: { y: 14, x0: 0, x1: 70 }, water: { y: 16, spans: [{ x0: 0, x1: 70 }] }, perches: [] }, crewZones: [] as { x: number; y: number; w: number; h: number }[], crewSpriteZones: [] as { x: number; y: number; w: number; h: number }[] }
+  const placed = placeFly(c, state, 25, 8, { kind: 'codex', tier: 4, seed: 0, isStale: false }, 70)!
   expect(placed.w).toBe(MACHINE_SIZE[4].w)
   expect(state.crewSpriteZones[0]).toBeDefined()
 })

@@ -63,6 +63,10 @@ export type Look = {
   /** Where this pass's own anchors begin in `crewAnchors` (it is shared across a scene's passes), so overlapping crew still keep an anchor each (placeFly). */
   crewAnchorsFrom?: number
   crewGround?: number
+  crewSurface?: { ground: { y: number; x0: number; x1: number }; water?: { y: number; spans: { x0: number; x1: number }[] }; perches: { x: number; y: number }[] }
+  crewSurfaceObstacles?: { x: number; y: number; w: number; h: number }[]
+  crewPerchesUsed?: { x: number; y: number; w: number; h: number }[]
+  crewRest?: boolean
   /** false draws bare sprites: no wind, trails, lights or particles (a switch for tests, and for a terminal that wants it quiet). */
   effects?: boolean
   /** How far each flyer may roam from its home each way, in cells: the sky's free width shared out among the crew (crew.ts airJobs). */
@@ -83,7 +87,7 @@ export type Building = {
 /** A crew member: the seed is who it is (its place, lane and motion come from it, never from its place in the list); the harness picks
  *  the family (kind), the model the class, and a maker with its own family (Claude inside agy) lends one mark its colour. */
 /** lift: 0..1, how high the sprite hops right now, only from real events (it did something, sent or received a message). */
-export type Job = { isStale: boolean; seed: number; kind?: 'codex' | 'agy' | 'claude' | 'opencode'; tier?: 1 | 2 | 3 | 4; maker?: 'claude'; signal?: boolean; /** the stretch of sky this flyer owns and roams, from `lanes` in crew.ts: its centre column and how far it may go each way */ lane?: { x: number; roam: number }; /** a message to or from the root is in flight: ms since it arrived in view, and whether this worker is the one sending it (scene.ts) */ talk?: { ms: number; sending: boolean; /** ms since the message was done, while the worker turns back to its own course (crew.ts `orient`) */ over?: number }; lift?: number; /** 0..1, how busy the worker is: from its real events and state (band.ts); calm hovers, busy roams and flaps faster */ pace?: number; /** the gait's own clock, in frames: it runs faster the busier the worker is, so a change of pace never jumps the sprite (band.ts) */ phase?: number; /** where it is on its route, a clock like `phase` that stands still while it hovers to talk to the root (band.ts `routeFor`), so it never flies backward to speak */ route?: number; /** ms since it finished, while it plays its exit; ms since it started, while it arrives (exits.ts) */ leaving?: number; arriving?: number; /** its last turn was interrupted, so its exit is a strike (exit-styles.ts `struck`) */ struck?: boolean; hit?: WakeSceneHit; hitOwner?: number }
+export type Job = { isStale: boolean; seed: number; kind?: 'codex' | 'agy' | 'claude' | 'opencode'; tier?: 1 | 2 | 3 | 4; maker?: 'claude'; signal?: boolean; /** the stretch of sky this flyer owns and roams, from `lanes` in crew.ts: its centre column and how far it may go each way */ lane?: { x: number; roam: number }; /** a message to or from the root is in flight: ms since it arrived in view, and whether this worker is the one sending it (scene.ts) */ talk?: { ms: number; sending: boolean; /** ms since the message was done, while the worker turns back to its own course (crew.ts `orient`) */ over?: number }; lift?: number; /** 0..1, how busy the worker is: from its real events and state (band.ts); calm hovers, busy roams and flaps faster */ pace?: number; /** A landing/takeoff transition, 0 flying to 1 resting. */ settle?: number; /** the gait's own clock, in frames: it runs faster the busier the worker is, so a change of pace never jumps the sprite (band.ts) */ phase?: number; /** where it is on its route, a clock like `phase` that stands still while it hovers to talk to the root (band.ts `routeFor`), so it never flies backward to speak */ route?: number; /** ms since it finished, while it plays its exit; ms since it started, while it arrives (exits.ts) */ leaving?: number; arriving?: number; /** its last turn was interrupted, so its exit is a strike (exit-styles.ts `struck`) */ struck?: boolean; hit?: WakeSceneHit; hitOwner?: number }
 
 /** Each backend keeps a distinct accent; agy's mauve reads on day and night skies, unlike blue; OpenCode's green, unlike the sky's own blues. */
 export const jobAccent = (job: Job, codex: number): number => (job.kind === 'agy' ? P.mauve : job.kind === 'claude' ? P.pink : job.kind === 'opencode' ? P.green : codex)
@@ -100,6 +104,9 @@ export type SceneEvent = {
 export type Landscape = {
   name: WakePreset
   ground: number // y of the row Mochi sits on and buildings stand on
+  water?: number // first open-water row, if the landscape has one
+  waterStart?: number // headlands may occupy the left edge of a water row
+  waterFreezes?: boolean
   backdrop(c: Canvas, look: Look): void
   floor(c: Canvas, look: Look): void
   /** Size of a turn's structure: grows with calls (kinds.length) and edits. Height <= ground - 1. */

@@ -256,6 +256,8 @@ function foreground(c: Canvas, look: Look, right: number) {
 export const forest: Landscape = {
   name: 'forest',
   ground: GROUND,
+  water: BANK + 1,
+  waterFreezes: true,
 
   backdrop(c, look) {
     const ridge = (x: number, f: number) => Math.sin(x * f + (look.seed % 97)) * 1.6 + Math.sin(x * f * 2.7 + (look.seed % 31)) * 0.8

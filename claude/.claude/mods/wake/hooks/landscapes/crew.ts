@@ -9,10 +9,11 @@ import * as craftSprite from './craft'
 import * as creatureSprite from './creatures'
 import * as agySprite from './agy'
 import * as lanternSprite from './lantern'
-import { boatFx, crewFx } from './fx'
+import { crewFx, groundStep } from './fx'
 import type { Vec } from './particles'
 import { clockRate, gait, roamShare } from './gait'
 import { type Job, jobAccent, type Look, P } from './kit'
+import type { WakePreset } from '../../types'
 
 // The crew's look: one family per harness, four classes that grow in size and detail.
 //   codex     mechanical  what each place builds (craft.ts): in the city a clockwork dragon, whelp -> Astra
@@ -26,7 +27,8 @@ import { type Job, jobAccent, type Look, P } from './kit'
 type Kind = NonNullable<Job['kind']>
 type Frames = readonly (readonly string[])[]
 // A sprite module may export `emissive: string` for additional glowing cell letters.
-const SPRITES = { codex: craftSprite, claude: creatureSprite, agy: agySprite, opencode: lanternSprite } as Record<Kind, { emissive?: string }>
+const SPRITES = { codex: craftSprite, claude: creatureSprite, agy: agySprite, opencode: lanternSprite } as Record<Kind, { emissive?: string; rest?: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> }>
+const TEMPO: Record<Kind, number> = { codex: 4, claude: 3, agy: 4, opencode: 5 }
 
 const drawWithHit = <T>(c: Canvas, job: Job, draw: () => T): T => job.hitOwner ? c.withHit(job.hitOwner, draw) : draw()
 /** How far a flyer patrols each way from its home, when the sky there is clear: about half a sky slot. */
@@ -38,14 +40,6 @@ const LANE: Record<Kind, readonly string[]> = {
   claude: ['a.a', '.a.', '.d.'],
   opencode: ['.l.', 'asd', '.p.'],
 }
-
-const ROAD: Record<1 | 2 | 3 | 4, readonly string[]> = {
-  1: ['..WW...', '.aaaaa.', '.d...d.'],
-  2: ['...WW....', '.aaaaaaaa', '.d.....d.'],
-  3: ['...WW.WW...', '.aaaaaaaaaa', '.dd.....dd.'],
-  4: ['...WW.WW.WW..', '.aaaaaaaaaaaa', '.dd.......dd.'],
-}
-
 /** The family's palette; a stale job stays amber. */
 function paint(job: Job, look: Look) {
   const family = job.isStale ? P.peach : job.kind === 'opencode' ? lanternInk(job.seed) : jobAccent(job, P.teal)
@@ -97,8 +91,10 @@ function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly strin
 /** A flyer's frames: a Codex machine is the craft its place builds (a glider over the mountains, a biplane over the fields),
  * a Claude worker is its place's living winged creature, agy's luminous bodies are generated per place, and OpenCode sews a local
  * festival lantern: every family has a generator for each place. */
-const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames =>
-  kind === 'codex' ? craftFrames(look.place, tier) : kind === 'claude' ? creatureFrames(look.place, tier) : kind === 'agy' ? agyFrames(look.place, tier) : lanternFrames(look.place, tier)
+const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames => {
+  const frames = kind === 'codex' ? craftFrames(look.place, tier) : kind === 'claude' ? creatureFrames(look.place, tier) : kind === 'agy' ? agyFrames(look.place, tier) : lanternFrames(look.place, tier)
+  return look.crewRest ? [SPRITES[kind].rest?.[look.place ?? 'city']?.[tier] ?? frames[0]!] : frames
+}
 
 /** The gait a flyer moves by: its family's, except that craft which cruise (a dragon, a banner plane) fly the continuous loop. */
 const gaitKind = (job: Job, look: Look) => designFor(job.kind ?? 'codex', look.place).cruise ? 'claude' : job.kind ?? 'codex'
@@ -245,9 +241,96 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   if (!quietMachine) air()
 }
 
+/** Place a grounded, floating or resting worker using the same sprite and hit owner as flight. */
+function placeSurface(c: Canvas, look: Look, x: number, job: Job, right: number) {
+  const design = designFor(job.kind ?? 'codex', look.place), surface = look.crewSurface
+  if (!surface) return undefined
+  const resting = job.isStale || (job.pace !== undefined && job.pace <= 0.15)
+  const habit = design.habit ?? 'air'
+  if (habit === 'air') return undefined
+  if (habit === 'water' && !surface.water) return undefined
+  const rest = resting
+  look.crewBoxes ??= {}
+  const state = { ...look, crewRest: rest }
+  const frames = airFrames(state, job.kind ?? 'codex', job.tier ?? 1), art = frames[0]!
+  const w = art[0]!.length, h = art.length
+  const hard = look.crewHard ?? [], others = (look.crewSpriteZones ?? []).filter(z => !hard.includes(z))
+  const obstacles = look.crewSurfaceObstacles ?? []
+  const clear = (left: number, top: number) => left >= 0 && left + w <= right && top >= 0 && top + h <= c.H && [...hard, ...others, ...obstacles].every(z => left + w <= z.x || left >= z.x + z.w || top + h <= z.y || top >= z.y + z.h)
+  const tempo = frames.length >= 8 ? 1.5 : TEMPO[job.kind ?? 'codex']
+  const beat = (Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length
+  const pose = frames[beat]!
+  const turning = design.facing ? orient(() => [0, 0], design.facing, 0, job.talk) : undefined
+  const shown = turning ? shape(pose, turning.mirror, turning.roll, design.turn) : pose
+  const bottom = Math.max(...shown.flatMap((row, y) => /[^.]/.test(row) ? [y] : []))
+  const bottoms = frames.map(frame => Math.max(...frame.flatMap((row, y) => /[^.]/.test(row) ? [y] : [])))
+  const minBottom = Math.min(bottom, ...bottoms), maxBottom = Math.max(bottom, ...bottoms)
+  const spans = habit === 'water' ? surface.water!.spans : [surface.ground]
+  let options: { cx: number; foot: number }[] = []
+  for (const span of spans) for (let cx = span.x0 + (w >> 1); cx + (w - (w >> 1)) <= span.x1; cx++) options.push({ cx, foot: habit === 'water' ? surface.water!.y + 1 : surface.ground.y })
+  options.sort((a, b) => Math.abs(a.cx - x) - Math.abs(b.cx - x))
+  const phase = job.route ?? job.phase ?? look.frame
+  const bob = habit === 'water' && Math.sin(phase * 0.12 + job.seed) > 0.3 ? -1 : 0
+  const fits = (cx: number, foot: number) => spans.some(span => cx - (w >> 1) >= span.x0 && cx + w - (w >> 1) <= span.x1) && clear(cx - (w >> 1), foot - minBottom) && clear(cx - (w >> 1), foot - maxBottom - Number(habit === 'water'))
+  const chosen = options.find(p => fits(p.cx, p.foot))
+  if (!chosen) return undefined
+  let reach = 0
+  const maxReach = job.lane?.roam ?? 2
+  while (!rest && reach < maxReach && fits(chosen.cx - reach - 1, chosen.foot) && fits(chosen.cx + reach + 1, chosen.foot)) reach++
+  const g = gait(gaitKind(job, look), job.tier ?? 1, job.seed, phase, reach)
+  const cx = chosen.cx + Math.round(reach * roamShare(job.pace ?? 0.6) * g.u)
+  const top = chosen.foot + bob - bottom, left = cx - (w >> 1)
+  const zone = { x: left, y: top, w, h }
+  const reserved = { x: chosen.cx - (w >> 1) - reach, y: chosen.foot - maxBottom - Number(habit === 'water'), w: w + 2 * reach, h: h + maxBottom - minBottom + Number(habit === 'water') }
+  ;(look.crewZones ??= []).push(reserved)
+  ;(look.crewSpriteZones ??= []).push(reserved)
+  ;(look.crewAnchors ??= []).push((top + (h >> 1)) * c.W + cx)
+  const centerY = top + (h >> 1), kind = job.kind ?? 'codex'
+  if (habit === 'water' && look.effects !== false) for (let d = 1; d <= 3; d++) c.glow(cx + (w >> 1) + d, surface.water!.y, P.white, 0.25 / d)
+  if (habit === 'ground' && !rest) groundStep(c, look, kind, cx, chosen.foot, job.seed, phase)
+  drawWithHit(c, job, () => fly(c, state, cx, centerY, job, kind, false, () => [cx, centerY], []))
+  if (habit === 'water') for (let dx = 0; dx < w; dx++) for (let dy = 1; dy <= 2; dy++) {
+    const yy = surface.water!.y + dy + 1, sy = top + bottom - dy
+    if (yy < c.H && sy >= top) c.glow(left + dx, yy, c.get(left + dx, sy), 0.12)
+  }
+  return zone
+}
+
+function placeRest(c: Canvas, look: Look, job: Job, x: number, y: number, right: number): { x: number; y: number; w: number; h: number } | undefined {
+  const resting = job.isStale || (job.pace !== undefined && job.pace <= 0.15)
+  const amount = job.settle ?? Number(resting)
+  if (!designFor(job.kind ?? 'codex', look.place).rests || amount <= 0) return undefined
+  const kind = job.kind ?? 'codex', tier = job.tier ?? 1
+  const art = airFrames({ ...look, crewRest: true }, kind, tier)[0]!, w = art[0]!.length, h = art.length
+  const bottom = Math.max(...art.flatMap((row, rowIndex) => /[^.]/.test(row) ? [rowIndex] : []))
+  const used = look.crewPerchesUsed ??= [], obstacles = [...(look.crewHard ?? []), ...(look.crewSpriteZones ?? []), ...used]
+  const clear = (z: { x: number; y: number; w: number; h: number }) => z.x >= 0 && z.x + z.w <= right && z.y >= 0 && z.y + z.h <= c.H && obstacles.every(o => z.x + z.w <= o.x || z.x >= o.x + o.w || z.y + z.h <= o.y || z.y >= o.y + o.h)
+  const perches = [...(look.crewSurface?.perches ?? [])].sort((a, b) => Math.abs(a.x - x) + Math.abs(a.y - y) - Math.abs(b.x - x) - Math.abs(b.y - y))
+  for (const perch of perches) {
+    const target = { x: perch.x - (w >> 1), y: perch.y - bottom, w, h }
+    if (!clear(target)) continue
+    const ease = amount * amount * (3 - 2 * amount)
+    const cx = Math.round(x + (perch.x - x) * ease), cy = Math.round(y + (target.y + (h >> 1) - y) * ease)
+    const zone = { x: cx - (w >> 1), y: cy - (h >> 1), w, h }
+    if (!clear(zone)) continue
+    used.push(target)
+    ;(look.crewZones ??= []).push(zone)
+    ;(look.crewSpriteZones ??= []).push(zone)
+    ;(look.crewAnchors ??= []).push(cy * c.W + cx)
+    look.crewBoxes ??= {}
+    drawWithHit(c, job, () => fly(c, { ...look, crewRest: amount >= 1 }, cx, cy, job, kind, false, () => [cx, cy], []))
+    return zone
+  }
+  return undefined
+}
+
 /** Reserve the nearest clear lane; compact silhouettes keep a crowded sky readable. */
 export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, right: number) {
   if (job.lane) x = job.lane.x // a flyer with a lane of the sky is centred in it, and roams it end to end
+  const design = designFor(job.kind ?? 'codex', look.place)
+  const placed = placeSurface(c, look, x, job, right)
+  if (placed) return placed
+  if (design.altitude === 'low') y = (look.crewGround ?? c.H) - 2
   const zones = look.crewZones ??= []
   const anchors = look.crewAnchors ??= []
   const sprites = look.crewSpriteZones ??= []
@@ -351,6 +434,8 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       // Crew may overlap (a soft boundary), but every worker keeps an anchor of its own, so a message wire finds only one of them.
       // (only this pass's anchors count: the array is shared across the passes of one scene)
       for (let tries = 0; tries < 8 && anchors.indexOf((candidate.y + offset) * c.W + candidate.x + drift, look.crewAnchorsFrom ?? 0) >= 0; tries++) drift += tries % 2 ? -tries : tries + 1
+      const settled = placeRest(c, look, job, candidate.x + drift, candidate.y + offset, right)
+      if (settled) return settled
       const reserved = { x: zone.x + formation.left - rx, y: zone.y + formation.top - up - hopRoom, w: formation.right - formation.left + 2 * rx, h: formation.bottom - formation.top + up + down + hopRoom }
       zones.push(reserved)
       sprites.push(reserved)
@@ -363,18 +448,6 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
         return [candidate.x + rx * share * g.u, candidate.y - share * (g.v > 0 ? g.v * up : g.v * down) - hop]
       }
       drawWithHit(c, job, () => fly(c, look, candidate.x + drift, candidate.y + offset, job, kind, false, path, company))
-      return zone
-    }
-  }
-  if ((job.kind ?? 'codex') === 'codex' && look.crewGround !== undefined) {
-    const art = ROAD[job.tier ?? 1], py = look.crewGround - 3
-    for (let px = 0; px + art[0]!.length <= right; px++) {
-      const zone = { x: px, y: py, w: art[0]!.length, h: art.length }
-      if (zones.some(z => zone.x < z.x + z.w && zone.x + zone.w > z.x && zone.y < z.y + z.h && zone.y + zone.h > z.y)) continue
-      anchors.push((py + 1) * c.W + px + 1)
-      zones.push(zone)
-      sprites.push(zone)
-      drawWithHit(c, job, () => draw(c, look, px, py, art, paint(job, look), false))
       return zone
     }
   }
@@ -532,7 +605,8 @@ export function airJobs(c: Canvas, look: Look, jobs: Job[], right: number) {
   const before = c.px.slice()
   const beforeOwners = c.hitOwners?.slice()
   const zones = look.crewZones ??= [], sprites = look.crewSpriteZones ??= [], anchors = look.crewAnchors ??= []
-  const counts = [zones.length, sprites.length, anchors.length]
+  const perches = look.crewPerchesUsed ??= []
+  const counts = [zones.length, sprites.length, anchors.length, perches.length]
   if (jobs.length * 9 > right * Math.max(1, (look.crewGround ?? c.H) - 3) && packCompact(c, look, ordered.map(([member]) => member))) return
   for (const [job, slot] of ordered) {
     const [x, y] = hover(c, look, job, slot, count, right)
@@ -542,6 +616,8 @@ export function airJobs(c: Canvas, look: Look, jobs: Job[], right: number) {
     zones.length = counts[0]!
     sprites.length = counts[1]!
     anchors.length = counts[2]!
+    perches.length = counts[3]!
+    if (look.crewBoxes) for (const [member] of ordered) if (member.hit) delete look.crewBoxes[member.hit.id]
     if (packCompact(c, look, ordered.map(([member]) => member))) return
     for (const [member, memberSlot] of ordered) {
       const [cx, cy] = hover(c, look, member, memberSlot, count, right)
@@ -549,107 +625,5 @@ export function airJobs(c: Canvas, look: Look, jobs: Job[], right: number) {
     }
     return
   }
-}
-
-/** A Codex boat of its class standing on `y` (its top row) at `x`; returns its width for reflections and slots. */
-export function boat(c: Canvas, look: Look, x: number, y: number, job: Job): number {
-  const frames = craftFrames('harbor', job.tier ?? 1)
-  const phase = job.phase ?? look.frame
-  const flip = job.talk ? true : Math.cos((phase + job.seed * 97) * 0.04 + job.seed) > 0
-  const index = ((Math.floor(phase / 1.5) + job.seed) % frames.length + frames.length) % frames.length
-  const art = shape(frames[index]!, flip ? -1 : 1, undefined, designFor('codex', 'harbor').turn)
-  const pal = paint(job, look)
-  boatFx(c, look, { x, y, w: art[0]!.length, h: art.length, tier: job.tier ?? 1, seed: job.seed, pace: job.pace ?? 0.6, phase, flip, talk: job.talk })
-  draw(c, look, x, y, art, pal, false)
-  return art[0]!.length
-}
-
-type Zone = { x: number; y: number; w: number; h: number }
-
-// Empty air around a wheelhouse is not hull. Reserve every animated pose in both headings before choosing a water berth.
-function boatSpace(tier: Tier): readonly (readonly [number, number])[] {
-  const frames = craftFrames('harbor', tier), w = frames[0]![0]!.length, cells = new Set<number>()
-  for (const art of frames) art.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== '.') { cells.add(y * w + x); cells.add(y * w + w - 1 - x) } }))
-  return [...cells].map(cell => [cell % w, Math.floor(cell / w)] as const)
-}
-const BOAT_SPACE = { 1: boatSpace(1), 2: boatSpace(2), 3: boatSpace(3), 4: boatSpace(4) }
-
-/** Find a clear water berth without crossing foreground, lamp or other crew reservations; otherwise leave room for overflow. */
-export function placeBoat(c: Canvas, look: Look, wanted: number, y: number, job: Job, compactOnly = false, distant = true) {
-  const zones = look.crewZones ??= []
-  const sprites = look.crewSpriteZones ??= []
-  const anchors = look.crewAnchors ??= []
-  const compact = ['.s.', 'aaa', 'hhh'] as const
-  for (const art of compactOnly ? [compact] : [craftFrames('harbor', job.tier ?? 1)[0]!, ...(distant ? [compact] : [])]) {
-    const w = art[0]!.length, h = art.length
-    const cells = h === 3 ? art.flatMap((row, y) => [...row].flatMap((ch, x) => ch === '.' ? [] : [[x, y] as const])) : BOAT_SPACE[job.tier ?? 1]
-    const collides = (left: number, top: number) => zones.some(z => left < z.x + z.w && left + w > z.x && top < z.y + z.h && top + h > z.y
-      && (h === 3 || cells.some(([px, py]) => left + px >= z.x && left + px < z.x + z.w && top + py >= z.y && top + py < z.y + z.h)))
-    const xs = Array.from({ length: Math.max(0, c.W - w + 1) }, (_, i) => i).sort((a, b) => Math.abs(a - wanted) - Math.abs(b - wanted) || a - b)
-    // Try the near water first, then the farther bay. Every occupied pose still has to clear the foreground and lamps.
-    const tops = h === 3 ? [y - 2, y - 1, y, y + 1, y + 2, y + 3, y - 3] : [y, y - 1, y - 2, y - 3, y - 4]
-    for (const top of tops) for (const x of xs) {
-      if (top < 0 || top + h > c.H) continue
-      const zone = { x, y: top, w, h }
-      if (collides(x, top)) continue
-      const free = (dx: number, dy: number) => x + dx >= 0 && x + dx + w <= c.W && top + dy >= 0 && top + dy + h <= c.H
-        && !collides(x + dx, top + dy)
-      let roam = 0
-      while (roam < 9 && free(-roam - 1, 0) && free(roam + 1, 0)) roam++
-      const phase = (job.phase ?? look.frame) + job.seed * 97
-      const drift = Math.round(roam * Math.sin(phase * 0.04 + job.seed))
-      drawWithHit(c, job, () => h === 3 ? draw(c, look, x + drift, top, art, paint(job, look), false) : boat(c, look, x + drift, top, job))
-      anchors.push((top + h - 1) * c.W + x + drift + (w >> 1))
-      zone.x -= roam; zone.w += 2 * roam
-      zones.push(zone)
-      sprites.push(zone)
-      if (h !== 3) for (const e of designFor('codex', 'harbor').escorts[job.tier ?? 1] ?? []) {
-        const small = craftFrames('harbor', e.tier)[0]!, sw = small[0]!.length, sh = small.length
-        const sx = x + w + 2, sy = Math.min(c.H - sh, top + e.dy)
-        const z = { x: sx, y: sy, w: sw, h: sh }
-        if (sx + sw > c.W || zones.some(o => z.x < o.x + o.w && z.x + z.w > o.x && z.y < o.y + o.h && z.y + z.h > o.y)) continue
-        drawWithHit(c, job, () => boat(c, look, sx, sy, { ...job, tier: e.tier, talk: undefined, phase: (job.phase ?? look.frame) - e.lag * 10 }))
-        zone.w = Math.max(zone.w, z.x + z.w - zone.x)
-        zone.h = Math.max(zone.h, z.y + z.h - zone.y)
-      }
-      return { x, w }
-    }
-  }
-  return undefined
-}
-
-/** Reserve crowded water berths together before painting any boat. */
-export function packBoats(c: Canvas, look: Look, boats: { job: Job; x: number; y: number }[]): { x: number; w: number }[] | undefined {
-  const zones = look.crewZones ??= [], sprites = look.crewSpriteZones ??= [], anchors = look.crewAnchors ??= []
-  const options = boats.map(boat => {
-    const slots: { x: number; y: number; w: number; h: number }[] = []
-    for (const y of [boat.y + 1, boat.y, boat.y + 2, boat.y + 3]) for (let x = 0; x + 3 <= c.W; x++) {
-      if (y < 0 || y + 3 > c.H) continue
-      const z = { x, y, w: 3, h: 3 }
-      if (!zones.some(o => z.x < o.x + o.w && z.x + z.w > o.x && z.y < o.y + o.h && z.y + z.h > o.y)) slots.push(z)
-    }
-    return slots.sort((a, b) => Math.abs(a.x - boat.x) - Math.abs(b.x - boat.x) || a.y - b.y || a.x - b.x)
-  })
-  const picked: { x: number; y: number; w: number; h: number }[] = []
-  let visits = 0
-  const search = (i: number): boolean => {
-    if (i === boats.length) return true
-    if (++visits > 20_000) return false
-    for (const z of options[i]!) {
-      if (picked.some(o => z.x < o.x + o.w && z.x + z.w > o.x && z.y < o.y + o.h && z.y + z.h > o.y)) continue
-      picked.push(z)
-      if (search(i + 1)) return true
-      picked.pop()
-    }
-    return false
-  }
-  if (!search(0)) return undefined
-  picked.forEach((z, i) => {
-    drawWithHit(c, boats[i]!.job, () => draw(c, look, z.x, z.y, ['.s.', 'aaa', 'hhh'], paint(boats[i]!.job, look), false))
-    anchors.push((z.y + 2) * c.W + z.x + 1)
-    zones.push(z)
-    sprites.push(z)
-  })
-  return picked.map(z => ({ x: z.x, w: z.w }))
 }
 

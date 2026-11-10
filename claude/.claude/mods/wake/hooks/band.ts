@@ -148,7 +148,7 @@ export function passageStamps(old: Pick<WakeChip, 'running' | 'waitingForRoot' |
  * plays when it is done, not only when it is finally retired or stopped; a reply that wakes it plays its arrival again.
  */
 export const isWorking = (job: { running: boolean; waitingForRoot?: boolean; state?: string }): boolean =>
-  job.running && !job.waitingForRoot && job.state !== 'waiting_for_root'
+  job.running
 
 /** How long ago a worker that is no longer at work was seen to stop, while it is still playing its exit (see exits.ts). */
 const leavingFor = (job: WakeChip, now: number) => (isWorking(job) ? undefined : sinceIn(job.leftAt, now, EXIT_MS))
@@ -160,7 +160,15 @@ const arrivingFor = (job: WakeChip, now: number) => (isWorking(job) ? sinceIn(jo
 const gaitClock = new PhaseClock()
 /** The clock of where a worker is on its route: the same as its gait clock, except that it stands still while the worker hovers to talk to the root. */
 const routeClock = new PhaseClock()
-const gaitOf = (id: string, pace: number, now: number, rate = 1) => ({ pace, phase: gaitClock.advance(id, pace, now), route: routeClock.advance(id, pace, now, rate) })
+const settling = new Map<string, { at: number; amount: number }>()
+const gaitOf = (id: string, pace: number, now: number, rate = 1, stale = false) => {
+  const rest = stale || pace <= 0.15, previous = settling.get(id)
+  const step = previous ? Math.min(1, Math.max(0, now - previous.at) / 1200) : 1
+  const amount = previous ? Math.max(0, Math.min(1, previous.amount + (rest ? step : -step))) : Number(rest)
+  settling.set(id, { at: now, amount })
+  if (settling.size > 256) for (const key of [...settling.keys()].slice(0, 64)) settling.delete(key)
+  return { pace, settle: amount, phase: gaitClock.advance(id, pace, now), route: routeClock.advance(id, pace, now, rate) }
+}
 
 /**
  * Messages between the main conversation and native subagents, as scene edges: the same trail, packets, calls and replies as a
@@ -255,7 +263,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
       struck: job.interrupted || undefined, // its last turn was cut off: it leaves by being struck down
       arriving: arrivingFor(job, now),
       lift: job.id ? lifts.get(job.id) : undefined,
-      ...gaitOf(job.id ?? `${job.owner}/${job.name}`, isWorking(job) ? paceOf(job, now) : 0.3, now, routeFor(job, now)),
+      ...gaitOf(job.id ?? `${job.owner}/${job.name}`, isWorking(job) ? paceOf(job, now) : 0.3, now, routeFor(job, now), job.isStale),
       isStale: job.isStale, seed: seedOf(job.name), tier: modelTier(job.backend ?? 'codex', job.model),
       kind: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const), maker: job.maker,
       signal: !!peer && peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt < 2_000 && Math.floor((now - peer.observedAt) / 400) % 2 === 1,

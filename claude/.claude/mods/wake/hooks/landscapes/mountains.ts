@@ -254,6 +254,8 @@ function camp(c: Canvas, look: Look, right: number) {
 export const mountains: Landscape = {
   name: 'mountains',
   ground: GROUND,
+  water: GROUND + 2,
+  waterFreezes: true,
 
   backdrop(c, look) {
     const r = ridges(look)

@@ -66,6 +66,7 @@ test('a worker\'s pace follows what it really did: busy after an event, calm whe
   expect(later).toBeGreaterThanOrEqual(0.35)
   expect(paceOf({ isStale: true, lastEventAt: now }, now)).toBeLessThan(0.2)
   expect(paceOf({ isStale: false, waitingForRoot: true, lastEventAt: now }, now)).toBeLessThan(0.2)
+  expect(paceOf({ isStale: false, state: 'idle', lastEventAt: now }, now)).toBeLessThan(0.2)
   expect(Math.abs(paceOf({ isStale: false }, now) - 0.45)).toBeLessThan(1e-9)
 })
 

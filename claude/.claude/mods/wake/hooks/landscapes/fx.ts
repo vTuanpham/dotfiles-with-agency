@@ -364,13 +364,12 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
 
 // ── boats ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** A boat uses the harbor cell too: one water wake and its wheelhouse's send signal, anchored on the actual hull. */
-export function boatFx(c: Canvas, look: Look, b: { x: number; y: number; w: number; h: number; tier: number; seed: number; pace: number; phase: number; flip: boolean; talk?: Aura['talk'] }): void {
-  const cx = b.x + (b.w >> 1), cy = b.y + (b.h >> 1)
-  crewFx(c, { ...look, place: 'harbor' }, {
-    x0: b.x, y0: b.y, w: b.w, h: b.h, cx, cy, kind: 'codex', tier: b.tier, seed: b.seed, pace: b.pace, phase: b.phase,
-    path: () => [cx, cy], lift: 0, ground: b.y + b.h, flip: b.flip, talk: b.talk,
-  })
+/** A footstep reuses the place's ground stream, or its wind-borne material if it has none. */
+export function groundStep(c: Canvas, look: Look, kind: Kind, x: number, y: number, seed: number, phase: number): void {
+  if (look.effects === false) return
+  const place = look.place ?? 'city'
+  const source = cellsFor(kind, place, look.night).flatMap(cell => cell.streams ?? []).find(stream => stream.at === 'ground' && (stream.from === undefined || look.night >= stream.from))?.emitter ?? CARRIED[place]
+  emit(c, { ...source, count: 3, life: 0.5, burst: true, delay: 0, spawn: { w: 1 }, speed: [0.5, 2], angle: [UP - 0.8, UP + 0.8], gravity: 5, streak: 0, arc: false }, { at: () => [x, y], t: (phase % 6) / 10, seed, strength: 0.7, wind: clamp(look.wind, 0, 60) })
 }
 
 // ── the wind ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────

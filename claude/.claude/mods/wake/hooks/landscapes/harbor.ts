@@ -1,6 +1,6 @@
 import { type Canvas, hash, mix, sprite } from '../pixels'
 import { type Building, type Job, byPhase, KIND_COLOR, type Landscape, type Look, P, SCENE_H, editsOf, farTone, foliage, lightWindows, wave, jobAccent } from './kit'
-import { airJobs, packBoats, placeBoat, stations } from './crew'
+import { airJobs } from './crew'
 
 // Harbor: a port town on the water. Turns are waterfront buildings on a pier (warehouse,
 // row house, customs tower, fish market, stepped gable); Codex jobs are paddle launches; the
@@ -272,6 +272,7 @@ function trucks(c: Canvas, look: Look, right: number) {
 export const harbor: Landscape = {
   name: 'harbor',
   ground: GROUND,
+  water: WATER,
 
   backdrop: farShore,
 
@@ -364,36 +365,7 @@ export const harbor: Landscape = {
   jobs(c, look, jobs, right) {
     reflect(c, look) // the mirror comes first so boats and their wakes sit on top of it
     smallBoats(c, look)
-    const count = Math.max(1, Math.floor((right - 14) / 20)) // berths: each boat keeps its own by who it is
-    const berth = (right - 14) / count
-    const boats = stations(jobs.filter(job => (job.kind ?? 'codex') === 'codex'), count).map(([job, slot]) => {
-      const t = job.seed * 97 // stable berth; placeBoat moves only within its reserved clear water
-      const x = Math.round(4 + ((slot % count) + (Math.floor(slot / count) % 2) * 0.5) * berth + (job.seed % 5) + 3 * Math.sin(t * 0.04 + job.seed))
-      const bob = Math.sin(t * 0.12 + job.seed) > 0.3 ? 1 : 0
-      const y = GROUND - 1 + bob
-      return { job, x, y, bob }
-    })
-    const crowded = jobs.length * 9 > right * Math.max(1, GROUND - 3)
-    const overflow: Job[] = [] // distant launches pack into water berths before any worker needs the sky
-    const packed = crowded ? packBoats(c, look, boats) : undefined
-    for (const [i, { job, x, y, bob }] of boats.entries()) {
-      // The distant mark is for a fleet; a lone unberthable worker keeps a full coastal dragon instead.
-      const placed = packed ? packed[i] : placeBoat(c, look, x, y, job, crowded, boats.length > 1)
-      if (placed && !bob) for (let k = 1; k < placed.w; k++) {
-        const x = placed.x + k, y = SCENE_H - 1
-        if (!(look.crewZones ?? []).some(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h)) c.glow(x, y, jobAccent(job, P.teal), 0.2)
-      }
-      if (!placed) overflow.push(job)
-    }
-    airJobs(c, look, jobs.filter(job => (job.kind ?? 'codex') !== 'codex'), right)
-    // If even a distant launch cannot berth, the coastal city lends a dragon; never put a boat in the sky.
-    if (overflow.length) {
-      const sprites = look.crewSpriteZones ??= []
-      const reserved = [...sprites, ...(look.crewZones ?? [])], before = reserved.length
-      // A fallback dragon must not turn the launch's protected foreground/lamp cells into soft skyline preferences.
-      airJobs(c, { ...look, place: 'city', crewSpriteZones: reserved }, overflow, right)
-      sprites.push(...reserved.slice(before)) // later subagents must also give the fallback crew room
-    }
+    airJobs(c, look, jobs, right)
   },
 
   foreground(c, look, right) {

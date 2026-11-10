@@ -332,6 +332,8 @@ function beachLife(c: Canvas, look: Look, right: number) {
 export const beach: Landscape = {
   name: 'beach',
   ground: GROUND,
+  water: SHORE - 1,
+  waterStart: 26,
 
   backdrop: seaAndShore,
 

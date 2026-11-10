@@ -40,7 +40,7 @@ export const EFFECT_FRAMES: Record<SceneEffect['kind'], number> = { fireworks: 4
 export type SceneWeather = { cloud: number; rain: 0 | 1 | 2 | 3; snow: 0 | 1 | 2 | 3; fog: boolean; thunder: boolean; wind: number }
 
 /** A running subagent as its place's creature: its id's seed (who it is: its lane and pace come from it) and its model's class. */
-export type SceneAgent = { id?: string; seed: number; tier: 1 | 2 | 3 | 4; hit?: WakeSceneHit; leaving?: number; arriving?: number; struck?: boolean; pace?: number; phase?: number; route?: number }
+export type SceneAgent = { id?: string; seed: number; tier: 1 | 2 | 3 | 4; hit?: WakeSceneHit; leaving?: number; arriving?: number; struck?: boolean; pace?: number; settle?: number; phase?: number; route?: number }
 
 export type SceneHitMap = { columns: number; rows: number; owners: number[]; targets: WakeSceneHit[] }
 export type SceneSelection = { target: WakeSceneHit; x: number; y: number }
@@ -619,7 +619,7 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   }
   const jobs = input.jobs.map(job => ({ ...job, hitOwner: registerHit(job.hit) || undefined }))
   const agents = input.agents.map(agent => ({
-    isStale: false, seed: agent.seed, tier: agent.tier, kind: 'claude' as const, pace: agent.pace, phase: agent.phase, route: agent.route, lane: undefined as Job['lane'], talk: undefined as Job['talk'],
+    isStale: false, seed: agent.seed, tier: agent.tier, kind: 'claude' as const, pace: agent.pace, settle: agent.settle, phase: agent.phase, route: agent.route, lane: undefined as Job['lane'], talk: undefined as Job['talk'],
     hit: agent.hit, hitOwner: registerHit(agent.hit) || undefined,
   }))
   const skyOwner = registerHit({ id: 'sky', title: 'Sky', details: [look.isDay ? 'Daytime' : 'Nighttime', input.weather ? `Cloud cover: ${Math.round(input.weather.cloud * 100)}%` : 'Weather unavailable'] })
@@ -660,8 +660,19 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   const mochiOwner = registerHit({ id: 'mochi', title: CHARACTERS[asCharacter(input.character)].label, details: [`Session mood: ${input.mood}`] })
 
   drawSky(c, look, input, celestialOwner)
-  if (localHits) skyPixels = c.px.slice()
+  const skyBeforeBackdrop = c.px.slice()
+  if (localHits) skyPixels = skyBeforeBackdrop
   land.backdrop(c, look)
+  // Aurora and other translucent night effects are not surfaces. Sample the same terrain in daylight for its solid contour.
+  const terrain = look.night > 0 ? canvas(c.W, c.H) : undefined
+  if (terrain) land.backdrop(terrain, { ...look, night: 0, isDay: true, phase: 'noon', blend: { dawn: 0, morning: 0, noon: 1, afternoon: 0, dusk: 0, night: 0 } })
+  const solid = (x: number, y: number) => terrain ? terrain.get(x, y) !== 0 : c.px[y * c.W + x] !== skyBeforeBackdrop[y * c.W + x]
+  const terrainPerches: { x: number; y: number }[] = []
+  for (let x = 2; x < right - 2; x++) {
+    let y = 1
+    while (y < ground && !solid(x, y)) y++
+    if (y < ground && solid(x - 1, y) && solid(x + 1, y)) terrainPerches.push({ x, y: y - 1 })
+  }
   land.floor(c, look)
   if (localHits) sceneryPixels = c.px.slice()
   if (plan.ends) drawTrails(c, input, plan.ends, reactions, target => {
@@ -672,6 +683,7 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
 
   look.crewZones = []
   look.crewGround = ground
+  look.crewSurface = { ground: { y: ground, x0: 0, x1: right }, ...(land.water === undefined || look.snowy && land.waterFreezes ? {} : { water: { y: land.water, spans: [{ x0: land.waterStart ?? 0, x1: right }] } }), perches: terrainPerches }
   look.crewAnchors = crewAnchors
   look.crewAnchorsFrom = crewAnchors.length
   const catZone = { x: catX - 4, y: 0, w: CAT_COLUMNS + 4, h: H }
@@ -763,7 +775,15 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   if (foregroundOwner) c.withHit(foregroundOwner, () => land.foreground(c, look, right))
   else land.foreground(c, look, right)
   land.foreground(reference, referenceLook, right)
+  const foregroundStart = look.crewZones.length
   reserveChanges(beforeForeground, 2)
+  look.crewSurfaceObstacles = look.crewZones.slice(foregroundStart)
+  // The reference is painted from the actual structures and foreground at their stable pose.
+  for (let x = 2; x < right - 2; x++) {
+    let y = 1
+    while (y < ground && !reference.get(x, y)) y++
+    if (y < ground && reference.get(x - 1, y) && reference.get(x + 1, y)) look.crewSurface.perches.push({ x, y: y - 1 })
+  }
   const playing = playingEvent(look, [...land.events, ...SHARED_EVENTS], input.forceEvent)
   const eventOwner = playing ? registerHit({ id: `event:${playing.event.name}`, title: playing.event.name, details: ['Ambient scene event'] }) : 0
   if (playing) {
