@@ -84,6 +84,8 @@ class InstallTests(unittest.TestCase):
             self.assertIn("differs: ~/.gitconfig", result.stdout)
             self.assertTrue((home / ".claude/settings.json").is_file())
             self.assertFalse((home / "README.md").exists())
+            self.assertFalse((home / ".claude/hooks/README.md").exists())
+            self.assertFalse((home / ".codex/model-catalogs/README.md").exists())
 
 
     def test_hooks_are_added_to_an_existing_file_without_losing_anything_and_only_once(self):

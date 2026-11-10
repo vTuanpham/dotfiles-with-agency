@@ -233,6 +233,7 @@ step_snapshots() {
     while IFS= read -r file; do
       dest="$HOME/${file#"$pkg"/}"
       [[ ${file#"$pkg"/} == .* ]] || continue # a package's own README is not a config file
+      [[ ${file##*/} == README.md ]] && continue # documentation is not installed
       [[ -L $REPO/$file ]] && continue # in-repo links are the links step's business
       if [[ ! -e $dest && ! -L $dest ]]; then
         act mkdir -p "$(dirname "$dest")"
