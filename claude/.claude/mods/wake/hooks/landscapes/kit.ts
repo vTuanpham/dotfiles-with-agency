@@ -63,6 +63,7 @@ export type Look = {
   /** Where this pass's own anchors begin in `crewAnchors` (it is shared across a scene's passes), so overlapping crew still keep an anchor each (placeFly). */
   crewAnchorsFrom?: number
   crewGround?: number
+  crewCount?: number
   crewSurface?: { ground: { y: number; x0: number; x1: number }; water?: { y: number; spans: { x0: number; x1: number }[] }; perches: { x: number; y: number }[] }
   crewSurfaceObstacles?: { x: number; y: number; w: number; h: number }[]
   crewPerchesUsed?: { x: number; y: number; w: number; h: number }[]

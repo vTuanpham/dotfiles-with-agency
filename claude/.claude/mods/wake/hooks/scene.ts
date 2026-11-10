@@ -794,6 +794,7 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
 
   // Subagents and jobs share the same exclusion zones, and the same sky: each roams its share of what is free.
   look.crewRoam = roamOf([...jobs, ...agents], right)
+  look.crewCount = jobs.length + agents.length
   for (const [member, lane] of lanes([...jobs, ...agents], right)) member.lane = lane // each flyer owns a stretch of the whole sky
   for (const edge of input.peerEdges ?? []) { // a message to or from the root turns a worker toward Mochi, and a sender shouts it at her
     if (edge.arriving === undefined || (edge.source !== 'mochi' && edge.target !== 'mochi')) continue

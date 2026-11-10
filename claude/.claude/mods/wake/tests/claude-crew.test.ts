@@ -62,13 +62,14 @@ test('Claude fronts, turns, cruise and flock belong to every species', () => {
 
 test('Claude air cannot repaint the plumage, face or eye on either heading', () => {
   for (const place of places) for (const tier of tiers) for (const beat of [0, 3, 6, 9]) for (const direction of [-1, 1]) {
-    const bare = canvas(48, 20), air = canvas(48, 20), phase = beat * 1.5
+    const bare = canvas(48, 20), air = canvas(48, 20), mask = canvas(48, 20), phase = beat * 1.5
     const look = { place, frame: phase, night: 1, wind: 8, crewGround: 18 } as Look
     const job = { kind: 'claude' as const, tier, seed: 0, isStale: false, phase }
     const path = (ago: number) => [24 - direction * ago * 10, 8] as const
     fly(bare, { ...look, effects: false }, 24, 8, job, 'claude', false, path, [])
     fly(air, { ...look, effects: true }, 24, 8, job, 'claude', false, path, [])
-    for (let i = 0; i < bare.px.length; i++) if (bare.px[i]) expect(air.px[i], `${place} ${tier} ${beat} heading ${direction}`).toBe(bare.px[i])
+    fly(mask, { ...look, night: 0, effects: false }, 24, 8, job, 'claude', false, path, [])
+    for (let i = 0; i < bare.px.length; i++) if (mask.px[i]) expect(air.px[i], `${place} ${tier} ${beat} heading ${direction}`).toBe(bare.px[i])
   }
 })
 

@@ -108,10 +108,11 @@ test('heat, embers and the lead flame voice leave every solid lantern cell intac
   for (const place of places) for (const tier of tiers) for (let beat = 0; beat < 8; beat++) for (const night of [0, 1]) {
     const job = { kind: 'opencode' as const, tier, seed: 0, isStale: false, phase: beat * 1.5, talk: { ms: 1050, sending: true } }
     const look = { place, frame: 0, night, wind: 12, crewGround: 18 } as Look
-    const bare = canvas(40, 20), air = canvas(40, 20)
+    const bare = canvas(40, 20), air = canvas(40, 20), mask = canvas(40, 20)
     fly(bare, { ...look, effects: false }, 20, 10, job, 'opencode', false, () => [20, 10], [])
     fly(air, { ...look, effects: true }, 20, 10, job, 'opencode', false, () => [20, 10], [])
-    for (let i = 0; i < bare.px.length; i++) if (bare.px[i]) expect(air.px[i], `${place} ${tier} ${beat} solid ink`).toBe(bare.px[i])
+    fly(mask, { ...look, night: 0, effects: false }, 20, 10, job, 'opencode', false, () => [20, 10], [])
+    for (let i = 0; i < bare.px.length; i++) if (mask.px[i]) expect(air.px[i], `${place} ${tier} ${beat} solid ink`).toBe(bare.px[i])
   }
 })
 

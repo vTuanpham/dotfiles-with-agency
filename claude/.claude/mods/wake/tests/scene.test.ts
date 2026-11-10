@@ -3,6 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { PACKET_RUN_MS } from '../hooks/crew-row'
 import { sceneInput, type BandState } from '../hooks/band'
 import { LANDSCAPES } from '../hooks/landscapes'
+import { designFor } from '../hooks/landscapes/design'
 import { P, SCENE_H } from '../hooks/landscapes/kit'
 import { canvas, hash, seedOf } from '../hooks/pixels'
 import { CAT_COLUMNS, MIN_SCENE_ROWS, SCENE_ROWS, type SceneInput, arcCells, lookOf, readScenePointer, sceneFrame, sceneHitAt, scenePixels } from '../hooks/scene'
@@ -257,11 +258,10 @@ test('crowded workers preserve the pre-existing scene hit pixels', () => {
     const background = scenePixels(empty)
     const crowded = scenePixels(input)
     for (let cell = 0; cell < frame.hits.owners.length; cell++) {
-      // (the sky, scenery and the sun and moon sit behind the crew: a flyer may cross them, which is the soft placement rule;
-      // so may the foreground's tall things (lamps, the beam) in the air, but nothing may be drawn over its street-level rows)
+      // Surface workers can pass in front of foreground figures when no clear berth remains.
       const id = frame.hits.owners[cell] ? frame.hits.targets[frame.hits.owners[cell]! - 1]!.id : undefined
       // (the plan lamps' hover cells are empty by day, so a flyer crossing them hides nothing)
-      if (!id || ['sky', 'scenery', 'sun', 'moon', 'plan-lamps'].includes(id) || (id === 'foreground' && Math.floor(cell / width) * 2 < 16)) continue
+      if (!id || ['sky', 'scenery', 'sun', 'moon', 'plan-lamps'].includes(id) || (id === 'foreground' && (Math.floor(cell / width) * 2 < 16 || !!designFor('codex', preset).habit))) continue
       const x = cell % width, y = Math.floor(cell / width) * 2
       if (crowded[y * width + x] !== background[y * width + x] || crowded[(y + 1) * width + x] !== background[(y + 1) * width + x]) throw new Error(`${preset} width ${width} cell ${x},${y} owner ${frame.hits.targets[frame.hits.owners[cell]! - 1]!.id}`)
       expect(crowded[y * width + x]).toBe(background[y * width + x])

@@ -256,7 +256,9 @@ function placeSurface(c: Canvas, look: Look, x: number, job: Job, right: number)
   const w = art[0]!.length, h = art.length
   const hard = look.crewHard ?? [], others = (look.crewSpriteZones ?? []).filter(z => !hard.includes(z))
   const obstacles = look.crewSurfaceObstacles ?? []
-  const clear = (left: number, top: number) => left >= 0 && left + w <= right && top >= 0 && top + h <= c.H && [...hard, ...others, ...obstacles].every(z => left + w <= z.x || left >= z.x + z.w || top + h <= z.y || top >= z.y + z.h)
+  const overlap = (left: number, top: number, z: { x: number; y: number; w: number; h: number }) =>
+    Math.max(0, Math.min(left + w, z.x + z.w) - Math.max(left, z.x)) * Math.max(0, Math.min(top + h, z.y + z.h) - Math.max(top, z.y))
+  const clear = (left: number, top: number, zones: typeof hard) => left >= 0 && left + w <= right && top >= 0 && top + h <= c.H && zones.every(z => left + w <= z.x || left >= z.x + z.w || top + h <= z.y || top >= z.y + z.h)
   const tempo = frames.length >= 8 ? 1.5 : TEMPO[job.kind ?? 'codex']
   const beat = (Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length
   const pose = frames[beat]!
@@ -266,22 +268,49 @@ function placeSurface(c: Canvas, look: Look, x: number, job: Job, right: number)
   const bottoms = frames.map(frame => Math.max(...frame.flatMap((row, y) => /[^.]/.test(row) ? [y] : [])))
   const minBottom = Math.min(bottom, ...bottoms), maxBottom = Math.max(bottom, ...bottoms)
   const spans = habit === 'water' ? surface.water!.spans : [surface.ground]
-  let options: { cx: number; foot: number }[] = []
+  const options: { cx: number; foot: number }[] = []
   for (const span of spans) for (let cx = span.x0 + (w >> 1); cx + (w - (w >> 1)) <= span.x1; cx++) options.push({ cx, foot: habit === 'water' ? surface.water!.y + 1 : surface.ground.y })
   options.sort((a, b) => Math.abs(a.cx - x) - Math.abs(b.cx - x))
   const phase = job.route ?? job.phase ?? look.frame
   const bob = habit === 'water' && Math.sin(phase * 0.12 + job.seed) > 0.3 ? -1 : 0
-  const fits = (cx: number, foot: number) => spans.some(span => cx - (w >> 1) >= span.x0 && cx + w - (w >> 1) <= span.x1) && clear(cx - (w >> 1), foot - minBottom) && clear(cx - (w >> 1), foot - maxBottom - Number(habit === 'water'))
-  const chosen = options.find(p => fits(p.cx, p.foot))
+  const fits = (cx: number, foot: number, zones: typeof hard) => spans.some(span => cx - (w >> 1) >= span.x0 && cx + w - (w >> 1) <= span.x1) && clear(cx - (w >> 1), foot - minBottom, zones) && clear(cx - (w >> 1), foot - maxBottom - Number(habit === 'water'), zones)
+  const strict = [...hard, ...others, ...obstacles]
+  const free = options.find(p => fits(p.cx, p.foot, strict))
+  const prior = (look.crewAnchors ?? []).slice(look.crewAnchorsFrom ?? 0)
+  // Foreground and other crew are soft boundaries: a crowded surface is still preferable to flying.
+  const cost = (p: { cx: number; foot: number }) => {
+    const left = p.cx - (w >> 1), top = p.foot - maxBottom - Number(habit === 'water')
+    return others.reduce((sum, z) => sum + 5 * overlap(left, top, z), 0)
+      + obstacles.reduce((sum, z) => sum + overlap(left, top, z), 0)
+  }
+  let chosen = free, best = Infinity
+  if (!chosen) for (const requireNewColumn of [true, false]) {
+    for (const candidate of options) {
+      if (!fits(candidate.cx, candidate.foot, hard) || prior.includes((candidate.foot + bob - bottom + (h >> 1)) * c.W + candidate.cx) || (requireNewColumn && prior.some(anchor => anchor % c.W === candidate.cx))) continue
+      const penalty = cost(candidate)
+      if (penalty < best) { chosen = candidate; best = penalty }
+    }
+    if (chosen) break
+  }
   if (!chosen) return undefined
-  let reach = 0
-  const maxReach = job.lane?.roam ?? 2
-  while (!rest && reach < maxReach && fits(chosen.cx - reach - 1, chosen.foot) && fits(chosen.cx + reach + 1, chosen.foot)) reach++
-  const g = gait(gaitKind(job, look), job.tier ?? 1, job.seed, phase, reach)
-  const cx = chosen.cx + Math.round(reach * roamShare(job.pace ?? 0.6) * g.u)
+  let leftReach = 0, rightReach = 0
+  const maxReach = (look.crewCount ?? 1) > 1 && (look.crewRoam ?? PATROL) <= 3 ? 0 : job.lane?.roam ?? 2
+  const travelZones = free ? strict : [...hard, ...others]
+  while (!rest && leftReach < maxReach && fits(chosen.cx - leftReach - 1, chosen.foot, travelZones)) leftReach++
+  while (!rest && rightReach < maxReach && fits(chosen.cx + rightReach + 1, chosen.foot, travelZones)) rightReach++
+  const g = gait(gaitKind(job, look), job.tier ?? 1, job.seed, phase, Math.max(leftReach, rightReach))
+  let cx = chosen.cx + Math.round((g.u < 0 ? leftReach : rightReach) * roamShare(job.pace ?? 0.6) * g.u)
+  const anchorY = chosen.foot + bob - bottom + (h >> 1)
+  if (prior.includes(anchorY * c.W + cx)) {
+    const alternate = options.find(p => fits(p.cx, p.foot, hard) && !prior.includes((p.foot + bob - bottom + (h >> 1)) * c.W + p.cx))
+    if (!alternate) return undefined
+    chosen = alternate
+    cx = alternate.cx
+    leftReach = rightReach = 0
+  }
   const top = chosen.foot + bob - bottom, left = cx - (w >> 1)
   const zone = { x: left, y: top, w, h }
-  const reserved = { x: chosen.cx - (w >> 1) - reach, y: chosen.foot - maxBottom - Number(habit === 'water'), w: w + 2 * reach, h: h + maxBottom - minBottom + Number(habit === 'water') }
+  const reserved = { x: chosen.cx - (w >> 1) - leftReach, y: chosen.foot - maxBottom - Number(habit === 'water'), w: w + leftReach + rightReach, h: h + maxBottom - minBottom + Number(habit === 'water') }
   ;(look.crewZones ??= []).push(reserved)
   ;(look.crewSpriteZones ??= []).push(reserved)
   ;(look.crewAnchors ??= []).push((top + (h >> 1)) * c.W + cx)
