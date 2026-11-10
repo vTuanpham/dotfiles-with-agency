@@ -1,9 +1,10 @@
 import type { WakePreset } from '../../types'
 import type { Tier } from './design'
 
-// Living rose-plumaged birds in profile: beak, bright eye, covert band, primaries and a trimming tail.
-// Shoulder, elbow and feather tips lag through twelve poses; the body lifts against the downstroke.
-// Art and anchors are cached together, so the call and the loose feather follow the actual pose.
+// Claude's crew is alive: a different rose-plumaged creature for each place, not one bird in eight coats. Each is a shape you can
+// name at a glance (a pelican's bill and pouch, a flamingo's neck and legs, a butterfly's wings, an owl's face), hand-drawn in the
+// family's few tones with a bright eye, and each beats its wings at its own rate: the eagle soars, the dragonfly whirrs.
+// Letters: a body, l light, d shade, k dark, W white, s the bright eye, bill or feet.
 type Frames = readonly (readonly string[])[]
 type Point = readonly [number, number]
 type Pose = { rows: readonly string[]; beak: Point; feather: { x: number; y: number; force: number } }
@@ -11,146 +12,107 @@ type Species = Record<Tier, Frames>
 
 export const CREATURE_BEATS = 12
 export const CREATURE_SIZE: Record<Tier, { w: number; h: number }> = {
-  1: { w: 7, h: 5 }, 2: { w: 11, h: 6 }, 3: { w: 15, h: 7 }, 4: { w: 19, h: 7 },
+  1: { w: 5, h: 3 }, 2: { w: 7, h: 5 }, 3: { w: 11, h: 6 }, 4: { w: 15, h: 7 },
 }
 
-/** Anatomy, not alternate class pictures: every class grows the same local species. */
-const BIRDS = {
-  city:        { name: 'rose swift',       sweep: 0.82, elbow: 0.51, breadth: 1, flex: 2.3, tail: 'fan' },
-  harbor:      { name: 'skimming tern',    sweep: 0.91, elbow: 0.43, breadth: 1, flex: 1.9, tail: 'notch' },
-  beach:       { name: 'rose frigate',     sweep: 0.75, elbow: 0.53, breadth: 1, flex: 1.7, tail: 'scissor' },
-  mountains:   { name: 'bearded vulture',  sweep: 0.88, elbow: 0.46, breadth: 2, flex: 1.25, tail: 'wedge' },
-  countryside: { name: 'ribbon swallow',  sweep: 0.65, elbow: 0.45, breadth: 1, flex: 2.4, tail: 'ribbon' },
-  forest:      { name: 'tufted moth-owl',  sweep: 0.81, elbow: 0.50, breadth: 2, flex: 2.0, tail: 'round' },
-  desert:      { name: 'rose hoopoe',      sweep: 0.77, elbow: 0.48, breadth: 2, flex: 2.2, tail: 'paddle' },
-  tundra:      { name: 'rosy ptarmigan',   sweep: 0.69, elbow: 0.46, breadth: 2, flex: 1.8, tail: 'snowfan' },
-} as const
+/** One creature: its wings up and its wings down in each class, how many strokes fit the twelve-pose loop, and where its face is. */
+type Creature = { name: string; strokes: 1 | 2 | 3 | 6; face: 'left' | 'centre'; art: Record<Tier, readonly [up: readonly string[], down: readonly string[]]> }
 
-function bird(place: WakePreset, tier: Tier, beat: number): Pose {
-  const species = BIRDS[place], { w, h } = CREATURE_SIZE[tier], phase = beat * Math.PI * 2 / CREATURE_BEATS
-  const rows = Array.from({ length: h }, () => Array<string>(w).fill('.'))
-  const clipY = (y: number) => Math.max(0, Math.min(h - 1, Math.round(y)))
-  const dot = (x: number, y: number, ink: string) => {
-    x = Math.round(x); y = clipY(y)
-    if (x >= 0 && x < w) rows[y]![x] = ink
-  }
-  // Stair-step the joints: diagonal feather edges remain a solid, four-connected silhouette.
-  const line = (a: Point, b: Point, ink: string) => {
-    let x = Math.round(a[0]), y = clipY(a[1])
-    const ex = Math.round(b[0]), ey = clipY(b[1]), dx = Math.abs(ex - x), dy = Math.abs(ey - y)
-    const sx = x < ex ? 1 : -1, sy = y < ey ? 1 : -1
-    let error = dx - dy
-    dot(x, y, ink)
-    while (x !== ex || y !== ey) {
-      const twice = error * 2
-      if (twice > -dy) { error -= dy; x += sx; dot(x, y, ink) }
-      if (twice < dx) { error += dx; y += sy; dot(x, y, ink) }
-    }
-  }
-  const base = (h - 1) / 2, bob = tier === 1 ? 0.7 : 0.55, body = clipY(base - bob * Math.sin(phase))
-  const shoulder = Math.max(3, Math.round(w * 0.22)), rump = Math.max(4, Math.round(w * 0.43))
-  const bodyAt = (x: number) => clipY(base - bob * Math.sin(phase - (x - 2) * 0.14))
-
-  const wing = (far: boolean) => {
-    const lag = far ? 0.7 : 0, root = shoulder - (far ? 1 : 0), side = far ? -1 : 1
-    const fold = (1 + Math.sin(phase - 0.55 - lag)) / 2
-    const elbow = Math.max(root + 1, Math.round(w * species.elbow - fold * tier * 0.35))
-    const tip = Math.max(elbow + 1, Math.round((w - 1) * species.sweep - fold * tier * 0.8))
-    const lift = species.flex * (tier === 1 ? 0.85 : 1)
-    const ey = clipY(base + side * lift * Math.sin(phase - 0.55 - lag))
-    const ty = clipY(base + side * lift * Math.sin(phase - 1.1 - lag) + (place === 'harbor' ? side * 0.8 : 0))
-    const ry = bodyAt(root), trailing = Math.max(root + 1, Math.round((root + tip) / 2))
-    const trailingY = clipY(ry + (far ? -0.5 : 0.8))
-    for (let x = root; x <= tip; x++) {
-      const u = (x - root) / (tip - root)
-      const rounded = place === 'forest' || place === 'desert' || place === 'tundra'
-      const arch = (place === 'forest' ? 1.7 : place === 'tundra' ? 1.2 : 1.5) + (place === 'tundra' ? 1.2 : 1) * Math.sin(phase - 0.55 - lag - u * 0.7)
-      const leading = rounded ? ry + side * arch * Math.sin(Math.PI * u)
-        : x <= elbow ? ry + (ey - ry) * (x - root) / (elbow - root) : ey + (ty - ey) * (x - elbow) / (tip - elbow)
-      const back = rounded ? ry + side * 0.25 * Math.sin(Math.PI * u)
-        : x <= trailing ? ry + (trailingY - ry) * (x - root) / (trailing - root) : trailingY + (ty - trailingY) * (x - trailing) / (tip - trailing)
-      const top = clipY(Math.min(leading, back)), edge = clipY(Math.max(leading, back))
-      for (let y = top; y <= edge; y++) dot(x, y, far ? y === top ? 'a' : 'd' : y === top ? 'l' : 'a')
-      if (x > root && !rounded) {
-        const prev = x - 1 <= elbow ? ry + (ey - ry) * (x - 1 - root) / (elbow - root) : ey + (ty - ey) * (x - 1 - elbow) / (tip - elbow)
-        line([x - 1, prev], [x, leading], far ? 'd' : 'l')
-      }
-      if (!far && x > elbow && !rounded) {
-        dot(x, edge, (x - elbow) % 2 ? 'a' : 'd') // separate primaries under the covert band
-        if (species.breadth === 2 && (x - elbow) % 2 === 0) dot(x, edge + 1, 'a')
-      }
-      if (place === 'mountains' && x >= elbow && x % 2 === 0) {
-        const feather = leading + (leading < base ? -1 : 1) * (1 + 0.65 * Math.sin(phase - (x - elbow) * 0.7))
-        line([x, leading], [x, feather], 'd') // each finger yields after the next: a ripple, not a rigid comb
-      }
-      if (rounded && x > root + 1 && x < tip) {
-        if (place === 'desert' && x % 3 === 0) for (let y = top; y <= edge; y++) dot(x, y, far ? 'd' : 'l')
-        if (place === 'forest' && !far) dot(x, edge, x % 3 ? 'a' : 'd')
-        if (place === 'tundra' && !far) dot(x, edge, x % 3 ? 'l' : 'a')
-      }
-    }
-    return tip
-  }
-  wing(true)
-
-  // The torso flexes from neck to rump rather than holding a rigid horizontal baseline.
-  for (let x = 2; x <= rump; x++) {
-    const y = bodyAt(x)
-    if (x > 2) line([x - 1, bodyAt(x - 1)], [x, y], 'a')
-    dot(x, y, 'a')
-    if (x < rump) dot(x, y + 1, 'd')
-  }
-  const tailY = bodyAt(rump), trim = Math.sin(phase - 1.6), tail = species.tail
-  if (tail === 'scissor' || tail === 'ribbon' || tail === 'notch') {
-    const split = tail === 'ribbon' ? 2 : tail === 'scissor' ? 2.7 : 0.9, join = Math.min(w - 2, rump + 1)
-    line([rump, tailY], [join, tailY], 'a')
-    line([join, tailY], [w - 1, tailY - split + trim * 0.7], 'l')
-    line([join, tailY], [w - 1, tailY + split + trim * 0.7], 'd')
-  } else {
-    const spread = tail === 'snowfan' ? 1.7 : tail === 'fan' ? 1.1 : tail === 'wedge' ? 0.5 : 1
-    const end = tail === 'round' ? rump + 2 : tail === 'snowfan' ? rump + 4 : tail === 'wedge' ? rump + 3 : tail === 'fan' ? rump + 3 : w - 2
-    for (let x = rump; x <= end; x++) {
-      const t = (x - rump) / Math.max(1, end - rump), y = tailY + trim * t
-      const fan = spread * (tail === 'wedge' ? 1 - t : t)
-      for (let dy = -Math.round(fan); dy <= Math.round(fan); dy++) dot(x, y + dy, dy < 0 ? 'l' : dy > 0 ? 'd' : 'a')
-      if (x > rump) line([x - 1, tailY + trim * (t - 1 / (end - rump))], [x, y], 'a')
-    }
-  }
-  const tip = wing(false)
-
-  // The forward face survives a wing passing behind it: yellow eye, ivory beak, rose cheek.
-  const headY = clipY(body - (place === 'forest' || place === 'tundra' ? 1 : 0))
-  line([1, headY], [3, bodyAt(3)], 'a')
-  dot(1, headY, 'W'); dot(2, headY, 's'); dot(3, headY, 'a')
-  dot(1, headY + 1, 'a'); dot(2, headY + 1, 'l'); dot(0, headY + 1, 'W')
-  if (place === 'mountains') dot(1, headY + 2, 'd') // beard beneath the hooked bill
-  if (place === 'forest') {
-    dot(2, headY - 1, 'a')
-    line([3, headY], [3 + Math.round(0.6 * Math.sin(phase - 0.8)), headY - 1], 'd')
-    dot(3, headY + 1, 'l')
-  }
-  if (place === 'desert') {
-    const crown = 1 + Math.max(0, Math.sin(phase - 0.4))
-    for (let x = 2; x <= Math.min(4, w - 2); x++) line([x, headY], [x, headY - crown + (x % 2) * 0.8], x % 2 ? 'd' : 'l')
-    dot(2, headY, 's')
-  }
-  if (place === 'tundra') { dot(3, body + 1, 'l'); dot(4, bodyAt(4) + 1, 'l') }
-  dot(2, headY, 's') // a crest can fold over the brow, never over the eye
-
-  const rowsOut = rows.map(row => row.join(''))
-  // The first empty cell below a primary is the shedding edge, not a guessed rectangle corner.
-  const x = Math.min(w - 1, tip - 1), y = Math.max(...rowsOut.flatMap((row, r) => row[x] === '.' ? [] : [r]))
-  return { rows: rowsOut, beak: [0, headY + 1], feather: { x, y, force: Math.max(0, Math.cos(phase - 0.7)) ** 6 } }
+const CREATURES: Record<WakePreset, Creature> = {
+  city: { name: 'pigeon', strokes: 3, face: 'left', art: { // plump and small-headed, beating fast
+    1: [['..l..', 'saaad', '.dd..'], ['.....', 'saaad', '.ld..']],
+    2: [['...ll..', '.s.la..', 'Waaaaad', '.daadd.', '.......'], ['.......', '.s.....', 'Waaaaad', '.dlaad.', '...ld..']],
+    3: [['.....ll....', '....lda....', '.sa.lda....', 'Wkaaaadaadk', '.llaaaadd..', '...lll.....'], ['...........', '.sa........', 'Wkaaaaaaadk', '.llldaadd..', '....lda....', '.....ld....']],
+    4: [ // a dark collar, two wing bars, a pale belly and a banded tail
+      ['.......ll......', '......lda......', '.sa...lad......', 'Wkaa.ldaa....k.', '.aaaaaadaaaadk.', '..llaaaaaddd...', '....lllld......'],
+      ['...............', '.sa............', 'Wkaaaaaaa....k.', '.aaaaadaaaaadk.', '..llldadaddd...', '.....ldad......', '......ld.......'],
+    ],
+  } },
+  harbor: { name: 'pelican', strokes: 2, face: 'left', art: { // a great bill with its yellow pouch, on slow heavy wings
+    1: [['..l..', 'Wsaad', '.sd..'], ['.....', 'Wsaad', '.sld.']],
+    2: [['...ll..', '.s.la..', 'WWaaaad', '.sdadd.', '.......'], ['.......', '.s.....', 'WWaaaad', '.sdlad.', '...ld..']],
+    3: [['......kk...', '.sa..lka...', 'WWaa.laa...', '.ssaaaaaaak', '..llaaadd..', '....lld....'], ['...........', '.sa........', 'WWaaaaaaa..', '.ssaaaaaaak', '..lldaadd..', '....lkk....']],
+    4: [ // black wing tips and a pale breast
+      ['.........kk....', '........lka....', '..sa...llaa....', 'WWWaa.laaaa....', '.sssaaaaaaaaak.', '...llaaaaaadd..', '.....llldd.....'],
+      ['...............', '..sa...........', 'WWWaaaaaaaa....', '.sssaaaaaaaaak.', '...lldlaaadd...', '.....llak......', '......lkk......'],
+    ],
+  } },
+  beach: { name: 'flamingo', strokes: 2, face: 'left', art: { // all neck and trailing legs, with a bent bill and black wing tips
+    1: [['..l..', 'Waadd', 'k....'], ['.....', 'Waadd', 'k.l..']],
+    2: [['...kl..', '.s.la..', 'Waaaadd', 'k..d...', '.......'], ['.......', '.s.....', 'Waaaadd', 'k..la..', '...lk..']],
+    3: [['......kl...', '.s...lla...', 'Waaaaaaaddd', 'k...ddaa..d', '...........', '...........'], ['...........', '.s.........', 'Waaaaaaaddd', 'k...dlaa..d', '.....lla...', '......lk...']],
+    4: [
+      ['........kl.....', '.......lla.....', '.s.....laa.....', 'Waaaaaaaaaadddd', 'k.....ddaa....d', '...............', '...............'],
+      ['...............', '.s.............', 'Waaaaaaaaaadddd', 'k.....dlaa....d', '.......lla.....', '........lk.....', '...............'],
+    ],
+  } },
+  mountains: { name: 'eagle', strokes: 1, face: 'left', art: { // white head and tail, a yellow bill, broad fingered wings held out to soar
+    1: [['..d.k', 'sWaaW', '.d...'], ['.....', 'sWadk', '.daW.']],
+    2: [['....k.k', '...ad..', 'sWaaaWW', '.ddad..', '.......'], ['.......', '.......', 'sWaaadk', '.daaaWW', '..dd...']],
+    3: [['.......k.k.', '......ddd..', '.W..aaad...', 'sWaaaaaaaWW', '..ddaaadW..', '....dd.....'], ['...........', '...........', '.W...aaadkk', 'sWaaaaaadk.', '..daaaaaaWW', '...dddd.W..']],
+    4: [
+      ['..........k.k.k', '.........ddddd.', '.......aaaad...', '.WW..aaaaa.....', 'sWWaaaaaaaaaWWW', '...ddaaaaaddWW.', '.....dddd......'],
+      ['...............', '...............', '.WW....aaaadk.k', 'sWWaaaaaaaaddk.', '...daaaaaaaaWWW', '....dddddd.WW..', '...............'],
+    ],
+  } },
+  countryside: { name: 'butterfly', strokes: 3, face: 'centre', art: { // seen face on: two pairs of wings that open wide and shut
+    1: [['l.s.l', 'aadaa', 'd...d'], ['..s..', '.ada.', '.....']],
+    2: [['.k...k.', 'lW.s.Wl', 'aaadaaa', '.dadad.', '.......'], ['.k...k.', '.W.s.W.', '.aadaa.', '..dad..', '.......']],
+    3: [['...k...k...', 'll..k.k..ll', 'laWl.s.lWal', 'daaa.d.aaad', '.laa.d.aal.', '..d.....d..'], ['...k...k...', '....k.k....', '..Wl.s.lW..', '..aa.d.aa..', '..la.d.al..', '...........']],
+    4: [
+      ['.....k...k.....', '.lll..k.k..lll.', 'laWal..s..laWal', 'laaaal.d.laaaal', '.daaad.d.daaad.', '..laad.d.daal..', '...dd.....dd...'],
+      ['.....k...k.....', '...ll.k.k.ll...', '...lWl.s.lWl...', '...laa.d.aal...', '...daa.d.aad...', '....ld.d.dl....', '...............'],
+    ],
+  } },
+  forest: { name: 'owl', strokes: 2, face: 'centre', art: { // seen face on: two round eyes, ear tufts, broad silent wings
+    1: [['l.a.l', '.sWs.', '..d..'], ['..a..', 'lsWsl', 'd.d.d']],
+    2: [['l.k.k.l', '.lsasl.', '..aWa..', '..ldl..', '.......'], ['..k.k..', '..sas..', 'laaWaal', 'd.ldl.d', '.......']],
+    3: [['l...k.k...l', '.ll.aaa.ll.', '..alsasla..', '...aaWaa...', '....lll....', '....k.k....'], ['....k.k....', '....aaa....', '.llasasall.', 'laaaaWaaaal', 'd.d.lll.d.d', '....k.k....']],
+    4: [
+      ['ll...k...k...ll', '.lll.aaaaa.lll.', '..aalasasalaa..', '...aaaaWaaaa...', '....dalllad....', '.....aldla.....', '......k.k......'],
+      ['.....k...k.....', '.....aaaaa.....', '..lllasasalll..', '.laaaaaWaaaaal.', 'laa.dalllad.aal', 'd.d..aldla..d.d', '......k.k......'],
+    ],
+  } },
+  desert: { name: 'dragonfly', strokes: 6, face: 'left', art: { // a long jointed needle under four whirring glass wings
+    1: [['.W.W.', 'sakad', '.....'], ['.....', 'sakad', '.W.W.']],
+    2: [['.W..W..', '..ll...', 'saakdad', '.......', '.......'], ['.......', '.......', 'saakdad', '..ll...', '.W..W..']],
+    3: [['..W....W...', '...l..l....', 'ssaakadadad', '.s.........', '...........', '...........'], ['...........', '...........', 'ssaakadadad', '.s.l..l....', '..W....W...', '...........']],
+    4: [
+      ['..WW.....WW....', '...ll...ll.....', '....ll.ll......', 'ssaaakkadadadad', '.s.............', '...............', '...............'],
+      ['...............', '...............', '...............', 'ssaaakkadadadad', '.s..ll.ll......', '...ll...ll.....', '..WW.....WW....'],
+    ],
+  } },
+  tundra: { name: 'puffin', strokes: 6, face: 'left', art: { // stout, dark-backed and white-fronted, a bright bill and feet, wings a blur
+    1: [['.d.d.', 'sWdd.', '.WWs.'], ['.d...', 'sWdd.', '.WdWs']],
+    2: [['...dd..', '.dd.d..', 'sWdddd.', '.WWWWs.', '.......'], ['.......', '.dd....', 'sWdddd.', '.WWdWs.', '...dd..']],
+    3: [['.....dd....', '.dd..dl....', 'ssWdddddd..', '.sWWWWWWdd.', '..WWWWW.s..', '...........'], ['...........', '.dd........', 'ssWdddddd..', '.sWWddWWdd.', '..WWdl..s..', '....dd.....']],
+    4: [
+      ['.......dd......', '......ddl......', '..ddd.dd.......', 'ssaWWdddddd....', '.sWWWaWWWWddd..', '...WWWWWWW.ss..', '....WWWWW......'],
+      ['...............', '..ddd..........', 'ssaWWdddddd....', '.sWWWaWWWWddd..', '...WWddWWW.ss..', '....WWddl......', '.......dd......'],
+    ],
+  } },
 }
 
-const poses = (place: WakePreset, tier: Tier) => Array.from({ length: CREATURE_BEATS }, (_, beat) => bird(place, tier, beat))
+function pose(place: WakePreset, tier: Tier, beat: number): Pose {
+  const { w, h } = CREATURE_SIZE[tier], kind = CREATURES[place], down = Math.floor(beat * kind.strokes / 6) % 2
+  const rows = Array.from({ length: h }, (_, y) => (kind.art[tier][down]![y] ?? '').padEnd(w, '.').slice(0, w))
+  const cells = rows.flatMap((row, y) => [...row].flatMap((ink, x) => ink === '.' ? [] : [[x, y, ink] as const]))
+  const mid = w >> 1
+  // The face: the foremost cell of a creature in profile, the eye or bill on the centre line of one seen face on.
+  const beak = kind.face === 'centre' ? cells.find(([x, , ink]) => x === mid && (ink === 's' || ink === 'W'))! : cells.reduce((a, b) => b[0] < a[0] ? b : a)
+  // The loose feather falls from the lowest cell of the trailing half.
+  const low = cells.filter(([x]) => x >= mid).reduce((a, b) => b[1] > a[1] ? b : a)
+  return { rows, beak: [beak[0], beak[1]], feather: { x: low[0], y: low[1], force: down } }
+}
+
+const poses = (place: WakePreset, tier: Tier) => Array.from({ length: CREATURE_BEATS }, (_, beat) => pose(place, tier, beat))
 const species = (place: WakePreset) => ({ 1: poses(place, 1), 2: poses(place, 2), 3: poses(place, 3), 4: poses(place, 4) })
 const POSES: Record<WakePreset, Record<Tier, readonly Pose[]>> = {
   city: species('city'), harbor: species('harbor'), beach: species('beach'), mountains: species('mountains'),
   countryside: species('countryside'), forest: species('forest'), desert: species('desert'), tundra: species('tundra'),
 }
 const frames = (place: WakePreset): Species => {
-  const rows = (tier: Tier) => POSES[place][tier].map(pose => pose.rows)
+  const rows = (tier: Tier) => POSES[place][tier].map(p => p.rows)
   return { 1: rows(1), 2: rows(2), 3: rows(3), 4: rows(4) }
 }
 export const ALL_CREATURES: Record<WakePreset, Species> = {

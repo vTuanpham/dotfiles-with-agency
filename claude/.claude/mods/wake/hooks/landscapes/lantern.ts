@@ -15,119 +15,147 @@ export function lanternPaper(ink: number, night: number): number {
   return r! << 16 | g! << 8 | b!
 }
 
+// OpenCode's crew is paper and cloth with a flame inside: a different lit craft for each place, in the worker's own paper colour.
+// An origami crane over the city, a carp streamer in the harbor wind, a kite on the beach, a sky lantern in the mountains, a
+// balloon over the fields, a string of lanterns in the forest, a flying carpet in the desert and a paper star on the tundra.
+// Each has one warm window (`s`, flaring to `f`) and moves in its own way: it flaps, ripples, trails, sways, bobs or turns.
+// Letters: a paper, l its lit edge, d its shade, p trim, k dark, W white, s the flame's window, f the flare.
 type Point = readonly [number, number]
 type Rect = { x: number; y: number; w: number; h: number }
 type Lamp = { flame: Point; heat: Point; force: number; window: Rect; shade: Rect; rib: Point }
 type Pose = { rows: readonly string[]; lamps: readonly Lamp[]; flame: Point; heat: Point; force: number; window: Rect }
 const BEATS = 8
-const COUNT = { 1: 1, 2: 2, 3: 3, 4: 5 } as const
-const WIDTH = { 1: 5, 2: 9, 3: 13, 4: 19 } as const
-
-/**
- * How each place hangs its garland: how many rows below the string's top line lantern `i` of `n` hangs. This is the first thing the
- * eye sees at one pixel to the cell, before any corner or tassel: flat in the city, a sagging swag of bunting in the harbor,
- * swinging alternately on the beach, stepping down the slope in the mountains, an arch over the fields, an uneven drift in the
- * forest; the desert and the tundra stay level and differ by their own tassels and crowns.
- */
-const hang = (place: WakePreset, i: number, n: number): number => {
-  if (n < 2) return 0
-  switch (place) {
-    case 'harbor': return Math.round(1.3 * Math.sin(Math.PI * i / (n - 1))) // sags in the middle
-    case 'beach': return i % 2 // swings up and down
-    case 'mountains': return Math.round(i / (n - 1)) // steps down the slope
-    case 'countryside': return 1 - Math.round(1.3 * Math.sin(Math.PI * i / (n - 1))) // an arch: the middle hangs high
-    case 'forest': return [0, 1, 0, 0, 1][i % 5]! // uneven, like leaves on a twig
-    default: return 0
-  }
+export const LANTERN_SIZE: Record<Tier, { w: number; h: number }> = {
+  1: { w: 5, h: 3 }, 2: { w: 7, h: 5 }, 3: { w: 11, h: 6 }, 4: { w: 15, h: 7 },
 }
 
-function lantern(place: WakePreset, tier: Tier, beat: number): Pose {
-  const w = WIDTH[tier], h = 7, phase = beat * Math.PI / 4
+type Drawn = readonly (readonly string[])[]
+/** A craft is either drawn pose by pose (`cycles` loops of its poses fit the eight beats) or generated, when it ripples. */
+type Craft = { name: string } & ({ cycles: 1 | 2; art: Record<Tier, Drawn> } | { wave: (w: number, h: number, phase: number) => string[] })
+
+function sheet(w: number, h: number) {
   const rows = Array.from({ length: h }, () => Array<string>(w).fill('.'))
-  const dot = (x: number, y: number, ch: string) => {
+  const dot = (x: number, y: number, ink: string) => {
     x = Math.round(x); y = Math.round(y)
-    if (x >= 0 && x < w && y >= 0 && y < h) rows[y]![x] = ch
+    if (x >= 0 && x < w && y >= 0 && y < h) rows[y]![x] = ink
   }
-  const line = (x0: number, y0: number, x1: number, y1: number, ch: string) => {
-    let x = Math.round(x0), y = Math.round(y0)
-    const ex = Math.round(x1), ey = Math.round(y1)
-    dot(x, y, ch)
-    while (x !== ex || y !== ey) {
-      if (x !== ex) x += Math.sign(ex - x)
-      dot(x, y, ch)
-      if (y !== ey) y += Math.sign(ey - y)
-      dot(x, y, ch)
-    }
+  return { dot, rows: () => rows.map(row => row.join('')) }
+}
+
+/** A carp streamer: an open white mouth ring, a bright eye, a striped tube that ripples more toward its forked tail. */
+function carp(w: number, h: number, phase: number) {
+  const s = sheet(w, h), cy = (h - 1) / 2, body = w - 3
+  const at = (x: number) => cy + (h > 3 ? 1.1 : 0.6) * Math.sin(x * 0.55 - phase) * x / w
+  for (let x = 2; x < body; x++) {
+    const half = h > 3 && x < w * 0.62 ? 1 : 0
+    for (let dy = -half; dy <= half; dy++) s.dot(x, at(x) + dy, x % 3 === 1 ? 'd' : dy < 0 ? 'l' : 'a')
   }
-  const ribbon = (x: number) => Math.round(0.5 + 0.5 * Math.sin(phase - x * 0.55))
-  const centres = Array.from({ length: COUNT[tier] }, (_, i) => (tier === 4 ? 1 : 2) + i * 4)
-  for (let x = centres[0]!; x < centres.at(-1)!; x++) line(x, ribbon(x), x + 1, ribbon(x + 1), 'd')
-  const lamps: Lamp[] = []
-  for (const [i, cx] of centres.entries()) {
-    const q = phase - i * 0.95, top = 1 + hang(place, i, centres.length) + Math.round(0.5 + 0.5 * Math.sin(q))
-    const depth = place === 'harbor' || place === 'desert' ? 3 : 4
-    const force = (0.5 + 0.5 * Math.cos(q + 0.45)) ** 2
-    const left = cx - 1, bottom = top + depth - 1
-    line(cx, ribbon(cx), cx, top - 1, 'd')
-    // Fill the volume first. Only outer corners breathe; both window rows stay solid.
-    for (let y = 0; y < depth; y++) for (let x = left; x <= cx + 1; x++) {
-      const relaxTop = Math.cos(q) < 0.3, relaxBottom = Math.cos(q - 1.3) < 0.3
-      const cutLeft = place === 'mountains' || place === 'forest'
-        || ['city', 'harbor', 'countryside', 'tundra'].includes(place) && relaxTop
-      const cutRight = ['beach', 'desert', 'mountains', 'forest'].includes(place) && relaxTop
-      const cutFootLeft = ['beach', 'mountains', 'tundra'].includes(place) && relaxBottom
-      const cutFootRight = place === 'forest' && Math.cos(q - 0.8) < -0.2 || ['city', 'countryside'].includes(place) && relaxBottom
-      if (!(y === 0 && (x === left && cutLeft || x === cx + 1 && cutRight)
-        || y === 3 && (x === left && cutFootLeft || x === cx + 1 && cutFootRight))) dot(x, top + y, 'a')
+  for (let x = body; x < w; x++) { s.dot(x, at(x) - (x - body + (h > 3 ? 0 : -1)) * 0.5 - 0.5, 'a'); s.dot(x, at(x) + (x - body) * 0.5 + 0.5, 'p') } // the forked tail
+  if (h > 3) { s.dot(1, cy - 1, 'W'); s.dot(1, cy + 1, 'W') }
+  s.dot(0, cy, 'W'); s.dot(2, at(2) - (h > 3 ? 0 : 0), 's')
+  return s.rows()
+}
+
+/** A flying carpet seen edge on: a patterned rug rippling from front to back, a tassel at each end and a lamp riding on it. */
+function carpet(w: number, h: number, phase: number) {
+  const s = sheet(w, h), cy = (h - 1) / 2 + (h > 3 ? 0.5 : 0)
+  const at = (x: number) => cy + (h > 3 ? 1 : 0.5) * Math.sin(x * 0.6 - phase)
+  for (let x = 1; x < w - 1; x++) { s.dot(x, at(x), x % 3 === 0 ? 'p' : 'a'); if (h > 5 && x % 3 === 0) s.dot(x, at(x) + 1, 'd') } // a patterned rug with a fringe
+  s.dot(0, at(1) + 1, 'p'); s.dot(w - 1, at(w - 2) + 1, 'p')
+  const lamp = Math.round(w * 0.35), top = Math.round(at(lamp)) - 1
+  s.dot(lamp, top, 's')
+  if (h > 3) { s.dot(lamp - 1, top, 'k'); s.dot(lamp + 1, top, 'k'); s.dot(lamp, top - 1, 'k') }
+  return s.rows()
+}
+
+const CRAFTS: Record<WakePreset, Craft> = {
+  city: { name: 'origami crane', cycles: 2, art: { // folded paper: a long neck, a peaked wing that beats, a pointed tail
+    1: [['W.l.d', '.asd.', '.....'], ['W...d', '.asd.', '..l..']],
+    2: [['...l...', 'W..la.d', '.aasad.', '..dd...', '.......'], ['.......', 'W.....d', '.aasad.', '..dla..', '...l...']],
+    3: [['.....l.....', 'W...laa..d.', '.a..laad.d.', '..aalsaadd.', '...daadd...', '...........'], ['...........', 'W........d.', '.a.......d.', '..aalsaadd.', '...dlaad...', '....lld....']],
+    4: [
+      ['.......l.......', '......lla......', 'W.....laa....d.', '.a...llaad..dd.', '..aaalssaaadd..', '...daaaaadd....', '.....ddd.......'],
+      ['...............', 'W............d.', '.a..........dd.', '..aaalssaaadd..', '...dlaaaadd....', '....llaad......', '.....lld.......'],
+    ],
+  } },
+  harbor: { name: 'carp streamer', wave: carp },
+  beach: { name: 'kite', cycles: 1, art: { // a diamond on its cross spars, trailing a tail of bows that snakes behind
+    1: [['ls...', '.d.p.', '.....'], ['ls...', '.d...', '..p..']],
+    2: [['.l.....', 'lsa....', '.d.d...', '....p.d', '.......'], ['.l.....', 'lsa....', '.d.....', '..d.p..', '.....d.']],
+    3: [['..l........', '.lla.......', 'llsaa......', '.dda.W..W..', '..d.d.dd.d.', '...........'], ['..l........', '.lla.......', 'llsaa......', '.dda.......', '..ddW.d.W..', '.....d.d.d.']],
+    4: [
+      ['...l...........', '..lla..........', '.llsaa.........', '..ddaa.........', '...dd.W...W....', '....dd.d.d.d.W.', '...............'],
+      ['...l...........', '..lla..........', '.llsaa.........', '..ddaa.........', '...dd..........', '....ddW.d.W.d..', '.......d...d.W.'],
+    ],
+  } },
+  mountains: { name: 'sky lantern', cycles: 2, art: { // a tall paper lantern glowing right through, its flame guttering beneath
+    1: [['.la..', '.ss..', '..f..'], ['.la..', '.ss..', '.f...']],
+    2: [['.laad..', '.lssd..', '.assd..', '..d.d..', '...f...'], ['.laad..', '.lssd..', '.assd..', '..d.d..', '..f....']],
+    3: [['...laad....', '..lssssd...', '..lssssd...', '...assd....', '...d.d.....', '....f......'], ['...laad....', '..lssssd...', '..lssssd...', '...assd....', '...d.d.....', '.....f.....']],
+    4: [
+      ['....laaaad.....', '...lssssssd....', '...lssssssd....', '...lssssssd....', '....asssad.....', '.....d.d.......', '......f........'],
+      ['....laaaad.....', '...lssssssd....', '...lssssssd....', '...lssssssd....', '....asssad.....', '.....d.d.......', '.......f.......'],
+    ],
+  } },
+  countryside: { name: 'balloon', cycles: 2, art: { // a striped envelope, a rope, a basket, and a burner that flares
+    1: [['.lal.', '.lal.', '..s..'], ['.lal.', '.lal.', '..f..']],
+    2: [['.lalad.', '.lalad.', '..dsd..', '...k...', '..ppp..'], ['.lalad.', '.lalad.', '..dfd..', '...k...', '..ppp..']],
+    3: [['...lalad...', '..lalalad..', '..lalalad..', '....dsd....', '.....k.....', '....ppp....'], ['...lalad...', '..lalalad..', '..lalalad..', '....dfd....', '.....k.....', '....ppp....']],
+    4: [
+      ['.....lalad.....', '....lalalad....', '...lalalaladd..', '....lalalad....', '.....d.s.d.....', '......k.k......', '......ppp......'],
+      ['.....lalad.....', '....lalalad....', '...lalalaladd..', '....lalalad....', '.....d.f.d.....', '......k.k......', '......ppp......'],
+    ],
+  } },
+  forest: { name: 'lantern string', cycles: 1, art: { // round lanterns on one thread, bobbing turn and turn about
+    1: [['.la..', '.sa..', '.p...'], ['.la..', '.sa..', '..p..']],
+    2: [['..d....', '.laad..', '.lsad..', '..ad...', '..p....'], ['.......', '..d....', '.laad..', '.lsad..', '..ad...']],
+    3: [['.d.........', 'laad..d....', 'lsad.laad..', '.ad..lsad..', '.p....ad...', '......p....'], ['......d....', '.d...laad..', 'laad.lsad..', 'lsad..ad...', '.ad...p....', '.p.........']],
+    4: [
+      ['.d.............', 'laad..d........', 'lsad.laad..d...', '.ad..lsad.laad.', '.p....ad..lsad.', '......p....ad..', '...........p...'],
+      ['......d........', '.d...laad..d...', 'laad.lsad.laad.', 'lsad..ad..lsad.', '.ad...p....ad..', '.p.........p...', '...............'],
+    ],
+  } },
+  desert: { name: 'flying carpet', wave: carpet },
+  tundra: { name: 'paper star', cycles: 1, art: { // a folded star with a lit heart: its long points turn from a cross to a saltire
+    1: [['..l..', '.asd.', '..d..'], ['.l.d.', '..s..', '.l.d.']],
+    2: [['...l...', 'llasadd', '...d...', '...p...', '.......'], ['.l...d.', '..asa..', '.l.p.d.', '.......', '.......']],
+    3: [['.....l.....', '....lad....', '.llasssadd.', '....lad....', '.....d.....', '.....p.....'], ['..l.....d..', '...la.ad...', '...asfsa...', '...la.ad...', '..d..p..d..', '...........']],
+    4: [
+      ['.......l.......', '.......a.......', '.....laaad.....', '..llaasssaadd..', '.....laaad.....', '.......d.......', '.......p.......'],
+      ['...l.......d...', '....la...ad....', '.....laaad.....', '....aasfsaa....', '.....laaad.....', '....ad...ad....', '...d...p...d...'],
+    ],
+  } },
+}
+
+function pose(place: WakePreset, tier: Tier, beat: number): Pose {
+  const { w, h } = LANTERN_SIZE[tier], craft = CRAFTS[place]
+  const drawn = 'wave' in craft ? craft.wave(w, h, beat * Math.PI * 2 / BEATS) : craft.art[tier][Math.floor(beat * craft.cycles * craft.art[tier].length / BEATS) % craft.art[tier].length]!
+  const rows = Array.from({ length: h }, (_, y) => (drawn[y] ?? '').padEnd(w, '.').slice(0, w))
+  const cells = rows.flatMap((row, y) => [...row].flatMap((ink, x) => ink === '.' ? [] : [[x, y, ink] as const]))
+  const xs = cells.map(c => c[0]), ys = cells.map(c => c[1])
+  const shade: Rect = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs) + 1, h: Math.max(...ys) - Math.min(...ys) + 1 }
+  const rib = cells.find(c => c[2] === 'l') ?? cells[0]!
+  // Every separate window is a lamp: its own flame, the first clear cell above it for its heat, and a flicker out of step with the next.
+  const lit = new Set(cells.filter(c => c[2] === 's' || c[2] === 'f').map(c => c[1] * w + c[0])), lamps: Lamp[] = []
+  while (lit.size) {
+    const first = lit.values().next().value!, queue = [first]
+    lit.delete(first)
+    for (let i = 0; i < queue.length; i++) for (const step of [-1, 1, -w, w]) {
+      const next = queue[i]! + step
+      if (lit.has(next) && (Math.abs(step) === w || Math.floor(next / w) === Math.floor(queue[i]! / w))) { lit.delete(next); queue.push(next) }
     }
-    // A single rib catches the light; the paper is never painted as a pale outline.
-    const rib = rows[top]!.findIndex((ch, x) => x >= left && x <= cx + 1 && ch === 'a')
-    if (depth === 4) dot(cx, bottom, 'd')
-    else dot(cx, bottom + 1, 'd')
-    dot(cx, top - 1, 'd')
-    const sway = Math.round(Math.sin(q - 1.1))
-    const end = Math.min(6, bottom + (depth === 3 ? 1 + Math.round(0.5 + 0.5 * Math.cos(q - 1.1)) : 1))
-    const tassel = Math.max(0, Math.min(w - 1, cx + sway))
-    line(cx, Math.min(6, bottom + 1), tassel, end, 'd')
-    dot(tassel, end, 'p')
-    if (place === 'city') dot(cx + ((beat + i) % 2), top, 'a')
-    if (place === 'harbor') { line(cx, top - 1, cx + 1, top - 1, 'd'); dot(cx + 1, top - 1, 'p') }
-    if (place === 'beach') {
-      const side = i % 2 ? -1 : 1, edge = cx + side
-      line(edge, bottom, Math.max(0, Math.min(w - 1, edge + side)), Math.min(6, bottom + 1), 'a')
-    }
-    if (place === 'mountains') line(cx - 1, top - 1, cx, top - 1, 'd')
-    if (place === 'countryside') line(cx + 1, Math.min(6, bottom + 1), Math.min(w - 1, cx + 2), Math.min(6, bottom + 1), 'p')
-    if (place === 'forest') { dot(cx + 1, top - 1, 'd'); line(cx, top - 1, cx + 1, top - 1, 'd') }
-    if (place === 'desert') for (const x of [left, cx + 1]) dot(x, Math.min(6, bottom + 1), 'p')
-    if (place === 'tundra') { line(left, top - 1, cx + 1, top - 1, 'd'); dot(cx, top - 2, 'd') }
-    const window: Rect = { x: cx, y: top + 1, w: tier === 1 ? 1 : 2, h: 2 }
-    const flame: Point = [window.x, window.y]
-    lamps.push({ flame, heat: [cx, top - 1], force, window, shade: { x: left, y: top, w: 3, h: depth }, rib: [rib, top] })
+    const wx = queue.map(c => c % w), wy = queue.map(c => Math.floor(c / w))
+    const window: Rect = { x: Math.min(...wx), y: Math.min(...wy), w: Math.max(...wx) - Math.min(...wx) + 1, h: Math.max(...wy) - Math.min(...wy) + 1 }
+    let heat = window.y
+    while (heat >= 0 && rows[heat]![window.x] !== '.') heat--
+    lamps.push({ flame: [window.x, window.y], heat: [window.x, heat], force: (0.5 + 0.5 * Math.cos(beat * Math.PI / 4 - lamps.length * 0.95 + 0.45)) ** 2, window, shade, rib: [rib[0], rib[1]] })
   }
-  // Filled windows are last: neither a rib nor a tassel can make a hollow arch.
-  for (const lamp of lamps) {
-    // A neighbour's sagging ribbon cannot repaint the filled paper as a dark frame.
-    const shade = lamp.shade
-    for (let y = shade.y; y < shade.y + shade.h; y++) for (let x = shade.x; x < shade.x + shade.w; x++) {
-      if ('dp'.includes(rows[y]![x]!)) dot(x, y, 'a')
-    }
-    if (shade.h === 4) dot(shade.x + 1, shade.y + shade.h - 1, 'd')
-    dot(...lamp.rib, 'l')
-    const { x, y, w, h } = lamp.window
-    for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) dot(x + dx, y + dy,
-      dx === w - 1 && dy === h - 1 && lamp.force > 0.45 ? 'f' : 's')
-    dot(...lamp.flame, 's')
-    let heatY = lamp.heat[1]
-    while (heatY >= 0 && rows[heatY]![lamp.heat[0]] !== '.') heatY--
-    lamp.heat = [lamp.heat[0], heatY]
-  }
-  const lead = lamps.at(-1)!, pulse = lamps.reduce((a, b) => a.force > b.force ? a : b)
-  return { rows: rows.map(row => row.join('')), lamps, flame: lead.flame, heat: pulse.heat, force: pulse.force, window: lead.window }
+  const lead = lamps[0]!, pulse = lamps.reduce((a, b) => a.force > b.force ? a : b)
+  return { rows, lamps, flame: lead.flame, heat: pulse.heat, force: pulse.force, window: lead.window }
 }
 
 const classes = (place: WakePreset): Record<Tier, readonly Pose[]> => {
-  const frames = (tier: Tier) => Array.from({ length: BEATS }, (_, beat) => lantern(place, tier, beat))
+  const frames = (tier: Tier) => Array.from({ length: BEATS }, (_, beat) => pose(place, tier, beat))
   return { 1: frames(1), 2: frames(2), 3: frames(3), 4: frames(4) }
 }
 const POSES = {
@@ -136,7 +164,7 @@ const POSES = {
 }
 export const lanternPose = (place: WakePreset, tier: Tier, beat: number) => POSES[place][tier][((beat % BEATS) + BEATS) % BEATS]!
 const pictures = (place: WakePreset) => {
-  const frames = (tier: Tier) => POSES[place][tier].map(pose => pose.rows)
+  const frames = (tier: Tier) => POSES[place][tier].map(p => p.rows)
   return { 1: frames(1), 2: frames(2), 3: frames(3), 4: frames(4) }
 }
 export const ALL_LANTERNS = {
@@ -145,7 +173,5 @@ export const ALL_LANTERNS = {
 }
 export const lanternFrames = (place: WakePreset = 'city', tier: Tier) => ALL_LANTERNS[place][tier]
 export const lanternNose = (place: WakePreset, tier: Tier, beat: number) => lanternPose(place, tier, beat).flame
-export const lanternFlare = (place: WakePreset, tier: Tier, beat: number) => {
-  const { rows, window: { x, y, w, h } } = lanternPose(place, tier, beat)
-  return rows.map((row, r) => r >= y && r < y + h ? row.slice(0, x) + 'f'.repeat(w) + row.slice(x + w) : row)
-}
+/** The craft with every window flaring: the instant it sends. */
+export const lanternFlare = (place: WakePreset, tier: Tier, beat: number) => lanternPose(place, tier, beat).rows.map(row => row.replaceAll('s', 'f'))

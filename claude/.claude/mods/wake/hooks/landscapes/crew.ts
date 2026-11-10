@@ -53,7 +53,7 @@ function paint(job: Job, look: Look) {
     W,
     m: mark ?? a,
     M: mark === undefined ? W : mix(mark, P.white, 0.45),
-    l: mix(a, P.white, paper ? 0.08 : 0.5),
+    l: mix(a, P.white, paper ? 0.32 : 0.5), // paper's lit folds and stripes have to read against its shade
     d: mix(a, P.ink, 0.45),
     s: P.yellow,
     f: mix(P.yellow, P.white, 0.65), // a flaring paper-lantern window stays warm

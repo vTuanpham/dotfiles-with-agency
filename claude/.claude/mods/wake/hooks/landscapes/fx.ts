@@ -275,7 +275,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
           const pose = lanternPose(place, a.tier as Tier, Math.floor((a.phase - back * 10) / 1.5) + a.seed)
           const [x, y] = pose.heat
           const [px, py] = s.follow ? a.path(back / clockRate(a.pace)) : [a.cx, a.cy]
-          return [px + x - (a.w >> 1), py + y - (a.h >> 1)]
+          return [px + (a.flip ? (a.w >> 1) - x : x - (a.w >> 1)), py + y - (a.h >> 1)]
         }
         if (machine || creature) {
           const push = pose(s.follow ? ago : 0), dx = push.x - (a.w >> 1)
@@ -300,7 +300,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
       if (l.tiers && !l.tiers.includes(a.tier)) continue
       if (a.kind === 'opencode' && l.at === 'nose') {
         for (const lamp of lanternPose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed).lamps) {
-          shine(c, l.light, a.cx + lamp.flame[0] - (a.w >> 1) + 0.5, a.cy + lamp.flame[1] - (a.h >> 1) + 0.5,
+          shine(c, l.light, a.cx + (a.flip ? (a.w >> 1) - lamp.flame[0] : lamp.flame[0] - (a.w >> 1)) + 0.5, a.cy + lamp.flame[1] - (a.h >> 1) + 0.5,
             t, dark * (0.65 + 0.35 * lamp.force), a.seed)
         }
         continue

@@ -38,15 +38,15 @@ export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
     desert: { facing: 'left', cruise: false, turn: 'bank', escorts: wingmen },
     tundra: { facing: 'left', cruise: true, turn: 'bank', escorts: wingmen },
   },
-  // These retain the other families' existing motion while their place-specific art is developed.
+  // Birds in profile cruise and bank; the butterfly and the owl are seen face on, so they have no heading and wander.
   claude: {
     city: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
     harbor: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
     beach: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
     mountains: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
-    countryside: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
-    forest: { facing: 'left', cruise: false, turn: 'bank', escorts: flock },
-    desert: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
+    countryside: { facing: null, cruise: false, turn: 'none', escorts: flock },
+    forest: { facing: null, cruise: false, turn: 'none', escorts: flock },
+    desert: { facing: 'left', cruise: false, turn: 'bank', escorts: flock },
     tundra: { facing: 'left', cruise: true, turn: 'bank', escorts: flock },
   },
   agy: {
@@ -59,15 +59,15 @@ export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
     desert: { facing: null, cruise: false, turn: 'none', escorts: wingmen },
     tundra: { facing: 'left', cruise: true, turn: 'coil', escorts: wingmen },
   },
-  // Paper garlands drift with the air; pennants and tassels do not give them a heading.
+  // The crane, the carp, the kite and the carpet have a front and fly along; lanterns, the balloon and the star drift with the air.
   opencode: {
-    city: { facing: null, cruise: false, turn: 'none', escorts: sisters },
-    harbor: { facing: null, cruise: false, turn: 'none', escorts: sisters },
-    beach: { facing: null, cruise: false, turn: 'none', escorts: sisters },
+    city: { facing: 'left', cruise: true, turn: 'bank', escorts: sisters },
+    harbor: { facing: 'left', cruise: true, turn: 'bank', escorts: sisters },
+    beach: { facing: 'left', cruise: false, turn: 'bank', escorts: sisters },
     mountains: { facing: null, cruise: false, turn: 'none', escorts: sisters },
     countryside: { facing: null, cruise: false, turn: 'none', escorts: sisters },
     forest: { facing: null, cruise: false, turn: 'none', escorts: sisters },
-    desert: { facing: null, cruise: false, turn: 'none', escorts: sisters },
+    desert: { facing: 'left', cruise: true, turn: 'bank', escorts: sisters },
     tundra: { facing: null, cruise: false, turn: 'none', escorts: sisters },
   },
 }
