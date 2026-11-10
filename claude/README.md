@@ -165,7 +165,7 @@ are class 2). Only designs that declare escorts bring them at classes 3 and 4.
 
 Each design declares how it faces, moves and turns (`hooks/landscapes/design.ts`): the dragon coils, headed designs bank or
 show a hand-drawn mid-turn pose, and face-on designs do not turn. The tug and paper boat ride harbor water; the crab,
-snowcat, flamingo and fox use the ground, and the sun skiff and crop drone cruise low. The dragon, bat, owl, puffin and lantern string
+snowcat and fox use the ground, the flamingo flies the shoreline, and the sun skiff and crop drone cruise low. The dragon, bat, owl, puffin and lantern string
 settle on perches when stale or waiting. Other workers fly. Mochi and her laptop are hard boundaries.
 
 ### Messages

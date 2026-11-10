@@ -42,7 +42,7 @@ test('real scenes keep each surface-habit worker on its declared surface', { tim
 })
 
 test('grounded crews keep their actual feet planted while walking and turning to speak', () => {
-  for (const [kind, place] of [['claude', 'desert'], ['claude', 'beach'], ['codex', 'tundra']] as const) for (const tier of [1, 2, 3, 4] as const) for (const phase of [0, 18, 40, 70]) for (const ms of [undefined, 150, 450, 750, 1200]) {
+  for (const [kind, place] of [['claude', 'desert'], ['codex', 'tundra']] as const) for (const tier of [1, 2, 3, 4] as const) for (const phase of [0, 18, 40, 70]) for (const ms of [undefined, 150, 450, 750, 1200]) {
     const c = canvas(100, 24, true)
     const look = { place, frame: phase, night: 0, effects: false, crewSurface: { ground: { y: 18, x0: 0, x1: 95 }, perches: [] }, crewGround: 18 } as unknown as Look
     const job: Job = { kind, tier, seed: 6, phase, isStale: false, pace: .8, hitOwner: 1, hit: { id: 'one', title: 'one', details: [] }, ...(ms === undefined ? {} : { talk: { ms, sending: true, targetX: 90 } }) }

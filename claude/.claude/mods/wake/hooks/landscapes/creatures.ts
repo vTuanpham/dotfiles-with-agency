@@ -62,16 +62,22 @@ const CREATURES: Record<WakePreset, Creature> = {
       ['...............', '.dd...s.s...dd.', '.aad..a.a..daa.', '...aaaaaaaaa...', '..aaalaWalaaa..', 'd.dddaaaaaddd.d', '.d.d.......d.d.'],
     ],
   } },
-  beach: { name: 'flamingo', strokes: 2, face: 'left', art: { // it wades: an S of neck, a bent black-tipped bill, one leg tucked, then a step and a bob of the head
-    1: [['sa...', '.aad.', '..r..'], ['sa...', '.aad.', '.r.r.']],
-    2: [['ksa....', '..a....', '..aWad.', '...rr..', '...r...'], ['ksa....', '..a....', '..aWad.', '..r.r..', '..r.r..']],
+  beach: { name: 'flamingo', strokes: 1, face: 'left', art: { // in flight it is one long line: black-tipped bill, neck stretched out ahead, red legs trailing, black-tipped wings beating slowly
+    1: [['..dk.', 'ksaar', '.....'], ['.....', 'ksaar', '..dk.']],
+    2: [
+      ['....dk.', '...aa..', 'ksaaarr', '.......', '.......'],
+      ['.......', '.......', 'ksaaarr', '...aa..', '....dk.'],
+      ['.......', '...d...', 'ksaaarr', '...l...', '.......'],
+    ],
     3: [
-      ['.ksla......', '....a......', '....aWlaad.', '.....r.r...', '.....r.rr..', '.....r.....'],
-      ['.ksla......', '....a......', '....aWlaad.', '.....r.r...', '....r..r...', '...rr..r...'],
+      ['......dk...', '.....aad...', 'ksaaaaaarr.', '....all....', '...........', '...........'],
+      ['...........', '...........', 'ksaaaaaarr.', '....aaa....', '.....aad...', '......dk...'],
+      ['...........', '.....dd....', 'ksaaaaaarr.', '....all....', '...........', '...........'],
     ],
     4: [
-      ['..ksla.........', '.....a.........', '.....a.llll....', '.....aaWaaaad..', '........r.r....', '........r.rr...', '........r......'],
-      ['..ksla.........', '.....a.........', '.....a.llll....', '.....aaWaaaad..', '........r.r....', '.......r..r....', '......rr..r....'],
+      ['........dk.....', '.......aad.....', '......aaa......', 'kWsaaaaaaaarrr.', '.....alll......', '...............', '...............'],
+      ['...............', '...............', '...............', 'kWsaaaaaaaarrr.', '.....aaaa......', '......aad......', '.......dk......'],
+      ['...............', '...............', '......ddd......', 'kWsaaaaaaaarrr.', '.....alll......', '...............', '...............'],
     ],
   } },
   mountains: { name: 'eagle', strokes: 1, face: 'left', art: { // white head and tail, a yellow bill, broad fingered wings held out to soar
@@ -167,11 +173,11 @@ export const creatureFrames = (place: WakePreset | undefined, tier: Tier): Frame
 /** The middle of a turn, seen head on: each creature comes round through its own front view. (The butterfly and the owl are
  *  already face on and do not turn.) */
 export const turnPose: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> = {
-  beach: { // the flamingo face on: almost nothing but a neck, a body and two legs
-    1: ['.ksk.', '.aaa.', '.r.r.'],
-    2: ['..ksk..', '...a...', '..aaa..', '..r.r..', '..r.r..'],
-    3: ['.....a.....', '....ksk....', '.....a.....', '....aaa....', '....r.r....', '....r.r....'],
-    4: ['.......a.......', '......ksk......', '.......a.......', '......aaa......', '.....aalaa.....', '......r.r......', '......r.r......'],
+  beach: { // the flamingo banking toward you: the whole span of its black-tipped wings, its eye between, legs hanging
+    1: ['k.s.k', 'daaad', '.r.r.'],
+    2: ['k.....k', 'da.s.ad', '.aaaaa.', '..r.r..', '.......'],
+    3: ['k.........k', 'da...s...ad', '.aaaaaaaaa.', '....r.r....', '....r.r....', '...........'],
+    4: ['...............', 'k.............k', 'dd.....s.....dd', '.aaad.aaa.daaa.', '....aaaaaaa....', '......r.r......', '......r.r......'],
   },
   mountains: { // the eagle banking: the full span of both wings, dark tips up, the white head between
     1: ['k.W.k', 'dasad', '.....'],

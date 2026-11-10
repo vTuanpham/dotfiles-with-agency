@@ -21,7 +21,7 @@ not captured in the moving sprite. Distant crews cast no local surface light.
 | Tundra | snowcat | puffin | aurora arch | paper star |
 
 The tug and paper boat ride harbor water; the crab walks its quay. The
-snowcat, flamingo and fox walk the ground; the sun skiff and crop drone cruise low. Other designs
+snowcat and fox walk the ground; the flamingo flies the shoreline and stands on one leg to rest; the sun skiff and crop drone cruise low. Other designs
 fly. A surface worker rests when stale or its pace falls to 0.15 or below. Air
 designs marked `rests` settle at an available perch: the dragon, bat (hanging by its feet), owl,
 puffin and lantern string. `rest` is an optional sprite-module map of place to

@@ -52,7 +52,7 @@ export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
     // Birds that flock keep a follower at the top classes; a second dolphin, flamingo, owl or fox would read as another worker.
     city: { facing: null, cruise: false, turn: 'none', rests: true, escorts: flock }, // bats flit face on, in a small colony
     harbor: { ...walk, facing: null, cruise: false, turn: 'none', habit: 'ground', escorts: {} }, // the crab scuttles along the quay, face on
-    beach: { ...walk, facing: 'left', cruise: false, turn: 'pose', habit: 'ground', escorts: {} }, // the flamingo wades
+    beach: { facing: 'left', cruise: true, turn: 'pose', rests: true, escorts: {} }, // the flamingo flies the shoreline, clear of the pink huts, and comes down to stand on one leg
     mountains: { facing: 'left', cruise: true, turn: 'pose', escorts: {} }, // the eagle soars alone
     countryside: { facing: null, cruise: false, turn: 'none', escorts: flock }, // butterflies go in pairs
     forest: { facing: null, cruise: false, turn: 'none', rests: true, escorts: {} }, // the owl

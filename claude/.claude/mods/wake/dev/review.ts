@@ -41,7 +41,7 @@ const critiques: Record<Family, string[]> = {
   claude: [
     'A bat replaces the birds: seen face on, ears up, two lit eyes, thin wings with a scalloped edge that beat through three poses. It flits instead of cruising and roosts hanging by its feet. Judge the silhouette by day and the eyes at night.',
     'The crab gives the harbor a grounded creature instead of another flyer. Its claws and legs need to read separately from the shell rather than flickering around a pink lump.',
-    'The flamingo has longer visible legs and a compact feathered body. Wading and face-on turns keep its feet on the beach; inspect the neck at the smallest size.',
+    'The flamingo now flies: one long line of bill, outstretched neck and trailing red legs with black-tipped wings, clear of the pink huts it used to vanish among. It banks to turn and comes down to stand on one leg when idle. Check it against the parasols at the top left.',
     'The eagle needs weight, glide and a clear wingbeat. More motion is not automatically better; inspect whether its turn preserves the bird rather than flattening it.',
     'The butterfly’s wings can justify flexibility. Check for a readable body and an intentional wing rhythm, not a symmetric pulsing blob; followers should remain subordinate.',
     'The owl is a face-on design with a real perch. Its eyes and wings must remain distinct from its rounded body, and landing should have more intent than simply lowering it.',
