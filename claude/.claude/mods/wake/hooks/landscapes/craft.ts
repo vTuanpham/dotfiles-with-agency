@@ -222,3 +222,14 @@ export function craftNose(place: WakePreset, tier: Tier, beat: number): readonly
 
 /** Every design, for the rectangle, growth and animation checks. */
 export const ALL_CRAFT = CRAFT
+
+/** The dragon at rest: coiled down on a rooftop, its head laid on its own loops and the tail blade still showing. The other
+ *  machines simply stop where they stand or float. */
+export const rest: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> = {
+  city: {
+    1: ['.kl..', 'aWdl.', 'ddddW'],
+    2: ['...kll...', '.kldddl..', 'aWad.dl.W', 'ddadlldl.', '.ddddd...'],
+    3: ['.....kllk......', '....ldddddl....', '.k.ld.ll.dl....', 'aWald.ldl.dl..W', 'ddadd.ldlldd.l.', '.dddllddddd....'],
+    4: ['...................', '......kllllk.......', '.....ldddddddl.....', '.k..ld..lll..dl....', 'aWalld.ldddl..dl..W', 'ddaddd.ld..dllld.l.', '.ddddllddddddddd...'],
+  },
+}

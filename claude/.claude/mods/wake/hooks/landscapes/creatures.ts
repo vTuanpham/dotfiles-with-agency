@@ -160,8 +160,8 @@ export const rest: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> 
   desert: { // the fox curled asleep, its brush laid over its nose
     1: ['.....', 'd.aa.', 'kWaad'],
     2: ['.......', '.......', 'd.aaa..', 'kaWaaa.', '.laad..'],
-    3: ['...........', '...........', '...........', '.d.daaaa...', 'kaaWWaaaaa.', '.llaaaaad..'],
-    4: ['...............', '...............', '...............', '......aaaaa....', '..d.daaaaaaaa..', '.kaaaWWaaaaaaa.', '..llaaaaaaaad..'],
+    3: ['...........', '...........', '...........', '.d.d.aaa...', 'kakaaaaad..', '.WWddddd...'],
+    4: ['...............', '...............', '...............', '...d.d..aaaa...', '...aaaaaaaaaad.', '.kakaaaaaaaadd.', '..WWdddddddd...'],
   },
   tundra: { // the puffin standing on its bright feet
     1: ['sWd..', '.Wdd.', '.s.s.'],
