@@ -40,12 +40,10 @@ test('agy has eight shaded beats of a few stars within the shared footprint, gro
   }
 })
 
-test('agy moves its figure rather than only blinking, with eight different silhouettes', () => {
-  const minimum = { 1: 4, 2: 6, 3: 8, 4: 10 }
+test('agy holds its figure while light travels its lines', () => {
   for (const place of places) for (const tier of tiers) {
     const frames = ALL_AGY[place][tier], masks = frames.map(mask)
-    const changes = masks.flatMap(a => masks.map(b => [...a].filter((cell, i) => cell !== b[i]).length))
-    expect(Math.max(...changes), `${place} class ${tier} structural stroke`).toBeGreaterThanOrEqual(minimum[tier])
+    expect(new Set(masks).size, `${place} class ${tier} fixed figure`).toBe(1)
     for (let beat = 0; beat < 8; beat++) expect(frames[beat], `${place} ${tier} loop seam`).not.toEqual(frames[(beat + 1) % 8])
   }
   for (let beat = 0; beat < 8; beat++) expect(new Set(places.map(place => mask(ALL_AGY[place][4][beat]!))).size).toBe(8)
@@ -60,17 +58,17 @@ test('agy satellites follow beat-locked ellipses and the same core in both half-
   }
 })
 
-test('agy sends from its current luminous face, preserves solid light under effects and has small companions', () => {
+test('agy sends from its current luminous face and preserves solid light under effects', () => {
   for (const place of places) {
-    expect(DESIGNS.agy[place].escorts[3]!.length).toBeGreaterThan(0)
-    expect(DESIGNS.agy[place].escorts[4]!.length).toBeGreaterThan(0)
+    expect(DESIGNS.agy[place].escorts).toEqual({})
     expect(CREW.agy[place]!.talking![0]!.at).toBe('nose')
     for (const tier of tiers) for (let beat = 0; beat < 8; beat++) {
       const job = { kind: 'agy' as const, tier, seed: 0, isStale: false, phase: beat * 1.5, talk: { ms: 1200, sending: true } }
-      const bare = canvas(50, 24), lit = canvas(50, 24)
-      fly(bare, { ...look, place }, 25, 10, job, 'agy', false, () => [25, 10], [])
+      const maskCanvas = canvas(50, 24), bare = canvas(50, 24), lit = canvas(50, 24)
+      fly(maskCanvas, { ...look, place }, 25, 10, job, 'agy', false, () => [25, 10], [])
+      fly(bare, { ...look, place, night: 1 }, 25, 10, job, 'agy', false, () => [25, 10], [])
       fly(lit, { ...look, place, night: 1, effects: true }, 25, 10, job, 'agy', false, () => [25, 10], [])
-      for (let i = 0; i < bare.px.length; i++) if (bare.px[i]) expect(lit.px[i], `${place} ${tier} body stays solid`).toBe(bare.px[i])
+      for (let i = 0; i < bare.px.length; i++) if (maskCanvas.px[i]) expect(lit.px[i], `${place} ${tier} body stays solid`).toBe(bare.px[i])
       for (const mirror of [1, -1] as const) {
         const rows = shape(ALL_AGY[place][tier][beat]!, mirror, undefined, DESIGNS.agy[place].turn)
         const [x, y] = agyCore(place, tier, beat)

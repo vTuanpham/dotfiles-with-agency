@@ -1,10 +1,10 @@
 import { TURN_LEAD_MS } from '../crew-row'
 import { type Canvas, hash, mix } from '../pixels'
-import { craftFrames } from './craft'
-import { agyFrames } from './agy'
-import { lanternFlare, lanternFrames, lanternInk, lanternPaper } from './lantern'
+import { craftFrames, craftNose } from './craft'
+import { agyFrames, agyCore } from './agy'
+import { lanternFlare, lanternFrames, lanternInk, lanternPaper, lanternNose, lanternPose } from './lantern'
 import { designFor, type Design, type Tier, type Turn } from './design'
-import { creatureFrames } from './creatures'
+import { creatureFrames, creatureNose } from './creatures'
 import * as craftSprite from './craft'
 import * as creatureSprite from './creatures'
 import * as agySprite from './agy'
@@ -96,6 +96,42 @@ const airFrames = (look: Look, kind: Kind, tier: 1 | 2 | 3 | 4): Frames => {
   return look.crewRest ? [SPRITES[kind].rest?.[look.place ?? 'city']?.[tier] ?? frames[0]!] : frames
 }
 
+const nearestLamp = (frame: readonly string[], [nx, ny]: Vec): Vec => {
+  let point: Vec = [nx, ny], distance = Infinity
+  for (const [y, row] of frame.entries()) for (let x = 0; x < row.length; x++) if (row[x] === 's' || row[x] === 'f') {
+    const d = (x - nx) ** 2 + (y - ny) ** 2
+    if (d < distance) { point = [x, y]; distance = d }
+  }
+  return point
+}
+const lanternPoint: typeof lanternNose = (place, tier, beat) => nearestLamp(lanternFrames(place, tier)[((beat % 8) + 8) % 8]!, lanternNose(place, tier, beat))
+const noses = { codex: craftNose, claude: creatureNose, agy: agyCore, opencode: lanternPoint }
+const lamps: Partial<Record<Kind, typeof lanternPose>> = { opencode: lanternPose }
+
+/** Project the sprite's own point through its turn, then attach it to the nearest surviving painted cell. */
+export function messagePoint(frame: readonly string[], art: readonly string[], point: readonly [number, number], mirror: 1 | -1, roll: number | undefined, turn: Turn): Vec {
+  let target: Vec = [mirror < 0 ? frame[0]!.length - 1 - point[0] : point[0], point[1]]
+  if (roll !== undefined && roll > 0 && roll < 1 && turn !== 'none') {
+    const marked = frame.map((row, y) => y === point[1] ? row.slice(0, point[0]) + '@' + row.slice(point[0] + 1) : row)
+    const projected = shape(marked, mirror, roll, turn)
+    for (const [y, row] of projected.entries()) { const x = row.indexOf('@'); if (x >= 0) { target = [x, y]; break } }
+  }
+  if (art[target[1]]?.[target[0]] && art[target[1]]![target[0]] !== '.') return target
+  let best: Vec = target, distance = Infinity
+  for (const [y, row] of art.entries()) for (let x = 0; x < row.length; x++) if (row[x] !== '.') {
+    const d = (x - target[0]) ** 2 + (y - target[1]) ** 2
+    if (d < distance) { best = [x, y]; distance = d }
+  }
+  return best
+}
+
+function rememberPoint(look: Look, job: Job, art: readonly string[], x: number, y: number, point: Vec = [art[0]!.length >> 1, art.length >> 1]) {
+  if (!job.hit) return
+  const [px, py] = messagePoint(art, art, point, 1, undefined, 'none')
+  ;(look.crewMessagePoints ??= {})[job.hit.id] = { x: x + px, y: y + py }
+  ;(look.crewBoxes ??= {})[job.hit.id] = { x0: x, y0: y, x1: x + art[0]!.length - 1, y1: y + art.length - 1 }
+}
+
 /** The gait a flyer moves by: its family's, except that craft which cruise (a dragon, a banner plane) fly the continuous loop. */
 const gaitKind = (job: Job, look: Look) => designFor(job.kind ?? 'codex', look.place).cruise ? 'claude' : job.kind ?? 'codex'
 
@@ -163,7 +199,7 @@ export function shape(rows: readonly string[], mirror: 1 | -1, roll?: number, tu
       if (ch === '.') continue
       const px = Math.round(cx + (x - cx) * sx)
       const py = Math.max(0, Math.min(h - 1, Math.round(cy + (y - cy) * sy + (x - cx) / w * Math.sin(2 * Math.PI * roll))))
-      out[py]![px] = ch
+      if (out[py]![px] !== '@' || ch === '@') out[py]![px] = ch
     }
     return reversed(out.map(r => r.join('')))
   }
@@ -182,7 +218,7 @@ export function shape(rows: readonly string[], mirror: 1 | -1, roll?: number, tu
         const px = (1 - coiled) * x + coiled * (cx + radius * Math.cos(angle))
         const py = (1 - coiled) * y + coiled * (mid + ky * radius * Math.sin(angle))
         const [ix, iy] = [Math.round(px), Math.round(py)]
-        if (ix >= 0 && ix < w && iy >= 0 && iy < h) out[iy]![ix] = rows[y]![x]!
+        if (ix >= 0 && ix < w && iy >= 0 && iy < h && (out[iy]![ix] !== '@' || rows[y]![x] === '@')) out[iy]![ix] = rows[y]![x]!
       }
     }
   }
@@ -201,7 +237,7 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   const turning: { mirror: 1 | -1; roll?: number; since?: number } = drawn ? orient(path, drawn, 0, job.talk) : { mirror: 1 }
   const facingRight = !drawn ? false : drawn === 'right' ? turning.mirror > 0 : turning.mirror < 0 // effects are written facing left
   const beat = (Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length
-  const blast = kind === 'opencode' && !compact && job.talk?.sending && job.talk.over === undefined && job.talk.ms >= TURN_LEAD_MS && job.talk.ms < TURN_LEAD_MS + 300
+  const blast = kind === 'opencode' && !compact && !look.crewRest && job.talk?.sending && job.talk.over === undefined && job.talk.ms >= TURN_LEAD_MS && job.talk.ms < TURN_LEAD_MS + 300
   const frame = blast ? lanternFlare(look.place ?? 'city', job.tier ?? 1, beat) : frames[beat]!
   const art = drawn ? shape(frame, turning.mirror, turning.roll, design.turn) : [...frame]
   if (kind === 'agy' && drawn && turning.roll !== undefined) {
@@ -213,14 +249,19 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   }
   const pal = paint({ ...job, kind }, look)
   const x0 = cx - (art[0]!.length >> 1), y0 = cy - (art.length >> 1)
+  const point = messagePoint(frame, art, noses[kind](look.place ?? 'city', compact ? 1 : job.tier ?? 1, beat), turning.mirror, turning.roll, design.turn)
+  if (job.hit && !compact) (look.crewMessagePoints ??= {})[job.hit.id] = { x: x0 + point[0], y: y0 + point[1] }
   // The worker's own sprite, for what happens ON it (the send pulse, the receive ring): not its escorts, nor the trail and air it
   // leaves, which are painted under the same hit owner and would stretch its box across half the screen.
   if (job.hit && !compact) (look.crewBoxes ??= {})[job.hit.id] = { x0, y0, x1: x0 + art[0]!.length - 1, y1: y0 + art.length - 1 }
   const quietMachine = kind === 'agy' || kind === 'claude' || kind === 'opencode' || kind === 'codex' && look.place !== undefined && look.place !== 'city'
-  const coreY = kind === 'agy' ? art.findIndex(row => row.includes('M')) : -1
-  const nose: Vec | undefined = coreY < 0 ? undefined : [(art[coreY]!.indexOf('M') - (art[0]!.length >> 1)) * (facingRight ? -1 : 1), coreY - (art.length >> 1)]
+  const nose: Vec = [(point[0] - (art[0]!.length >> 1)) * (facingRight ? -1 : 1), point[1] - (art.length >> 1)]
+  const lightPoints = look.effects === false ? undefined : lamps[kind]?.(look.place ?? 'city', job.tier ?? 1, beat).lamps.map(lamp => {
+    const [x, y] = messagePoint(frame, art, nearestLamp(frame, lamp.flame), turning.mirror, turning.roll, design.turn)
+    return [x0 + x, y0 + y] as Vec
+  })
   const air = () => {
-    if (!compact) crewFx(c, look, { x0, y0, w: art[0]!.length, h: art.length, cx, cy, kind, tier: job.tier ?? 1, seed: job.seed, pace: job.pace ?? 0.6, phase: job.phase ?? look.frame, path, lift: job.lift ?? 0, ground: look.crewGround ?? c.H, flip: facingRight, talk: job.talk, turn: design.turn === 'coil' ? turning.since : undefined, nose })
+    if (!compact) crewFx(c, look, { x0, y0, w: art[0]!.length, h: art.length, cx, cy, kind, tier: job.tier ?? 1, seed: job.seed, pace: job.pace ?? 0.6, phase: job.phase ?? look.frame, path, lift: job.lift ?? 0, ground: look.crewGround ?? c.H, flip: facingRight, talk: job.talk, turn: design.turn === 'coil' ? turning.since : undefined, nose, lamps: lightPoints })
   }
   // Air stays behind solid machines and plumage: no particle can repaint a body cell.
   if (quietMachine) air()
@@ -251,6 +292,7 @@ function placeSurface(c: Canvas, look: Look, x: number, job: Job, right: number)
   if (habit === 'water' && !surface.water) return undefined
   const rest = resting
   look.crewBoxes ??= {}
+  look.crewMessagePoints ??= {}
   const state = { ...look, crewRest: rest }
   const frames = airFrames(state, job.kind ?? 'codex', job.tier ?? 1), art = frames[0]!
   const w = art[0]!.length, h = art.length
@@ -347,6 +389,7 @@ function placeRest(c: Canvas, look: Look, job: Job, x: number, y: number, right:
     ;(look.crewSpriteZones ??= []).push(zone)
     ;(look.crewAnchors ??= []).push(cy * c.W + cx)
     look.crewBoxes ??= {}
+    look.crewMessagePoints ??= {}
     drawWithHit(c, job, () => fly(c, { ...look, crewRest: amount >= 1 }, cx, cy, job, kind, false, () => [cx, cy], []))
     return zone
   }
@@ -497,6 +540,7 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
     art.forEach((row, dy) => [...row].forEach((ch, dx) => { if (ch !== '.') zones.push({ x: px + dx - reach, y: py + dy, w: 1 + 2 * reach, h: 1 }) }))
     sprites.push({ ...zone, x: zone.x - reach, w: zone.w + 2 * reach })
     drawWithHit(c, job, () => draw(c, look, px + drift, py + lift, art, paint(job, look), false))
+    rememberPoint(look, job, art, px + drift, py + lift)
     return zone
   }
   return undefined
@@ -623,6 +667,7 @@ function packCompact(c: Canvas, look: Look, jobs: Job[]): boolean {
     look.crewSpriteZones!.push({ x, y, w: 3, h: 3 })
     look.crewAnchors!.push((y + 2) * c.W + x + 1)
     drawWithHit(c, job, () => draw(c, look, x, y, art, paint(job, look), false))
+    rememberPoint(look, job, art, x, y)
   })
   return true
 }

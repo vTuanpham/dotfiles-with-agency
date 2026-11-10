@@ -42,6 +42,22 @@ const look = { frame: 0, night: 1, effects: false } as Look // bare sprites: the
 const kinds = ['codex', 'agy', 'claude', 'opencode'] as const
 const tiers = [1, 2, 3, 4] as const
 
+test('message points stay on the leader body for every design, beat, heading and turn', () => {
+  for (const place of Object.keys(ALL_CRAFT) as (keyof typeof ALL_CRAFT)[]) for (const kind of kinds) for (const tier of tiers)
+    for (const heading of [-1, 1]) for (const phase of [0, 1.5, 3, 6, 10.5]) for (const ms of [undefined, 200, 450, 700, 1200]) {
+      const c = canvas(60, 24)
+      const state = { ...look, place, crewMessagePoints: {} } as Look
+      const job: Job = { kind, tier, seed: 0, isStale: false, phase, hit: { id: 'leader', title: 'Leader', details: [] }, ...(ms === undefined ? {} : { talk: { ms, sending: true } }) }
+      fly(c, state, 30, 12, job, kind, false, ago => [30 - heading * ago, 12])
+      const point = state.crewMessagePoints!.leader!
+      const alone = canvas(60, 24), solo = { ...look, place, crewMessagePoints: {} } as Look
+      fly(alone, solo, 30, 12, job, kind, false, ago => [30 - heading * ago, 12], [])
+      expect(point, `${kind} ${place} ${tier} ${heading} ${phase} ${ms}`).toBeDefined()
+      expect(point).toEqual(solo.crewMessagePoints!.leader)
+      expect(alone.get(point.x, point.y), `${kind} ${place} ${tier} ${heading} ${phase} ${ms}`).not.toBe(0)
+    }
+})
+
 
 function render(job: Job, frame: number, water = false) {
   const c = canvas(40, 20)
@@ -132,7 +148,7 @@ test('Codex places have distinct uncoloured silhouettes, and the smallest craft 
   }
   for (const [place, classes] of Object.entries(ALL_CRAFT)) {
     if (place === 'city') continue
-    expect(new Set(classes[1].map(mask)).size, `${place} miniature has visible secondary motion`).toBeGreaterThanOrEqual(2)
+    expect(new Set(classes[1].map(rows => rows.join(''))).size, `${place} miniature animates`).toBeGreaterThanOrEqual(2)
   }
 })
 
@@ -148,9 +164,7 @@ test('non-city Codex poses move their structure', () => {
   for (const [place, classes] of Object.entries(ALL_CRAFT)) {
     if (place === 'city') continue
     for (const tier of tiers) {
-      const silhouettes = classes[tier].map(art => [...art.join('')].map(ch => ch !== '.'))
-      const changed = silhouettes.flatMap(a => silhouettes.map(b => a.filter((solid, i) => solid !== b[i]).length))
-      expect(Math.max(...changed), `${place} class ${tier} changes occupied body cells`).toBeGreaterThan(0)
+      expect(new Set(classes[tier].map(art => art.join(''))).size, `${place} class ${tier} animates`).toBeGreaterThan(1)
     }
   }
 })

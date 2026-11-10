@@ -60,6 +60,8 @@ export type Look = {
   crewHard?: { x: number; y: number; w: number; h: number }[]
   /** Each worker's own sprite box this pass, by its hit id (crew.ts `fly`): where a send pulse or a receive ring is centred. */
   crewBoxes?: Record<string, { x0: number; y0: number; x1: number; y1: number }>
+  /** Current message point on the leader's painted body, in scene coordinates. */
+  crewMessagePoints?: Record<string, { x: number; y: number }>
   /** Where this pass's own anchors begin in `crewAnchors` (it is shared across a scene's passes), so overlapping crew still keep an anchor each (placeFly). */
   crewAnchorsFrom?: number
   crewGround?: number

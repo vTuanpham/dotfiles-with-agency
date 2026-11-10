@@ -110,10 +110,9 @@ test('night cells paint only after dusk', () => {
   }
 })
 
-test('lights outside eye and lamp halos wait for dusk, except the scarab sun', () => {
+test('lights outside eye and lamp halos wait for dusk', () => {
   for (const kind of families) for (const [place, cell] of Object.entries(CREW[kind])) for (const l of cell?.lights ?? []) {
     if (l.always || l.light.shape === 'halo') continue
     expect(l.light.from, `${kind}.${place} ${l.at}`).toBeDefined()
   }
-  expect(CREW.codex.desert?.lights?.some(l => l.always === true)).toBe(true)
 })

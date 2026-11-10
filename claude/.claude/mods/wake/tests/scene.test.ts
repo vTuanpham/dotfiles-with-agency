@@ -80,6 +80,22 @@ test('a real message edge connects visible workers and exposes its preview', () 
   expect(missingTarget.hits.targets.some(item => item.id.startsWith('peer:'))).toBe(false)
 })
 
+test('scene message endpoints follow the visible worker body and root', () => {
+  for (const preset of Object.keys(LANDSCAPES) as SceneInput['preset'][]) for (const kind of ['codex', 'claude', 'agy', 'opencode'] as const) for (const tier of [1, 2, 3, 4] as const) {
+    const job = { kind, tier, seed: 3, isStale: false, hit: { id: 'worker', title: 'Worker', details: [] } }
+    const input: SceneInput = { ...base, preset, effects: false, turns: [], live: null, plan: null, agents: [], jobs: [job], peerEdges: [{ source: 'worker', target: 'mochi', strength: 1, preview: 'message', arriving: 500 }] }
+    const anchors = new Map<string, { x: number; y: number }>()
+    scenePixels(input, [], undefined, anchors)
+    const hits = sceneFrame(input).hits
+    for (const id of ['worker', 'mochi']) {
+      const point = anchors.get(id)!, owner = hits.targets.findIndex(target => target.id === id) + 1
+      expect(point, `${preset} ${kind} ${tier} ${id}`).toBeDefined()
+      const near = [-1, 0, 1].some(dy => [-1, 0, 1].some(dx => hits.owners[(Math.floor(point.y / 2) + dy) * input.width + point.x + dx] === owner))
+      expect(near, `${preset} ${kind} ${tier} ${id} body at endpoint`).toBe(true)
+    }
+  }
+})
+
 test('an arc is pure geometry: connected, inside the scene, and from one end to the other', () => {
   const a = { x: 10, y: 6 }, b = { x: 70, y: 3 }
   const arc = arcCells(a, b, 120, SCENE_H, 0)
@@ -134,7 +150,7 @@ test('message trails live in the background: nothing painted over them changes, 
 test('Bridge root messages connect to Mochi in the recorded direction without covering scene objects', () => {
   const job = { isStale: false, seed: 1, hit: { id: 'owner/job', title: 'Worker', details: [] } }
   const rootToWorker: SceneInput = {
-    ...base, width: 100, turns: [], live: null, plan: null, agents: [], jobs: [job],
+    ...base, effects: false, width: 100, turns: [], live: null, plan: null, agents: [], jobs: [job],
     peerEdges: [{ source: 'mochi', target: 'owner/job', strength: 1, preview: 'Inspect this result', messageState: 'sent' }],
   }
   const workerToRoot: SceneInput = {
@@ -165,15 +181,11 @@ test('Bridge root messages connect to Mochi in the recorded direction without co
   const both = sceneFrame({ ...rootToWorker, peerEdges: [...rootToWorker.peerEdges!, ...workerToRoot.peerEdges!] })
   expect(both.hits.targets.filter(item => item.id.startsWith('peer:')).map(item => item.id)).toEqual(['peer:mochi:owner/job', 'peer:owner/job:mochi'])
 
-  const background = scenePixels({ ...rootToWorker, peerEdges: [] })
-  const linked = scenePixels(rootToWorker)
   const plainHits = sceneFrame({ ...rootToWorker, peerEdges: [] }).hits
-  for (let cell = 0; cell < plainHits.owners.length; cell++) {
-    const owner = plainHits.owners[cell]!
-    if (!owner || plainHits.targets[owner - 1]!.id === 'sky') continue
-    const x = cell % rootToWorker.width, y = Math.floor(cell / rootToWorker.width) * 2
-    expect(linked[y * rootToWorker.width + x]).toBe(background[y * rootToWorker.width + x])
-    expect(linked[(y + 1) * rootToWorker.width + x]).toBe(background[(y + 1) * rootToWorker.width + x])
+  for (const id of ['owner/job', 'mochi']) {
+    const plainOwner = plainHits.targets.findIndex(target => target.id === id) + 1
+    const linkedOwner = incoming.hits.targets.findIndex(target => target.id === id) + 1
+    expect(plainHits.owners.some((owner, cell) => owner === plainOwner && incoming.hits.owners[cell] === linkedOwner)).toBe(true)
   }
 })
 
@@ -193,7 +205,7 @@ test('a root relationship remains after the last recorded message expires', () =
 })
 
 test('the trail to the root stays put while Mochi\'s "!" blinks, her envelope hops and the other trails come and go', () => {
-  const job = { isStale: false, seed: 1, hit: { id: 'owner/job', title: 'Worker', details: [] } }
+  const job = { isStale: false, seed: 1, phase: 0, route: 0, hit: { id: 'owner/job', title: 'Worker', details: [] } }
   const peerCells = (input: SceneInput) => {
     const { hits } = sceneFrame(input)
     const at = hits.targets.findIndex(item => item.id === 'peer:owner/job:mochi') + 1

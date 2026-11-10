@@ -576,37 +576,18 @@ export function lookOf(input: SceneInput): Look {
  * The scene's pixels, row-major, `width` x 12, as 0xRRGGBB.
  *
  * A message trail lives in the background, painted straight after the sky and ground so that buildings, the crew, weather and
- * Mochi all paint over it and it can take nothing from them. Its ends are the crew's places, which are known only once the crew
- * is placed, so the crew is placed in a first pass (no messages drawn) and the trail painted in the second.
+ * Mochi all paint over it and it can take nothing from them. Once the crew is placed, trails are painted onto the saved
+ * background and copied only into cells untouched by the later scene layers.
  */
-export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMap?: SceneHitMap): Uint32Array {
-  if (!input.peerEdges?.length) return drawScene(input, crewAnchors, hitMap)
-  const want = new Set(input.peerEdges.flatMap(edge => [edge.source, edge.target]))
-  return drawScene(input, crewAnchors, hitMap, { ends: anchorsOf(input, crewAnchors, want) })
+export function scenePixels(input: SceneInput, crewAnchors: number[] = [], hitMap?: SceneHitMap, messagePoints?: Map<string, Anchor>): Uint32Array {
+  return drawScene(input, crewAnchors, hitMap, messagePoints)
 }
 
-/**
- * Where each wanted worker and Mochi stand, for the trails' ends. Finding them takes a whole extra drawing of the scene, but
- * they are fixed by the layout (the crew, the place, the weather, the plan), not by the frame, so the last answer is kept
- * and reused until something of that kind changes. Messages, effects and the frame are left out of the key on purpose.
- */
-let anchorCache: { key: string; ends: Map<string, Anchor> } | undefined
-function anchorsOf(input: SceneInput, crewAnchors: number[], want: Set<string>): Map<string, Anchor> {
-  const key = JSON.stringify([{ ...input, frame: 0, effect: null, peerEdges: undefined, mail: undefined }, crewAnchors, [...want].sort()])
-  if (anchorCache?.key === key) return anchorCache.ends
-  const ends = new Map<string, Anchor>()
-  drawScene({ ...input, peerEdges: undefined }, crewAnchors, undefined, { collect: ends, want })
-  anchorCache = { key, ends }
-  return ends
-}
-
-type TrailPlan = { collect?: Map<string, Anchor>; want?: Set<string>; ends?: Map<string, Anchor> }
-
-function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap | undefined, plan: TrailPlan = {}): Uint32Array {
+function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap | undefined, messagePoints?: Map<string, Anchor>): Uint32Array {
   // (a scene with a message landing needs the hit owners even when nobody asked for the map: the reactions find sprites by them)
-  const reacting = plan.ends !== undefined && (input.peerEdges ?? []).some(edge => edge.arriving !== undefined)
-  const exiting = !plan.collect && [...input.jobs, ...input.agents].some(job => job.leaving !== undefined || job.arriving !== undefined) // (the anchor-finding pass has none)
-  const localHits = hitMap ?? (plan.collect || reacting || exiting ? { columns: input.width, rows: SCENE_ROWS, owners: [], targets: [] } : undefined)
+  const reacting = (input.peerEdges ?? []).some(edge => edge.arriving !== undefined)
+  const exiting = [...input.jobs, ...input.agents].some(job => job.leaving !== undefined || job.arriving !== undefined)
+  const localHits = hitMap ?? (reacting || exiting ? { columns: input.width, rows: SCENE_ROWS, owners: [], targets: [] } : undefined)
   const reactions: Reaction[] = []
   const c = canvas(input.width, H, localHits !== undefined)
   const look = lookOf(input)
@@ -675,13 +656,12 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   }
   land.floor(c, look)
   if (localHits) sceneryPixels = c.px.slice()
-  if (plan.ends) drawTrails(c, input, plan.ends, reactions, target => {
-    const owner = registerHit(target)
-    if (owner) trails.add(owner)
-    return owner
-  })
+  const trailBase = input.peerEdges?.length ? c.px.slice() : undefined
+  const trailBaseOwners = trailBase ? c.hitOwners?.slice() : undefined
 
   look.crewZones = []
+  look.crewMessagePoints = {}
+  look.crewBoxes = {}
   look.crewGround = ground
   look.crewSurface = { ground: { y: ground, x0: 0, x1: right }, ...(land.water === undefined || look.snowy && land.waterFreezes ? {} : { water: { y: land.water, spans: [{ x0: land.waterStart ?? 0, x1: right }] } }), perches: terrainPerches }
   look.crewAnchors = crewAnchors
@@ -813,27 +793,29 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
     const y = 3 + (j % 3)
     placeFly(c, look, x, y, bird, right)
   }
-  // First pass: where each wanted worker and Mochi are. A worker plays about inside its reserved zone, so its end of a trail is
-  // the zone's fixed top, never the sprite: nothing the sprite does (a hop, a mark, a drift) can move the trail. The crew is
-  // read before the weather is drawn, because fog claims every cell it covers; Mochi is read once she is drawn.
-  const collectPlaces = (mochi: boolean) => {
-    if (!plan.collect || !localHits || !c.hitOwners) return
-    for (const [i, hit] of localHits.targets.entries()) {
-      if (!plan.want?.has(hit.id) || (hit.id === 'mochi') !== mochi) continue
-      if (mochi) {
-        // her body's fixed top, never her marks: the "!", the envelope, the umbrella and the jump all come and go above it
-        plan.collect.set(hit.id, { x: catX + (CAT_COLUMNS >> 1), y: Math.max(0, ((ground - MOCHI_ROWS - 5) & ~1) - 1) })
-        continue
-      }
-      const owner = i + 1
-      for (let y = 0; y < H && !plan.collect.has(hit.id); y++) for (let x = 0; x < c.W; x++) { // (a harbor's boats sit in the water, below `ground`)
-        if (c.hitOwners[y * c.W + x] !== owner) continue
-        const zone = (look.crewSpriteZones ?? []).find(z => x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h)
-        if (zone) { plan.collect.set(hit.id, { x: zone.x + (zone.w >> 1), y: Math.max(0, (zone.y & ~1) - 1) }); break } // the last row of the cell row above the sprite's
-      }
+  const rootJump = input.effect?.kind === 'fireworks' && input.effect.age < 28 && look.frame % 6 < 3 ? 1 : 0
+  const rootPoint = { x: catX + 4, y: ground - MOCHI_ROWS - rootJump + 5 }
+  if (messagePoints) {
+    for (const [id, point] of Object.entries(look.crewMessagePoints ?? {})) messagePoints.set(id, point)
+    messagePoints.set('mochi', rootPoint)
+  }
+  if (trailBase) {
+    const ends = new Map(Object.entries(look.crewMessagePoints ?? {}))
+    ends.set('mochi', rootPoint)
+    const background = canvas(c.W, c.H, !!c.hitOwners)
+    background.px.set(trailBase)
+    if (trailBaseOwners) background.hitOwners!.set(trailBaseOwners)
+    drawTrails(background, input, ends, reactions, target => {
+      const owner = registerHit(target)
+      if (owner) trails.add(owner)
+      return owner
+    })
+    for (let i = 0; i < c.px.length; i++) {
+      if (c.px[i] !== trailBase[i] || c.hitOwners && c.hitOwners[i] !== trailBaseOwners?.[i]) continue
+      c.px[i] = background.px[i]!
+      if (c.hitOwners && background.hitOwners) c.hitOwners[i] = background.hitOwners[i]!
     }
   }
-  collectPlaces(false)
   if (input.weather) {
     const weather = input.weather
     const weatherOwner = registerHit({ id: 'weather', title: 'Weather', details: [`Cloud cover: ${Math.round(weather.cloud * 100)}%`, weather.thunder ? 'Thunderstorm' : weather.snow ? 'Snow' : weather.rain ? 'Rain' : weather.fog ? 'Fog' : 'No precipitation shown'] })
@@ -843,17 +825,16 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   if (input.effect) drawEffect(c, look, input.effect, ground, right, input.preset)
   if (mochiOwner) c.withHit(mochiOwner, () => drawMochi(c, look, input, ground, catX))
   else drawMochi(c, look, input, ground, catX)
-  collectPlaces(true) // Mochi, now she is drawn
   // the crew reacts to the messages that just left or landed (each harness its own way: see reactions.ts)
   const kindOf = (id: string): ReactionKind => id === 'mochi' ? asCharacter(input.character) : input.jobs.find(job => job.hit?.id === id)?.kind ?? (input.agents.some(agent => agent.hit?.id === id) ? 'claude' : 'codex')
   // the root's gadget stands on her body, wherever the marks above her happen to be
-  const rootBox = { x0: catX, x1: catX + 8, y0: ground - MOCHI_ROWS, y1: ground - 1 }
+  const rootBox = { x0: catX, x1: catX + 8, y0: ground - MOCHI_ROWS - rootJump, y1: ground - 1 - rootJump }
   if (localHits) react(c, localHits.targets, reactions, kindOf, { ...look.crewBoxes, mochi: rootBox }) // (a worker's own sprite box, not everything painted under its hit id)
   // a worker that has just started arrives, and one that has just finished leaves, each in its craft's own way (exits.ts)
   const coming = [...input.jobs.map(job => ({ ...job, kind: job.kind ?? 'codex' as const })), ...input.agents.map(agent => ({ ...agent, kind: 'claude' as const }))]
     .flatMap(job => job.hit && (job.arriving ?? job.leaving) !== undefined
       ? [{ id: job.hit.id, kind: job.kind, place: input.preset, seed: job.seed, age: job.arriving ?? job.leaving!, arriving: job.arriving !== undefined, struck: job.struck }] : [])
-  if (localHits && coming.length && !plan.collect) passages(c, localHits.targets, coming)
+  if (localHits && coming.length) passages(c, localHits.targets, coming)
   return finish()
 }
 

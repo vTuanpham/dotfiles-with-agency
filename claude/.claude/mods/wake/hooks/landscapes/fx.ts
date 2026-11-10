@@ -51,16 +51,6 @@ const SIGNAL = (at: Anchor, dx = 0, dy = 0, extra: Partial<Emitter> = {}): reado
   at, dx, dy, emitter: { count: 2, life: 0.6, burst: true, delay: 0.25, speed: [8, 12], angle: [Math.PI - 0.08, Math.PI + 0.08], colors: [P.white, P.sky], alpha: 0.45, envelope: 'fade', ...extra },
 }]
 
-/** Prop-wash at the ground: one soft fan of local material, rather than a column of light or a cloud of confetti. */
-const WASH = (colors: readonly number[]): Stream => ({ at: 'ground', beats: [0, 4], emitter: { count: 3, life: 0.55, spawn: { w: 2 }, speed: [1, 3], angle: [UP - 0.8, UP + 0.8], gravity: 7, wind: 0.5, colors, alpha: 0.18, envelope: 'fade' } })
-const BOOST: Stream = { at: 'tail', beats: [0, 4], emitter: { count: 2, life: 0.3, speed: [2, 4], angle: [-0.12, 0.12], colors: [P.white, P.sky], alpha: 0.18, envelope: 'fade' } }
-
-/** Side-on wingtip and cockpit lamps: measured on the generator, never attached to the rectangle's banner or empty corner. */
-const PLANE_LIGHTS: readonly LightAt[] = [
-  { at: 'centre', light: { shape: 'halo', color: P.red, alpha: 0.25, reach: 0 } }, // actual wingtip comes from the generated pose
-  { at: 'nose', light: { shape: 'halo', color: P.white, alpha: 0.2, reach: 0, modulate: 'strobe' } },
-]
-
 /** What an automaton sheds in its wake, twinkling out behind it. */
 const WORKS = (colors: readonly number[], extra: Partial<Emitter> = {}): Stream => ({ at: 'tail', follow: true, emitter: { count: 7, life: 1.1, speed: [0.3, 1], angle: [0, TAU], wind: 0.5, colors, alpha: 0.55, envelope: 'twinkle', ...extra } })
 /** The glass eye, lit from within once it is dusk. */
@@ -85,7 +75,7 @@ const CODEX: FamilyCells = {
       { at: 'tail', dx: 1, emitter: { count: 7, life: 0.35, spawn: { h: 0.3 }, speed: [3, 6], angle: [-0.2, 0.2], colors: [P.white, P.sky, P.teal], alpha: 0.8, envelope: 'fade', streak: 2 } }, // the booster at its tail: a short bright jet streaming back
     ],
     lights: [
-      { at: 'left', light: { shape: 'halo', color: P.teal, alpha: 0.5, reach: 1, modulate: 'pulse', from: 0.05 } }, // the head's eyes
+      { at: 'nose', light: { shape: 'halo', color: P.teal, alpha: 0.5, reach: 1, modulate: 'pulse', from: 0.05 } }, // the head's eyes
       { at: 'below', tiers: [3, 4], light: { shape: 'pool', color: P.teal, alpha: 0.22, reach: 6, modulate: 'pulse', from: 0.05 } }, // the pods' light, on whatever is below
     ],
   },
@@ -165,11 +155,11 @@ const AGY: FamilyCells = {
     ],
     lights: [
       { at: 'nose', light: { shape: 'halo', color: P.mauve, alpha: 0.4, reach: 2, modulate: 'pulse' } },
-      { at: 'ground', light: { shape: 'pool', color: P.lavender, alpha: 0.2, reach: 4, modulate: 'pulse' } }, // the stars light the ground beneath them
+      { at: 'ground', light: { shape: 'pool', color: P.lavender, alpha: 0.2, reach: 4, modulate: 'pulse', from: 0.05 } }, // the stars light the ground beneath them
     ],
   },
   city: STARS(LIGHT_ECHO(DOWN, [P.white, P.lavender]), [P.pink, P.sky]), // neon
-  harbor: { ...STARS(LIGHT_ECHO(0, [P.white, P.sky], 0, { angle: [0, Math.PI], speed: [3, 4] }), [P.sky, P.white], { gravity: 2 }), lights: [{ at: 'ground', light: { shape: 'pool', color: P.lavender, alpha: 0.2, reach: 4, modulate: 'pulse' } }] }, // spray
+  harbor: { ...STARS(LIGHT_ECHO(0, [P.white, P.sky], 0, { angle: [0, Math.PI], speed: [3, 4] }), [P.sky, P.white], { gravity: 2 }), lights: [{ at: 'ground', light: { shape: 'pool', color: P.lavender, alpha: 0.2, reach: 4, modulate: 'pulse', from: 0.05 } }] }, // spray
   beach: STARS(LIGHT_ECHO(DOWN, [P.white, P.sand], 0, { spawn: { ring: 2 } }), [P.sand, P.white], { gravity: 1 }), // sand glitter
   mountains: STARS(LIGHT_ECHO(DOWN, [P.white, P.snow], 0, { angle: [DOWN - 0.7, DOWN + 0.7] }), [P.snow, P.white], { gravity: 0.6 }), // ice glints
   countryside: STARS(LIGHT_ECHO(DOWN, [P.white, P.yellow], 1, { count: 2, delay: 0.1, speed: [3, 3] }), [P.yellow, P.white]), // pollen
@@ -231,6 +221,8 @@ export type Aura = {
   turn?: number
   /** Local nose relative to the sprite centre, before mirroring. Codex derives it from the visible generated frame. */
   nose?: Vec
+  /** Lamp cells already projected into the visible scene. */
+  lamps?: readonly Vec[]
 }
 
 /** The sparks thrown off as a craft rolls round: a ring that spins out from it and fades. */
@@ -258,7 +250,7 @@ const cellsFor = (kind: Kind, place: WakePreset, dark: number) => {
 export function crewFx(c: Canvas, look: Look, a: Aura): void {
   if (look.effects === false) return
   const place = look.place ?? 'city', wind = clamp(look.wind, 0, 60)
-  if (a.kind === 'codex') {
+  if (a.kind === 'codex' && !a.nose) {
     const beat = ((Math.floor(a.phase / 1.5) + a.seed) % 8 + 8) % 8
     const [x, y] = craftNose(place, a.tier as Tier, beat)
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
@@ -267,11 +259,11 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
     const [x, y] = agyCore(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed)
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
   }
-  if (a.kind === 'claude') {
+  if (a.kind === 'claude' && !a.nose) {
     const [x, y] = creatureNose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed)
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
   }
-  if (a.kind === 'opencode') {
+  if (a.kind === 'opencode' && !a.nose) {
     const [x, y] = lanternNose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed)
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
   }
@@ -343,8 +335,9 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
     for (const l of cell.lights ?? []) {
       if (l.tiers && !l.tiers.includes(a.tier)) continue
       if (a.kind === 'opencode' && l.at === 'nose') {
-        for (const lamp of lanternPose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed).lamps) {
-          shine(c, boostLight(l.light), a.cx + (a.flip ? (a.w >> 1) - lamp.flame[0] : lamp.flame[0] - (a.w >> 1)) + 0.5, a.cy + lamp.flame[1] - (a.h >> 1) + 0.5,
+        for (const [i, lamp] of lanternPose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed).lamps.entries()) {
+          const [x, y] = a.lamps?.[i] ?? [a.cx + (a.flip ? (a.w >> 1) - lamp.flame[0] : lamp.flame[0] - (a.w >> 1)), a.cy + lamp.flame[1] - (a.h >> 1)]
+          shine(c, boostLight(l.light), x + 0.5, y + 0.5,
             t, dark * (0.65 + 0.35 * lamp.force), a.seed)
         }
         continue

@@ -25,7 +25,7 @@ test('Claude grows a shaded creature through twelve poses inside the sky budget'
         expect(art.length).toBe(h); expect(art.every(row => row.length === w)).toBe(true)
         const inks = new Set(art.join('').replaceAll('.', ''))
         expect(inks.size, `${place} ${tier} beat ${beat}: shaded, not one flat colour`).toBeGreaterThanOrEqual(3)
-        if (tier > 1) expect(inks.has('s'), `${place} ${tier} beat ${beat}: a bright eye, bill or foot`).toBe(true)
+        if (tier > 1) expect(inks.has('s') || inks.has('W'), `${place} ${tier} beat ${beat}: a bright eye, bill or foot`).toBe(true)
         const filled = [...art.join('')].filter(ch => ch !== '.').length
         if (tier > 1) expect(filled / (w * h),`${place} ${tier} beat ${beat}: a shape with air around it, not a slab`).toBeLessThan(0.6)
         const [x, y] = creatureNose(place, tier, beat)
@@ -51,7 +51,8 @@ test('Claude fronts, turns, cruise and flock belong to every species', () => {
   for (const place of places) {
     const d = DESIGNS.claude[place]
     expect(d.turn, `${place}: a creature seen face on has no heading to turn`).toBe(d.facing ? 'bank' : 'none')
-    expect(d.escorts[3]!.length).toBe(1); expect(d.escorts[4]!.length).toBe(2)
+    const flocking = ['city', 'countryside', 'tundra'].includes(place)
+    expect(d.escorts[3]?.length ?? 0).toBe(flocking ? 1 : 0); expect(d.escorts[4]?.length ?? 0).toBe(flocking ? 2 : 0)
     expect(CREW.claude[place]!.talking![0]!.emitter.arc).toBe(true)
     for (const stream of CREW.claude.any!.streams!) {
       expect(stream.emitter.count).toBeLessThanOrEqual(2)
@@ -62,14 +63,14 @@ test('Claude fronts, turns, cruise and flock belong to every species', () => {
 
 test('Claude air cannot repaint the plumage, face or eye on either heading', () => {
   for (const place of places) for (const tier of tiers) for (const beat of [0, 3, 6, 9]) for (const direction of [-1, 1]) {
-    const bare = canvas(48, 20), air = canvas(48, 20), mask = canvas(48, 20), phase = beat * 1.5
+    const maskCanvas = canvas(48, 20), bare = canvas(48, 20), air = canvas(48, 20), phase = beat * 1.5
     const look = { place, frame: phase, night: 1, wind: 8, crewGround: 18 } as Look
     const job = { kind: 'claude' as const, tier, seed: 0, isStale: false, phase }
     const path = (ago: number) => [24 - direction * ago * 10, 8] as const
+    fly(maskCanvas, { ...look, night: 0, effects: false }, 24, 8, job, 'claude', false, path, [])
     fly(bare, { ...look, effects: false }, 24, 8, job, 'claude', false, path, [])
     fly(air, { ...look, effects: true }, 24, 8, job, 'claude', false, path, [])
-    fly(mask, { ...look, night: 0, effects: false }, 24, 8, job, 'claude', false, path, [])
-    for (let i = 0; i < bare.px.length; i++) if (mask.px[i]) expect(air.px[i], `${place} ${tier} ${beat} heading ${direction}`).toBe(bare.px[i])
+    for (let i = 0; i < bare.px.length; i++) if (maskCanvas.px[i]) expect(air.px[i], `${place} ${tier} ${beat} heading ${direction}`).toBe(bare.px[i])
   }
 })
 
@@ -129,6 +130,6 @@ test('the flock stays separate from its leader in either heading', () => {
         remaining.delete(cell); queue.push(cell)
       }
     }
-    expect(pieces, `${place} ${tier} heading ${direction} beat ${beat}`).toBe(1 + DESIGNS.claude[place].escorts[tier]!.length)
+    expect(pieces, `${place} ${tier} heading ${direction} beat ${beat}`).toBe(1 + (DESIGNS.claude[place].escorts[tier]?.length ?? 0))
   }
 })
