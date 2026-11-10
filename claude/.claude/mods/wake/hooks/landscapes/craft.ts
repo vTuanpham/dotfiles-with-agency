@@ -111,9 +111,9 @@ const AUTOMATA: Record<Exclude<WakePreset, 'city'>, Machine> = {
       ['..llllll.d.', 'Walalalaadd', '.dadadaddd.', '..ddddd..d.', '...lWgdk...', '....s......'],
       ['..llllll.d.', 'Walalalaadd', '.dadadaddd.', '..ddddd..d.', '...lWgdkk..', '....s......'],
     ],
-    4: [ // a bright nose cone, ribs along the envelope, a row of ports, two tail fins, and the gondola's propeller
-      ['...llllllll..d.', '.lalalalalaaadd', 'Waapaaapaaapaad', '.dadadadadaddd.', '...ddddddd...d.', '.....lWgadk....', '......s........'],
-      ['...llllllll..d.', '.lalalalalaaadd', 'Waapaaapaaapaad', '.dadadadadaddd.', '...ddddddd...d.', '.....lWgadkk...', '......s........'],
+    4: [ // a bright nose cone, ribs along the envelope, a row of ports that stay lit at night, two tail fins, and the gondola's propeller
+      ['...llllllll..d.', '.lalalalalaaadd', 'Waasaaasaaasaad', '.dadadadadaddd.', '...ddddddd...d.', '.....lWgadk....', '......s........'],
+      ['...llllllll..d.', '.lalalalalaaadd', 'Waasaaasaaasaad', '.dadadadadaddd.', '...ddddddd...d.', '.....lWgadkk...', '......s........'],
     ],
   } },
   countryside: { name: 'crop drone', strokes: 4, art: { // two rotors on masts over a slim pod, a camera eye forward, a tail beacon, and a long spray boom misting the field
@@ -155,13 +155,13 @@ const AUTOMATA: Record<Exclude<WakePreset, 'city'>, Machine> = {
   tundra: { name: 'snowcat', strokes: 2, art: { // a tracked crawler: a plough, a windscreen, a beacon that turns on its roof, and tracks whose wheels roll
     1: [['.Wgr.', 'paaad', '.klkl'], ['.Wgs.', 'paaad', '.lklk']],
     2: [['...r...', '.lWgl.k', 'plaaaad', '.klklkl', '.......'], ['...s...', '.lWgl.k', 'plaaaad', '.lklklk', '.......']],
-    3: [
-      ['....r......', '..lWgl.p.k.', 'p.aaapaaad.', 'ppaakaakad.', '.klkklkklk.', '..kkkkkkk..'],
-      ['....s......', '..lWgl.p.k.', 'p.aaapaaad.', 'ppaakaakad.', '.kklkklkkl.', '..kkkkkkk..'],
+    3: [ // from here up it hauls a sled: a short cab on its tracks, a headlamp over the plough, a hitch, and a crate riding behind on runners
+      ['...r.......', '..lWgl..pp.', 'psaaaad.laa', 'ppdakadkddd', '.klkklk.kkk', '..kkkkk....'],
+      ['...s.......', '..lWgl..pp.', 'psaaaad.laa', 'ppdakadkddd', '.kklkkl.kkk', '..kkkkk....'],
     ],
-    4: [ // a cab up front, a flat bed with a crate and an exhaust stack behind, a plough ahead, dark tracks with bright wheels
-      ['......r........', '....llll.....k.', '...lWggal.pp.k.', 'p..aaapaaaaaad.', 'pp.aakaaaakaad.', '..klkklkklkklk.', '...kkkkkkkkk...'],
-      ['......s........', '....llll.....k.', '...lWggal.pp.k.', 'p..aaapaaaaaad.', 'pp.aakaaaakaad.', '..kklkklkklkkl.', '...kkkkkkkkk...'],
+    4: [
+      ['....r..........', '...lll.........', '..lWgal....pp..', 'psaaaaad..laal.', 'pp.daakadkddddd', '..klkklkk.kkkkk', '...kkkkk.......'],
+      ['....s..........', '...lll.........', '..lWgal....pp..', 'psaaaaad..laal.', 'pp.daakadkddddd', '..kklkklk.kkkkk', '...kkkkk.......'],
     ],
   } },
 }
