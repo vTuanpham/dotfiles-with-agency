@@ -887,6 +887,18 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
 }
 
 /** Each shot leaves a fading record of the cells it crossed, above atmospheric effects. */
+/** How each place's machine dresses the head of its packet, as [colour, strength]: lights to either side, a wake behind, a
+ *  cross of light, or a tinted core. One row per place, so a new look is data, not another branch. The harbor's is a rocket. */
+const PACKET_HEAD: Partial<Record<SceneInput['preset'], { side?: [number, number]; wake?: [number, number]; cross?: [number, number]; core?: [number, number] }>> = {
+  city: { side: [P.teal, .55], wake: [P.teal, .8] }, // a neon dart
+  desert: { side: [P.peach, .55], wake: [P.peach, .8] }, // a sunlit dart
+  beach: { cross: [P.teal, .65] }, // the saucer's pulse
+  forest: { side: [P.sky, .75] }, // the probe's scan line
+  mountains: { core: [P.yellow, .85] }, // a signal lamp
+  tundra: { core: [P.red, .85] }, // the beacon's flare
+  countryside: { side: [P.sky, .6], wake: [P.white, .5] }, // a droplet off the spray boom
+}
+
 function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, reactions: Reaction[], night: number, registerHit: (target: WakeSceneHit | undefined) => number, bodies: { x0: number; x1: number; y0: number; y1: number }[], foregroundOwner: number) {
   const titleOf = (id: string) => id === 'mochi' ? 'root' : [...input.jobs, ...input.agents].find(job => job.hit?.id === id)?.hit?.title ?? id
   const trails = input.messageTrails ?? new MessageTrails()
@@ -992,15 +1004,13 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
             if (k >= 2) c.set(bx, by, P.snow)
             if (k >= 1) c.set(wx, wy, P.white)
             c.set(x, y, P.red)
-          } else if (input.preset === 'city' || input.preset === 'desert') {
-            const color = input.preset === 'city' ? P.teal : P.peach
-            for (const sign of [-1, 1]) c.glow(x - dy * sign, y + dx * sign, color, .55)
-            c.glow(x - dx, y - dy, color, .8)
-          } else if (input.preset === 'beach') {
-            for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) c.glow(x + ox!, y + oy!, P.teal, .65)
-          } else if (input.preset === 'forest') {
-            for (const sign of [-1, 1]) c.glow(x - dy * sign, y + dx * sign, P.sky, .75)
-          } else if (input.preset === 'mountains' || input.preset === 'tundra') c.glow(x, y, input.preset === 'tundra' ? P.red : P.yellow, .85)
+          } else {
+            const head = PACKET_HEAD[input.preset]
+            if (head?.side) for (const sign of [-1, 1]) c.glow(x - dy * sign, y + dx * sign, ...head.side)
+            if (head?.wake) c.glow(x - dx, y - dy, ...head.wake)
+            if (head?.cross) for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(x + ox, y + oy, ...head.cross)
+            if (head?.core) c.glow(x, y, ...head.core)
+          }
         }
         // a soft halo round the bright part, so the comet has body rather than being a one-pixel dash
         if (glow > 0.2) for (const [dx, dy] of (style === 'song' ? [[1, -1], [1, -2], [0, 1]] as const : style === 'packet' ? [] : [[0, -1], [0, 1]] as const)) {
