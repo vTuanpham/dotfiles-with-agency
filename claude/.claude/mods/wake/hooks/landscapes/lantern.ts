@@ -188,5 +188,33 @@ export const lanternNose = (place: WakePreset, tier: Tier, beat: number) => lant
 /** The craft with every window flaring: the instant it sends. */
 export const lanternFlare = (place: WakePreset, tier: Tier, beat: number) => lanternPose(place, tier, beat).rows.map(row => row.replaceAll('s', 'f'))
 
+/** The middle of a turn, seen head on: each craft comes round through its own front or edge view. */
+export const turnPose: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> = {
+  city: { // the crane with both wings spread, neck and head straight up between them
+    1: ['l.W.d', '.asd.', '.....'],
+    2: ['...W...', 'l.lal.d', '.lasad.', '...d...', '.......'],
+    3: ['.....W.....', 'l...lal...d', '.ll.asa.dd.', '....dad....', '...........', '...........'],
+    4: ['.......W.......', '.......a.......', 'l.....lal.....d', '.ll..laaad..dd.', '...llassadd....', '.....daad......', '......dd.......'],
+  },
+  beach: { // the kite edge on: one bright line of spar, the tail hanging straight
+    1: ['..l..', '..s..', '..d..'],
+    2: ['...l...', '...s...', '...d...', '..d.W..', '.......'],
+    3: ['.....l.....', '.....s.....', '.....s.....', '.....d.....', '....d.W....', '.....d.....'],
+    4: ['.......l.......', '.......l.......', '.......s.......', '.......s.......', '.......d.......', '......d.W......', '.......d.......'],
+  },
+  countryside: { // the carp straight on: the white ring of its open mouth with the flame inside
+    1: ['.WWW.', '.WsW.', '.WWW.'],
+    2: ['..WWW..', '..WsW..', '..WWW..', '...a...', '.......'],
+    3: ['...........', '....WWW....', '...WdsdW...', '....WWW....', '.....a.....', '...........'],
+    4: ['...............', '......WWW......', '.....WdddW.....', '.....WdsdW.....', '......WWW......', '.......a.......', '...............'],
+  },
+  desert: { // the carpet end on: its narrow edge, a tassel at each corner, the lamp on top
+    1: ['..s..', '.lal.', '.p.p.'],
+    2: ['.......', '...s...', '..lal..', '..p.p..', '.......'],
+    3: ['...........', '....ksk....', '...lapal...', '...d.d.d...', '...p...p...', '...........'],
+    4: ['...............', '.......k.......', '......ksk......', '.....lapal.....', '.....d.d.d.....', '.....p...p.....', '...............'],
+  },
+}
+
 /** At night the lit edge of the paper glows with its flame. */
 export const emissive = 'l'

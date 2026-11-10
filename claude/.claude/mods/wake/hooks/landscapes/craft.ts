@@ -223,6 +223,35 @@ export function craftNose(place: WakePreset, tier: Tier, beat: number): readonly
 /** Every design, for the rectangle, growth and animation checks. */
 export const ALL_CRAFT = CRAFT
 
+/** The middle of a turn, seen head on: each machine swings round through its own front view. (The dragon coils instead; the
+ *  tug, the saucer and the probe do not turn.) */
+export const turnPose: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> = {
+  mountains: { // the airship's round nose, its four fins and the gondola slung beneath
+    1: ['.lll.', 'daWad', '.Wgk.'],
+    2: ['...d...', '..lll..', '.daWad.', '..ddd..', '..Wgk..'],
+    3: ['.....d.....', '...lllll...', '.d.laWad.d.', '...daaad...', '....ddd....', '....Wgk....'],
+    4: ['.......d.......', '.....lllll.....', '....laaaaad....', '..d.aaWaaad.d..', '....daaaaad....', '.....ddddd.....', '......Wgk......'],
+  },
+  countryside: { // the strider squared up: two headlamps either side of the windscreen, both legs planted
+    1: ['sWgWs', '.d.d.', '.d.d.'],
+    2: ['..lll..', '.sWgWs.', '..dkd..', '..d.d..', '.dd.dd.'],
+    3: ['....lll....', '...sWgWs...', '....dkd....', '....d.d....', '....d.d....', '...dd.dd...'],
+    4: ['...............', '.....lllll.....', '....saWgWas....', '.....ddkdd.....', '.....d...d.....', '.....d...d.....', '....dd...dd....'],
+  },
+  desert: { // the racer's two intakes with the spark between them and the pod behind
+    1: ['l...l', 'kfWgk', 'd...d'],
+    2: ['.......', 'll...ll', 'kafWgak', 'dd...dd', '.......'],
+    3: ['...........', '.lal...lal.', '.akafWgfaka', '.dad...dad.', '...........', '...........'],
+    4: ['...............', '...............', '..lal.....lal..', '..akaf.Wg.faka.', '..dad.....dad..', '...............', '...............'],
+  },
+  tundra: { // the snowcat's wide cab, a headlamp at each side, the plough right across, a track at each end
+    1: ['..r..', 'sWgWs', 'kpppk'],
+    2: ['...r...', '.lWgWl.', '.saaas.', 'kpppppk', 'k.....k'],
+    3: ['.....r.....', '...lllll...', '...aWgWa...', '..saaaaas..', '.kkpppppkk.', '.kk.....kk.'],
+    4: ['.......r.......', '....lllllll....', '....aWgggWa....', '...saaaaaaas...', '...aaakkkaaa...', '..kkpppppppkk..', '..kk.......kk..'],
+  },
+}
+
 /** The dragon at rest: coiled down on a rooftop, its head laid on its own loops and the tail blade still showing. The other
  *  machines simply stop where they stand or float. */
 export const rest: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> = {

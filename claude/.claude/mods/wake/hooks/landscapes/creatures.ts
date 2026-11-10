@@ -137,6 +137,47 @@ export const creatureNose = (place: WakePreset, tier: Tier, beat: number): Point
 export const creatureStroke = (place: WakePreset, tier: Tier, beat: number) => poseAt(place, tier, beat).feather
 export const creatureFrames = (place: WakePreset | undefined, tier: Tier): Frames => ALL_CREATURES[place ?? 'city'][tier]
 
+/** The middle of a turn, seen head on: each creature comes round through its own front view. (The butterfly and the owl are
+ *  already face on and do not turn.) */
+export const turnPose: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> = {
+  city: { // the pigeon wheeling: both wings out, the sheen of its neck in the middle
+    1: ['.ksk.', 'laaal', '.r.r.'],
+    2: ['.......', '..ksk..', 'l.aaa.l', '.ldadl.', '..r.r..'],
+    3: ['....aaa....', '....ksk....', 'l..apgpa..l', '.llaaaaall.', '...ddadd...', '....r.r....'],
+    4: ['...............', '......aaa......', '.....akska.....', 'l...aapgpaa...l', '.llaaaaaaaaall.', '...ddaaaaadd...', '......r.r......'],
+  },
+  harbor: { // the dolphin rolling towards you: beak and pale belly, the fin above, a flipper each side
+    1: ['..d..', '.kWk.', 'd.l.d'],
+    2: ['...d...', '..aaa..', '.akWka.', 'd.lWl.d', '.......'],
+    3: ['.....d.....', '....aaa....', '...akaka...', '..daWWWad..', '.d..lWl..d.', '...........'],
+    4: ['.......d.......', '......dad......', '.....aaaaa.....', '....akaaaka....', '...daaWWWaad...', '..d..lWWWl..d..', '......lll......'],
+  },
+  beach: { // the flamingo face on: almost nothing but a neck, a body and two legs
+    1: ['.ksk.', '.aaa.', '.r.r.'],
+    2: ['..ksk..', '...a...', '..aaa..', '..r.r..', '..r.r..'],
+    3: ['.....a.....', '....ksk....', '.....a.....', '....aaa....', '....r.r....', '....r.r....'],
+    4: ['.......a.......', '......ksk......', '.......a.......', '......aaa......', '.....aalaa.....', '......r.r......', '......r.r......'],
+  },
+  mountains: { // the eagle banking: the full span of both wings, dark tips up, the white head between
+    1: ['k.W.k', 'dasad', '.....'],
+    2: ['k.....k', 'daWsWad', '..dad..', '..s.s..', '.......'],
+    3: ['k.........k', 'da..WWW..ad', '.aaaWsWaaa.', '...daaad...', '....s.s....', '...........'],
+    4: ['...............', 'k.............k', 'dd....WWW....dd', '.aaad.WsW.daaa.', '...aaaaaaaaa...', '.....daaad.....', '......s.s......'],
+  },
+  desert: { // the fox stops and looks at you: both ears, both eyes, the brush curled round to one side
+    1: ['d.d.W', 'sksa.', 'd.d..'],
+    2: ['.d.d...', '.sks.W.', '.aaaa..', '.d.d...', '.......'],
+    3: ['..d...d....', '..aaaaa..W.', '..sakas.a..', '...laaaa...', '...d.d.....', '...........'],
+    4: ['...d.....d.....', '...aa...aa.....', '...aaaaaaa.....', '...asaaasa..aW.', '....lakal..aa..', '....laaal.aa...', '....d...d......'],
+  },
+  tundra: { // the puffin head on: a white front between dark sides, the bright bill in the middle, wings a blur
+    1: ['.dsd.', 'dWWWd', '.s.s.'],
+    2: ['..ddd..', '.dWsWd.', 'd.WWW.d', '..s.s..', '.......'],
+    3: ['....ddd....', '...dWsWd...', '.d.dWWWd.d.', '...dWWWd...', '....s.s....', '...........'],
+    4: ['...............', '......ddd......', '.....dWsWd.....', '.dd.dWWsWWd.dd.', '...ddWWWWWdd...', '.....WWWWW.....', '......s.s......'],
+  },
+}
+
 /** How each creature rests when its worker waits: perched, standing, curled up or asleep on one leg. The dolphin never stops. */
 export const rest: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> = {
   city: { // the pigeon perched: a green-and-blue sheen on its neck, a wing bar, red feet
