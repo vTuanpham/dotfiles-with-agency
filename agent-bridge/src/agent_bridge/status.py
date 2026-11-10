@@ -466,7 +466,7 @@ class Collector:
                         state.get("title") or "",
                         state.get("backend"),
                         state.get("account"),
-                        state.get("model"),
+                        state.get("resolvedModel") or state.get("model"),
                         state.get("effectiveEffort") or state.get("effort"),
                         state.get("cwd"),
                         str(job),

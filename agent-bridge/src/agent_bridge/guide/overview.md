@@ -17,6 +17,11 @@ Managed workers use the job channels under Steer, resume, peers; native sends ar
 
 Use the model-selection skill for model choices. `model-guide read maintenance`
 owns reference updates; `model-guide check` reports drift without changing files.
+Model and effort flags override the harness's configuration. Omit them when those
+defaults suit the task (OpenCode requires a model for its retention check);
+Bridge reports native resolved settings in status and Wake
+without requiring the root to repeat them. Requested settings remain separate from
+native observations. Missing native data stays unreported rather than guessed.
 
 ## Jobs
 - Flags are in `agent-bridge <command> --help`.

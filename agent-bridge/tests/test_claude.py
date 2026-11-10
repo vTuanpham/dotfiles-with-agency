@@ -92,8 +92,9 @@ def test_effort_hook_keeps_only_main_agent_native_observations(tmp_path):
 
 def test_run_observes_only_current_claude_session_effort(monkeypatch, tmp_path):
     state, path = make_state(tmp_path)
-    fake_stream(monkeypatch, [{"type": "system", "subtype": "init", "session_id": "sid"},
-                              {"type": "result", "subtype": "success"}])
+    fake_stream(monkeypatch, [
+        {"type": "system", "subtype": "init", "session_id": "sid", "model": "native-model"},
+        {"type": "result", "subtype": "success"}])
     original = claude.os.read
     def read(*args):
         result = original(*args)
@@ -104,6 +105,7 @@ def test_run_observes_only_current_claude_session_effort(monkeypatch, tmp_path):
     monkeypatch.setattr(claude.os, "read", read)
     claude.run(tmp_path, state, path, "start")
     assert state["effectiveEffort"] == "medium"
+    assert state["resolvedModel"] == "native-model"
 
 
 def used(**output):

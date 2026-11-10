@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import sys
 import threading
 from datetime import datetime
@@ -45,12 +46,34 @@ def event(job, kind, **fields):
     core.append(job / "live.jsonl", {"at": NOW, "kind": kind, **fields})
 
 
-def test_status_prefers_native_reported_effort_without_changing_request(world):
-    job = job_at(world, effort=None, effectiveEffort="medium")
+@pytest.mark.parametrize("backend", ["codex", "claude", "agy", "opencode"])
+def test_status_prefers_native_reported_effort_without_changing_request(world, backend):
+    job = job_at(world, backend=backend, model=None, resolvedModel="native-model",
+                 effort=None, effectiveEffort="medium")
     snapshot = status.Collector().collect()
     assert snapshot.jobs[0].effort == "medium"
+    assert snapshot.jobs[0].model == "native-model"
     assert json.loads((job / "state.json").read_text())["effort"] is None
     VALIDATE.validate(json.loads(json.dumps(snapshot.to_dict())))
+
+
+def test_codex_status_recovers_omitted_defaults_from_its_own_native_thread_index(world):
+    job = job_at(world, model=None, effort=None, threadId="worker")
+    home = job / "home/codex"
+    home.mkdir(parents=True)
+    with sqlite3.connect(home / "state_5.sqlite") as database:
+        database.execute("CREATE TABLE threads (id TEXT, model TEXT, reasoning_effort TEXT)")
+        database.executemany("INSERT INTO threads VALUES (?, ?, ?)", [
+            ("another-thread", "wrong-model", "low"), ("worker", "native-model", "high")])
+    collector = status.Collector()
+    observed = collector.collect().jobs[0]
+    assert (observed.model, observed.effort) == ("native-model", "high")
+    assert json.loads((job / "state.json").read_text())["model"] is None
+    with sqlite3.connect(home / "state_5.sqlite") as database:
+        database.execute("UPDATE threads SET model = ?, reasoning_effort = ? WHERE id = ?",
+                         ("changed", "medium", "worker"))
+    observed = collector.collect().jobs[0]
+    assert (observed.model, observed.effort) == ("changed", "medium")
 
 
 def test_a_large_context_is_marked_on_the_status_and_owner_lines_and_a_small_one_is_not(world):

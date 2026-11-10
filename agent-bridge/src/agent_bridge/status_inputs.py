@@ -1,6 +1,7 @@
 """Persisted status boundaries: invalid observations stay unknown, never guessed."""
 
 import re
+import sqlite3
 import subprocess
 from datetime import datetime
 
@@ -118,6 +119,7 @@ def read_job(job, root):
         "backend",
         "title",
         "model",
+        "resolvedModel",
         "effort",
         "effectiveEffort",
         "account",
@@ -155,6 +157,29 @@ def read_job(job, root):
         not state.get("purgeAfter") or timestamp(state["purgeAfter"]) < timestamp(state["retiredAt"])
     ):
         raise ValueError("invalid retirement dates")
+    if state.get("backend") == "codex" and not state.get("resolvedModel"):
+        # Older runners omitted resolved defaults; Codex's own thread index retains them.
+        home = job / "home" / "codex"
+        databases = sorted((p for p in home.glob("state_*.sqlite") if p.stem[6:].isdigit()),
+                           key=lambda p: int(p.stem[6:]))
+        if databases and state.get("threadId"):
+            database = databases[-1]
+            if database.is_symlink() or not database.resolve().is_relative_to(job.resolve()):
+                raise ValueError("unsafe native thread index")
+            try:
+                connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=0.1)
+                try:
+                    row = connection.execute("SELECT model, reasoning_effort FROM threads WHERE id = ?",
+                                             (state["threadId"],)).fetchone()
+                finally:
+                    connection.close()
+                if row:
+                    for key, value in zip(("resolvedModel", "effectiveEffort"), row):
+                        if (isinstance(value, str) and value and value == value.strip()
+                                and value.isprintable() and len(value) <= 4096):
+                            state[key] = value
+            except sqlite3.Error:
+                pass  # A missing/new native schema leaves the recorded settings intact.
     return state
 
 

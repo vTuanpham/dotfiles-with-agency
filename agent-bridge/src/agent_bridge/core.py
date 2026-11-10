@@ -180,7 +180,8 @@ def log(job, kind, level=None, **fields):
 
 def log_turn_started(job, state, turn_id):
     log(job, "turn_started", turnId=turn_id, backend=state.get("backend"),
-        requestedModel=state.get("model"), requestedAccount=state.get("account"),
+        requestedModel=state.get("model"), resolvedModel=state.get("resolvedModel"),
+        requestedAccount=state.get("account"),
         requestedEffort=state.get("effort"), effectiveEffort=state.get("effectiveEffort"))
 
 

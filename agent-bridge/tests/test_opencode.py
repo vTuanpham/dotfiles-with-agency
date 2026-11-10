@@ -45,8 +45,8 @@ def test_compact_waits_for_native_outcome(monkeypatch, tmp_path, outcome):
     assert kinds == (["compact_started", "compacted"] if outcome.endswith("ended") else ["compact_started"])
 
 
-def test_effective_variant_requires_matching_native_message_and_model(monkeypatch):
-    data = {"id": "msg_assistant", "type": "assistant", "model": {
+def test_native_settings_require_matching_message_and_session_without_replacing_request(monkeypatch):
+    data = {"id": "msg_assistant", "sessionID": "ses_worker", "type": "assistant", "model": {
         "providerID": "opencode", "id": "deepseek-v4.1-flash-free", "variant": "default"}}
     calls = []
     def request(*args):
@@ -58,9 +58,18 @@ def test_effective_variant_requires_matching_native_message_and_model(monkeypatc
         st, "http://127.0.0.1:1234", "secret", {"messageID": "msg_assistant"}
     ) == "default"
     assert calls[0][2:] == ("GET", "/api/session/ses_worker/message/msg_assistant")
+    assert st["resolvedModel"] == st["model"]
+    inherited = {"sessionId": "ses_worker"}
     assert opencode.read_effective_variant(
-        {**st, "model": "other/model"}, "url", "secret", {"messageID": "msg_assistant"}
-    ) is None
+        inherited, "url", "secret", {"messageID": "msg_assistant"}) == "default"
+    assert inherited["resolvedModel"] == st["model"]
+    assert "model" not in inherited
+    different = {**st, "model": "other/model"}
+    assert opencode.read_effective_variant(
+        different, "url", "secret", {"messageID": "msg_assistant"}) == "default"
+    assert different["model"] == "other/model" and different["resolvedModel"] == st["model"]
+    assert opencode.read_effective_variant(
+        {**st, "sessionId": "ses_other"}, "url", "secret", {"messageID": "msg_assistant"}) is None
     assert opencode.read_effective_variant(st, "url", "secret", {"messageID": "../bad"}) is None
 
 

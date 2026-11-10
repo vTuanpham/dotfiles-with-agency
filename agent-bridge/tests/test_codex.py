@@ -117,6 +117,59 @@ def test_records_native_effective_effort_without_changing_requested(
     assert json.loads(path.read_text())["effectiveEffort"] == expected
 
 
+@pytest.mark.parametrize("resume", [False, True])
+@pytest.mark.parametrize("requested", [None, "model-alias"])
+def test_native_model_defaults_and_explicit_settings_reach_status(monkeypatch, tmp_path, resume, requested):
+    job, path, state = job_state(tmp_path)
+    state.update(threadId="thread-1" if resume else "", model=requested)
+    rpc = FakeRpc(state["cwd"], job / "stderr", [
+        {"method": "turn/completed", "params": {"turn": {"id": "turn-1", "status": "completed"}}}])
+    call = rpc.call
+
+    def configured(method, params=None):
+        result = call(method, params)
+        if method in ("thread/start", "thread/resume"):
+            result.update(model="resolved-default", reasoningEffort="high")
+        if method == "thread/read":
+            result["thread"] = {"model": "resolved-explicit", "reasoningEffort": "medium"}
+        return result
+
+    rpc.call = configured
+    monkeypatch.setattr(codex, "Rpc", lambda *args: rpc)
+    monkeypatch.setattr(codex, "runner_started", lambda *_: None)
+    monkeypatch.setattr(codex, "runner_finished", lambda *_: None)
+    codex.run(job, state, path, "prompt", resume=resume)
+    assert state["model"] == requested
+    assert state["resolvedModel"] == ("resolved-explicit" if requested else "resolved-default")
+    assert state["effectiveEffort"] == ("medium" if requested else "high")
+
+
+@pytest.mark.parametrize("value", [None, "", " model", "model\n", 123, {}])
+def test_malformed_native_settings_remain_unreported(value):
+    state = {"resolvedModel": "old", "effectiveEffort": "old"}
+    codex.record_settings(state, {"model": value, "reasoningEffort": value})
+    assert state == {"resolvedModel": None, "effectiveEffort": None}
+
+
+def test_native_settings_updates_follow_only_the_workers_thread(monkeypatch, tmp_path):
+    job, path, state = job_state(tmp_path)
+    state["model"] = "requested"
+    events = [
+        {"method": "thread/settings/updated", "params": {"threadId": "thread-1",
+            "threadSettings": {"model": "resolved", "effort": "medium"}}},
+        {"method": "thread/settings/updated", "params": {"threadId": "another-thread",
+            "threadSettings": {"model": "wrong", "effort": "max"}}},
+        {"method": "turn/completed", "params": {"turn": {"id": "turn-1", "status": "completed"}}},
+    ]
+    rpc = FakeRpc(state["cwd"], job / "stderr", events)
+    monkeypatch.setattr(codex, "Rpc", lambda *args: rpc)
+    monkeypatch.setattr(codex, "runner_started", lambda *_: None)
+    monkeypatch.setattr(codex, "runner_finished", lambda *_: None)
+    codex.run(job, state, path, "prompt")
+    assert (state["resolvedModel"], state["effectiveEffort"], state["model"]) == (
+        "resolved", "medium", "requested")
+
+
 def test_event_mapping_and_inbox(monkeypatch, tmp_path):
     job, path, state = job_state(tmp_path)
     answer_text = "SERVICE_TOKEN=hidden-value"

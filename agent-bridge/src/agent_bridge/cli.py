@@ -222,6 +222,7 @@ def run_with_linger(
                 state = load_state(job)
                 state.update(switch)
                 state.pop("effectiveEffort", None)
+                state.pop("resolvedModel", None)
                 save(state_path, state)
                 extra, then = {}, None
                 continue
@@ -351,8 +352,10 @@ def main():
             "network access depends on the backend"
         ),
     )
-    s.add_argument("--model", help="backend model ID")
-    s.add_argument("--effort", help="backend reasoning effort or variant")
+    s.add_argument("--model", help=(
+        "backend model ID; omitted: native configured model; required for OpenCode's retention check"))
+    s.add_argument("--effort", help=(
+        "reasoning effort/variant; omitted: native default, reported when available"))
     s.add_argument("--memory", help="per-job scope cap, such as 4G; default CODEX_JOB_MEMORY_MAX or 2500M")
     s.add_argument("--cpu", help="per-job scope cap, such as 400%%; defaults to CODEX_JOB_CPU_QUOTA or 300%%")
     s.add_argument(
@@ -781,6 +784,7 @@ def main():
                 state.update(switch)
                 if switch:
                     state.pop("effectiveEffort", None)
+                    state.pop("resolvedModel", None)
         else:
             if state_path.exists():
                 raise RuntimeError("job exists; use resume")

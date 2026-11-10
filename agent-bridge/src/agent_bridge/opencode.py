@@ -251,19 +251,20 @@ def read_effective_variant(state, url, password, message):
                               + "/message/" + quote(identifier, safe=""))
     except NativeMessagePending:
         return None
-    if not isinstance(data, dict) or data.get("id") != identifier or data.get("type") != "assistant":
+    if (not isinstance(data, dict) or data.get("id") != identifier
+            or data.get("sessionID") != session or data.get("type") != "assistant"):
         return None
     model = data.get("model")
     if not isinstance(model, dict):
         return None
-    selected, provider, identifier = state.get("model"), model.get("providerID"), model.get("id")
+    provider, identifier = model.get("providerID"), model.get("id")
     variant = model.get("variant")
-    if (not isinstance(provider, str) or not isinstance(identifier, str)
-            or not isinstance(selected, str) or selected.split("#", 1)[0] != provider + "/" + identifier
-            or not isinstance(variant, str) or not variant or variant != variant.strip()
-            or not variant.isprintable()):
+    if not all(isinstance(value, str) and value and value == value.strip() and value.isprintable()
+               for value in (provider, identifier)):
         return None
-    return variant
+    state["resolvedModel"] = provider + "/" + identifier
+    return (variant if isinstance(variant, str) and variant and variant == variant.strip()
+            and variant.isprintable() else None)
 
 
 def record_live_steer(job, filename, text):
@@ -535,6 +536,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
                 proc.stdin.close()
                 state["activeTurnId"] = f"turn-{turn + 1}"
                 state["effectiveEffort"] = None
+                state["resolvedModel"] = None
                 log_turn_started(job, state, state["activeTurnId"])
                 save(path, state)
                 buf, interrupted, server_url, retry_at, warned = b"", False, None, 0.0, False
@@ -569,16 +571,17 @@ def run(job, state, path, prompt, resume=False, compact=False):
                             process(event, state, job, turn_data)
                             part = event.get("part")
                             message_id = part.get("messageID") if isinstance(part, dict) else None
-                            if (server_url and not state.get("effectiveEffort")
+                            if (server_url
+                                    and (not state.get("effectiveEffort") or not state.get("resolvedModel"))
                                     and isinstance(message_id, str) and message_id not in variant_messages):
                                 variant_messages.add(message_id)
                                 try:
                                     variant = read_effective_variant(state, server_url, password, part)
                                     if variant:
                                         state["effectiveEffort"] = variant
-                                        save(path, state)
                                         log(job, "effort_observed", turnId=state.get("activeTurnId"),
                                             effort=variant, source="opencode_message")
+                                    save(path, state)
                                 except (OSError, ValueError, KeyError, TypeError, RuntimeError):
                                     pass
                     if server_url and state.get("sessionId") and time.monotonic() >= retry_at:

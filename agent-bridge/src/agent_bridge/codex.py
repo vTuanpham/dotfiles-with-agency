@@ -182,13 +182,19 @@ def read_quota(rpc, job, state):
     except (RuntimeError, TimeoutError):
         return
     snapshots = list((result.get("rateLimitsByLimitId") or {}).values()) or [result.get("rateLimits")]
-    quota_pressure.feed(job, state, quota_pressure.codex(snapshots, state.get("model"), time.time()))
+    model = state.get("resolvedModel") or state.get("model")
+    quota_pressure.feed(job, state, quota_pressure.codex(snapshots, model, time.time()))
 
 
-def reported_effort(response):
-    value = response.get("reasoningEffort")
+def reported_setting(response, key):
+    value = response.get(key)
     return (value if isinstance(value, str) and value and value == value.strip() and value.isprintable()
             else None)
+
+
+def record_settings(state, response):
+    state["resolvedModel"] = reported_setting(response, "model")
+    state["effectiveEffort"] = reported_setting(response, "reasoningEffort")
 
 
 def run(job, state, path, prompt, resume=False, compact=False):
@@ -228,8 +234,13 @@ def run(job, state, path, prompt, resume=False, compact=False):
                 if state.get(k):
                     args[k] = state[k]
             turn = rpc.call("turn/start", args).get("turn", {}).get("id")
-            if state.get("effort"):
-                state["effectiveEffort"] = None
+            if state.get("model") or state.get("effort"):
+                record_settings(state, {})
+                try:
+                    current = rpc.call("thread/read", {"threadId": thread}).get("thread") or {}
+                    record_settings(state, current)
+                except (RuntimeError, TimeoutError):
+                    pass  # Configuration observation must not undo an accepted turn.
             log_turn_started(job, state, turn)
             if turn:
                 log(job, "prompt_accepted", turnId=turn)
@@ -247,7 +258,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
         if resume:
             resumed = rpc.call("thread/resume", {"threadId": thread})
             thread = resumed.get("thread", {}).get("id", thread)
-            state["effectiveEffort"] = reported_effort(resumed)
+            record_settings(state, resumed)
             turns = rpc.call(
                 "thread/turns/list",
                 {"threadId": thread, "limit": 10, "sortDirection": "desc", "itemsView": "full"},
@@ -275,7 +286,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
                 p["config"] = state["config"]
             started = rpc.call("thread/start", p)
             thread = started["thread"]["id"]
-            state["effectiveEffort"] = reported_effort(started)
+            record_settings(state, started)
             persist()
         if compact:
             awaiting = True
@@ -297,7 +308,12 @@ def run(job, state, path, prompt, resume=False, compact=False):
                         state["contextTokens"] = context
                 elif method == "account/rateLimits/updated":
                     quota_pressure.feed(job, state, quota_pressure.codex(
-                        [p.get("rateLimits")], state.get("model"), time.time()))
+                        [p.get("rateLimits")], state.get("resolvedModel") or state.get("model"), time.time()))
+                elif method == "thread/settings/updated" and p.get("threadId") == thread:
+                    settings = p.get("threadSettings") or {}
+                    record_settings(state, {"model": settings.get("model"),
+                                            "reasoningEffort": settings.get("effort")})
+                    persist()
                 elif method == "turn/started":
                     turn = (p.get("turn") or {}).get("id")
                     if turn:

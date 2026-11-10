@@ -78,8 +78,14 @@ def configure(rpc, session, result, state):
     for key, option in (("model", "model"), ("effort", "thought_level")):
         if state.get(key) and config_value(result, option) != state[key]:
             raise RuntimeError(f"AGY changed requested {key} while configuring the session")
-    value = config_value(result, "thought_level")
-    state["effectiveEffort"] = value if isinstance(value, str) and value else None
+    record_settings(state, result)
+
+
+def record_settings(state, result):
+    for field, option in (("resolvedModel", "model"), ("effectiveEffort", "thought_level")):
+        value = config_value(result, option)
+        state[field] = (value if isinstance(value, str) and value and value == value.strip()
+                        and value.isprintable() else None)
 
 
 def reject(rpc, event, job):
@@ -286,7 +292,10 @@ def run(job, state, path, prompt, resume=False, compact=False):
                 monitor["seen"] = True
                 content = update.get("content") or {}
                 text = content.get("text") if isinstance(content, dict) else None
-                if kind == "user_message_chunk" and isinstance(text, str):
+                if kind == "config_option_update":
+                    record_settings(state, update)
+                    save(path, state)
+                elif kind == "user_message_chunk" and isinstance(text, str):
                     flush_message(job, texts)
                     echo += text
                     if awaiting_echo:

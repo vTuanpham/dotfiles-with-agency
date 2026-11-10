@@ -230,6 +230,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
     effort_path = Path(job) / "claude-effort.jsonl"
     effort_offset = effort_path.stat().st_size if effort_path.exists() else 0
     state["effectiveEffort"] = None
+    state["resolvedModel"] = None
     cmd = command(state, job, resume)
     proc = subprocess.Popen(
         capped(cmd, state),

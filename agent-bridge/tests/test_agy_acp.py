@@ -70,7 +70,8 @@ def test_acp_process_keeps_sandbox_and_explicit_writable_roots(tmp_path, monkeyp
     assert calls[0][1]["start_new_session"] is True
 
 
-def test_active_prompt_is_steered_and_receipt_confirms_delivery(tmp_path, monkeypatch):
+@pytest.mark.parametrize("update_settings", [False, True])
+def test_active_prompt_is_steered_and_receipt_confirms_delivery(tmp_path, monkeypatch, update_settings):
     job = tmp_path / "job"
     (job / "steer").mkdir(parents=True)
     state = {"backend": "agy", "cwd": str(tmp_path), "model": None, "effort": None}
@@ -89,6 +90,7 @@ def test_active_prompt_is_steered_and_receipt_confirms_delivery(tmp_path, monkey
                 return {"protocolVersion": 1}
             assert method == "session/new"
             return {"sessionId": "session", "configOptions": [
+                {"id": "model", "currentValue": "native-default"},
                 {"id": "thought_level", "currentValue": "high"}]}
 
         def send(self, value):
@@ -98,6 +100,12 @@ def test_active_prompt_is_steered_and_receipt_confirms_delivery(tmp_path, monkey
             text = value["params"]["prompt"][0]["text"]
             self.output.append({"method": "session/update", "params": {"sessionId": "session", "update": {
                 "sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": text}}}})
+            if update_settings:
+                for session, model in [("session", "changed-model"), ("other-session", "wrong-model")]:
+                    self.output.append({"method": "session/update", "params": {"sessionId": session,
+                        "update": {"sessionUpdate": "config_option_update", "configOptions": [
+                            {"id": "model", "currentValue": model},
+                            {"id": "thought_level", "currentValue": "medium"}]}}})
             if len(calls) == 1:
                 (job / "steer/001.md").write_text("change course\n")
                 (job / "steer/002.md").write_text("another adjustment\n")
@@ -122,7 +130,8 @@ def test_active_prompt_is_steered_and_receipt_confirms_delivery(tmp_path, monkey
     assert (job / "steer/sent/002.md").is_file()
     events = [json.loads(line)["kind"] for line in (job / "live.jsonl").read_text().splitlines()]
     assert events.count("steer_sent") == 2 and events.count("turn_completed") == 1
-    assert state["effectiveEffort"] == "high"
+    assert state["effectiveEffort"] == ("medium" if update_settings else "high")
+    assert state["resolvedModel"] == ("changed-model" if update_settings else "native-default")
 
 
 def test_explicit_queue_waits_for_active_turn(tmp_path, monkeypatch):
