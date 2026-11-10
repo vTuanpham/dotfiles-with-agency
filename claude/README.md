@@ -159,13 +159,13 @@ are class 2). Only designs that declare escorts bring them at classes 3 and 4.
 | Family | The idea | By place |
 | --- | --- | --- |
 | Codex | Mint clockwork with a glass eye and gear | Dragon, tug, saucer, airship, strider, probe, sun skiff and snowcat |
-| Claude | Living creatures in the family's pink | Sparrow, crab, flamingo, eagle, butterfly, owl, fox and puffin |
+| Claude | Living creatures in the family's pink | Bat, crab, flamingo, eagle, butterfly, owl, fox and puffin |
 | agy | Constellations with a moving pulse of light | Crown, sail, starfish, condor, plough, tree, scorpion and aurora arch |
 | OpenCode | Paper and cloth with a warm window | Crane, paper boat, kite, sky lantern, carp streamer, lantern string, flying carpet and paper star |
 
 Each design declares how it faces, moves and turns (`hooks/landscapes/design.ts`): the dragon coils, headed designs bank or
 show a hand-drawn mid-turn pose, and face-on designs do not turn. The tug and paper boat ride harbor water; the crab, strider,
-snowcat, flamingo and fox use the ground, and the sun skiff cruises low. The dragon, sparrow, owl, puffin and lantern string
+snowcat, flamingo and fox use the ground, and the sun skiff cruises low. The dragon, bat, owl, puffin and lantern string
 settle on perches when stale or waiting. Other workers fly. Mochi and her laptop are hard boundaries.
 
 ### Messages

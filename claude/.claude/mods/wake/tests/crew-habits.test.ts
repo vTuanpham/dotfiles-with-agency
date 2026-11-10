@@ -147,7 +147,7 @@ test('each resting design records its own painted message point and box', () => 
   }
 })
 
-test('a perched sparrow rests on its feet at every size', () => {
+test('a roosting bat hangs from its feet at every size', () => {
   for (const tier of [1, 2, 3, 4] as const) {
     const c = canvas(80, 24, true)
     const look = { place: 'city', frame: 0, night: 0, top: 0, wind: 0, effects: false,

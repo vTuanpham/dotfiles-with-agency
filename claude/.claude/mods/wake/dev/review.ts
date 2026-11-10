@@ -23,7 +23,7 @@ const findings: Item[] = [
 ]
 const names: Record<Family, string[]> = {
   codex: ['Mechanical dragon', 'Tug', 'Saucer', 'Airship', 'Strider', 'Forest probe', 'Sun skiff', 'Snowcat'],
-  claude: ['Rooftop sparrow', 'Crab', 'Flamingo', 'Eagle', 'Butterfly', 'Owl', 'Fox', 'Puffin'],
+  claude: ['City bat', 'Crab', 'Flamingo', 'Eagle', 'Butterfly', 'Owl', 'Fox', 'Puffin'],
   agy: ['Crown', 'Sail', 'Starfish', 'Condor', 'Plough', 'Tree', 'Scorpion', 'Aurora arch'],
   opencode: ['Origami crane', 'Paper boat', 'Kite', 'Sky lantern', 'Carp streamer', 'Lantern string', 'Flying carpet', 'Paper star'],
 }
@@ -39,7 +39,7 @@ const critiques: Record<Family, string[]> = {
     'The snowcat belongs on snow, but a rectangular body and changing tread pixels may feel too plain. Check the smallest silhouette, suspension and the amount of solid body fill.',
   ],
   claude: [
-    'A compact rooftop sparrow replaces the elongated swallow: raised head, pale cheek, broad wings and a short fan tail. Its bank and perch use the same proportions. Judge it in the skyline as well as close up.',
+    'A bat replaces the birds: seen face on, ears up, two lit eyes, thin wings with a scalloped edge that beat through three poses. It flits instead of cruising and roosts hanging by its feet. Judge the silhouette by day and the eyes at night.',
     'The crab gives the harbor a grounded creature instead of another flyer. Its claws and legs need to read separately from the shell rather than flickering around a pink lump.',
     'The flamingo has longer visible legs and a compact feathered body. Wading and face-on turns keep its feet on the beach; inspect the neck at the smallest size.',
     'The eagle needs weight, glide and a clear wingbeat. More motion is not automatically better; inspect whether its turn preserves the bird rather than flattening it.',

@@ -11,7 +11,7 @@ not captured in the moving sprite. Distant crews cast no local surface light.
 
 | Place | Codex | Claude | agy | OpenCode |
 | --- | --- | --- | --- | --- |
-| City | dragon | sparrow | crown | origami crane |
+| City | dragon | bat | crown | origami crane |
 | Harbor | tug | crab | sail | paper boat |
 | Beach | saucer | flamingo | starfish | kite |
 | Mountains | airship | eagle | condor | sky lantern |
@@ -23,7 +23,7 @@ not captured in the moving sprite. Distant crews cast no local surface light.
 The tug and paper boat ride harbor water; the crab walks its quay. The strider,
 snowcat, flamingo and fox walk the ground; the sun skiff cruises low. Other designs
 fly. A surface worker rests when stale or its pace falls to 0.15 or below. Air
-designs marked `rests` settle at an available perch: the dragon, sparrow, owl,
+designs marked `rests` settle at an available perch: the dragon, bat (hanging by its feet), owl,
 puffin and lantern string. `rest` is an optional sprite-module map of place to
 class to rows; missing entries use flight frame 0. An optional `restContact` map
 identifies a supporting pixel when a tail hangs below the feet. Perches and surface spans come
@@ -32,7 +32,7 @@ from the scene, and Mochi and her laptop remain hard boundaries.
 The dragon coils to turn. Headed designs bank or use the optional `turnPose` map
 (place → class → rows); a missing pose falls back to a bank. Face-on designs do
 not turn. The supplied poses cover the Codex airship, strider, skiff and snowcat;
-Claude sparrow, flamingo, eagle, fox and puffin; and OpenCode crane, kite, carp and
+Claude flamingo, eagle, fox and puffin; and OpenCode crane, kite, carp and
 carpet. `flex.ts` bends loose parts between strokes, creatures may have an
 intermediate stroke, and the saucer's rim lamps chase across its frames. Constellations
 keep their star arrangement while drifting; their light moves within that figure.
@@ -64,7 +64,7 @@ can select a shared style; otherwise `exit-styles.ts` supplies the scene's style
 Interrupts use the family's strike and debris.
 
 Escorts are explicit in `design.ts`, not automatic for large classes: the dragon
-has whelps, the sparrow, butterfly and puffin flock, and the sky lantern and
+has whelps, the bat, butterfly and puffin flock, and the sky lantern and
 paper star have sisters. Other designs, including every agy constellation, have
 none. Each escort follows the patrol with its own wing clock and bounded lateral
 and vertical drift; its heading follows that path.
