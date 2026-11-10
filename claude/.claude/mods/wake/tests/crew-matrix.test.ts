@@ -8,7 +8,6 @@ import { ALL_CREATURES } from '../hooks/landscapes/creatures'
 import { CARRIED, CREW } from '../hooks/landscapes/fx'
 import { LANDSCAPES } from '../hooks/landscapes'
 import { DESIGNS } from '../hooks/landscapes/design'
-import { P } from '../hooks/landscapes/kit'
 
 // The crew is a matrix: four families by eight places. Each cell has a sprite, effects in the air and a passage. A cell left out is a
 // family that looks, moves or leaves the same everywhere: these tests fail when one is missing, so whoever adds a place or a family
@@ -17,13 +16,11 @@ import { P } from '../hooks/landscapes/kit'
 const places = Object.keys(LANDSCAPES) as WakePreset[]
 const families = ['codex', 'claude', 'agy', 'opencode'] as const
 
-test('non-city Codex air stays sparse and separate in tone from the mechanical body', () => {
-  for (const place of places) {
-    if (place === 'city') continue
-    for (const stream of [...(CREW.codex[place]?.streams ?? []), ...(CREW.codex[place]?.talking ?? [])]) {
-      expect(stream.emitter.count, `${place} air must stay subordinate`).toBeLessThanOrEqual(3)
-      expect(stream.emitter.colors, `${place} air is not a cloud of body-coloured pixels`).not.toContain(P.teal)
-    }
+test('every family and place has a trail and a voice', () => {
+  for (const kind of families) for (const place of places) {
+    const cells = [CREW[kind].any, CREW[kind][place]]
+    expect(cells.some(cell => cell?.streams?.some(stream => stream.follow)), `${kind}.${place} trail`).toBe(true)
+    expect(cells.some(cell => cell?.talking?.length), `${kind}.${place} voice`).toBe(true)
   }
 })
 
@@ -47,7 +44,7 @@ test('every family/place has a complete motion design with an explicit front, cr
     expect(d.escorts).toBeDefined()
   }
   expect(DESIGNS.codex.city.turn).toBe('coil')
-  for (const place of ['beach', 'tundra'] as const) expect(DESIGNS.codex[place].turn, `${place} is a rigid plane`).toBe('bank')
+  for (const place of places.filter(place => place !== 'city')) expect(DESIGNS.codex[place].turn).not.toBe('coil')
 })
 
 test('escort formations reference existing smaller classes and finite path offsets', () => {
@@ -83,9 +80,10 @@ test('effect tables name only anchors, tiers and places that exist', () => {
   }
 })
 
-test('a light is only on a design that has a reason for it: no searchlight cones, and navigation lights only on aeroplanes', () => {
-  for (const kind of families) for (const [place, cell] of Object.entries(CREW[kind])) for (const l of cell?.lights ?? []) expect(l.light.shape, `${kind}.${place}`).not.toBe('cone')
-  const lit = (place: WakePreset) => (CREW.codex[place]?.lights ?? []).some(l => l.light.color === 0xf38ba8 || l.light.color === 0xa6e3a1)
-  for (const place of ['beach', 'countryside', 'tundra'] as const) expect(lit(place), `${place} has aeroplanes`).toBe(true)
-  for (const place of ['mountains', 'forest', 'desert'] as const) expect(lit(place), `${place} has no aeroplanes`).toBe(false)
+test('lights outside eye and lamp halos wait for dusk, except the scarab sun', () => {
+  for (const kind of families) for (const [place, cell] of Object.entries(CREW[kind])) for (const l of cell?.lights ?? []) {
+    if (l.always || l.light.shape === 'halo') continue
+    expect(l.light.from, `${kind}.${place} ${l.at}`).toBeDefined()
+  }
+  expect(CREW.codex.desert?.lights?.some(l => l.always === true)).toBe(true)
 })

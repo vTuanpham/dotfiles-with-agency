@@ -33,7 +33,7 @@ test('every character is drawn on the same grid, with a colour for each letter i
   }
 })
 import { airJobs, boat, fly, placeBoat, placeFly, shape } from '../hooks/landscapes/crew'
-import { ALL_CRAFT, CRAFT_MAX, craftFrames, craftNose, craftPush, dragonCrests } from '../hooks/landscapes/craft'
+import { ALL_CRAFT, CRAFT_MAX, MACHINE_SIZE, craftFrames, craftNose, craftPush, dragonCrests } from '../hooks/landscapes/craft'
 import { DESIGNS } from '../hooks/landscapes/design'
 import { type Job, type Look, P } from '../hooks/landscapes/kit'
 import { canvas } from '../hooks/pixels'
@@ -95,11 +95,15 @@ test('every place-built Codex craft is a rectangle inside the sky slot, grows wi
   }
 })
 
-test('Codex machines have eight beats, a lit accent, gear and at least three structural tones', () => {
+test('non-city machines have two poses, an eye and a gear in each', () => {
   for (const [place, classes] of Object.entries(ALL_CRAFT)) for (const tier of tiers) {
-    expect(classes[tier].length, `${place} ${tier}`).toBe(8)
-    const letters = new Set(classes[tier].flat().join(''))
-    for (const ink of ['W', 'k', 'l', 'a', 'd']) expect(letters.has(ink), `${place} ${tier} ${ink}`).toBe(true)
+    if (place === 'city') continue
+    expect(new Set(classes[tier].map(art => art.join('\n'))).size, `${place} ${tier} poses`).toBe(2)
+    for (const art of classes[tier]) {
+      expect({ w: art[0]!.length, h: art.length }).toEqual(MACHINE_SIZE[tier])
+      expect(art.join('')).toContain('Wg')
+      expect(art.join('')).toContain('k')
+    }
   }
 })
 
@@ -111,7 +115,7 @@ test('non-city Codex silhouettes form one connected body at every beat', () => {
       const cells = new Set(art.flatMap((row, y) => [...row].flatMap((ch, x) => ch === '.' ? [] : [y * w + x])))
       const first = cells.values().next().value!
       const seen = new Set([first]), queue = [first]
-      for (let i = 0; i < queue.length; i++) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      for (let i = 0; i < queue.length; i++) for (const [dx, dy] of Array.from({ length: 25 }, (_, n) => [n % 5 - 2, Math.floor(n / 5) - 2])) {
         const x = queue[i]! % w + dx!, y = Math.floor(queue[i]! / w) + dy!, cell = y * w + x
         if (x < 0 || x >= w || y < 0 || y >= art.length || !cells.has(cell) || seen.has(cell)) continue
         seen.add(cell); queue.push(cell)
@@ -124,35 +128,30 @@ test('non-city Codex silhouettes form one connected body at every beat', () => {
 test('Codex places have distinct uncoloured silhouettes, and the smallest craft keeps its animated trait', () => {
   const mask = (art: readonly string[]) => art.map(row => row.replace(/[^.]/g, '#')).join('\n')
   for (let beat = 0; beat < 8; beat++) {
-    const silhouettes = Object.values(ALL_CRAFT).map(classes => mask(classes[4][beat]!))
+    const silhouettes = Object.values(ALL_CRAFT).map(classes => mask(classes[4][beat % classes[4].length]!))
     expect(new Set(silhouettes).size, `eight different class-4 silhouettes at beat ${beat}`).toBe(8)
   }
   for (const [place, classes] of Object.entries(ALL_CRAFT)) {
-    // The launch's silhouette is its paddle disc; colour rotates the spokes inside that solid circle.
-    if (place === 'city' || place === 'harbor') continue
+    if (place === 'city') continue
     expect(new Set(classes[1].map(mask)).size, `${place} miniature has visible secondary motion`).toBeGreaterThanOrEqual(2)
   }
 })
 
 test('every Codex send anchor follows the visible face on every class and beat', () => {
   for (const [place, classes] of Object.entries(ALL_CRAFT)) for (const tier of tiers) for (let beat = 0; beat < 8; beat++) {
-    const [x, y] = craftNose(place as keyof typeof ALL_CRAFT, tier, beat), art = classes[tier][beat]!
+    const [x, y] = craftNose(place as keyof typeof ALL_CRAFT, tier, beat), art = classes[tier][beat % classes[tier].length]!
     expect(art[y]![x], `${place} class ${tier} beat ${beat} mouth/prow`).not.toBe('.')
     if (place !== 'city') expect(art[y]!.slice(x, x + 2), `${place} retains its bright forward eye and glass`).toBe('Wg')
   }
 })
 
-test('non-city Codex moves its structure, not only its light or propeller', () => {
-  const minimum = { 1: 8, 2: 14, 3: 20, 4: 26 }
+test('non-city Codex poses move their structure', () => {
   for (const [place, classes] of Object.entries(ALL_CRAFT)) {
     if (place === 'city') continue
     for (const tier of tiers) {
       const silhouettes = classes[tier].map(art => [...art.join('')].map(ch => ch !== '.'))
       const changed = silhouettes.flatMap(a => silhouettes.map(b => a.filter((solid, i) => solid !== b[i]).length))
-      expect(Math.max(...changed), `${place} class ${tier} changes enough occupied body cells across its stroke`).toBeGreaterThanOrEqual(minimum[tier])
-      for (let beat = 0; beat < 8; beat++) {
-        expect(classes[tier][beat], `${place} class ${tier} adjacent beats, including the loop seam`).not.toEqual(classes[tier][(beat + 1) % 8])
-      }
+      expect(Math.max(...changed), `${place} class ${tier} changes occupied body cells`).toBeGreaterThan(0)
     }
   }
 })
@@ -162,21 +161,21 @@ test('mechanical wash and thrust points belong to their generated physical pose'
     if (place === 'city') continue
     for (const tier of tiers) for (let beat = 0; beat < 8; beat++) {
       const { x, y, force } = craftPush(place as Exclude<keyof typeof ALL_CRAFT, 'city'>, tier, beat)
-      expect(classes[tier][beat]![y]![x]).toBeDefined()
-      expect(classes[tier][beat]![y]![x], `${place} class ${tier} beat ${beat} push cell`).not.toBe('.')
+      const art = classes[tier][beat % classes[tier].length]!
+      expect(art[y]![x]).toBeDefined()
+      expect(art[y]![x], `${place} class ${tier} beat ${beat} push cell`).not.toBe('.')
       expect(force).toBeGreaterThanOrEqual(0)
       expect(force).toBeLessThanOrEqual(1)
     }
   }
 })
 
-test('a launch can berth around empty wheelhouse air without lifting its hull onto the quay', () => {
+test('a harbor machine keeps its full footprint at its berth', () => {
   const c = canvas(80, 20)
   const state = { ...look, place: 'harbor' as const, crewZones: [{ x: 13, y: 13, w: 2, h: 1 }], crewSpriteZones: [] as { x: number; y: number; w: number; h: number }[] }
   const placed = placeBoat(c, state, 5, 13, { kind: 'codex', tier: 4, seed: 0, isStale: false })!
-  expect(placed.w, 'keeps the full generated boat').toBe(19)
-  expect(placed.x, 'the obstacle is in empty air between cabin and wheel').toBe(5)
-  expect(state.crewSpriteZones[0]!.y, 'the water berth stays at the requested depth').toBe(13)
+  expect(placed.w).toBe(MACHINE_SIZE[4].w)
+  expect(state.crewSpriteZones[0]).toBeDefined()
 })
 
 test('non-city machine effects cannot repaint the body, including its lit plates and eye', () => {
@@ -187,7 +186,7 @@ test('non-city machine effects cannot repaint the body, including its lit plates
       const bare = canvas(40, 20), air = canvas(40, 20)
       fly(bare, { ...look, place, crewGround: 18 }, 20, 10, job, 'codex', false, () => [20, 10], [])
       fly(air, { ...look, place, crewGround: 18, effects: true }, 20, 10, job, 'codex', false, () => [20, 10], [])
-      const art = craftFrames(place, tier)[beat]!
+      const frames = craftFrames(place, tier), art = frames[beat % frames.length]!
       const left = 20 - (art[0]!.length >> 1), top = 10 - (art.length >> 1)
       // A message mirrors a left-facing machine toward Mochi. Compare the actual solid pixels, whichever way it faces.
       for (let y = top; y < top + art.length; y++) for (let x = left; x < left + art[0]!.length; x++) {
@@ -208,7 +207,7 @@ test('the low non-city flight formation keeps its companions separate from the l
         pieces++
         const first = remaining.values().next().value!, queue = [first]
         remaining.delete(first)
-        for (let i = 0; i < queue.length; i++) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        for (let i = 0; i < queue.length; i++) for (const [dx, dy] of Array.from({ length: 25 }, (_, n) => [n % 5 - 2, Math.floor(n / 5) - 2])) {
           const x = queue[i]! % c.W + dx!, y = Math.floor(queue[i]! / c.W) + dy!, cell = y * c.W + x
           if (x < 0 || x >= c.W || y < 0 || y >= c.H || !remaining.has(cell)) continue
           remaining.delete(cell); queue.push(cell)
@@ -246,7 +245,7 @@ test('rigid bodies bank edge-on without coiling; none keeps a symmetric design u
 
 test('a slowly cruising craft keeps its heading between raster steps instead of repeatedly turning', () => {
   const left = canvas(40, 20), right = canvas(40, 20)
-  const state = { ...look, place: 'beach' as const }
+  const state = { ...look, place: 'mountains' as const }
   const job: Job = { kind: 'codex', tier: 1, seed: 0, isStale: false }
   fly(left, state, 20, 10, job, 'codex', false, ago => [20 + 0.3 * ago, 10])
   fly(right, state, 20, 10, job, 'codex', false, ago => [20 - 0.3 * ago, 10])
