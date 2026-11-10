@@ -31,7 +31,10 @@ Run `readme_gifs.py` without selectors to refresh the complete Wake set, includi
 the root README banner and annotated overview. The tour features class-4 crews at
 native animation speed; the banner and landscape gallery compress a day into a loop.
 The cast gallery blends between day and night. The overview uses class 3 to leave
-space for its labels and rows. Inspect both lighting states and action transitions.
+space for its labels and rows. Short dissolves join tour recordings and reset the
+time-lapse/cast loops. Inspect consecutive frames, loop seams, both lighting states
+and action transitions. `tests/showcase.test.ts` checks crew placement throughout
+the exact banner and landscape inputs, including changing time and weather.
 
 Overview, selection, account, Lab, resource and Codex notification diagrams use the
 same renderer; pass their SVG stems to regenerate only the changed assets. Claude

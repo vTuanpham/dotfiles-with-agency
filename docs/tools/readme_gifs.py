@@ -75,6 +75,11 @@ def save_gif(frames, path, delay=DELAY_MS):
     print(path.name, f"{path.stat().st_size / 1e6:.2f} MB", frames[0].size)
 
 
+def dissolve(last, first):
+    """An editorial transition between recordings whose simulation clocks restart."""
+    return [Image.blend(last, first, i / 7) for i in range(1, 7)]
+
+
 def label_font(bold, size):
     return ImageFont.truetype(SANS.format("-Bold" if bold else ""), size)
 
@@ -104,7 +109,7 @@ def landscapes():
             draw.text((16, y + 5), title, font=font, fill=(166, 173, 200))
             sheet.paste(scene(data, size, s * FRAMES + i, 6), (0, y + 30))
         frames.append(sheet)
-    save_gif(frames, IMAGES / "wake-landscapes.gif")
+    save_gif(frames + dissolve(frames[-1], frames[0]), IMAGES / "wake-landscapes.gif")
 
 
 # ── hero: the page chrome from google-chrome, the strips drawn over its black band ───────────────
@@ -126,7 +131,7 @@ def hero():
         for k, s in enumerate((0, 2, 5, 7)):  # city, beach, rain, snow
             frame.paste(scene(data, size, s * FRAMES + i, 6), (0, 250 + k * SCENE_H * 6))
         frames.append(frame)
-    save_gif(frames, IMAGES / "hero.gif")
+    save_gif(frames + dissolve(frames[-1], frames[0]), IMAGES / "hero.gif")
 
 
 # ── dock: the scene with call-outs, the crew and quota rows, a prompt and the real status line ────
@@ -434,7 +439,7 @@ def cast():
             for f in range(len(FAMILIES)):
                 sheet.paste(scene(data, size, (p * len(FAMILIES) + f) * FRAMES + i, scale), (left + f * (cell_w + gap), y))
         frames.append(sheet)
-    save_gif(frames, IMAGES / "wake-cast.gif")
+    save_gif(frames + dissolve(frames[-1], frames[0]), IMAGES / "wake-cast.gif")
 
 
 def tiles(sheet_name, width_cells, scale, columns, labels, out_name, captions=None):
@@ -492,7 +497,14 @@ def tour():
             draw.rectangle((0, y, width * (i - clip["start"] + 1) / (clip["end"] - clip["start"]), y + 2), fill=TEAL)
             frames.append(frame)
     assert len(frames) == meta["frames"]
-    save_gif(frames, IMAGES / "wake-tour.gif", delay=meta["delay"])
+    edited = []
+    cuts = set(meta["cuts"])
+    for i, frame in enumerate(frames):
+        if i in cuts and edited:
+            edited.extend(dissolve(edited[-1], frame))
+        edited.append(frame)
+    edited.extend(dissolve(edited[-1], edited[0]))
+    save_gif(edited, IMAGES / "wake-tour.gif", delay=meta["delay"])
 
 
 NEW = {"cast": cast, "sequence": sequence, "strike": strike}

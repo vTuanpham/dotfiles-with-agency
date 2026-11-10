@@ -649,8 +649,9 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   if (localHits) skyPixels = skyBeforeBackdrop
   land.backdrop(c, look)
   // Stable daylight geometry excludes aurora and prevents passing boats or crane lights from moving crew homes.
+  const geometryLook: Look = { ...look, frame: 0, night: 0, isDay: true, phase: 'noon', blend: { dawn: 0, morning: 0, noon: 1, afternoon: 0, dusk: 0, night: 0 } }
   const terrain = canvas(c.W, c.H)
-  land.backdrop(terrain, { ...look, frame: 0, night: 0, isDay: true, phase: 'noon', blend: { dawn: 0, morning: 0, noon: 1, afternoon: 0, dusk: 0, night: 0 } })
+  land.backdrop(terrain, geometryLook)
   const solid = (x: number, y: number) => terrain.get(x, y) !== 0
   const terrainPerches: { x: number; y: number }[] = []
   for (let x = 2; x < right - 2; x++) {
@@ -685,21 +686,10 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
     look.crewSpriteZones.push(laptop)
     look.crewHard.push(laptop)
   }
-  if ((input.weather?.cloud ?? 0) < 0.85) {
-    const { rise, set } = input.sun
-    const len = look.isDay ? set - rise : 24 - (set - rise)
-    const since = look.isDay ? input.hour - rise : (((input.hour - set) % 24) + 24) % 24
-    const arc = Math.max(0, Math.min(1, since / len))
-    const x = Math.round(4 + arc * (c.W - 14)), y = Math.round(H * 0.55 - H * 0.5 * Math.sin(Math.PI * arc))
-    const top = y & ~1
-    look.crewZones.push({ x, y: top, w: 4, h: y + 4 - top + (y % 2) })
-  }
-
-
   // Turn buildings and their furniture reserve their painted pixels for the crew. Filler (the backdrop between and behind
   // them) does not: flyers pass in front of it, otherwise a dense skyline like the city's leaves no sky to move in.
   const reference = canvas(c.W, c.H)
-  const referenceLook = { ...look, frame: 0, crewZones: [] }
+  const referenceLook = { ...geometryLook, crewZones: [] }
   const beforeStructures = reference.px.slice()
   const structures = (target: Canvas, state: Look, tag = false, filler = true) => {
     let edge = right

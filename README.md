@@ -60,18 +60,35 @@ Claude Code prompt. Workers move with their activity; messages cross the scene; 
 - **Eight places** that follow time, weather and session state: success, failure, waiting and sleeping all
   change the scene, with fireworks, storms, shooting stars, lanterns and rainbows for the milestones.
 
-[Meet all 32 designs, by day and night →](claude/README.md#the-crew-at-work) ·
-[Messages and character gadgets](claude/README.md#messages) ·
-[Arrivals and exits](claude/README.md#arrivals-and-exits)
+### The whole crew, by day and night
 
-<details>
-<summary>Read the scene: workers, messages, effort and quota</summary>
+<img src="docs/images/wake-cast.gif" alt="All 32 class-4 crew designs: four harness families across eight landscapes, changing from daylight to night." width="100%">
+
+### Messages and their receivers
+
+<img src="docs/images/wake-sequence.gif" alt="Four class-4 workers slow down, turn toward the root, send their messages and resume moving." width="100%">
+
+<img src="docs/images/wake-characters.gif" alt="Mochi, Tabby, Tuxedo and Bun catch incoming messages with their own gadgets." width="100%">
+
+### Arrive, work, leave
+
+<img src="docs/images/wake-passages.gif" alt="Class-4 crews and their companions arrive and depart in all eight landscapes, using each design's own passage effects." width="100%">
+
+When a turn is interrupted, each family breaks apart differently:
+
+<img src="docs/images/wake-strike.gif" alt="An interrupted dragon sheds sparks, an eagle loses feathers, a scorpion scatters starlight and a paper star tears into scraps." width="560">
+
+### A day in eight places
+
+<img src="docs/images/wake-landscapes.gif" alt="Eight landscapes through day and night, with rain, snow, working crews and session effects." width="100%">
+
+Time and weather are accelerated; the crews use Wake's animation clock.
+
+### Read the scene
 
 <img src="docs/images/wake-dock.gif" alt="Annotated harbor: a Codex tug, Claude crab, AGY constellation, plan lamps and Mochi, above the worker, message and quota rows." width="100%">
 
 [Crew and quota legend](claude/README.md#crew-and-quota-rows) · [Weather and session state](claude/README.md#landscapes-and-session-state)
-
-</details>
 
 ## Codex tasks that wake you
 
@@ -101,12 +118,7 @@ Open an existing conversation, read its work and send a reply from your phone. I
 Tailscale and uses each harness's supported controls; it does not create a separate chat history.
 [Pair a phone and connect a harness](agent-inbox/README.md#connect-a-harness).
 
-<details>
-<summary>How the tools connect</summary>
-
 <img src="docs/images/agent-tools.gif" alt="Inbox carries chat and controls; Baton carries questions and secrets; native delegation and Bridge connect workers. Bridge also sends native messages directly to existing sessions. Shared model, account, resource and lab tools support the session." width="100%">
-
-</details>
 
 ### Delegate work and message other sessions
 
@@ -148,26 +160,16 @@ Phone pushes and session-isolated replies. [Setup](agent-baton/README.md#phone-a
 
 ### Local previews, anywhere
 
-<details>
-<summary>Send a local app or build to your phone</summary>
-
 <img src="portlink/docs/preview.svg" alt="Portlink opens a private preview from a local app, folder or file on a phone over Tailscale, with a QR and automatic expiry." width="100%">
 
 [Portlink](portlink/README.md): private, expiring links to an app, build folder or file.
 
-</details>
-
 ### Make room for heavy commands
-
-<details>
-<summary>Coordinate tests, builds and experiments across agents</summary>
 
 <img src="docs/images/agent-resources.gif" alt="Heavy commands declare their needs to a shared queue. Inspect queue position, admission reason and reserved, budget and free memory before coordinating with the owning session. Admitted commands run in the foreground; exit releases the reservation." width="100%">
 
 `agent-resources list` shows why a request is waiting and which request is ahead.
 Commands run together when capacity permits. [agent-resources](agent-resources/README.md).
-
-</details>
 
 Behind the scenes: [account observations](agent-accounts/README.md), [persistent labs](agent-lab/README.md)
 and [session identity](agent-session/README.md).

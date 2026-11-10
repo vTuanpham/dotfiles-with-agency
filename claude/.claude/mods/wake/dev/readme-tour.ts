@@ -10,9 +10,11 @@ const chapters: { title: string; caption: string; config: Partial<Config>; shots
   { title: 'OpenCode · sky lanterns', caption: 'Mountain night · a whole formation arrives and leaves', config: { family: 'opencode', place: 'mountains', hour: 22 }, shots: [['arrive', 1000, 5000], ['leave', 1000, 5800]] },
 ]
 const frames: Uint32Array[] = [], clips: { title: string; caption: string; start: number; end: number }[] = []
+const cuts: number[] = []
 for (const chapter of chapters) {
   const start = frames.length
   for (const [mode, from, to] of chapter.shots) {
+    cuts.push(frames.length)
     const timeline = makeFrames({ family: 'codex', place: 'city', hour: 22, ...chapter.config, tier: 4, width, mode })
     for (let ms = from; ms < to; ms += 100) {
       const frame = timeline[ms / 50]
@@ -25,4 +27,4 @@ for (const chapter of chapters) {
 const pixels = new Uint32Array(frames.length * width * SCENE_H)
 frames.forEach((frame, i) => pixels.set(frame, i * width * SCENE_H))
 await Bun.write(out + '.bin', pixels)
-await Bun.write(out + '.json', JSON.stringify({ width, height: SCENE_H, frames: frames.length, delay: 100, clips }))
+await Bun.write(out + '.json', JSON.stringify({ width, height: SCENE_H, frames: frames.length, delay: 100, clips, cuts }))

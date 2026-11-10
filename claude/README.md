@@ -164,19 +164,12 @@ Each projectile travels independently after release. Its faint trace records onl
 as the crew moves on. Notes and embers leave their own curved path; a harbor tug launches its dart upward before it turns.
 
 <a id="characters-arrivals-and-exits"></a>
-<details>
-<summary>On the receiving end: Mochi, Tabby, Tuxedo and Bun</summary>
 
 <img src="../docs/images/wake-characters.gif" alt="Mochi's satellite dish, Tabby's radar whiskers, Tuxedo's ear trumpet and Bun's antennae catch incoming messages." width="100%">
 
 Choose a character with `/wake mochi <name>`. Each has its own signal-catching gadget.
 
-</details>
-
 ### Interrupts
-
-<details>
-<summary>When a turn is interrupted: sparks, feathers, starlight and paper</summary>
 
 A worker whose turn is cut off by the root (a native subagent's aborted turn, or a Bridge job's interrupted turn) does not
 take a bow: a bolt strikes it, it flashes white, shudders and falls dissolving, shedding what it is made of.
@@ -184,8 +177,6 @@ take a bow: a bolt strikes it, it flashes white, shudders and falls dissolving, 
 <img src="../docs/images/wake-strike.gif" alt="Four workers struck down: a Codex dragon sheds smoke and sparks, a Claude eagle loses feathers, an agy scorpion scatters light and an OpenCode paper star tears into scraps and sparks." width="560">
 
 *Struck down, in each family's own debris. Actual renderer output.*
-
-</details>
 
 ### Arrivals and exits
 
@@ -210,9 +201,6 @@ Daylight gives way to lit windows, engine glow and star nodes. Wind carries smok
 rain crosses the forest and snow settles over the tundra. `/wake tour` visits all eight places;
 `/wake scene <name>` pins one.
 
-<details>
-<summary>Watch a day pass in all eight landscapes</summary>
-
 <img src="../docs/images/wake-landscapes.gif" alt="Eight time-lapses: city, harbor, beach, mountains, countryside, rainy forest, desert and snowy tundra move through day and night with working crews and session effects." width="100%">
 
 *Time and weather are accelerated here; crew movement uses the renderer's animation clock.*
@@ -229,8 +217,6 @@ rain crosses the forest and snow settles over the tundra. `/wake tour` visits al
 | Plan progress and session mood | Lamps light; Mochi works, waits, celebrates or sleeps |
 
 When milestones coincide, failure takes priority, then a finished plan, recovery and passing tests.
-
-</details>
 
 ### Crew and quota rows
 
