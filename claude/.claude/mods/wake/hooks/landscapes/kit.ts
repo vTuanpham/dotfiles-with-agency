@@ -62,6 +62,8 @@ export type Look = {
   crewBoxes?: Record<string, { x0: number; y0: number; x1: number; y1: number }>
   /** Current message point on the leader's painted body, in scene coordinates. */
   crewMessagePoints?: Record<string, { x: number; y: number }>
+  crewMessageStars?: Record<string, { x: number; y: number }[]>
+  crewStarTargets?: Set<string>
   /** Deferred sprite painting when peer directions need both placements first. */
   crewDeferred?: (() => void)[]
   crewLocateOnly?: boolean

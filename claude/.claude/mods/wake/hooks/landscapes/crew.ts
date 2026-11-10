@@ -27,7 +27,7 @@ import type { WakePreset } from '../../types'
 type Kind = NonNullable<Job['kind']>
 type Frames = readonly (readonly string[])[]
 // A sprite module may export `emissive: string` for additional glowing cell letters.
-const SPRITES = { codex: craftSprite, claude: creatureSprite, agy: agySprite, opencode: lanternSprite } as Record<Kind, { emissive?: string; rest?: Partial<Record<WakePreset, Record<Tier, readonly string[]>>>; turnPose?: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> }>
+const SPRITES = { codex: craftSprite, claude: creatureSprite, agy: agySprite, opencode: lanternSprite } as Record<Kind, { emissive?: string; rest?: Partial<Record<WakePreset, Record<Tier, readonly string[]>>>; turnPose?: Partial<Record<WakePreset, Record<Tier, readonly string[]>>>; messageStars?: (place: WakePreset, tier: Tier) => Vec[] }>
 const TEMPO: Record<Kind, number> = { codex: 4, claude: 3, agy: 4, opencode: 5 }
 
 const drawWithHit = <T>(c: Canvas, job: Job, draw: () => T): T => job.hitOwner ? c.withHit(job.hitOwner, draw) : draw()
@@ -292,6 +292,12 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   const x0 = cx - (art[0]!.length >> 1), y0 = cy - (art.length >> 1)
   const point = messagePoint(frame, art, noses[kind](look.place ?? 'city', compact ? 1 : job.tier ?? 1, beat), turning.mirror, turning.roll, design.turn)
   if (job.hit && !compact) (look.crewMessagePoints ??= {})[job.hit.id] = { x: x0 + point[0], y: y0 + point[1] }
+  if (job.hit && !compact && look.crewStarTargets?.has(job.hit.id) && SPRITES[kind].messageStars) {
+    (look.crewMessageStars ??= {})[job.hit.id] = SPRITES[kind].messageStars!(look.place ?? 'city', job.tier ?? 1).map(star => {
+      const [x, y] = messagePoint(frame, art, star, turning.mirror, turning.roll, design.turn)
+      return { x: x0 + x, y: y0 + y }
+    })
+  }
   // The worker's own sprite, for what happens ON it (the send pulse, the receive ring): not its escorts, nor the trail and air it
   // leaves, which are painted under the same hit owner and would stretch its box across half the screen.
   if (job.hit && !compact) (look.crewBoxes ??= {})[job.hit.id] = { x0, y0, x1: x0 + art[0]!.length - 1, y1: y0 + art.length - 1 }

@@ -113,6 +113,8 @@ export const ALL_AGY = {
 }
 export const agyFrames = (place: WakePreset = 'city', tier: Tier) => ALL_AGY[place][tier]
 export const agyCore = (place: WakePreset, tier: Tier, beat: number) => pose(place, tier, beat).core
+/** The drawn constellation's star cells, for links made by arriving messages. */
+export const messageStars = (place: WakePreset, tier: Tier): Vec[] => figure(place, 2 + tier * 4, 0, tier >= 3).stars.map(([x, y]) => [clamp(Math.round(x), 0, 2 + tier * 4), clamp(Math.round(y), 0, H - 1)])
 export const agyPulse = (place: WakePreset, tier: Tier, beat: number) => pose(place, tier, beat).pulse
 /** Pale satellites take real elliptical orbits around this beat's core, never a random particle box. */
 export const agyOrbit = (place: WakePreset, tier: Tier, beat: number, offset = 0): Vec => {

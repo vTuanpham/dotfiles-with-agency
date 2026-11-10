@@ -27,7 +27,8 @@ export type Stream = { at: Anchor; dx?: number; dy?: number; emitter: Emitter; f
 export type LightAt = { at: Anchor; dx?: number; dy?: number; light: Light; tiers?: readonly number[]; /** a pool of light where a cone lands */ lands?: Light; /** a column or cone that runs down to the ground */ toGround?: boolean; /** shown whatever the hour (true), or in proportion to daylight ('day'): a shadow, not a lamp */ always?: boolean | 'day' }
 /** `talking` streams are bursts shown while the worker is sending a message to the root; written facing left, the way a sprite is drawn. */
 export type Cell = { streams?: readonly Stream[]; lights?: readonly LightAt[]; talking?: readonly Stream[]; /** Added to this family or place only after dusk. */ night?: Cell }
-type FamilyCells = Partial<Record<WakePreset | 'any' | 'night', Cell>>
+export type MessageStyle = 'packet' | 'song' | 'starfall' | 'ember'
+type FamilyCells = Partial<Record<WakePreset | 'any' | 'night', Cell>> & { message: MessageStyle }
 
 const TAU = Math.PI * 2
 const UP = -Math.PI / 2, DOWN = Math.PI / 2
@@ -58,6 +59,7 @@ const EYE = (color: number): LightAt => ({ at: 'nose', light: { shape: 'halo', c
 
 /** The eye and pulse are in the art; additional lights belong only to actual lamps. */
 const CODEX: FamilyCells = {
+  message: 'packet',
   night: nightLight(P.sky),
   any: { lights: SHADOW },
   city: {
@@ -121,6 +123,7 @@ const BIRD_WASH = (color: number): readonly Stream[] => [{ at: 'ground', emitter
 /** What a creature leaves in its wake, shed from its wing on each downstroke: as present as the dragon's packets, in its own stuff. */
 const SHED = (colors: readonly number[], extra: Partial<Emitter> = {}): Stream => ({ at: 'below', follow: true, emitter: { count: 7, life: 1.1, speed: [0.3, 1], angle: [DOWN - 0.6, DOWN + 0.6], gravity: 1.2, swirl: 0.6, wind: 0.6, colors, alpha: 0.5, envelope: 'fade', ...extra } })
 const CLAUDE: FamilyCells = {
+  message: 'song',
   night: nightLight(P.pink),
   any: { lights: SHADOW, streams: [FEATHER] },
   city: { talking: CALL(11), streams: [SHED([P.white, P.overlay1]), ...BIRD_WASH(P.overlay1)] }, // the pigeon's grey down
@@ -147,6 +150,7 @@ const STARS = (echo: Cell, colors: readonly number[], extra: Partial<Emitter> = 
   streams: [...echo.streams!, { at: 'tail', follow: true, emitter: { count: 6, life: 1.4, speed: [0.2, 0.7], angle: [0, TAU], wind: 0.4, colors, alpha: 0.55, envelope: 'twinkle', ...extra } }],
 })
 const AGY: FamilyCells = {
+  message: 'starfall',
   night: nightLight(P.lavender),
   any: {
     streams: [
@@ -171,6 +175,7 @@ const AGY: FamilyCells = {
 /** A paper craft's own trail in its place, twinkling out behind it. */
 const PAPER = (colors: readonly number[], extra: Partial<Emitter> = {}): Stream => ({ at: 'above', follow: true, emitter: { count: 6, life: 1.2, speed: [0.2, 0.8], angle: [0, TAU], gravity: 1, swirl: 0.5, wind: 0.5, colors, alpha: 0.5, envelope: 'twinkle', ...extra } })
 const OPENCODE: FamilyCells = {
+  message: 'ember',
   night: nightLight(P.yellow),
   any: {
     streams: [

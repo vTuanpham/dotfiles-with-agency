@@ -1,6 +1,6 @@
 import type { WakeMood, WakePreset, WakePulseKind, WakeSceneHit } from '../types'
 import { lanes, placeFly, roamOf, stations } from './landscapes/crew'
-import { windLayer } from './landscapes/fx'
+import { CREW, windLayer } from './landscapes/fx'
 import { type DayPhase, type Job, jobAccent, type Landscape, type Look, P, SCENE_H, type SceneEvent, type Season } from './landscapes/kit'
 import { LANDSCAPES } from './landscapes'
 import { type Canvas, canvas, hash, mix, sprite } from './pixels'
@@ -478,9 +478,8 @@ function drawEffect(c: Canvas, look: Look, fx: SceneEffect, ground: number, righ
 
 // ── Mochi ──────────────────────────────────────────────────────────────────
 
-function drawMochi(c: Canvas, look: Look, input: SceneInput, ground: number, catX: number) {
+function drawMochi(c: Canvas, look: Look, input: SceneInput, ground: number, catX: number, jump: number) {
   const fx = input.effect
-  const jump = fx?.kind === 'fireworks' && fx.age < 28 && look.frame % 6 < 3 ? 1 : 0
   const blink = input.mood !== 'sleep' && look.frame % 61 < 2
   const character = CHARACTERS[asCharacter(input.character)]
   const rows = input.mood === 'work' || look.frame % 24 < 12 ? character.up : character.down
@@ -591,6 +590,7 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   const reactions: Reaction[] = []
   const c = canvas(input.width, H, localHits !== undefined)
   const look = lookOf(input)
+  look.crewStarTargets = new Set((input.peerEdges ?? []).filter(edge => edge.arriving !== undefined && CREW[edge.family ?? input.jobs.find(job => job.hit?.id === (edge.source === 'mochi' ? edge.target : edge.source))?.kind ?? 'codex'].message === 'starfall').map(edge => edge.target))
   look.hitTargets = localHits?.targets
   look.place = input.preset
   const registerHit = (target: WakeSceneHit | undefined) => {
@@ -787,7 +787,12 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
     const done = elapsed - (packetWindow(edge.fresh ?? 1) + (edge.lead ?? 0))
     for (const [id, other, sending] of [[edge.source, edge.target, true], [edge.target, edge.source, false]] as const) {
       if (id === 'mochi') continue
-      const worker = [...jobs, ...agents].find(job => job.hit?.id === id)
+      const worker: Job | undefined = [...jobs, ...agents].find(job => job.hit?.id === id)
+      // The song recipient rises as the notes reach it, including direct scene callers without band activity data.
+      if (worker && !sending && CREW[edge.family ?? worker.kind ?? 'codex'].message === 'song' && edge.arriving !== undefined) {
+        const since = edge.arriving - (edge.lead ?? 0) - PACKET_RUN_MS * 0.65
+        worker.lift = Math.max(worker.lift ?? 0, Math.max(0, 1 - Math.abs(since - 120) / 400))
+      }
       if (worker && (!worker.talk || elapsed < worker.talk.ms)) {
         worker.talk = { ms: elapsed, sending, targetX: other === 'mochi' ? catX + 4 : undefined, ...(done >= 0 ? { over: done } : {}) }
         targets.set(worker, other)
@@ -818,7 +823,13 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
     }
     for (const draw of look.crewDeferred) draw()
   }
-  const rootJump = input.effect?.kind === 'fireworks' && input.effect.age < 28 && look.frame % 6 < 3 ? 1 : 0
+  const songLanding = (input.peerEdges ?? []).some(edge => {
+    if (edge.target !== 'mochi' || edge.arriving === undefined) return false
+    const family = edge.family ?? input.jobs.find(job => job.hit?.id === edge.source)?.kind ?? (input.agents.some(agent => agent.hit?.id === edge.source) ? 'claude' : 'codex')
+    const since = edge.arriving - (edge.lead ?? 0) - PACKET_RUN_MS * 0.65
+    return CREW[family].message === 'song' && since > -80 && since < 320
+  })
+  const rootJump = songLanding || input.effect?.kind === 'fireworks' && input.effect.age < 28 && look.frame % 6 < 3 ? 1 : 0
   const rootPoint = { x: catX + 4, y: ground - MOCHI_ROWS - rootJump + 5 }
   if (messagePoints) {
     for (const [id, point] of Object.entries(look.crewMessagePoints ?? {})) messagePoints.set(id, point)
@@ -848,13 +859,13 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
     else drawWeather(c, look, weather, ground)
   }
   if (input.effect) drawEffect(c, look, input.effect, ground, right, input.preset)
-  if (mochiOwner) c.withHit(mochiOwner, () => drawMochi(c, look, input, ground, catX))
-  else drawMochi(c, look, input, ground, catX)
+  if (mochiOwner) c.withHit(mochiOwner, () => drawMochi(c, look, input, ground, catX, rootJump))
+  else drawMochi(c, look, input, ground, catX, rootJump)
   // the crew reacts to the messages that just left or landed (each harness its own way: see reactions.ts)
   const kindOf = (id: string): ReactionKind => id === 'mochi' ? asCharacter(input.character) : input.jobs.find(job => job.hit?.id === id)?.kind ?? (input.agents.some(agent => agent.hit?.id === id) ? 'claude' : 'codex')
   // the root's gadget stands on her body, wherever the marks above her happen to be
   const rootBox = { x0: catX, x1: catX + 8, y0: ground - MOCHI_ROWS - rootJump, y1: ground - 1 - rootJump }
-  if (localHits) react(c, localHits.targets, reactions, kindOf, { ...look.crewBoxes, mochi: rootBox }) // (a worker's own sprite box, not everything painted under its hit id)
+  if (localHits) react(c, localHits.targets, reactions, kindOf, { ...look.crewBoxes, mochi: rootBox }, look.crewMessageStars) // (a worker's own sprite box, not everything painted under its hit id)
   // a worker that has just started arrives, and one that has just finished leaves, each in its craft's own way (exits.ts)
   const coming = [...input.jobs.map(job => ({ ...job, kind: job.kind ?? 'codex' as const })), ...input.agents.map(agent => ({ ...agent, kind: 'claude' as const }))]
     .flatMap(job => job.hit && (job.arriving ?? job.leaving) !== undefined
@@ -878,7 +889,10 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
     if (!from || !to || edge.source === edge.target) continue
     const pair = [...`${edge.source}>${edge.target}`].reduce((sum, ch) => (sum * 31 + ch.charCodeAt(0)) >>> 0, 7)
     const lane = toRoot(edge) ? 1.5 * yielding : pair & 1 // two heights, fixed per pair
-    const path = arcCells(from, to, c.W, H, lane)
+    const workerId = edge.source === 'mochi' ? edge.target : edge.source
+    const family = edge.family ?? input.jobs.find(job => job.hit?.id === workerId)?.kind ?? (input.agents.some(agent => agent.hit?.id === workerId) ? 'claude' : 'codex')
+    const style = CREW[family].message
+    const path = style === 'packet' && edge.arriving !== undefined ? circuitCells(from, to, c.W, H) : arcCells(from, to, c.W, H, lane)
     const length = path.length
     if (length < 3) continue
     const rootMessage = edge.source === 'mochi' || edge.target === 'mochi'
@@ -894,7 +908,7 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
     // A message is a comet in its sender's colour: a bright head running source to target, with a tail that fades slowly
     // behind it and is gone by the time the last packet has landed. At rest the trail is only embers, a faint mote every few
     // pixels that says who is in touch (brighter the fresher the message); nothing loops.
-    const accent = jobAccent({ kind: edge.family } as Job, P.teal)
+    const accent = style === 'ember' ? P.peach : jobAccent({ kind: family } as Job, P.teal)
     const tail = Math.max(2.5, Math.min(6, length * 0.125)) // cells over which the light fades to a third (a short, quick fade)
     const ember = 0.04 + 0.1 * Math.min(1, edge.strength / 0.65)
     const light = new Float32Array(length) // how bright each cell of the trail is just now, 0..1
@@ -905,23 +919,30 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
         if (t < 0 || t > PACKET_RUN_MS) continue
         const head = (t / PACKET_RUN_MS) * (length + 4 * tail) // the head runs on past the end so the tail finishes crossing
         // the sender pulses as the comet leaves; the receiver as its head reaches the end
-        reactions.push({ id: edge.source, role: 'send', v: Math.exp(-t / 320), t: edge.arriving - (edge.lead ?? 0) })
+        reactions.push({ id: edge.source, role: 'send', v: Math.exp(-t / 320), t, style, point: from })
         const landsAt = (PACKET_RUN_MS * (length - 1)) / (length + 4 * tail)
-        if (t >= landsAt) reactions.push({ id: edge.target, role: 'land', v: Math.exp(-(t - landsAt) / 420), t: edge.arriving - (edge.lead ?? 0) })
-        for (let at = 0; at < length; at++) if (at <= head) light[at] = Math.max(light[at]!, Math.exp(-(head - at) / tail))
+        if (t >= landsAt) reactions.push({ id: edge.target, role: 'land', v: Math.exp(-(t - landsAt) / 420), t: t - landsAt, style, point: to })
+        for (let at = 0; at < length; at++) if (at <= head) {
+          const distance = head - at
+          const glow = style === 'packet' ? Math.exp(-distance / 1.1) : style === 'song' ? Math.max(0, 1 - Math.min(Math.abs(distance), Math.abs(distance - 4), Math.abs(distance - 8))) : Math.exp(-distance / (style === 'ember' ? 1.8 : tail))
+          light[at] = Math.max(light[at]!, glow)
+        }
         if (head > length - 1) landing = Math.max(landing, Math.exp(-(head - (length - 1)) / tail))
       }
     }
     const paint = () => path.forEach((i, k) => {
-      const x = i % c.W, y = Math.floor(i / c.W), glow = light[k]!
+      const x = i % c.W, glow = light[k]!
+      const wave = style === 'ember' && glow > 0.05 ? Math.round(Math.sin(k * 0.7 + (edge.arriving ?? 0) * 0.008)) : style === 'song' && glow > 0.05 ? Math.round(Math.sin(k * 0.5 + (edge.arriving ?? 0) * 0.01)) : 0
+      const y = Math.max(0, Math.min(H - 1, Math.floor(i / c.W) + wave))
       const base = c.get(x, y)
       const ink = mix(mix(accent, P.white, 0.3), P.white, glow ** 3 * 0.7) // the tail is the sender's colour, lightened; the head near white
       // (the embers brighten toward the recipient, so the trail shows which way the last message went even at rest)
       c.set(x, y, mix(base, ink, Math.max(k % 5 === 0 ? ember * (0.3 + 0.7 * k / (length - 1)) : 0, glow * 0.95)))
       // a soft halo round the bright part, so the comet has body rather than being a one-pixel dash
-      if (glow > 0.2) for (const [dx, dy] of [[0, -1], [0, 1]] as const) {
+      if (glow > 0.2) for (const [dx, dy] of (style === 'song' ? [[1, -1], [1, -2]] as const : style === 'packet' ? [] : [[0, -1], [0, 1]] as const)) {
+        const hx = x + dx
         const hy = y + dy
-        if (hy >= 0 && hy < H) c.set(x, hy, mix(c.get(x, hy), ink, glow * 0.3))
+        if (hx >= 0 && hx < c.W && hy >= 0 && hy < H) c.set(hx, hy, mix(c.get(hx, hy), ink, glow * (style === 'song' ? 0.9 : 0.3)))
       }
     })
     const splash = () => {
@@ -955,6 +976,20 @@ export function arcCells(a: Anchor, b: Anchor, width: number, height: number, la
     const i = y * width + x
     if (cells.at(-1) !== i) cells.push(i)
   }
+  return cells
+}
+
+/** A circuit trace uses horizontal and vertical segments, including when its ends share a column. */
+export function circuitCells(a: Anchor, b: Anchor, width: number, height: number): number[] {
+  const cells: number[] = []
+  let x = a.x, y = a.y
+  const add = () => { if (x >= 0 && x < width && y >= 0 && y < height) cells.push(y * width + x) }
+  const line = (axis: 'x' | 'y', end: number) => {
+    while ((axis === 'x' ? x : y) !== end) { if (axis === 'x') x += Math.sign(end - x); else y += Math.sign(end - y); add() }
+  }
+  add()
+  const middle = Math.round((a.x + b.x) / 2)
+  line('x', middle); line('y', b.y); line('x', b.x)
   return cells
 }
 

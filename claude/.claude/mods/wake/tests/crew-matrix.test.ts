@@ -74,6 +74,7 @@ test('every family leaves every place in a style of its own', () => {
 
 test('effect tables name only anchors, tiers and places that exist', () => {
   for (const kind of families) for (const [place, cell] of Object.entries(CREW[kind])) {
+    if (typeof cell === 'string') continue
     expect(place === 'any' || place === 'night' || places.includes(place as WakePreset), `${kind}.${place}`).toBe(true)
     for (const s of [...(cell?.streams ?? []), ...(cell?.lights ?? [])]) {
       expect(s.at, `${kind}.${place}`).toBeTruthy()
@@ -111,7 +112,7 @@ test('night cells paint only after dusk', () => {
 })
 
 test('lights outside eye and lamp halos wait for dusk', () => {
-  for (const kind of families) for (const [place, cell] of Object.entries(CREW[kind])) for (const l of cell?.lights ?? []) {
+  for (const kind of families) for (const [place, cell] of Object.entries(CREW[kind])) for (const l of typeof cell === 'string' ? [] : cell?.lights ?? []) {
     if (l.always || l.light.shape === 'halo') continue
     expect(l.light.from, `${kind}.${place} ${l.at}`).toBeDefined()
   }
