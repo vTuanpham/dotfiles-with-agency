@@ -2,154 +2,99 @@ import type { WakePreset } from '../../types'
 import type { Tier } from './design'
 import type { Vec } from './particles'
 
-// Celestial bodies, not constellations of disconnected dots. Every filament is filled, and each
-// pose carries the core and the shedding point calculated by its own physical motion.
+// agy is a constellation: a few bright stars joined by dashed lines of light, one figure for each place. The figure itself moves
+// (its stars shift against each other), a pulse of light runs along one line after another, and the lesser stars twinkle in turn.
+// Few stars and clear lines: the figure has to read at a glance.
 type Pose = { rows: readonly string[]; core: Vec; pulse: { x: number; y: number; force: number } }
-const BEATS = 8
+/** The first star is the core (the maker's mark, where the voice and the glow sit); the last is the tip that sheds light. */
+type Figure = { stars: Vec[]; links: (readonly [number, number])[] }
+const BEATS = 8, H = 7
 const TAU = Math.PI * 2
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
+const chain = (n: number, from = 0) => Array.from({ length: n - 1 }, (_, i) => [from + i, from + i + 1] as const)
 
-function light(w: number) {
-  const grid = Array.from({ length: 7 }, () => Array<string>(w).fill('.'))
-  const dot = (x: number, y: number, ink: string) => {
-    x = Math.round(x); y = Math.round(y)
-    if (x >= 0 && x < w && y >= 0 && y < 7) grid[y]![x] = ink
-  }
-  // Supercover segments preserve a four-connected filament through diagonal bends.
-  const line = (a: Vec, b: Vec, ink: string) => {
-    const n = Math.max(1, Math.ceil(Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])) * 2))
-    let y = Math.round(a[1])
-    dot(a[0], y, ink)
-    for (let i = 1; i <= n; i++) {
-      const nx = Math.round(a[0] + (b[0] - a[0]) * i / n), ny = Math.round(a[1] + (b[1] - a[1]) * i / n)
-      dot(nx, y, ink); dot(nx, ny, ink); y = ny
+/** The figure of a place at one beat, on a grid `X + 1` wide and seven tall. `p` is the beat as an angle, `big` classes 3 and 4. */
+function figure(place: WakePreset, X: number, p: number, big: boolean): Figure {
+  const c = X / 2, s = Math.sin(p), k = Math.cos(p)
+  switch (place) {
+    case 'city': { // the Neon Sign: a zigzag whose corners ripple one after another, like a sign flickering on
+      const n = big ? 5 : 4
+      const stars = Array.from({ length: n }, (_, i): Vec => [1 + i * (X - 1) / (n - 1), 3 + (i % 2 ? 1 : -1) * (2 + 0.8 * Math.sin(p - i * 1.1))])
+      return { stars, links: chain(n) }
+    }
+    case 'harbor': { // the Sail: a mast, a sail and a hull that rock on the swell
+      const tilt = 1.3 * s, roll = 0.7 * s
+      const stars: Vec[] = [[c + tilt, 0], [1, 4 - roll], [c, 6], [X, 4 + roll]]
+      return { stars, links: [[0, 1], [1, 2], [2, 3], [3, 0], [0, 2]] }
+    }
+    case 'beach': { // the Starfish: five arms turning slowly about the core, a fifth of a turn each loop
+      const stars: Vec[] = [[c, 3]], links: (readonly [number, number])[] = []
+      for (let arm = 0; arm < 5; arm++) {
+        const a = arm * TAU / 5 + p / 5 - Math.PI / 2
+        stars.push([c + c * 0.8 * Math.cos(a), 3 + 3 * Math.sin(a)])
+        links.push([0, stars.length - 1])
+      }
+      return { stars, links }
+    }
+    case 'mountains': { // the Condor: an arrowhead of two long wings that open wide and fold on each stroke
+      const open = 1 + 2 * (0.5 + 0.5 * k), back = c + c * 0.3 * (0.5 - 0.5 * k)
+      const stars: Vec[] = [[1, 3], [c * 0.7, 3], [back, 3 - open], [back, 3 + open], [X, 3]]
+      return { stars, links: [[0, 1], [1, 2], [1, 3], [1, 4]] }
+    }
+    case 'countryside': { // the Plough: a square bowl and a long handle that swings like a whip
+      const b = X * 0.4
+      const stars: Vec[] = [[1, 2], [1, 5], [b, 5], [b, 2.4], [X * 0.62, 2 + 0.6 * s], [X * 0.82, 1.6 + 1.3 * s], [X, 1.4 + 2.2 * Math.sin(p - 0.7)]]
+      return { stars, links: [[0, 1], [1, 2], [2, 3], [3, 0], ...chain(4, 3)] }
+    }
+    case 'forest': { // the Tree: a trunk rooted at the core, its boughs swaying further the higher they reach
+      const sway = (h: number) => 1.4 * Math.sin(p - h * 0.5) * h / 3
+      const stars: Vec[] = [[c, 6], [c + sway(1), 3.5], [c - c * 0.75 + sway(2), 1.5], [c + c * 0.75 + sway(2), 1.5], [c + sway(3), 0]]
+      return { stars, links: [[0, 1], [1, 2], [1, 3], [1, 4]] }
+    }
+    case 'desert': { // the Scorpion: two claws that snap, a long body, and a tail that curls its sting over
+      const snap = 0.8 * (0.5 + 0.5 * k)
+      const stars: Vec[] = [[X * 0.42, 4], [X * 0.2, 3], [0, 1 + snap], [0, 5 - snap], [X * 0.68, 5], [X * 0.9, 4.4], [X, 2.2 - 0.5 * s], [X - 2 - 1.2 * s, 0.4 + 0.4 * k]]
+      return { stars, links: [[1, 2], [1, 3], [1, 0], [0, 4], [4, 5], [5, 6], [6, 7]] }
+    }
+    default: { // tundra, the Aurora Arch: an arch of stars with curtains of light swaying beneath it
+      const n = big ? 5 : 3
+      const arch = Array.from({ length: n }, (_, i): Vec => { const a = Math.PI * (1 - i / (n - 1)); return [c + (c - 0.5) * Math.cos(a), 3.6 - 3.2 * Math.sin(a)] })
+      const mid = n >> 1, stars: Vec[] = [arch[mid]!, ...arch.filter((_, i) => i !== mid)]
+      const at = (i: number) => i === mid ? 0 : i < mid ? i + 1 : i // arch index -> star index
+      const links: (readonly [number, number])[] = chain(n).map(([a, b]) => [at(a), at(b)] as const)
+      for (let i = 0; i < n; i += big ? 2 : 1) {
+        const [x, y] = arch[i]!
+        stars.push([x + 1.1 * Math.sin(p - i * 1.2), Math.min(6, y + 2.6 + 0.4 * Math.cos(p - i * 1.2))])
+        links.push([at(i), stars.length - 1])
+      }
+      return { stars, links }
     }
   }
-  const core = (x: number, y: number, radius = 1) => {
-    x = Math.round(x); y = Math.round(y)
-    for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
-      if (Math.abs(dx) + Math.abs(dy) <= radius) dot(x + dx, y + dy, dy > 0 ? 'a' : 'l')
-    }
-    dot(x, y, 'M')
-    return [x, y] as const
-  }
-  const ribbon = (from: number, to: number, at: (x: number) => number, thick = 2) => {
-    for (let x = from; x <= to; x++) {
-      const y = Math.round(at(x)), before = Math.round(at(Math.max(from, x - 1)))
-      line([x - (x > from ? 1 : 0), before], [x, y], 'l')
-      for (let r = 1; r < thick; r++) dot(x, y + r, r === thick - 1 ? 'a' : 'l')
-    }
-  }
-  return { dot, line, core, ribbon, rows: () => grid.map(row => row.join('')) }
 }
 
 function generate(place: WakePreset, tier: Tier, beat: number): Pose {
-  const w = 3 + tier * 4, mid = w >> 1, p = beat * TAU / BEATS
-  const b = light(w), { dot, line, ribbon, core } = b
-  let heart: Vec = [2, 3], tip: Vec = heart
-  if (place === 'city') {
-    // A filled star-kite, its shoulders opening against the travelling wave of its knotted train.
-    const cy = 3 + Math.round(0.6 * Math.sin(p)), end = Math.min(8, w - 2)
-    for (let x = 0; x <= end; x++) {
-      const half = Math.max(0, Math.round((1 - Math.abs(x - end / 2) / (end / 2)) * (2 + 0.45 * Math.cos(p))))
-      for (let y = cy - half; y <= cy + half; y++) dot(x, y, y === cy - half ? 'l' : y === cy + half ? 'd' : 'a')
-    }
-    const at = (x: number) => cy + 1.25 * Math.sin((x - end) * 0.65 - p)
-    ribbon(end - 1, w - 1, at)
-    for (let x = end + 2; x < w - 1; x += 5) { dot(x, at(x) - 1, 'l'); dot(x, at(x), 'W') }
-    heart = core(2, cy); tip = [w - 1, Math.round(at(w - 1)) + 1]
-  } else if (place === 'harbor') {
-    // A pear-shaped flame rolls above a low, sweeping reflection ribbon.
-    const cy = 2 + Math.round(0.7 * Math.sin(p))
-    const at = (x: number) => clamp(cy + 1 + (x - 2) / w + 1.1 * Math.sin((x - 2) * 0.45 - p), 1, 5)
-    ribbon(2, w - 1, at)
-    line([1, cy], [3, cy], 'a'); line([2, cy - 1], [3, cy + 1], 'l')
-    dot(3 + Math.round(Math.sin(p)), cy - 2, 'l'); line([3, cy - 1], [3 + Math.round(Math.sin(p)), cy - 2], 'l')
-    heart = core(1, cy); tip = [w - 1, Math.round(at(w - 1)) + 1]
-  } else if (place === 'beach') {
-    // Six tapered rays of a sun-glint star flex in opposing pairs; no travel heading.
-    const reach = mid - Math.round(0.8 + 0.8 * Math.sin(p))
-    for (let ray = 0; ray < 6; ray++) {
-      const angle = ray * TAU / 6 + 0.24 * Math.sin(p), rx = Math.max(2, reach)
-      const end: Vec = [mid + rx * Math.cos(angle), 3 + 2.6 * Math.sin(angle)]
-      line([mid, 3], end, 'l')
-      line([mid, 4], [mid + (end[0] - mid) * 0.65, 3 + (end[1] - 3) * 0.65], 'a')
-      dot(end[0], end[1], ray === beat % 6 ? 'W' : 'l')
-    }
-    heart = core(mid, 3); tip = [mid + Math.round(reach), 3 + Math.round(2.6 * Math.sin(0.24 * Math.sin(p)))]
-  } else if (place === 'mountains') {
-    // A folded aurora curtain: its lit hem and shaded folds rise in sequence, not all together.
-    const at = (x: number) => 1 + Math.round(0.9 + 0.9 * Math.sin(x * 0.6 - p))
-    for (let x = 0; x < w; x++) {
-      const y = at(x), depth = 1 + Math.round(1 + Math.sin(x * 0.6 - p - 0.8))
-      line([x, y], [x, Math.min(6, y + depth)], 'a')
-      line([Math.max(0, x - 1), at(Math.max(0, x - 1))], [x, y], 'l')
-      dot(x, Math.min(6, y + depth), 'd')
-    }
-    heart = core(1, at(1) + 1); tip = [w - 1, at(w - 1)]
-  } else if (place === 'countryside') {
-    // Twin lantern-fireflies, joined by a pliant cord of light, trade height on alternate strokes.
-    const left = 1, right = w - 2, ly = 3 + Math.round(Math.sin(p)), ry = 3 - Math.round(Math.sin(p))
-    const at = (x: number) => ly + (ry - ly) * (x - left) / (right - left) - Math.sin((x - left) / (right - left) * Math.PI) * Math.cos(p)
-    ribbon(left, right, at)
-    for (const [x, y] of [[left, ly], [right, ry]] as const) {
-      line([x - 1, y - 1], [x + 1, y - 1], 'l'); line([x - 1, y], [x + 1, y], 'a')
-      dot(x, y + 1, 'l'); dot(x, y - 2, 'l'); dot(x, y, 'W')
-    }
-    heart = core(left, ly); tip = [right, ry + 1]
-  } else if (place === 'forest') {
-    // A hovering spore bell: the whole dome opens and its three mycelial roots sway beneath it.
-    const inset = Math.round(0.8 + 0.8 * Math.sin(p)), radius = mid - inset
-    for (let x = inset; x <= w - 1 - inset; x++) {
-      const top = clamp(Math.round(0.4 + 1.6 * ((x - mid) / radius) ** 2 + 0.6 * Math.sin(p - x * 0.45)), 0, 3)
-      const bottom = 3 + Math.round(0.6 * Math.sin(p - x * 0.55))
-      line([x, top], [x, bottom], 'a'); dot(x, top, 'l'); dot(x, bottom, 'd')
-    }
-    line([inset, 3], [w - 1 - inset, 3], 'a')
-    for (const root of [mid - Math.max(1, tier), mid, mid + Math.max(1, tier)]) {
-      const end = root + Math.round(1.1 * Math.sin(p - root * 0.5)), depth = 5 + Math.round(0.7 * Math.cos(p - root * 0.5))
-      line([root, 3], [end, depth], 'l'); dot(end, depth, 'a')
-      if (root === mid) tip = [end, depth]
-    }
-    heart = core(mid, 2)
-  } else if (place === 'desert') {
-    // A closed mirage torus tilts and breathes; a bright knot orbits on its actual elliptical rim.
-    const rx = mid - Math.round(0.6 + 0.6 * Math.sin(p)), ry = 1.6 + 0.5 * Math.cos(p)
-    const at = (angle: number): Vec => [mid + rx * Math.cos(angle), 3 + ry * Math.sin(angle) + 0.55 * Math.sin(p) * Math.cos(angle)]
-    for (let i = 0; i < 64; i++) {
-      const a = at(i * TAU / 64), next = at((i + 1) * TAU / 64)
-      line(a, next, i < 32 ? 'a' : 'l')
-      if (i % 2 === 0) line(a, [mid + (a[0] - mid) * 0.8, 3 + (a[1] - 3) * 0.7], i < 32 ? 'd' : 'a')
-    }
-    const knot = at(p)
-    dot(knot[0], knot[1], 'W')
-    heart = core(Math.round(at(Math.PI)[0]), Math.round(at(Math.PI)[1])); tip = [Math.round(knot[0]), Math.round(knot[1])]
-  } else {
-    // A crowned aurora spirit. Two separate tails breathe apart, then stream together at the head.
-    const cy = 3 + Math.round(0.6 * Math.sin(p))
-    for (const side of [-1, 1]) {
-      const at = (x: number) => clamp(cy + side * (0.4 + (x - 2) / (w - 3) * 1.5) + 0.8 * Math.sin(x * 0.55 - p), 0, 5)
-      ribbon(2, w - 1, at)
-      tip = [w - 1, Math.round(at(w - 1)) + 1]
-    }
-    line([1, cy], [1, cy - 2], 'l'); line([3, cy], [3, cy - 2], 'l'); dot(2, cy - 1, 'a')
-    heart = core(1, cy)
+  const w = 3 + tier * 4, grid = Array.from({ length: H }, () => Array<string>(w).fill('.'))
+  const put = (x: number, y: number, ink: string, over = true) => { if (x >= 0 && x < w && y >= 0 && y < H && (over || grid[y]![x] === '.')) grid[y]![x] = ink }
+  const { stars, links } = figure(place, w - 1, beat * TAU / BEATS, tier >= 3)
+  const at = stars.map(([x, y]): Vec => [clamp(Math.round(x), 0, w - 1), clamp(Math.round(y), 0, H - 1)])
+  const lit = Math.floor(beat * links.length / BEATS) // the pulse: one line after another burns solid
+  for (const [n, [from, to]] of links.entries()) {
+    const [ax, ay] = at[from]!, [bx, by] = at[to]!, steps = Math.max(Math.abs(bx - ax), Math.abs(by - ay))
+    for (let i = 1; i < steps; i++) put(Math.round(ax + (bx - ax) * i / steps), Math.round(ay + (by - ay) * i / steps), n === lit ? 'a' : 'd')
   }
-  // A pulse runs through the connected material. It never creates a new silhouette cell.
-  const rows = b.rows(), occupied = rows.flatMap((row, y) => [...row].flatMap((ink, x) => ink === '.' || ink === 'M' ? [] : [[x, y] as const]))
-  const target: Vec = place === 'desert' ? tip : [1 + beat * (w - 2) / BEATS, 3]
-  const distance = (cell: Vec) => Math.abs(cell[0] - target[0]) * 4 + Math.abs(cell[1] - target[1])
-  const pulse = occupied.reduce((a, b) => distance(a) < distance(b) ? a : b)
-  dot(pulse[0], pulse[1], 'W')
-  const shedding = occupied.reduce((a, b) => Math.hypot(a[0] - tip[0], a[1] - tip[1]) < Math.hypot(b[0] - tip[0], b[1] - tip[1]) ? a : b)
-  return { rows: b.rows(), core: heart, pulse: { x: shedding[0], y: shedding[1], force: 0 } }
+  for (const [i, [x, y]] of at.entries()) if (i) put(x, y, (i + beat) % 4 ? 'W' : 'a')
+  const [cx, cy] = at[0]!
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) put(cx + dx, cy + dy, 'l', false) // the core's four rays
+  put(cx, cy, 'M')
+  const [tx, ty] = at[at.length - 1]!
+  return { rows: grid.map(row => row.join('')), core: [cx, cy], pulse: { x: tx, y: ty, force: 0 } }
 }
 
 const build = (place: WakePreset): Record<Tier, readonly Pose[]> => {
   const frames = (tier: Tier) => {
     const poses = Array.from({ length: BEATS }, (_, beat) => generate(place, tier, beat))
     const low = Math.max(...poses.map(p => p.pulse.y)), high = Math.min(...poses.map(p => p.pulse.y))
-    // The visible low stroke sheds light: strength is measured from the actual tip's excursion.
+    // The tip sheds light on its low stroke: strength is measured from the tip's own excursion.
     return poses.map(p => ({ ...p, pulse: { ...p.pulse, force: clamp(0.2 + 0.8 * (p.pulse.y - high) / Math.max(1, low - high), 0, 1) } }))
   }
   return { 1: frames(1), 2: frames(2), 3: frames(3), 4: frames(4) }

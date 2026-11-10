@@ -16,7 +16,7 @@ const look: Look = {
   season: 'summer', snowy: false, wet: false, wind: 0, working: false, effects: false,
 }
 
-test('agy has eight connected, shaded beats within the shared footprint, growing through four classes', () => {
+test('agy has eight shaded beats of a few stars within the shared footprint, growing through four classes', () => {
   for (const place of places) {
     let area = 0
     for (const tier of tiers) {
@@ -29,14 +29,8 @@ test('agy has eight connected, shaded beats within the shared footprint, growing
         expect(rows.length).toBe(h)
         expect(rows.every(row => row.length === w)).toBe(true)
         expect(new Set(rows.join('').replaceAll('.', '')).size).toBeGreaterThanOrEqual(3)
-        const cells = new Set(rows.flatMap((row, y) => [...row].flatMap((ch, x) => ch === '.' ? [] : [y * w + x])))
-        const queue = [cells.values().next().value!], seen = new Set(queue)
-        for (let i = 0; i < queue.length; i++) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-          const x = queue[i]! % w + dx!, y = Math.floor(queue[i]! / w) + dy!, cell = y * w + x
-          if (x < 0 || x >= w || y < 0 || y >= h || !cells.has(cell) || seen.has(cell)) continue
-          seen.add(cell); queue.push(cell)
-        }
-        expect(seen.size, `${place} ${tier} beat ${beat}: no detached body dots`).toBe(cells.size)
+        const stars = [...rows.join('')].filter(ch => ch === 'W' || ch === 'M').length
+        expect(stars >= 3 && stars <= 9, `${place} ${tier} beat ${beat}: a few bright stars, not a cloud of them`).toBe(true)
         const [x, y] = agyCore(place, tier, beat), pulse = agyPulse(place, tier, beat)
         expect(rows[y]![x], `${place} visible light core`).toBe('M')
         expect(rows[pulse.y]![pulse.x], `${place} physical shedding point`).not.toBe('.')
@@ -46,8 +40,8 @@ test('agy has eight connected, shaded beats within the shared footprint, growing
   }
 })
 
-test('agy moves its connected structure rather than only blinking, with eight different large silhouettes', () => {
-  const minimum = { 1: 8, 2: 14, 3: 20, 4: 26 }
+test('agy moves its figure rather than only blinking, with eight different silhouettes', () => {
+  const minimum = { 1: 4, 2: 6, 3: 8, 4: 10 }
   for (const place of places) for (const tier of tiers) {
     const frames = ALL_AGY[place][tier], masks = frames.map(mask)
     const changes = masks.flatMap(a => masks.map(b => [...a].filter((cell, i) => cell !== b[i]).length))
