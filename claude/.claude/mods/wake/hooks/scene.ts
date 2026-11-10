@@ -794,6 +794,8 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
       }
     }
   }
+  // Keep the real scenery under arriving and leaving sprites, including the textured harbor water.
+  const passageBackground = [...input.jobs, ...input.agents].some(job => job.hit && (job.arriving ?? job.leaving) !== undefined) ? c.px.slice() : undefined
   windLayer(c, look) // gusts and what the wind carries here: over the scenery, under the crew
   land.jobs(c, look, jobs, right)
   for (const [bird, j] of stations(agents, 5)) {
@@ -857,7 +859,7 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
   const coming = [...input.jobs.map(job => ({ ...job, kind: job.kind ?? 'codex' as const })), ...input.agents.map(agent => ({ ...agent, kind: 'claude' as const }))]
     .flatMap(job => job.hit && (job.arriving ?? job.leaving) !== undefined
       ? [{ id: job.hit.id, kind: job.kind, place: input.preset, seed: job.seed, age: job.arriving ?? job.leaving!, arriving: job.arriving !== undefined, struck: job.struck }] : [])
-  if (localHits && coming.length) passages(c, localHits.targets, coming)
+  if (localHits && coming.length) passages(c, localHits.targets, coming, passageBackground)
   return finish()
 }
 

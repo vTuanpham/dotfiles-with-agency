@@ -9,6 +9,8 @@
 // that burst gather into a star.
 import { type Ctx, type Dot, styleFor } from './exit-styles'
 import { type Canvas, hash, mix } from './pixels'
+import { designFor } from './landscapes/design'
+import type { WakePreset } from '../types'
 
 export const EXIT_MS = 3200
 export const ARRIVE_MS = 2400
@@ -22,7 +24,7 @@ const clamp = (v: number) => Math.max(0, Math.min(1, v))
  * Play every passage (a job arriving or leaving) over the finished scene. `owners` are the scene's hit targets, so a job's id
  * finds its pixels through the canvas's hit owners. Hit owners are never changed: hover stays where the job stands.
  */
-export function passages(c: Canvas, owners: { id: string }[], list: Passage[]): void {
+export function passages(c: Canvas, owners: { id: string }[], list: Passage[], background?: Uint32Array): void {
   const playing = list.filter(job => job.age > 0 && job.age < (job.arriving ? ARRIVE_MS : EXIT_MS))
   if (!c.hitOwners || playing.length === 0) return
   const wanted = new Map(playing.map(job => [owners.findIndex(owner => owner.id === job.id) + 1, job]))
@@ -44,11 +46,14 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[]): 
     for (const d of sprite) { const edge = rows.get(d.y); rows.set(d.y, edge ? [Math.min(edge[0], d.x), Math.max(edge[1], d.x)] : [d.x, d.x]) }
     const xs = sprite.map(d => d.x), ys = sprite.map(d => d.y)
     const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys)
-    // lift the sprite off: each row of the hole takes the colour of the scene just beside it (skies and water vary by row)
+    // Named passages restore textured scenery; legacy styles retain their original row-based fill.
+    const design = designFor(job.kind, job.place as WakePreset)
+    const backdrop = !(job.struck && !job.arriving) && (job.arriving ? design?.enter : design?.leave) ? background : undefined
     for (const d of sprite) {
       const [left, right] = rows.get(d.y)!
       const from = left - 1 >= 0 ? left - 1 : right + 1 < c.W ? right + 1 : d.x
-      c.px[d.y * c.W + d.x] = c.px[d.y * c.W + from]!
+      const index = d.y * c.W + d.x
+      c.px[index] = backdrop?.[index] ?? c.px[d.y * c.W + from]!
     }
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2
     const p = job.arriving ? 1 - job.age / ARRIVE_MS : job.age / EXIT_MS // an arrival is the exit played backwards
@@ -56,10 +61,13 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[]): 
       c, p, seed: job.seed, arriving: job.arriving, cx, cy, x0, x1, y0, y1, lit,
       behind: (i, step) => (job.arriving ? p + i * step : p - i * step),
       flip: job.arriving ? -1 : 1,
-      sprite: ({ dx = 0, dy = 0, sx = 1, sy = 1, dissolve = 0, tint, tintBy = 0 }) => {
+      sprite: ({ dx = 0, dy = 0, sx = 1, sy = 1, dissolve = 0, tint, tintBy = 0, filter, offset, clipBelow }) => {
         for (const d of sprite) {
+          if (filter && !filter(d)) continue
           if (dissolve > 0 && (hash(d.x * 31 + d.y * 17 + job.seed) % 1000) / 1000 < dissolve) continue
-          const x = cx + dx + (d.x - cx) * sx, y = Math.round(cy + dy + (d.y - cy) * sy)
+          const [ox, oy] = offset?.(d) ?? [0, 0]
+          const x = cx + dx + ox + (d.x - cx) * sx, y = Math.round(cy + dy + oy + (d.y - cy) * sy)
+          if (clipBelow !== undefined && y > clipBelow) continue
           const color = tint === undefined ? d.color : mix(d.color, tint, tintBy)
           for (let i = 0; i < Math.max(1, Math.ceil(sx)); i++) {
             const px = Math.floor(x) + i
@@ -68,6 +76,6 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[]): 
         }
       },
     }
-    styleFor(job.kind, job.place, job.struck && !job.arriving)(ctx)
+    styleFor(job.kind, job.place, job.struck && !job.arriving, job.arriving)(ctx)
   }
 }

@@ -279,8 +279,9 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   const beat = (Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length
   const blast = kind === 'opencode' && !compact && !look.crewRest && job.talk?.sending && job.talk.over === undefined && job.talk.ms >= TURN_LEAD_MS && job.talk.ms < TURN_LEAD_MS + 300
   const frame = blast ? lanternFlare(look.place ?? 'city', job.tier ?? 1, beat) : frames[beat]!
-  const art = drawn ? shape(frame, turning.mirror, turning.roll, design.turn, SPRITES[kind].turnPose?.[look.place ?? 'city']?.[compact ? 1 : job.tier ?? 1]) : [...frame]
-  if (kind === 'agy' && drawn && turning.roll !== undefined && design.turn !== 'pose') {
+  const turnPose = SPRITES[kind].turnPose?.[look.place ?? 'city']?.[compact ? 1 : job.tier ?? 1]
+  const art = drawn ? shape(frame, turning.mirror, turning.roll, design.turn, turnPose) : [...frame]
+  if (kind === 'agy' && drawn && turning.roll !== undefined && !(design.turn === 'pose' && turnPose && turning.roll >= 0.35 && turning.roll <= 0.65)) {
     // Projection can merge cells; keep the core in its own projected cell rather than losing it behind a filament.
     shape(frame.map(row => row.replace(/[^M]/g, '.')), turning.mirror, turning.roll, design.turn).forEach((row, y) => {
       const x = row.indexOf('M')

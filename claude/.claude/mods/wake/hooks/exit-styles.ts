@@ -11,9 +11,12 @@
 import { P } from './landscapes/kit'
 import { lanternInk } from './landscapes/lantern'
 import { type Canvas, hash, mix } from './pixels'
+import { designFor } from './landscapes/design'
+import type { WakePreset } from '../types'
+import { PASSAGE_STYLES } from './passage-styles'
 
 export type Dot = { x: number; y: number; color: number }
-export type Look = { dx?: number; dy?: number; sx?: number; sy?: number; dissolve?: number; tint?: number; tintBy?: number }
+export type Look = { dx?: number; dy?: number; sx?: number; sy?: number; dissolve?: number; tint?: number; tintBy?: number; filter?: (dot: Dot) => boolean; offset?: (dot: Dot) => readonly [number, number]; clipBelow?: number }
 export type Ctx = {
   c: Canvas
   p: number
@@ -281,5 +284,9 @@ const struck = (kind: 'codex' | 'agy' | 'claude' | 'opencode'): Style => k => {
   }
 }
 
-export const styleFor = (kind: 'codex' | 'agy' | 'claude' | 'opencode', place: string, interrupted = false): Style =>
-  interrupted ? struck(kind) : kind === 'codex' ? CODEX[place] ?? hyperdrive : kind === 'claude' ? flight(place) : kind === 'agy' ? spark(place) : lantern(place)
+export const styleFor = (kind: 'codex' | 'agy' | 'claude' | 'opencode', place: string, interrupted = false, arriving = false): Style => {
+  if (interrupted) return struck(kind)
+  const design = designFor(kind, place as WakePreset)
+  const name = arriving ? design?.enter : design?.leave
+  return name ? PASSAGE_STYLES[name] : kind === 'codex' ? CODEX[place] ?? hyperdrive : kind === 'claude' ? flight(place) : kind === 'agy' ? spark(place) : lantern(place)
+}
