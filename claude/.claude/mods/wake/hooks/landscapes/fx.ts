@@ -57,6 +57,11 @@ const PLANE_LIGHTS: readonly LightAt[] = [
   { at: 'nose', light: { shape: 'halo', color: P.white, alpha: 0.2, reach: 0, modulate: 'strobe' } },
 ]
 
+/** What an automaton sheds in its wake, twinkling out behind it. */
+const WORKS = (colors: readonly number[], extra: Partial<Emitter> = {}): Stream => ({ at: 'tail', follow: true, emitter: { count: 7, life: 1.1, speed: [0.3, 1], angle: [0, TAU], wind: 0.5, colors, alpha: 0.55, envelope: 'twinkle', ...extra } })
+/** The glass eye, lit from within once it is dusk. */
+const EYE = (color: number): LightAt => ({ at: 'nose', light: { shape: 'halo', color, alpha: 0.45, reach: 1, modulate: 'pulse', from: 0.05 } })
+
 /** The eye and pulse are in the art; additional lights belong only to actual lamps. */
 const CODEX: Partial<Record<WakePreset | 'any', Cell>> = {
   any: { lights: SHADOW },
@@ -79,37 +84,36 @@ const CODEX: Partial<Record<WakePreset | 'any', Cell>> = {
       { at: 'below', tiers: [3, 4], light: { shape: 'pool', color: P.teal, alpha: 0.22, reach: 6, modulate: 'pulse', from: 0.05 } }, // the pods' light, on whatever is below
     ],
   },
-  harbor: {
-    streams: [{ at: 'tail', dy: 1, follow: true, beats: [0, 2, 4, 6], emitter: { count: 3, life: 0.7, speed: [1, 2], angle: [-0.08, 0.08], drag: 0.6, colors: [P.white, P.sky], alpha: 0.24, envelope: 'fade' } }],
-    talking: SIGNAL('nose', 0, 0, { angle: [Math.PI - 0.3, Math.PI + 0.3], speed: [5, 9] }), // the wheelhouse's horn
+  // Each automaton sheds its own stuff from the part that drives it (a fluke, a wire, a propeller, a leg), as the dragon sheds
+  // packets, and its glass eye glows after dusk. Its signal to Mochi leaves that eye.
+  harbor: { // the whale: spray thrown up by the fluke
+    streams: [WORKS([P.white, P.sky], { gravity: 3, angle: [UP - 0.6, UP + 0.6], speed: [1, 3], envelope: 'fade' })], lights: [EYE(P.teal)],
+    talking: SIGNAL('nose', 0, 0, { angle: [Math.PI - 0.3, Math.PI + 0.3], speed: [5, 9] }),
   },
-  beach: {
-    // Cowling slipstream, before the tether: the banner is fabric, not an engine.
-    streams: [BOOST], lights: PLANE_LIGHTS, talking: SIGNAL('nose'),
+  beach: { // the jellyfish: light dripping off its wires, and the glow of its bell
+    streams: [WORKS([P.yellow, P.teal], { gravity: 1.5, angle: [DOWN - 0.3, DOWN + 0.3] })],
+    lights: [EYE(P.teal), { at: 'below', light: { shape: 'halo', color: P.yellow, alpha: 0.35, reach: 2, modulate: 'pulse', from: 0.05 } }],
+    talking: SIGNAL('nose'),
   },
-  mountains: {
-    streams: [{ ...BOOST, at: 'below', emitter: { ...BOOST.emitter, angle: [DOWN - 0.2, DOWN + 0.2] } }], // the swinging rider's lift pod
+  mountains: { // the airship: its propeller's slipstream, and the lamp under its gondola
+    streams: [WORKS([P.white, P.sky], { count: 5, life: 0.4, speed: [3, 6], angle: [-0.15, 0.15], envelope: 'fade', streak: 2 })],
+    lights: [EYE(P.teal), { at: 'below', light: { shape: 'halo', color: P.yellow, alpha: 0.4, reach: 1, from: 0.05 } }],
     talking: SIGNAL('nose', 0, 0, { speed: [6, 10] }),
   },
-  countryside: {
-    streams: [
-      WASH([P.sand, P.white]),
-    ],
-    lights: PLANE_LIGHTS, talking: SIGNAL('nose'),
-  },
-  forest: {
-    streams: [WASH([P.leaf, P.overlay1])], // the generated hub anchors leaves directly under the rotor
+  countryside: { streams: [WORKS([P.yellow, P.white], { gravity: 0.4 })], lights: [EYE(P.teal)], talking: SIGNAL('nose') }, // the bee: pollen
+  forest: { // the spider: glints of silk drifting off its legs
+    streams: [WORKS([P.white, P.snow], { count: 5, life: 1.6, speed: [0.1, 0.4], swirl: 0.8 })], lights: [EYE(P.teal)],
     talking: SIGNAL('nose', 0, 0, { angle: [Math.PI - 0.2, Math.PI + 0.2] }),
   },
-  desert: {
-    streams: [
-      { ...WASH([P.sand, P.overlay1]), beats: [2, 6] },
-    ],
+  desert: { // the scarab: dust kicked up by its legs, and the sun it rolls, glowing by day and by night
+    streams: [WORKS([P.sand, P.peach], { gravity: 1.5, envelope: 'fade' })],
+    lights: [{ at: 'nose', dx: -3, always: true, light: { shape: 'halo', color: P.yellow, alpha: 0.45, reach: 3, modulate: 'pulse' } }],
     talking: SIGNAL('nose', 0, 0, { speed: [6, 9] }),
   },
-  tundra: {
-    streams: [{ ...WASH([P.white, P.snow]), beats: [2, 6] }], // the alternating low strokes of the two runners
-    lights: PLANE_LIGHTS, talking: SIGNAL('nose', 0, 0, { speed: [10, 12] }),
+  tundra: { // the narwhal: ice crystals off its fluke, and a glint on its tusk
+    streams: [WORKS([P.snow, P.sky, P.white], { gravity: 0.5, swirl: 0.8 })],
+    lights: [EYE(P.teal), { at: 'left', light: { shape: 'halo', color: P.white, alpha: 0.4, reach: 1, modulate: 'pulse', from: 0.05 } }],
+    talking: SIGNAL('nose', 0, 0, { speed: [10, 12] }),
   },
 }
 
