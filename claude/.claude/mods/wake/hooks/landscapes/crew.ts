@@ -356,14 +356,18 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
       const ownPath = (ago: number): Vec => {
         const [x, y] = path(ago + e.lag)
         const t = ((job.phase ?? look.frame) - ago * 10) * .035 + job.seed + i * 2.4
-        return [x + (e.dx ?? 0) + 2 * Math.sin(t), y + e.dy + Math.sin(t * .7 + i)]
+        // A flock member (one with its own station, `dx`) roams round that station on two unrelated rhythms, closing up and
+        // falling back on its own; a whelp in line astern only weaves.
+        return e.dx === undefined ? [x + 2 * Math.sin(t), y + e.dy + Math.sin(t * .7 + i)]
+          : [x + e.dx - Math.sign(e.dx) * (1.5 + 1.5 * Math.sin(t * .6 + i * 2)) + Math.sin(t * 1.7 + i * 3), y + e.dy + 1.5 * Math.sin(t * .45 + i * 1.3) + .5 * Math.sin(t * 1.3)] // it closes on the leader and drops back to its station, never wider than the formation's reserved span
       }
       const small = airFrames(look, kind, e.tier), [px, py] = ownPath(0)
       const next = small[(Math.floor((job.phase ?? look.frame) / (tempo * (0.83 + i * .11))) + job.seed + 3 * i) % small.length]!
       const o = drawn ? orient(ownPath, drawn, 0) : undefined
       const piece = o ? shape(next, o.mirror, o.roll, design.turn, SPRITES[kind].turnPose?.[look.place ?? 'city']?.[e.tier]) : next
-      const top = Math.round(py) - (piece.length >> 1)
-      if (top < 0 || top + piece.length > (look.crewGround ?? c.H)) continue
+      const floor = (look.crewGround ?? c.H) - piece.length
+      if (floor < 0) continue
+      const top = Math.max(0, Math.min(floor, Math.round(py) - (piece.length >> 1))) // a roaming companion is held inside the sky, never blinked out at its edge
       const left = Math.round(px) - (piece[0]!.length >> 1)
       if (left < 0 || left + piece[0]!.length > c.W) continue
       draw(c, look, left, top, piece, pal, false)
