@@ -7,10 +7,11 @@ import { SCENE_H } from '../hooks/landscapes/kit.ts'
 import { EXIT_MS } from '../hooks/exits.ts'
 import { PhaseClock, routeRate } from '../hooks/landscapes/gait.ts'
 import { TURN_LEAD_MS, packetWindow } from '../hooks/crew-row.ts'
+import { SHOWCASE_FRAMES, passageAt } from './showcase-input'
 
 const prefix = process.argv[2] ?? `${import.meta.dir}/readme-crew`
-const FRAMES = Number(process.argv[3] ?? 48)
-const STEP = 3
+const FRAMES = Number(process.argv[3] ?? 144)
+const STEP = 1
 const MS_PER_FRAME = STEP * 50 // the band redraws at 20 frames a second
 
 const base = (width: number, preset: SceneInput['preset'], hour = 14): SceneInput => ({
@@ -24,14 +25,15 @@ const families = ['codex', 'claude', 'agy', 'opencode'] as const
 // the cast: every family at work in every place, so the moving structure, the effects and the escorts show
 {
   const W = 72
-  const data = new Uint32Array(places.length * families.length * FRAMES * W * SCENE_H)
+  const data = new Uint32Array(places.length * families.length * SHOWCASE_FRAMES * W * SCENE_H)
   let at = 0
   for (const place of places) for (const kind of families) {
-    for (let i = 0; i < FRAMES; i++) {
+    for (let i = 0; i < SHOWCASE_FRAMES; i++) {
       const job = { isStale: false, seed: 6, kind, tier: 4 as const, pace: 0.8, hit: { id: 'j', title: 'j', details: [] } }
-      const phase = i / FRAMES
-      const hour = phase < 1 / 3 ? 14 : phase < .5 ? 14 + (phase - 1 / 3) * 48 : phase < 5 / 6 ? 22 : 22 - (phase - 5 / 6) * 48
-      data.set(scenePixels({ ...base(W, place, hour), frame: 37 + i * STEP, jobs: [job] }), at)
+      const hour = (14 + 24 * i / SHOWCASE_FRAMES) % 24
+      const ms = i * MS_PER_FRAME, duration = SHOWCASE_FRAMES * MS_PER_FRAME
+      const jobs = ms < 450 || ms >= duration - 450 ? [] : [{ ...job, ...passageAt(ms, duration) }]
+      data.set(scenePixels({ ...base(W, place, hour), frame: 37 + i * STEP, jobs }), at)
       at += W * SCENE_H
     }
   }
@@ -66,7 +68,7 @@ const families = ['codex', 'claude', 'agy', 'opencode'] as const
 {
   const W = 64
   const tiles = [['codex', 'city'], ['claude', 'mountains'], ['agy', 'desert'], ['opencode', 'tundra']] as const
-  const before = 8, strike = Math.ceil(EXIT_MS / MS_PER_FRAME)
+  const before = Math.ceil(1200 / MS_PER_FRAME), strike = Math.ceil(EXIT_MS / MS_PER_FRAME)
   const data = new Uint32Array(tiles.length * FRAMES * W * SCENE_H)
   let at = 0
   for (const [kind, place] of tiles) {

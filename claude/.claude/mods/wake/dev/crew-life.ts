@@ -7,8 +7,8 @@ import { ARRIVE_MS, EXIT_MS } from '../hooks/exits.ts'
 import { CHARACTER_IDS } from '../hooks/mochi.ts'
 
 const prefix = process.argv[2] ?? `${import.meta.dir}/crew`
-const FRAMES = Number(process.argv[3] ?? 48)
-const STEP = 3
+const FRAMES = Number(process.argv[3] ?? 144)
+const STEP = 1
 const MS_PER_FRAME = STEP * 50 // the band redraws at 20 frames a second
 
 const base = (width: number, preset: SceneInput['preset']): SceneInput => ({

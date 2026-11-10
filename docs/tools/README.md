@@ -29,12 +29,15 @@ Chrome renders use a separate headless profile under `README_WORK`.
 
 Run `readme_gifs.py` without selectors to refresh the complete Wake set, including
 the root README banner and annotated overview. The tour features class-4 crews at
-native animation speed; the banner and landscape gallery compress a day into a loop.
-The cast gallery blends between day and night. The overview uses class 3 to leave
-space for its labels and rows. Short dissolves join tour recordings and reset the
-time-lapse/cast loops. Inspect consecutive frames, loop seams, both lighting states
+native animation speed. Wake GIFs render at 20 fps; the banner, landscapes and cast
+compress a day into 24 seconds. Two large crews share each banner landscape; their
+native arrivals and departures finish before a short dip to the background joins
+the loop; moving scenes are never overlaid at that seam. The overview uses
+class 3 to leave space for its labels and rows. Short dissolves join separate tour
+recordings. Inspect consecutive frames, loop seams, both lighting states
 and action transitions. `tests/showcase.test.ts` checks crew placement throughout
 the exact banner and landscape inputs, including changing time and weather.
+The longer sheets generate RGB frames on demand before palette conversion.
 
 Overview, selection, account, Lab, resource and Codex notification diagrams use the
 same renderer; pass their SVG stems to regenerate only the changed assets. Claude

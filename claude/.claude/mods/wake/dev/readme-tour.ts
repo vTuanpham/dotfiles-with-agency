@@ -16,7 +16,7 @@ for (const chapter of chapters) {
   for (const [mode, from, to] of chapter.shots) {
     cuts.push(frames.length)
     const timeline = makeFrames({ family: 'codex', place: 'city', hour: 22, ...chapter.config, tier: 4, width, mode })
-    for (let ms = from; ms < to; ms += 100) {
+    for (let ms = from; ms < to; ms += 50) {
       const frame = timeline[ms / 50]
       if (!frame || frame.length !== width * SCENE_H) throw new Error(`Invalid tour frame: ${chapter.title} at ${ms}`)
       frames.push(frame)
@@ -27,4 +27,4 @@ for (const chapter of chapters) {
 const pixels = new Uint32Array(frames.length * width * SCENE_H)
 frames.forEach((frame, i) => pixels.set(frame, i * width * SCENE_H))
 await Bun.write(out + '.bin', pixels)
-await Bun.write(out + '.json', JSON.stringify({ width, height: SCENE_H, frames: frames.length, delay: 100, clips, cuts }))
+await Bun.write(out + '.json', JSON.stringify({ width, height: SCENE_H, frames: frames.length, delay: 50, clips, cuts }))

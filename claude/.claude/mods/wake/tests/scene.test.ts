@@ -4,6 +4,9 @@ import { PACKET_RUN_MS } from '../hooks/crew-row'
 import { sceneInput, type BandState } from '../hooks/band'
 import { LANDSCAPES } from '../hooks/landscapes'
 import { designFor } from '../hooks/landscapes/design'
+import { creatureFrames } from '../hooks/landscapes/creatures'
+import { agyFrames } from '../hooks/landscapes/agy'
+import { showcaseInput } from '../dev/showcase-input'
 import { P, SCENE_H } from '../hooks/landscapes/kit'
 import { canvas, hash, seedOf } from '../hooks/pixels'
 import { CAT_COLUMNS, MIN_SCENE_ROWS, SCENE_ROWS, MessageTrails, type SceneInput, arcCells, lookOf, readScenePointer, sceneFrame, sceneHitAt, scenePixels } from '../hooks/scene'
@@ -493,6 +496,30 @@ test('crew does not jump between distant lanes as the scene animates', { timeout
       previous = anchors
     }
   }
+})
+
+test('flying crews share neighboring airspace without lingering together or jumping', { timeoutMs: 60_000 }, () => {
+  const width = 120, pace = .6
+  const jobs = [{ kind: 'claude' as const, seed: 3 }, { kind: 'agy' as const, seed: 8 }].map(j => ({ ...j, tier: 4 as const, isStale: false, pace }))
+  const art = [creatureFrames('city', 4)[0]!, agyFrames('city', 4)[0]!]
+  let streak = 0, longest = 0, previous: number[] = []
+  for (let frame = 0; frame < 1200; frame++) {
+    const anchors: number[] = []
+    scenePixels({ ...showcaseInput(0, 40, width), frame, jobs: jobs.map(j => ({ ...j, phase: 37 + frame * .7, route: 37 + frame * .7 })) }, anchors)
+    expect(anchors).toHaveLength(2)
+    const boxes = anchors.map((p, i) => ({ x: p % width - (art[i]![0]!.length >> 1), y: Math.floor(p / width) - (art[i]!.length >> 1), w: art[i]![0]!.length, h: art[i]!.length }))
+    const [a, b] = boxes
+    const area = Math.max(0, Math.min(a!.x + a!.w, b!.x + b!.w) - Math.max(a!.x, b!.x)) * Math.max(0, Math.min(a!.y + a!.h, b!.y + b!.h) - Math.max(a!.y, b!.y))
+    streak = area > Math.min(a!.w * a!.h, b!.w * b!.h) * .25 ? streak + 1 : 0
+    longest = Math.max(longest, streak)
+    for (const [i, p] of anchors.entries()) if (previous[i] !== undefined) {
+      const old = previous[i]!
+      expect(Math.abs(p % width - old % width) + Math.abs(Math.floor(p / width) - Math.floor(old / width))).toBeLessThanOrEqual(3)
+    }
+    previous = anchors
+  }
+  expect(longest).toBeGreaterThan(0)
+  expect(longest * 50).toBeLessThanOrEqual(10_000)
 })
 
 test('crowded beach packing keeps distinct anchors', () => {

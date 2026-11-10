@@ -11,7 +11,7 @@ import * as agySprite from './agy'
 import * as lanternSprite from './lantern'
 import { crewFx, groundStep } from './fx'
 import type { Vec } from './particles'
-import { clockRate, gait, roamShare } from './gait'
+import { clockRate, excursion, gait, roamShare } from './gait'
 import { type Job, jobAccent, type Look, P } from './kit'
 import type { WakePreset } from '../../types'
 
@@ -565,9 +565,6 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       const drift = e.dx === undefined ? 2 : 3, bob = e.dx === undefined ? 0 : 1
       for (let y = -bob; y < small.length + bob; y++) for (let x = -drift; x < small[0]!.length + drift; x++) pixels.push([left + x, top + y])
     }
-    // What a flyer must not cross: Mochi, her laptop and the other crew (their roaming boxes: every worker stays visible and
-    // hoverable), each with a ring of one cell. Scenery is only a preference (`soft`): a flyer is nearer than the buildings, so
-    // it may pass in front of them and hide a few, though it settles in clear sky when there is any.
     // Only Mochi and her laptop are hard (`crewHard`). The rest of the crew is a soft boundary like the scenery: a flyer prefers
     // clear sky but may pass through another worker when the sky is crowded, so nobody is ever pushed out of the scene.
     const padded = new Uint8Array(c.W * c.H), soft = new Uint8Array(c.W * c.H), crowd = new Uint8Array(c.W * c.H)
@@ -603,20 +600,22 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       const zone = { x: candidate.x - (art[0]!.length >> 1), y: candidate.y - (art.length >> 1), w, h }
       if (pixels.some(([dx, dy]) => padded[(zone.y + dy) * c.W + zone.x + dx])) continue
       if (zone.y + h > skyFloor && pixels.some(([dx, dy]) => crowd[(zone.y + dy) * c.W + zone.x + dx])) continue
-      // The room it may roam: around home, as wide as its share of the free sky (crewRoam) and a few rows high, stopping only
-      // at Mochi and the other crew. The whole box is reserved, so no other flyer crosses a roaming worker; scenery does not
-      // limit it (it passes in front of buildings).
+      // Neighboring airspace is shared during short excursions; only the viewport, ground and Mochi stop a flight.
       const ground = look.crewGround ?? c.H
       const free = (sx: number, sy: number) => pixels.every(([dx, dy]) => {
         const px = zone.x + dx + sx, py = zone.y + dy + sy
         return px >= 0 && px < c.W && py >= 0 && py < ground && !padded[py * c.W + px]
       })
-      const maxX = job.lane?.roam ?? look.crewRoam ?? PATROL, maxY = design.depth === 'far' ? 1 : (job.tier ?? 1) >= 3 ? 3 : 4
-      let rx = 0
-      while (rx < maxX && free(-(rx + 1), 0) && free(rx + 1, 0)) rx++
+      const homeRoam = job.lane?.roam ?? look.crewRoam ?? PATROL
+      const maxX = homeRoam + ((look.crewCount ?? 1) > 1 ? Math.max(10, Math.floor(homeRoam * 1.2)) : 0), maxY = design.depth === 'far' ? 1 : (job.tier ?? 1) >= 3 ? 3 : 4
+      let leftReach = 0, rightReach = 0
+      while (leftReach < maxX && free(-(leftReach + 1), 0)) leftReach++
+      while (rightReach < maxX && free(rightReach + 1, 0)) rightReach++
+      if ((look.crewCount ?? 1) <= 1) leftReach = rightReach = Math.min(leftReach, rightReach)
+      const rx = Math.max(leftReach, rightReach)
       // Rows above and below are tried apart (a rooftop below must not take away the open sky above), each as a full-width
       // band: a row counts only if the sprite fits there at both ends and in the middle of its horizontal range.
-      const across = [-rx, -(rx >> 1), 0, rx >> 1, rx]
+      const across = [-leftReach, -(leftReach >> 1), 0, rightReach >> 1, rightReach]
       const rowFree = (sy: number) => across.every(sx => free(sx, sy))
       let up = 0, down = 0
       while (up < maxY && rowFree(-(up + 1))) up++
@@ -627,25 +626,31 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       const hop = Math.round(hopRoom * Math.min(1, job.lift ?? 0))
       // Where in the box it is now: its family's gait, over the room that its activity earns it (a calm worker hovers near home).
       const pace = job.pace ?? 0.6
-      const { u, v } = gait(gaitKind(job, look), job.tier ?? 1, job.seed, job.route ?? job.phase ?? look.frame, rx) // (the route clock stands still while it hovers to talk to the root)
+      const core = Math.min(leftReach, rightReach, homeRoam)
+      const visit = candidate.x < right / 2 ? rightReach - core : core - leftReach
+      const at = (time: number) => {
+        const g = gait(gaitKind(job, look), job.tier ?? 1, job.seed, time, core)
+        return { x: core * g.u + visit * excursion(time, job.seed), v: g.v }
+      }
+      const { x: travel, v } = at(job.route ?? job.phase ?? look.frame)
       const share = roamShare(pace)
       const offset = -Math.round(share * (v > 0 ? v * up : v * down)) - hop
-      let drift = Math.round(rx * share * u)
+      let drift = Math.round(share * travel)
       // Crew may overlap (a soft boundary), but every worker keeps an anchor of its own, so a message wire finds only one of them.
       // (only this pass's anchors count: the array is shared across the passes of one scene)
       for (let tries = 0; tries < 8 && anchors.indexOf((candidate.y + offset) * c.W + candidate.x + drift, look.crewAnchorsFrom ?? 0) >= 0; tries++) drift += tries % 2 ? -tries : tries + 1
       const settled = placeRest(c, look, job, candidate.x + drift, candidate.y + offset, right, company)
       if (settled) return settled
-      const reserved = { x: zone.x + formation.left - rx, y: zone.y + formation.top - up - hopRoom, w: formation.right - formation.left + 2 * rx, h: formation.bottom - formation.top + up + down + hopRoom }
+      const reserved = { x: zone.x + formation.left - core, y: zone.y + formation.top - up - hopRoom, w: formation.right - formation.left + 2 * core, h: formation.bottom - formation.top + up + down + hopRoom }
       zones.push(reserved)
       sprites.push(reserved)
       anchors.push((candidate.y + offset) * c.W + candidate.x + drift)
       // where it was a moment ago: the same gait at earlier times, so its trail is exactly its own path
       const kind = job.kind ?? 'codex', now = job.route ?? job.phase ?? look.frame
       const path = (ago: number): Vec => { // the same gait at the time `ago` seconds back: a trail follows this
-        const g = gait(gaitKind(job, look), job.tier ?? 1, job.seed, now - ago * 10 * clockRate(pace), rx)
+        const g = at(now - ago * 10 * clockRate(pace))
         // Keep the path continuous for heading and effects; rasterising it here makes slow craft turn at every pixel step.
-        return [candidate.x + rx * share * g.u, candidate.y - share * (g.v > 0 ? g.v * up : g.v * down) - hop]
+        return [candidate.x + share * g.x, candidate.y - share * (g.v > 0 ? g.v * up : g.v * down) - hop]
       }
       const member = { ...job, lane: { x: candidate.x, roam: rx * share } }
       if (look.crewDeferred) fly(c, { ...look, crewLocateOnly: true }, candidate.x + drift, candidate.y + offset, { ...member, talk: undefined }, kind, false, path, company)

@@ -9,11 +9,11 @@ import { LOGOS } from '../hooks/logos.ts'
 import type { WakeChip, WakeQuota } from '../types'
 
 const out = process.argv[2] ?? `${import.meta.dir}/dock.bin`
-const FRAMES = Number(process.argv[3] ?? 48)
-const STEP = 3
+const FRAMES = Number(process.argv[3] ?? 144)
+const STEP = 1
 const MS_PER_TICK = 50 // the scene redraws at 20 frames a second
 const LOOP_MS = FRAMES * STEP * MS_PER_TICK
-const W = Number(process.argv[4] ?? 156) // the real band draws one scene pixel per terminal column: 156 columns, 9 px a cell = 1404 px
+const W = Number(process.argv[4] ?? 200) // one scene pixel per terminal column; leave room for the complete status line
 const TEXT_COLUMNS = W
 const H = SCENE_H
 const K = ['read', 'read', 'read', 'search', 'edit', 'run', 'test', 'read', 'edit', 'agent', 'web', 'edit'] as const

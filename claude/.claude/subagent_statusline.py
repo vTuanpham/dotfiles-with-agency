@@ -88,6 +88,8 @@ for t in d.get("tasks", []):
                 on(CARD, ramp(s / window), SPARK[int((s - lo) / (hi - lo) * 7) if hi > lo else 0]) for s in samples
             )
         body.append(seg)
+    elif tokens:
+        body.append(on(CARD, TEXT, f"{tokens / 1000:.0f}k"))
     if start := t.get("startTime"):
         body.append(on(CARD, SUBTLE, f"{ICON_CLOCK} {span(NOW - start / 1000)}"))
     if label := t.get("label") or t.get("description"):

@@ -35,8 +35,11 @@ def payload(now, tick):
         "model": {"id": "claude-opus-5-5", "display_name": "Opus 5.5"},
         "effort": {"level": "high"},
         "thinking": {"enabled": True},
+        "output_style": {"name": "Concise"},
+        "vim": {"mode": "INSERT"},
         "workspace": {"current_dir": f"{HOME}/projects/webapp"},
-        "context_window": {"used_percentage": 38 + tick % 3, "context_window_size": 1_000_000},
+        "context_window": {"used_percentage": 38, "context_window_size": 1_000_000},
+        "prompt_cache": {"caching_observed": True, "warm": True, "ttl": "1h", "expires_at": now + 47 * 60},
         "rate_limits": {
             "five_hour": {"used_percentage": 41, "resets_at": now + 2 * 3600 + 13 * 60},
             "seven_day": {"used_percentage": 23, "resets_at": now + 3 * 86400 + 5 * 3600},

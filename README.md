@@ -1,4 +1,4 @@
-<h1 align="center"><img src="docs/images/hero.gif" alt="Dotfiles with agency. Wake landscapes change through day, night, rain and snow above six tools: Wake, Inbox, Bridge, Model Guide, Accounts and Baton." width="100%"></h1>
+<h1 align="center"><img src="docs/images/hero.gif" alt="Dotfiles with agency. Wake landscapes change through day, night, rain and snow above six tools: Wake, Inbox, Bridge, Model Guide, Resources and Baton." width="100%"></h1>
 
 <p align="center">
 <a href="#wake">Watch the work</a> · <a href="#agent-tools">Use the tools</a> · <a href="#why-use-it">What’s included</a> · <a href="#setup">Install</a> · <a href="#packages">Packages</a>

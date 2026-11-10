@@ -14,8 +14,10 @@ Claude Code configuration under `~/.claude`. Each part has its own kind:
 
 The status line's second row shows context use, then **how long this session's prompt cache stays warm** (`cache ▰▰▱ 47m`,
 `cache cold` once it has lapsed), then the rate limits and cost. A turn refreshes the cache, so the countdown restarts at each
-response. `statusline.py` reads the last main-conversation response in the transcript and takes the lifetime (5 minutes or 1 hour)
-from how that cache was written, else from `promptCacheTtl` or `CLAUDE_CODE_PROMPT_CACHE_TTL`, else an hour.
+response. `statusline.py` uses Claude Code's native `prompt_cache` observation for
+warmth, lifetime and expiry. It leaves the segment out until caching is observed.
+See the [native statusline fields](https://code.claude.com/docs/en/statusline#prompt-cache-fields).
+Subagent rows retain their token count while the model's context size is being resolved.
 
 ## Accounts
 
@@ -149,6 +151,8 @@ Each design declares how it faces, moves and turns (`hooks/landscapes/design.ts`
 show a hand-drawn mid-turn pose, and face-on designs do not turn. The tug and paper boat ride harbor water; the crab,
 snowcat and fox use the ground, the flamingo flies the shoreline, and the sun skiff and crop drone cruise low. The dragon, bat, owl, puffin and lantern string
 settle on perches when stale or waiting. Other workers fly. Mochi and her laptop are hard boundaries.
+Flying crews can visit neighboring airspace and cross paths. A visit returns to its
+home route within roughly 4–10 seconds of movement; message turns can pause that route.
 
 ### Messages
 

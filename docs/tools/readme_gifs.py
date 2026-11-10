@@ -26,8 +26,9 @@ ROOT = Path(__file__).resolve().parents[2]
 WAKE = ROOT / "claude/.claude/mods/wake"
 IMAGES = ROOT / "docs/images"
 WORK = Path(os.environ.get("README_WORK", "/tmp/readme-work"))
-FRAMES = 48
-DELAY_MS = 150
+FRAMES = 144
+TIMELAPSE_FRAMES = 480
+DELAY_MS = 50
 # the scene's height in pixels is Wake's own constant, so a taller sky reaches the images without an edit here
 SCENE_H = int(re.search(r"SCENE_H = (\d+)", (WAKE / "hooks/landscapes/kit.ts").read_text()).group(1))
 
@@ -61,18 +62,26 @@ def scene(data, size, index, scale, height=SCENE_H, scale_y=None):
     return image.resize((image.width * scale, height * (scale_y or scale)), Image.NEAREST)
 
 
-def save_gif(frames, path, delay=DELAY_MS):
+def save_gif(frames, path, delay=DELAY_MS, count=None):
     """One shared palette (no dither, so flat colours stay flat), then gifsicle keeps only changed pixels.
     `delay` is milliseconds, one for all frames or one per frame."""
-    step = max(1, len(frames) // 6)
-    sample = Image.new("RGB", (frames[0].width, frames[0].height * len(frames[::step])))
-    for i, frame in enumerate(frames[::step]):
-        sample.paste(frame, (0, i * frame.height))
+    count, frame_at = (len(frames), frames.__getitem__) if count is None else (count, frames)
+    first = frame_at(0)
+    samples = range(0, count, max(1, count // 6))
+    sample = Image.new("RGB", (first.width, first.height * len(samples)))
+    for row, index in enumerate(samples):
+        sample.paste(frame_at(index), (0, row * first.height))
     palette = sample.quantize(255, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
-    indexed = [f.quantize(palette=palette, dither=Image.Dither.NONE) for f in frames]
+    indexed = [frame_at(i).quantize(palette=palette, dither=Image.Dither.NONE) for i in range(count)]
     indexed[0].save(path, save_all=True, append_images=indexed[1:], duration=delay, loop=0, optimize=False)
     run("gifsicle", "-O3", "--no-comments", "-b", str(path))
-    print(path.name, f"{path.stat().st_size / 1e6:.2f} MB", frames[0].size)
+    print(path.name, f"{path.stat().st_size / 1e6:.2f} MB", first.size)
+
+
+def loop_scene(image, index):
+    """Dip between recordings after the crews leave; never overlay two moving scenes."""
+    t = min(1, index / 8, (TIMELAPSE_FRAMES - 1 - index) / 8)
+    return image if t >= 1 else Image.blend(Image.new("RGB", image.size, BASE), image, t * t * (3 - 2 * t))
 
 
 def dissolve(last, first):
@@ -99,17 +108,17 @@ def landscapes():
     ]
     data, size = cells(WORK / "showcase180.bin", 180)
     font = label_font(False, 17)
-    frames = []
     pitch = SCENE_H * 6 + 30
-    for i in range(FRAMES):
+    def frame_at(i):
+        i = (i + 80) % TIMELAPSE_FRAMES  # open on the settled scene, not the loop transition
         sheet = Image.new("RGB", (1080, len(titles) * pitch), BASE)
         draw = ImageDraw.Draw(sheet)
         for s, title in enumerate(titles):
             y = s * pitch
             draw.text((16, y + 5), title, font=font, fill=(166, 173, 200))
-            sheet.paste(scene(data, size, s * FRAMES + i, 6), (0, y + 30))
-        frames.append(sheet)
-    save_gif(frames + dissolve(frames[-1], frames[0]), IMAGES / "wake-landscapes.gif")
+            sheet.paste(loop_scene(scene(data, size, s * TIMELAPSE_FRAMES + i, 6), i), (0, y + 30))
+        return sheet
+    save_gif(frame_at, IMAGES / "wake-landscapes.gif", count=TIMELAPSE_FRAMES)
 
 
 # ── hero: the page chrome from google-chrome, the strips drawn over its black band ───────────────
@@ -125,13 +134,13 @@ def hero():
     )
     page = Image.open(base).convert("RGB")
     data, size = cells(WORK / "showcase200.bin", 200)
-    frames = []
-    for i in range(FRAMES):
+    def frame_at(i):
+        i = (i + 80) % TIMELAPSE_FRAMES
         frame = page.copy()
         for k, s in enumerate((0, 2, 5, 7)):  # city, beach, rain, snow
-            frame.paste(scene(data, size, s * FRAMES + i, 6), (0, 250 + k * SCENE_H * 6))
-        frames.append(frame)
-    save_gif(frames + dissolve(frames[-1], frames[0]), IMAGES / "hero.gif")
+            frame.paste(loop_scene(scene(data, size, s * TIMELAPSE_FRAMES + i, 6), i), (0, 250 + k * SCENE_H * 6))
+        return frame
+    save_gif(frame_at, IMAGES / "hero.gif", count=TIMELAPSE_FRAMES)
 
 
 # ── dock: the scene with call-outs, the crew and quota rows, a prompt and the real status line ────
@@ -366,10 +375,11 @@ def dock():
         left = min(max(6, x_target - span / 2), width - span - 6)
         d.text((left, quota_y - 22), label, font=small, fill=(166, 173, 200))
         d.line([(x_target, quota_y - 6), (x_target, quota_y - 1)], fill=(166, 173, 200), width=2)
-        if i % 8 < 5:  # the prompt's cursor blinks
+        if (i * DELAY_MS) % 1200 < 750:  # the prompt's cursor blinks
             d.rectangle([cursor_x, prompt_y + face.ch, cursor_x + face.cw - 1, prompt_y + 2 * face.ch - 2], fill=TEXT)
-        status = statusline.render(statusline.ansi_lines(1_790_000_000.0 + 3.2 * i / FRAMES, i), TERMINAL_PX)
-        frame.paste(status.crop((0, 0, min(status.width, width), status.height)), (0, status_y))
+        status = statusline.render(statusline.ansi_lines(1_790_000_000.0 + i * DELAY_MS / 1000, i), TERMINAL_PX)
+        assert status.width <= width, "Status line exceeds the demo terminal width"
+        frame.paste(status, (0, status_y))
         frames.append(frame)
     save_gif(frames, IMAGES / "wake-dock.gif")
 
@@ -427,8 +437,8 @@ def cast():
     scale, left, top, gap = 3, 118, 34, 6
     cell_w, cell_h = 72 * scale, SCENE_H * scale
     width = left + len(FAMILIES) * (cell_w + gap)
-    frames = []
-    for i in range(FRAMES):
+    def frame_at(i):
+        i = (i + 80) % TIMELAPSE_FRAMES
         sheet = Image.new("RGB", (width, top + len(PLACES) * (cell_h + gap)), BASE)
         draw = ImageDraw.Draw(sheet)
         for f, family in enumerate(FAMILIES):
@@ -437,9 +447,9 @@ def cast():
             y = top + p * (cell_h + gap)
             draw.text((10, y + cell_h // 2 - 9), place, font=small, fill=(166, 173, 200))
             for f in range(len(FAMILIES)):
-                sheet.paste(scene(data, size, (p * len(FAMILIES) + f) * FRAMES + i, scale), (left + f * (cell_w + gap), y))
-        frames.append(sheet)
-    save_gif(frames + dissolve(frames[-1], frames[0]), IMAGES / "wake-cast.gif")
+                sheet.paste(loop_scene(scene(data, size, (p * len(FAMILIES) + f) * TIMELAPSE_FRAMES + i, scale), i), (left + f * (cell_w + gap), y))
+        return sheet
+    save_gif(frame_at, IMAGES / "wake-cast.gif", count=TIMELAPSE_FRAMES)
 
 
 def tiles(sheet_name, width_cells, scale, columns, labels, out_name, captions=None):
@@ -518,7 +528,7 @@ if __name__ == "__main__":
         run("bun", "dev/readme-crew.ts", str(WORK / "readme-crew"), str(FRAMES), cwd=WAKE)
     if "landscapes" in want or "hero" in want:
         for w in (180, 200):
-            run("bun", "dev/showcase.ts", str(WORK / f"showcase{w}.bin"), str(FRAMES), str(w), cwd=WAKE)
+            run("bun", "dev/showcase.ts", str(WORK / f"showcase{w}.bin"), str(TIMELAPSE_FRAMES), str(w), cwd=WAKE)
     if "dock" in want:
         run("bun", "dev/dock.ts", str(WORK / "dock.bin"), str(FRAMES), cwd=WAKE)
     if "crew" in want:

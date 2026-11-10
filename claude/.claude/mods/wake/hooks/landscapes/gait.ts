@@ -48,6 +48,12 @@ export const clockRate = (pace: number) => 0.8 + 1.0 * Math.max(0, Math.min(1, p
 /** The part of its room a worker uses: a calm one stays near home, a busy one ranges. */
 export const roamShare = (pace: number) => 0.6 + 0.4 * Math.max(0, Math.min(1, pace))
 
+/** A smooth visit to neighboring airspace, returning home within 4–10 seconds of active route time. */
+export function excursion(time: number, seed: number): number {
+  const age = ((time + hash(seed * 17) % 240) % 240 + 240) % 240
+  return age < 80 ? Math.sin(Math.PI * age / 80) ** 2 : 0
+}
+
 /** Seconds of its own events over which a worker winds down from busy to calm. */
 const BUSY_MS = 120_000
 
