@@ -1,12 +1,14 @@
 import type { WakePreset } from '../../types'
 import type { Tier } from './design'
 
-// Codex is the mechanical crew, and each place gives its machines a body of its own: what a person would actually build and
-// fly there: over the city a clockwork dragon (a generator, see `dragon` below: one design that grows from a small, slim whelp to a
-// long plated one), a banner plane on the beach, paddle launches in the harbor and a generated machine for every other place. Four classes grow the same machine, each a rectangle inside
-// CRAFT_MAX and larger than the one before. Sprite keys are crew.ts's: a body, W highlight, l light stripe, d shade or rope,
-// s lamp, p bunting, h hull or wood, r red (a beacon, a tail fin), g glass, k grey metal. Each craft has two or more frames so its
-// image moves over eight beats. What a craft stirs up, lights and trails is data in fx.ts, not drawn here.
+// Codex is the clockwork crew: every place has its own automaton, built of the same plated metal with a glass eye and a gear.
+// Over the city the clockwork dragon (a generator, see `dragon` below: one design that grows from a small, slim whelp to a long
+// plated one); elsewhere a hand-drawn machine animal that belongs there: a whale that spouts in the harbor, a jellyfish over the
+// beach, an airship in the mountains, a bee over the fields, a spider on its thread in the forest, a scarab rolling a sun across the
+// desert and a narwhal on the tundra. Four classes grow the same machine, each a rectangle inside CRAFT_MAX and larger than the
+// one before. Sprite keys are crew.ts's: a body, W highlight, l light plate, d shade, s lamp, g glass, k grey metal. Only the
+// dragon undulates; the others move a part of their own (a fluke, a bell, a propeller, wings, pincers, legs).
+// What a craft stirs up, lights and trails is data in fx.ts, not drawn here.
 
 type Frames = readonly (readonly string[])[]
 
@@ -70,207 +72,104 @@ function dragon(tier: Tier, beat: number): string[] {
 const dragonFrames = (tier: Tier): Frames => Array.from({ length: BEATS }, (_, beat) => dragon(tier, beat))
 const CITY_CRAFT: Record<Tier, Frames> = { 1: dragonFrames(1), 2: dragonFrames(2), 3: dragonFrames(3), 4: dragonFrames(4) }
 
-/** A letter grid shared by the machines' generators; lines keep spars, rigging and runners connected at every size. */
-function metal(w: number, h: number) {
-  const rows = Array.from({ length: h }, () => Array<string>(w).fill('.'))
-  const dot = (x: number, y: number, ch: string) => {
-    x = Math.round(x); y = Math.round(y)
-    if (x >= 0 && x < w && y >= 0 && y < h) rows[y]![x] = ch
-  }
-  const line = (x0: number, y0: number, x1: number, y1: number, ch: string) => {
-    const n = Math.max(1, Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))))
-    for (let i = 0; i <= n; i++) dot(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, ch)
-  }
-  return { dot, line, done: () => rows.map(r => r.join('')) }
+export const MACHINE_SIZE: Record<Tier, { w: number; h: number }> = {
+  1: { w: 5, h: 3 }, 2: { w: 7, h: 5 }, 3: { w: 11, h: 6 }, 4: { w: 15, h: 7 },
+}
+/** An automaton: two poses of its moving part in each class, and how many times it works that part in the eight beats. Every
+ *  pose has a glass eye (`Wg`, its face, where its signal leaves) and a gear (`k`). All are drawn heading left. */
+type Machine = { name: string; strokes: 1 | 2 | 4; art: Record<Tier, readonly [readonly string[], readonly string[]]> }
+
+const AUTOMATA: Record<Exclude<WakePreset, 'city'>, Machine> = {
+  harbor: { name: 'whale', strokes: 1, art: { // it swims at the surface: the fluke beats, and it spouts on the upstroke
+    1: [['.aa.a', 'Wgkaa', '.....'], ['.aa..', 'Wgkaa', '....a']],
+    2: [['.W...a.', 'aaaa.a.', 'Wgakaa.', 'dddd...', '.......'], ['.......', 'aaaa...', 'Wgakaa.', 'dddd.a.', '.......']],
+    3: [['..W........', '..W......a.', '.aaaaa...a.', 'Wgalakaaaa.', 'aaaaaaa....', '.dddd......'], ['...........', '...........', '.aaaaa.....', 'Wgalakaaaa.', 'aaaaaaa..a.', '.dddd....a.']],
+    4: [
+      ['..WWW..........', '...W.........a.', '..aaaaaaa....a.', 'aWgalalakaaaaa.', 'aaaaaaaaaaa....', '.ddddddd.......', '...............'],
+      ['...............', '...............', '..aaaaaaa......', 'aWgalalakaaaaa.', 'aaaaaaaaaaa..a.', '.ddddddd.....a.', '...............'],
+    ],
+  } },
+  beach: { name: 'jellyfish', strokes: 2, art: { // a glass bell that squeezes and opens, trailing wires tipped with lamps
+    1: [['kWgaa', '.d.d.', '.....'], ['kWga.', '.aaa.', '.d.d.']],
+    2: [['.laaad.', 'akWgaad', '.d.d.d.', '.s...s.', '.......'], ['..lad..', '.kWgad.', '.aaaaa.', '..d.d..', '..s.s..']],
+    3: [['..laaaaad..', '.lakWgaaad.', '.aaaaaaaaa.', '..d.d.d.d..', '..d.s.d.s..', '..s...s....'], ['...laaad...', '..lakWgad..', '..aaaaaaa..', '...d.d.d...', '...d.d.d...', '...s.s.s...']],
+    4: [
+      ['....laaaaad....', '...lakWgaaad...', '...aaaaaaaaa...', '....d.d.d.d....', '....d.d.d.d....', '....s.d.s.d....', '......s...s....'],
+      ['.....laaad.....', '....lakWgad....', '....aaaaaaa....', '.....aaaaa.....', '.....d.d.d.....', '.....d.d.d.....', '.....s.s.s.....'],
+    ],
+  } },
+  mountains: { name: 'airship', strokes: 4, art: { // a ribbed hull, a gondola with its porthole, and a propeller that spins
+    1: [['.ll..', 'aaadk', '.Wg..'], ['.llk.', 'aaad.', '.Wg..']],
+    2: [['.llll..', 'aWaaadk', '.dddd..', '.kWg...', '.......'], ['.llllk.', 'aaaWad.', '.ddddk.', '.kWg...', '.......']],
+    3: [['...........', '..llllll...', '.alalalaad.', 'aaWaaaaaadk', '.ddddddddd.', '...kWgk....'], ['...........', '..llllll...', '.alalalaadk', 'aaaaaWaaad.', '.dddddddddk', '...kWgk....']],
+    4: [
+      ['...............', '...llllllll....', '.aalalalalaaad.', 'aaaWaaaaaaaaadk', '.ddddddddddddd.', '....kWgk.......', '.....s.........'],
+      ['...............', '...llllllll....', '.aalalalalaaadk', 'aaaaaaaWaaaaad.', '.dddddddddddddk', '....kWgk.......', '.....s.........'],
+    ],
+  } },
+  countryside: { name: 'bee', strokes: 4, art: { // feelers, a brass-and-iron striped abdomen, six legs, a sting, and glass wings that whirr
+    1: [['.W.W.', 'Wgskd', '.....'], ['.....', 'Wgskd', '.W.W.']],
+    2: [['..W.W..', 'k.lWl..', 'Wgasksd', '.dask..', '.......'], ['.......', 'k.WWW..', 'Wgasksd', '.dask..', '.......']],
+    3: [['...WW.WW...', 'k...lWl....', '.kasksks...', 'Wgasksksd..', '.dasksk....', '..k..k.....'], ['...........', 'k..WWWWW...', '.kasksks...', 'Wgasksksd..', '.dasksk....', '...k..k....']],
+    4: [
+      ['....WW...WW....', 'k....lW.Wl.....', '.kaaasksksks...', 'Wgaaasksksksad.', '.daaasksksks...', '..k..k..k......', '...............'],
+      ['...............', 'k....WWWWWW....', '.kaaasksksks...', 'Wgaaasksksksad.', '.daaasksksks...', '...k..k..k.....', '...............'],
+    ],
+  } },
+  forest: { name: 'spider', strokes: 2, art: { // it hangs on its own thread, face on: two glass eyes and eight legs that reach and tuck
+    1: [['..d..', 'kWgak', '.....'], ['..d..', '.Wga.', 'k.d.k']],
+    2: [['...d...', 'k.lal.k', 'kWgagWk', '..ddd..', '.......'], ['...d...', '..lal..', 'kWgagWk', 'k.ddd.k', '.......']],
+    3: [['.....d.....', '.k.k.d.k.k.', 'k.klaaalk.k', 'k.kWgagWk.k', '...ddddd...', '...........'], ['.....d.....', '.....d.....', '.k.laaal.k.', 'k.kWgagWk.k', 'k..ddddd..k', '...........']],
+    4: [
+      ['.......d.......', '.k..k..d..k..k.', 'k.k.klaaalk.k.k', 'k..kaWgagWak..k', '....kaaaaak....', '.....ddddd.....', '...............'],
+      ['.......d.......', '.......d.......', '.k.k.laaal.k.k.', 'k.k.aWgagWa.k.k', 'k..k.aaaaa.k..k', '.....ddddd.....', '...............'],
+    ],
+  } },
+  desert: { name: 'scarab', strokes: 2, art: { // it rolls a glowing sun ahead of it: the sun turns, the legs paddle
+    1: [['s.a..', 'sWgkd', '.....'], ['..a..', 'sWgkd', 's....']],
+    2: [['sW.la..', 'ssWgkd.', '.s.k.k.', '.......', '.......'], ['ss.la..', 'ssWgkd.', '.W..k..', '.......', '.......']],
+    3: [['.ss........', 'sWss.laaa..', 'ssssWgakad.', '.ss..dakd..', '.....k.k...', '...........'], ['.ss........', 'ssss.laaa..', 'ssssWgakad.', '.sW..dakd..', '......k.k..', '...........']],
+    4: [
+      ['..sss..........', '.sssWs..laaaa..', 'ssssssWgaakaad.', '.sssss.daakaad.', '..sss..k..k.k..', '...............', '...............'],
+      ['..sss..........', '.sssss..laaaa..', 'ssssssWgaakaad.', '.sWsss.daakaad.', '..sss...k.k..k.', '...............', '...............'],
+    ],
+  } },
+  tundra: { name: 'narwhal', strokes: 1, art: { // a long bright tusk, a plated body, and a fluke that beats
+    1: [['....a', 'WWgka', '.....'], ['.....', 'WWgka', '....a']],
+    2: [['......a', '...la.a', 'WWWgkaa', '...dd..', '.......'], ['.......', '...la..', 'WWWgkaa', '...dd.a', '......a']],
+    3: [['...........', '.........a.', '....laa..a.', 'WWWaWgakaa.', '....dddd...', '...........'], ['...........', '...........', '....laa....', 'WWWaWgakaa.', '....dddd.a.', '.........a.']],
+    4: [
+      ['...............', '.............a.', '......laaaa..a.', 'WWWWWaWgaakaaa.', '.....ddddddd...', '...............', '...............'],
+      ['...............', '...............', '......laaaa....', 'WWWWWaWgaakaaa.', '.....ddddddd.a.', '.............a.', '...............'],
+    ],
+  } },
 }
 
-/** A pulse belongs to a filled plate, not an extra floating light. */
-const platePulse = (dot: (x: number, y: number, ch: string) => void, from: number, to: number, y: number, beat: number) =>
-  dot(to - Math.floor(beat * (to - from + 1) / BEATS), y, 'W')
-
-/** A machine's physical push point and strength come from the same pose as its plates. Kept alongside the generated frame. */
+/** A machine's physical push point and strength come from the same pose as its plates. Kept alongside the drawn frame. */
 type MachineFrame = { rows: readonly string[]; push: { x: number; y: number; force: number }; lamp?: readonly [number, number] }
-const heaveAt = (phase: number, x: number, lag: number) => Math.round(0.5 + 0.5 * Math.sin(phase - Math.max(0, x - 2) * lag))
-/** A one-row swell travels along launches and sail hulls. Two-row plating stays joined through each bend. */
-function heave(rows: readonly string[], phase: number, lag: number): string[] {
-  const out = Array.from({ length: rows.length + 1 }, () => Array<string>(rows[0]!.length).fill('.'))
-  rows.forEach((row, y) => [...row].forEach((ch, x) => {
-    if (ch === '.') return
-    const dy = heaveAt(phase, x, lag), before = heaveAt(phase, Math.max(0, x - 1), lag)
-    out[y + dy]![x] = ch
-    if (x > 0 && row[x - 1] !== '.' && before !== dy) out[y + before]![x] = ch
-  }))
-  return out.map(row => row.join(''))
+function machine(place: Exclude<WakePreset, 'city'>, tier: Tier, beat: number): MachineFrame {
+  const { w, h } = MACHINE_SIZE[tier], kind = AUTOMATA[place], down = Math.floor(beat * kind.strokes / 4) % 2
+  const rows = Array.from({ length: h }, (_, y) => (kind.art[tier][down]![y] ?? '').padEnd(w, '.').slice(0, w))
+  const cells = rows.flatMap((row, y) => [...row].flatMap((ink, x) => ink === '.' ? [] : [[x, y, ink] as const]))
+  // It pushes from the lowest cell of its trailing half (a fluke, a leg, a propeller); its lamp, if it carries one, is its first.
+  const low = cells.filter(([x]) => x >= w >> 1).reduce((a, b) => b[1] > a[1] || b[1] === a[1] && b[0] > a[0] ? b : a)
+  const lamp = cells.find(c => c[2] === 's')
+  return { rows, push: { x: low[0], y: low[1], force: down ? 1 : 0.3 }, ...(lamp ? { lamp: [lamp[0], lamp[1]] as const } : {}) }
 }
 
-/** Beach: the tug stays low while a two-row banner carries a full travelling wave, including on the smallest plane. */
-function bannerPlane(tier: Tier, beat: number): MachineFrame {
-  const w = [0, 9, 12, 16, 19][tier]!, body = [0, 4, 5, 7, 8][tier]!, phase = beat * Math.PI / 4
-  const { dot, line, done } = metal(w, 5)
-  line(1, 2, body - 1, 2, 'a'); line(0, 3, body - 1, 3, 'a')
-  line(1, 4, body - 2, 4, 'd')
-  line(2, 1, Math.max(2, body - 2), 1, 'l')
-  dot(3, 1, 'k'); dot(0, 2, 'l'); dot(1, 2, 'W'); dot(2, 2, 'g'); dot(body - 1, 1, 'l')
-  line(0, 3, 0, 3 + Math.round(Math.sin(phase)), 'l')
-  platePulse(dot, 2, body - 2, 3, beat)
-  dot(body - 1, 3, 'k')
-  dot(Math.max(2, body - 2), 1, beat % 4 === 0 ? 'r' : 'l')
-  line(body, 3, body + 1, 3, 'd')
-  for (let x = body + 1; x < w; x++) {
-    const y = 2 + Math.round(Math.sin(phase - (x - body - 1) * 0.75))
-    dot(x, y, 'l'); dot(x, y + 1, 'a')
-  }
-  // The engine and wing pitch with each thrust; the fabric's wave starts at its tow point and runs aft.
-  const rows = heave(done(), phase, 0.18), x = body - 1
-  const tip = Math.max(2, body - 2)
-  return { rows, lamp: [tip, 1 + heaveAt(phase, tip, 0.18)], push: { x, y: 3 + heaveAt(phase, x, 0.18), force: 0.3 + 0.7 * Math.max(0, Math.cos(phase)) } }
-}
-
-/** Mountains: the canopy breathes up from its downturned tips; a single hinged harness swings the eyed rider beneath it. */
-function ridgeGlider(tier: Tier, beat: number): MachineFrame {
-  const w = 3 + tier * 4, h = [0, 5, 6, 6, 7][tier]!, centre = w >> 1, phase = beat * Math.PI / 4
-  const { dot, line, done } = metal(w, h), rider = centre + Math.round(Math.sin(phase)), body = h - 2 - (Math.sin(phase - 0.8) > 0.7 ? 1 : 0)
-  const top = (x: number) => Math.round((tier === 1 ? 1 : 2) * (Math.abs(x - centre) / centre) ** 2 + 0.55 - 0.55 * Math.sin(phase - x * 0.45))
-  for (let x = 0; x < w; x++) {
-    dot(x, top(x), 'l'); dot(x, top(x) + 1, 'a')
-  }
-  line(centre, top(centre) + 1, centre, body - 1, 'd')
-  line(centre, body - 1, rider, body - 1, 'd')
-  line(rider - 1, body, rider + 1, body, 'a'); line(rider - 1, body + 1, rider + 1, body + 1, 'd')
-  dot(centre, top(centre), 'k')
-  const lit = w - 2 - Math.floor(beat * (w - 2) / BEATS)
-  dot(lit, top(lit) + 1, 'W')
-  dot(rider - 1, body, 'W'); dot(rider, body, 'g'); dot(rider + 1, body, 'k')
-  return { rows: done(), push: { x: rider + 1, y: body + 1, force: 0.2 + 0.8 * Math.max(0, Math.cos(phase - 0.8)) } }
-}
-
-/** Countryside: open air between two staggered wings and the fuselage; the outboard ailerons flex on alternate half-strokes. */
-function cropDuster(tier: Tier, beat: number): MachineFrame {
-  const w = 3 + tier * 4, h = tier === 1 ? 5 : 7, base = tier === 1 ? 2 : 3
-  const wing = Math.max(4, Math.floor(w * 0.62)), phase = beat * Math.PI / 4
-  const { dot, line, done } = metal(w, h)
-  const body = (x: number) => base + Math.round(0.55 * Math.sin(phase - Math.max(0, x - 2) * 0.18))
-  const upper = (x: number) => tier === 1 ? Math.round(0.5 + 0.5 * Math.sin(phase)) : 1 - Math.round(Math.sin(phase) * (x - 3) / (wing - 3))
-  const lower = (x: number) => tier === 1 ? 4 - Math.round(0.5 + 0.5 * Math.sin(phase)) : 5 + Math.round(Math.sin(phase + 0.4) * (x - 3) / (wing - 2))
-  for (let x = 0; x < w; x++) {
-    line(x, body(Math.max(0, x - 1)), x, body(x), x === w - 1 ? 'l' : 'a')
-    if (x < w - 2) dot(x, body(x) + 1, 'd')
-  }
-  for (let x = 3; x <= wing; x++) line(x, upper(Math.max(3, x - 1)), x, upper(x), 'l')
-  for (let x = 3; x <= Math.min(w - 1, wing + 1); x++) line(x, lower(Math.max(3, x - 1)), x, lower(x), 'l')
-  for (const x of [3, wing]) line(x, upper(x), x, lower(x), 'k')
-  dot(0, body(0) - 1, 'l'); dot(1, body(0) - 1, 'W'); dot(2, body(0) - 1, 'g')
-  dot(w - 2, body(w - 2) - 1, 'a')
-  const lit = w - 3 - Math.floor(beat * (w - 5) / BEATS)
-  dot(lit, body(lit), 'W'); dot(wing, upper(wing), beat % 4 === 0 ? 'r' : 'l')
-  return { rows: done(), lamp: [wing, upper(wing)], push: { x: 0, y: body(0), force: 0.25 + 0.75 * Math.abs(Math.cos(phase)) } }
-}
-
-/** Forest: a visibly foreshortening two-row rotor lens, one thin mast and a round pod on a long forked boom. */
-function autogyro(tier: Tier, beat: number): MachineFrame {
-  const w = 3 + tier * 4, cabin = Math.max(3, Math.floor(w * 0.42)), hub = Math.floor(cabin * 0.7), phase = beat * Math.PI / 4
-  const { dot, line, done } = metal(w, 7)
-  const radius = Math.max(1, Math.round((2 + tier) * (0.3 + 0.7 * Math.abs(Math.cos(phase)))))
-  const left = Math.max(0, hub - radius), right = Math.min(w - 1, hub + radius)
-  const rotor = (x: number) => 1 + Math.round((x - hub) / (radius + 1) * Math.sin(phase))
-  for (let x = left; x <= right; x++) { dot(x, rotor(x), 'l'); dot(x, rotor(x) + 1, 'a') }
-  const body = (x: number) => 4 + heaveAt(phase, x, 0.14)
-  line(hub, rotor(hub), hub, body(hub), 'k')
-  for (let x = 0; x < w; x++) {
-    line(x, body(Math.max(0, x - 1)), x, body(x), x > cabin && (x - cabin) % 3 === 0 ? 'd' : x > cabin ? 'l' : 'a') // a plated boom behind the pod
-    if (x >= 1 && x < w - 2) dot(x, body(x) + 1, x <= cabin ? 'd' : 'a') // two rows deep all the way along, not a bare stick
-    if (x >= 1 && x <= cabin) dot(x, body(x) + 2, 'd') // the pod's belly
-  }
-  dot(1, body(1), 'W'); dot(2, body(1), 'g')
-  dot(w - 2, body(w - 2) - 1, 'l'); dot(w - 2, body(w - 2) + 1, 'l')
-  dot(Math.sin(phase) < 0 ? left : right, rotor(Math.sin(phase) < 0 ? left : right), 'd')
-  const lit = w - 3 - Math.floor(beat * (w - 5) / BEATS)
-  dot(lit, body(lit), 'W')
-  return { rows: done(), push: { x: hub, y: rotor(hub) + 1, force: 0.3 + 0.7 * Math.abs(Math.cos(phase)) } }
-}
-
-/** Desert: a filled lateen sail that swells sideways and leans at the apex; the low two-row hull keeps its prow eye. */
-function sandYacht(tier: Tier, beat: number): MachineFrame {
-  const w = 3 + tier * 4, mast = Math.floor(w * 0.62), phase = beat * Math.PI / 4
-  const { dot, line, done } = metal(w, 6)
-  const foot = Math.max(1, mast - 2 * tier - 1)
-  for (let x = foot; x <= mast; x++) {
-    const top = Math.max(0, Math.min(3, Math.round(3 * (mast - x) / (mast - foot) + 0.7 * Math.sin(phase - (mast - x) * 0.6))))
-    line(x, top, x, 3, 'a'); dot(x, top, 'l')
-  }
-  line(0, 4, w - 2, 4, 'a'); line(1, 5, w - 3, 5, 'd')
-  dot(0, 3, 'l'); dot(0, 4, 'l'); dot(1, 3, 'W'); dot(2, 3, 'g'); dot(w - 2, 3, 'l'); dot(w - 3, 5, 'k')
-  platePulse(dot, 3, w - 3, 4, beat)
-  const x = w - 3
-  return { rows: heave(done(), phase, 0.25), push: { x, y: 5 + heaveAt(phase, x, 0.25), force: 0.2 + 0.8 * Math.max(0, Math.sin(phase - Math.max(0, x - 2) * 0.25)) } }
-}
-
-/**
- * Tundra: a plated bush plane. A solid two-row fuselage (light spine, dark belly, seams between plates) with the dragon's eye
- * up front, a high wing that flexes tip-down and tip-up like a bird's, and two curled skis that kick against each other on sprung
- * struts as it works through the air.
- */
-function skiPlane(tier: Tier, beat: number): MachineFrame {
-  const w = 3 + tier * 4, wing = Math.max(4, Math.floor(w * 0.62)), phase = beat * Math.PI / 4
-  const { dot, line, done } = metal(w, 7)
-  const pitch = Math.round(0.5 + 0.5 * Math.sin(phase - 1)), top = 1 + pitch // the fuselage rocks a row with each thrust
-  for (let x = 0; x < w - 2; x++) { dot(x, top, (x - 3) % 3 === 2 ? 'd' : 'l'); dot(x, top + 1, 'a') } // plates and seams
-  dot(0, top, 'l'); dot(0, top + 1, 'd'); dot(1, top, 'W'); dot(2, top, 'g') // nose and eye
-  dot(w - 3, top - 1, 'a'); dot(w - 3, top - 2, 'l'); dot(w - 2, top, 'a'); dot(w - 1, top, 'l'); dot(w - 2, top + 1, 'd') // tail fin and tailplane
-  const flex = Math.sin(phase) * (0.7 + 0.15 * tier) // the wing's tip rises and sinks; its root stays put
-  const wingY = (x: number) => top - 1 - Math.round(flex * (x - 3) / Math.max(1, wing - 3))
-  for (let x = 3; x <= wing; x++) { dot(x, wingY(x), 'l'); dot(x, wingY(x) + 1, x === 3 || x === wing ? 'k' : 'a') }
-  for (const x of [3, Math.max(4, wing - 2)]) line(x, wingY(x) + 1, x, top, 'k') // struts
-  const lit = w - 3 - Math.floor(beat * (w - 5) / BEATS)
-  dot(lit, top + 1, 'W')
-  dot(wing, wingY(wing), beat % 4 === 0 ? 'r' : 'l')
-  dot(0, top + 2 - (beat % 2), 'l') // the prop flicks above and below the nose
-  // two skis: bright, curled at the toe, one kicking down as the other lifts, joined to the belly by struts
-  let push = { x: 2, y: -1, force: 0 } // (the first ski drawn sets it: the push point is always a painted cell)
-  for (const [i, from] of (w >= 11 ? [2, Math.floor(w * 0.62)] : [1]).entries()) { // the smallest plane has the one ski
-    const to = Math.min(w - 2, from + 1 + tier)
-    const ski = top + 3 + Math.round(Math.sin(phase + i * Math.PI) * 0.6), kick = Math.max(0, Math.sin(phase + i * Math.PI))
-    line(from + 1, top + 1, from + 1, ski, 'k'); line(Math.min(to, from + 3), top + 1, Math.min(to, from + 3), ski, 'k')
-    for (let x = from; x <= to; x++) dot(x, ski, x === from ? 'W' : 'l')
-    dot(from - 1, ski, 'l'); dot(from - 1, ski - 1, 'l') // the toe curls up
-    if (ski >= push.y) push = { x: to, y: ski, force: 0.25 + 0.75 * kick }
-  }
-  return { rows: done(), lamp: [wing, wingY(wing)], push }
-}
-
-/** Harbor: a turning paddle wheel dips below the launch's stern; its spokes are geometry, not extra particles. */
-function paddleLaunch(tier: Tier, beat: number): MachineFrame {
-  const w = 3 + tier * 4, cabin = Math.min(5, 2 + tier), wheel = w - 3, radius = tier === 1 ? 1 : 2, phase = beat * Math.PI / 4
-  const { dot, line, done } = metal(w, 6)
-  line(2, 0, cabin, 0, 'l'); line(1, 1, cabin, 1, 'a')
-  line(0, 2, w - 2, 2, 'a'); line(1, 3, wheel - radius - 1, 3, 'd')
-  dot(0, 1, 'l'); dot(1, 1, 'W'); dot(2, 1, 'g'); dot(cabin, 0, 'k')
-  for (let dy = -radius; dy <= radius; dy++) {
-    const half = Math.floor(Math.sqrt(radius * radius - dy * dy))
-    line(wheel - half, 3 + dy, wheel + half, 3 + dy, dy === -radius ? 'l' : 'a')
-  }
-  for (let spoke = 0; spoke < 3; spoke++) {
-    const angle = phase + spoke * Math.PI * 2 / 3
-    line(wheel, 3, wheel + Math.cos(angle) * radius, 3 + Math.sin(angle) * radius, 'k')
-  }
-  dot(wheel, 3, 'l'); dot(wheel + Math.round(Math.cos(phase) * radius), 3 + Math.round(Math.sin(phase) * radius), 'l')
-  platePulse(dot, 2, Math.max(2, wheel - radius - 1), 2, beat)
-  return { rows: heave(done(), phase, 0.3), push: { x: wheel, y: 3 + radius + heaveAt(phase, wheel, 0.3), force: 0.4 + 0.6 * Math.abs(Math.cos(phase * 1.5)) } }
-}
-
-const machineFrames = (build: (tier: Tier, beat: number) => MachineFrame): Record<Tier, readonly MachineFrame[]> => {
-  const frames = (tier: Tier) => Array.from({ length: BEATS }, (_, beat) => build(tier, beat))
+const machineFrames = (place: Exclude<WakePreset, 'city'>): Record<Tier, readonly MachineFrame[]> => {
+  const frames = (tier: Tier) => Array.from({ length: BEATS }, (_, beat) => machine(place, tier, beat))
   return { 1: frames(1), 2: frames(2), 3: frames(3), 4: frames(4) }
 }
 
 const MACHINES = {
-  harbor: machineFrames(paddleLaunch),
-  beach: machineFrames(bannerPlane),
-  mountains: machineFrames(ridgeGlider),
-  countryside: machineFrames(cropDuster),
-  forest: machineFrames(autogyro),
-  desert: machineFrames(sandYacht),
-  tundra: machineFrames(skiPlane),
+  harbor: machineFrames('harbor'),
+  beach: machineFrames('beach'),
+  mountains: machineFrames('mountains'),
+  countryside: machineFrames('countryside'),
+  forest: machineFrames('forest'),
+  desert: machineFrames('desert'),
+  tundra: machineFrames('tundra'),
 }
 const pictures = (classes: Record<Tier, readonly MachineFrame[]>): Record<Tier, Frames> => ({
   1: classes[1].map(f => f.rows), 2: classes[2].map(f => f.rows), 3: classes[3].map(f => f.rows), 4: classes[4].map(f => f.rows),
@@ -282,7 +181,7 @@ const CRAFT: Record<WakePreset, Record<Tier, Frames>> = {
 
 /** The real push point of this pose, before mirroring. Wash lands below it; thrust starts one cell outside it. */
 export const craftPush = (place: Exclude<WakePreset, 'city'>, tier: Tier, beat: number) => MACHINES[place][tier][((beat % BEATS) + BEATS) % BEATS]!.push
-/** Aeroplane navigation lamps travel with their flexing wings. */
+/** A machine's own lamp travels with its pose. */
 export const craftLamp = (place: Exclude<WakePreset, 'city'>, tier: Tier, beat: number) => MACHINES[place][tier][((beat % BEATS) + BEATS) % BEATS]!.lamp
 
 /** The machine built for this place and class; the city dragon is the default outside a landscape. */

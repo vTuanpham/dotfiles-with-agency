@@ -17,10 +17,10 @@ const chain = (n: number, from = 0) => Array.from({ length: n - 1 }, (_, i) => [
 function figure(place: WakePreset, X: number, p: number, big: boolean): Figure {
   const c = X / 2, s = Math.sin(p), k = Math.cos(p)
   switch (place) {
-    case 'city': { // the Neon Sign: a zigzag whose corners ripple one after another, like a sign flickering on
-      const n = big ? 5 : 4
-      const stars = Array.from({ length: n }, (_, i): Vec => [1 + i * (X - 1) / (n - 1), 3 + (i % 2 ? 1 : -1) * (2 + 0.8 * Math.sin(p - i * 1.1))])
-      return { stars, links: chain(n) }
+    case 'city': { // the Crown: three points over a band, each jewel rising and settling in its turn
+      const peak = (i: number) => 1 + 0.9 * Math.sin(p + i * 2.1)
+      const stars: Vec[] = [[c, peak(0)], [1, 5.5], [1, 1 + peak(1)], [c * 0.5 + 0.5, 3.6], [c * 1.5 - 0.5, 3.6], [X - 1, 1 + peak(2)], [X - 1, 5.5]]
+      return { stars, links: [[1, 2], [2, 3], [3, 0], [0, 4], [4, 5], [5, 6], [6, 1]] }
     }
     case 'harbor': { // the Sail: a mast, a sail and a hull that rock on the swell
       const tilt = 1.3 * s, roll = 0.7 * s

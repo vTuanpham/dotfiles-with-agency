@@ -42,10 +42,11 @@ function sheet(w: number, h: number) {
   return { dot, rows: () => rows.map(row => row.join('')) }
 }
 
-/** A carp streamer: an open white mouth ring, a bright eye, a striped tube that ripples more toward its forked tail. */
+/** A carp streamer: an open white mouth ring, a bright eye, a striped tube and a forked tail that swings in the wind. */
 function carp(w: number, h: number, phase: number) {
   const s = sheet(w, h), cy = (h - 1) / 2, body = w - 3
-  const at = (x: number) => cy + (h > 3 ? 1.1 : 0.6) * Math.sin(x * 0.55 - phase) * x / w
+  // The tube holds straight in the wind and only its tail half swings, as one piece: no wave travels down it (that is the dragon's).
+  const at = (x: number) => cy + (h > 3 ? 1.4 : 0.7) * Math.sin(phase) * Math.max(0, (x - w * 0.45) / (w * 0.55))
   for (let x = 2; x < body; x++) {
     const half = h > 3 && x < w * 0.62 ? 1 : 0
     for (let dy = -half; dy <= half; dy++) s.dot(x, at(x) + dy, x % 3 === 1 ? 'd' : dy < 0 ? 'l' : 'a')
@@ -56,12 +57,17 @@ function carp(w: number, h: number, phase: number) {
   return s.rows()
 }
 
-/** A flying carpet seen edge on: a patterned rug rippling from front to back, a tassel at each end and a lamp riding on it. */
+/** A flying carpet seen edge on: a flat patterned rug whose ends flap, a tassel at each end and a lamp riding on it. */
 function carpet(w: number, h: number, phase: number) {
   const s = sheet(w, h), cy = (h - 1) / 2 + (h > 3 ? 0.5 : 0)
-  const at = (x: number) => cy + (h > 3 ? 1 : 0.5) * Math.sin(x * 0.6 - phase)
-  for (let x = 1; x < w - 1; x++) { s.dot(x, at(x), x % 3 === 0 ? 'p' : 'a'); if (h > 5 && x % 3 === 0) s.dot(x, at(x) + 1, 'd') } // a patterned rug with a fringe
-  s.dot(0, at(1) + 1, 'p'); s.dot(w - 1, at(w - 2) + 1, 'p')
+  // The rug lies flat on the air; its front edge curls up and its back edge flaps, turn about. No wave runs along it.
+  const curl = h > 3 ? 1.2 : 0.6, end = Math.max(2, Math.round(w * 0.2))
+  const at = (x: number) => cy - curl * (x < end ? (end - x) / end * Math.max(0, Math.sin(phase)) : x >= w - end ? (x - (w - end - 1)) / end * Math.max(0, -Math.sin(phase)) : 0)
+  for (let x = 1; x < w - 1; x++) {
+    s.dot(x, at(x), x % 4 === 2 ? 'l' : x % 2 ? 'a' : 'p') // the weave: a light motif between darker bands
+    if (h > 3) s.dot(x, at(x) + 1, x % 2 ? 'd' : '.') // the fringe along its near edge
+  }
+  for (const [x, edge] of [[0, 1], [w - 1, w - 2]] as const) { s.dot(x, at(edge) + 1, 'p'); if (h > 5) s.dot(x, at(edge) + 2, 'p') } // a tassel hanging at each end
   const lamp = Math.round(w * 0.35), top = Math.round(at(lamp)) - 1
   s.dot(lamp, top, 's')
   if (h > 3) { s.dot(lamp - 1, top, 'k'); s.dot(lamp + 1, top, 'k'); s.dot(lamp, top - 1, 'k') }
@@ -82,10 +88,10 @@ const CRAFTS: Record<WakePreset, Craft> = {
   beach: { name: 'kite', cycles: 1, art: { // a diamond on its cross spars, trailing a tail of bows that snakes behind
     1: [['ls...', '.d.p.', '.....'], ['ls...', '.d...', '..p..']],
     2: [['.l.....', 'lsa....', '.d.d...', '....p.d', '.......'], ['.l.....', 'lsa....', '.d.....', '..d.p..', '.....d.']],
-    3: [['..l........', '.lla.......', 'llsaa......', '.dda.W..W..', '..d.d.dd.d.', '...........'], ['..l........', '.lla.......', 'llsaa......', '.dda.......', '..ddW.d.W..', '.....d.d.d.']],
-    4: [
-      ['...l...........', '..lla..........', '.llsaa.........', '..ddaa.........', '...dd.W...W....', '....dd.d.d.d.W.', '...............'],
-      ['...l...........', '..lla..........', '.llsaa.........', '..ddaa.........', '...dd..........', '....ddW.d.W.d..', '.......d...d.W.'],
+    3: [['..l........', '.lla.......', 'llsaad.W.d.', '.dsa..d...W', '..d........', '...........'], ['..l........', '.lla.......', 'llsaa.d...W', '.dsa.d.W.d.', '..d........', '...........']],
+    4: [ // a full diamond with its lit spar, and a tail of white bows on a dark string
+      ['...l...........', '..lla..........', '.llsaa.........', 'lllsaaad.W.d.W.', '.ddsaa..d...d..', '..dda..........', '...d...........'],
+      ['...l...........', '..lla..........', '.llsaa.........', 'lllsaaa.d...d..', '.ddsaa.d.W.d.W.', '..dda..........', '...d...........'],
     ],
   } },
   mountains: { name: 'sky lantern', cycles: 2, art: { // a tall paper lantern glowing right through, its flame guttering beneath
