@@ -29,7 +29,9 @@ const families = ['codex', 'claude', 'agy', 'opencode'] as const
   for (const place of places) for (const kind of families) {
     for (let i = 0; i < FRAMES; i++) {
       const job = { isStale: false, seed: 6, kind, tier: 4 as const, pace: 0.8, hit: { id: 'j', title: 'j', details: [] } }
-      data.set(scenePixels({ ...base(W, place), frame: 37 + i * STEP, jobs: [job] }), at)
+      const phase = i / FRAMES
+      const hour = phase < 1 / 3 ? 14 : phase < .5 ? 14 + (phase - 1 / 3) * 48 : phase < 5 / 6 ? 22 : 22 - (phase - 5 / 6) * 48
+      data.set(scenePixels({ ...base(W, place, hour), frame: 37 + i * STEP, jobs: [job] }), at)
       at += W * SCENE_H
     }
   }
@@ -50,7 +52,7 @@ const families = ['codex', 'claude', 'agy', 'opencode'] as const
       const rate = routeRate(ms, window, TURN_LEAD_MS), p = phase.advance('j', 0.85, now), r = route.advance('j', 0.85, now, rate)
       if (ms < startMs + i * MS_PER_FRAME) continue
       const since = ms >= 0 && ms <= window + TURN_LEAD_MS ? ms : undefined
-      const job = { isStale: false, seed: 11, kind, tier: 3 as const, pace: 0.85, phase: p, route: r, hit: { id: 'j', title: 'j', details: [] } }
+      const job = { isStale: false, seed: 11, kind, tier: 4 as const, pace: 0.85, phase: p, route: r, hit: { id: 'j', title: 'j', details: [] } }
       const peerEdges = ms < 0 ? [] : [{ source: 'j', target: 'mochi', strength: 0.9, preview: 'x', count: 1, family: kind, arriving: since, fresh: 1, lead: TURN_LEAD_MS }]
       data.set(scenePixels({ ...base(W, place), frame: Math.round(p), jobs: [job], peerEdges, messageTrails }), at)
       at += W * SCENE_H
@@ -71,7 +73,7 @@ const families = ['codex', 'claude', 'agy', 'opencode'] as const
     for (let i = 0; i < FRAMES; i++) {
       const gone = i >= before + strike
       const phase = i < before ? {} : { leaving: (i - before) * MS_PER_FRAME + 1, struck: true }
-      const job = { isStale: false, seed: 6, kind, tier: 3 as const, pace: 0.8, hit: { id: 'j', title: 'j', details: [] }, ...phase }
+      const job = { isStale: false, seed: 6, kind, tier: 4 as const, pace: 0.8, hit: { id: 'j', title: 'j', details: [] }, ...phase }
       data.set(scenePixels({ ...base(W, place), frame: 37 + i * STEP, jobs: gone ? [] : [job] }), at)
       at += W * SCENE_H
     }

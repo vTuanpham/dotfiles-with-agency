@@ -1,13 +1,12 @@
-<h1 align="center"><img src="docs/images/hero.gif" alt="Dotfiles with agency: a workspace where AI agents work together, hand off to you when it matters, and a small town grows above your prompt. Four animated pixel landscapes from Wake, and cards for Wake, Bridge, Baton and install.sh." width="100%"></h1>
+<h1 align="center"><img src="docs/images/hero.gif" alt="Dotfiles with agency. Wake landscapes change through day, night, rain and snow above six tools: Wake, Inbox, Bridge, Model Guide, Accounts and Baton." width="100%"></h1>
 
 <p align="center">
-<a href="#why-use-it">Why use it</a> · <a href="#wake">Wake</a> · <a href="#codex-tasks-that-wake-you">codex-wake</a> · <a href="#agent-tools">Agent tools</a> · <a href="#built-in-guardrails">Guardrails</a> · <a href="#setup">Setup</a> · <a href="#packages">Packages</a>
+<a href="#wake">Watch the work</a> · <a href="#agent-tools">Use the tools</a> · <a href="#why-use-it">What’s included</a> · <a href="#setup">Install</a> · <a href="#packages">Packages</a>
 </p>
 
-A working environment for people who run several coding agents at once. Codex, Claude Code, Antigravity
-and OpenCode share one set of instructions, skills and tools, so they can delegate to each other, ask you
-questions on your phone, wake you (and each other) when work finishes, and show what they are doing without
-you reading a transcript. Each tool is a small CLI or mod: take one, or all of them.
+A shared workspace for **Codex, Claude Code, Antigravity and OpenCode**. Follow your workers in the
+terminal, continue their conversations on your phone, and choose a model with the task and available
+allowance in view. Shared instructions and skills connect the tools; each CLI or mod can be used on its own.
 
 ```sh
 git clone https://github.com/vTuanpham/dotfiles-with-agency ~/dotfiles-with-agency && cd ~/dotfiles-with-agency
@@ -19,7 +18,10 @@ git clone https://github.com/vTuanpham/dotfiles-with-agency ~/dotfiles-with-agen
 
 ## Why use it
 
-| You get | What it does that is hard to get elsewhere |
+<details>
+<summary>The toolkit at a glance</summary>
+
+| Tool | What it does |
 | --- | --- |
 | **[codex-wake](codex-wake/README.md)** | Background task and subagent results resume the idle Codex conversation. `codex-wake monitor` watches a condition and reports matching events. |
 | **[Wake](claude/README.md#wake-mod-live)**, a Claude Code mod | A pixel town above the prompt that is the session's live state: eight places, weather and time, a building that rises with each turn, and a crew of real workers that arrive, message each other, react and leave, each in its own way. Plus per-harness quota, effort inferred from what each model supports, and hover cards on everything. |
@@ -34,41 +36,42 @@ git clone https://github.com/vTuanpham/dotfiles-with-agency ~/dotfiles-with-agen
 | **[agent-session](agent-session/README.md)** | One answer to "which conversation is calling?", correct even when Claude Code is started inside a Codex terminal. |
 | **[Feedback loop](agents/feedback/README.md)** | Agents file a ticket when a tool gives them trouble, with harness version and session ID attached. Tickets are worked to a root cause and closed, never deleted. |
 
+</details>
+
 ## Wake
 
 **[Wake](claude/README.md#wake-mod-live)** puts the session, its workers and account quota above the
-Claude Code prompt. The landscape is not decoration: every sprite is a fact about the session.
+Claude Code prompt. Workers move with their activity; messages cross the scene; time and weather change its atmosphere.
 
-<img src="docs/images/wake-dock.gif" alt="Wake's harbor scene animating above the session's activity, crew and account quota rows, a prompt and the Claude Code status line. Call-outs name what each sprite is: street lamps are plan steps, a boat is a Codex worker, a kite (here; each place has its own creature) is a Claude subagent, a constellation is an agy worker, a comet is a message in flight, the rising building is the current turn and Mochi shows the session's mood. Notes under the crew rows name their parts: the round harness logo with its own spinner, effort dots from the model's own levels, a peer lane that lights when one worker messages another, and the root graph where a message to the root travels up and the quota line below is tinted per harness." width="100%">
+<img src="docs/images/wake-tour.gif" alt="Four class-4 crews in motion: a mechanical dragon warps into the night city, an owl perches and takes flight in the daytime forest, a scorpion constellation sends light across the desert, and sky lanterns arrive and leave together above the mountains." width="100%">
 
-- **Crew that works.** Each worker patrols its own patch of sky or sea in the sprite of its harness and
-  model class, and a Codex worker is whatever its place would build: a saucer in the city, a steamship at
-  sea, a paraglider in the mountains, a ski plane in the tundra, while Claude's subagents are the winged
-  creature of the place: a pigeon in the city, a kite on the beach, a butterfly in the fields, an owl in the
-  forest. A message between two workers is a comet
-  with a short, quickly fading tail, drawn behind the scene, and the same message lights the peer lane and
-  the root graph in the rows below. Nothing moves once the job is idle.
+- **Four families, eight habitats.** Codex machines, Claude creatures, AGY constellations and OpenCode
+  paper craft each take a different form in every place. A dragon coils above the city, a crab walks the
+  quay, a scorpion lights the desert sky, and lanterns drift behind the mountains.
+- **Messages you can follow.** Workers slow down, aim and send a packet, song, star or ember. The flight
+  leaves a fading trace where it passed; the same exchange lights the peer lane and root graph below.
 - **Crew that reacts.** When a message lands the receiver lights up and the sender pulses, each harness in its
   own way, and a gadget pops out of the root's head to catch a message: a dish, radar whiskers, an ear
   trumpet or rabbit-ear antennae, depending on which of four characters you chose (`/wake mochi`).
-- **Crew with a life.** A worker arrives when its job starts and leaves when it is done, in its own way for
-  every harness and every place: a saucer that warps in and hyperdrives away, a boat that sails for the
-  horizon, a balloon that pops into petals or bubbles.
-- **Honest rows.** Quota is coloured per harness, effort is shown as dots inferred from each model's
+- **Entrances, pauses and departures.** Dragons warp, saucers beam in, boats sail and paper unfolds.
+  Companions enter and leave with their leader. Waiting crews slow down or settle onto a perch.
+- **Readable rows.** Quota is coloured per harness, effort reflects each model's
   supported levels, and every item (effort, time, memory, stall reason) has a hover card.
 - **Eight places** that follow time, weather and session state: success, failure, waiting and sleeping all
   change the scene, with fireworks, storms, shooting stars, lanterns and rainbows for the milestones.
 
-<img src="docs/images/wake-characters.gif" alt="Four characters stand where Mochi does, each catching a message from a worker in its own way: Mochi raises a satellite dish between her ears, Tabby's whiskers turn to radar, Tuxedo unfolds an ear trumpet and Bun's ears stretch into antennae with TV static between them." width="100%">
+[Meet all 32 designs, by day and night →](claude/README.md#the-crew-at-work) ·
+[Messages and character gadgets](claude/README.md#messages) ·
+[Arrivals and exits](claude/README.md#arrivals-and-exits)
 
-<img src="docs/images/wake-passages.gif" alt="A grid of eight landscapes by four worker families. Each cell loops a worker arriving, working and leaving: the city saucer warps in and hyperdrives away, harbor boats sail off to the horizon, mountain paragliders spiral up a thermal, countryside biplanes roar off, forest autogyros come apart into leaves, desert skiffs kick up dust and tundra ski planes lift off into aurora glitter. Claude's creature, agy's sparks and OpenCode's balloon end differently in each place too." width="100%">
+<details>
+<summary>Read the scene: workers, messages, effort and quota</summary>
 
-[Characters, arrivals and exits](claude/README.md#characters-arrivals-and-exits) ·
-[Scene, crew and quota legend](claude/README.md#crew-and-quota-rows).
+<img src="docs/images/wake-dock.gif" alt="Annotated harbor: a Codex tug, Claude crab, AGY constellation, plan lamps and Mochi, above the worker, message and quota rows." width="100%">
 
-<img src="docs/images/wake-landscapes.gif" alt="Eight animated Wake landscapes: city at work, harbor awaiting input, beach with workers, mountains with fireworks after passed tests, countryside with a rainbow after tests pass again, rainy forest after a failure, desert with a shooting star after a completed job, and sleeping winter tundra." width="100%">
+[Crew and quota legend](claude/README.md#crew-and-quota-rows) · [Weather and session state](claude/README.md#landscapes-and-session-state)
 
-[Landscapes, time, weather and session state](claude/README.md#landscapes-and-session-state).
+</details>
 
 ## Codex tasks that wake you
 
@@ -90,7 +93,20 @@ The monitor runs a probe on an interval and reports matching events through the 
 
 ## Agent tools
 
+### Your sessions on your phone
+
+<img src="agent-inbox/docs/hero.svg" alt="Agent Inbox on a phone: a conversation with tool steps and images, native commands, and supported question controls." width="100%">
+
+Open an existing conversation, read its work and send a reply from your phone. Inbox connects through
+Tailscale and uses each harness's supported controls; it does not create a separate chat history.
+[Pair a phone and connect a harness](agent-inbox/README.md#connect-a-harness).
+
+<details>
+<summary>How the tools connect</summary>
+
 <img src="docs/images/agent-tools.gif" alt="Inbox carries chat and controls; Baton carries questions and secrets; native delegation and Bridge connect workers. Bridge also sends native messages directly to existing sessions. Shared model, account, resource and lab tools support the session." width="100%">
+
+</details>
 
 ### Delegate work and message other sessions
 
@@ -108,7 +124,7 @@ worker. [Direct messages, discovery and setup](agent-bridge/README.md#direct-ses
 <img src="docs/images/model-selection.gif" alt="Task scope, native catalogs, paired measurements and account context inform whether to continue, delegate natively or use Bridge." width="100%">
 
 ```sh
-model-guide suggest --task "fix a flaky failing test" --domain debugging --domain coding
+model-guide suggest --task "fix a flaky failing test"
 model-guide benchmarks --domain performance --query sol --brief
 ```
 
@@ -118,38 +134,48 @@ session. The agent weighs those facts against the observations; a benchmark lead
 fit for the available allowance or workflow. `suggest --help` describes the context format.
 [Native controls, domain evidence and account context](agent-models/README.md).
 An explicit model choice stays intact, including its provider, variant and effort.
-A service API error describes that context; verify a chat request in the matching native session.
+
+[Account observations](agent-accounts/README.md) supply remaining allowance, reset windows and freshness.
+The model with the highest benchmark score is one candidate, not an automatic choice.
 
 ### Questions on your PC or phone
 
-<img src="docs/images/baton.gif" alt="Agent Baton in four steps: a Windows notification arrives, the one-use form opens, the human types an email and password, and the form replies that the agent can type them for ten minutes." width="100%">
+Use [Baton](agent-baton/README.md) when an agent needs an answer or a private credential handoff.
+Secrets go to the target field or environment file without appearing in the agent's transcript.
 
 Phone pushes and session-isolated replies. [Setup](agent-baton/README.md#phone-alerts-and-remote-handoff)
 · [Questions and private handoffs](agent-baton/README.md#unanswered-questions).
 
-### Your sessions on your phone
-
-<img src="agent-inbox/docs/hero.svg" alt="Agent Inbox drawn on a phone in three scenes: chat with folded tool steps and an inline image, a slash menu of native commands, and a question form with attached images." width="100%">
-
-[Agent Inbox: pairing, live chat and native controls](agent-inbox/README.md#connect-a-harness).
-
 ### Local previews, anywhere
+
+<details>
+<summary>Send a local app or build to your phone</summary>
 
 <img src="portlink/docs/preview.svg" alt="Portlink opens a private preview from a local app, folder or file on a phone over Tailscale, with a QR and automatic expiry." width="100%">
 
 [Portlink](portlink/README.md): private, expiring links to an app, build folder or file.
 
+</details>
+
 ### Make room for heavy commands
+
+<details>
+<summary>Coordinate tests, builds and experiments across agents</summary>
 
 <img src="docs/images/agent-resources.gif" alt="Heavy commands declare their needs to a shared queue. Inspect queue position, admission reason and reserved, budget and free memory before coordinating with the owning session. Admitted commands run in the foreground; exit releases the reservation." width="100%">
 
 `agent-resources list` shows why a request is waiting and which request is ahead.
 Commands run together when capacity permits. [agent-resources](agent-resources/README.md).
 
+</details>
+
 Behind the scenes: [account observations](agent-accounts/README.md), [persistent labs](agent-lab/README.md)
 and [session identity](agent-session/README.md).
 
 ## Built-in guardrails
+
+<details>
+<summary>Installation, publication and parallel work</summary>
 
 - **Safe to publish.** `tests/check_public.py` runs as a pre-commit and commit-message hook. It scans for
   credentials, personal identifiers and private project names, and reports where and why, never the
@@ -161,6 +187,8 @@ and [session identity](agent-session/README.md).
 - **Self-improving.** Agents are told to leave [feedback](agents/feedback/README.md) when a tool misleads
   them, with reporter metadata for tracing. Suggestions are treated as hypotheses; the fix goes to the
   root cause.
+
+</details>
 
 ## Setup
 

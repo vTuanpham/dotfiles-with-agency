@@ -45,7 +45,7 @@ const base = (width: number, preset: SceneInput['preset']): SceneInput => ({
   for (const place of places) for (const kind of families) {
     for (let i = 0; i < FRAMES; i++) {
       const phase = i < arrive ? { arriving: i * MS_PER_FRAME } : i < arrive + hold ? {} : { leaving: (i - arrive - hold) * MS_PER_FRAME }
-      const job = { isStale: false, seed: 6, kind, tier: 2 as const, hit: { id: 'j', title: 'j', details: [] }, ...phase }
+      const job = { isStale: false, seed: 6, kind, tier: 4 as const, hit: { id: 'j', title: 'j', details: [] }, ...phase }
       data.set(scenePixels({ ...base(W, place), frame: 37 + i * STEP, jobs: [job] }), at)
       at += W * SCENE_H
     }

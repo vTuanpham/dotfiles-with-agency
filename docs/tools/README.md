@@ -8,7 +8,7 @@ README capture never needs a screenshot of a live session and never shows person
 
 | Script | Makes | Source of the pixels |
 | --- | --- | --- |
-| `readme_gifs.py` | `hero.gif`, `wake-landscapes.gif`, `wake-dock.gif`, `wake-characters.gif`, `wake-passages.gif` | Wake's `dev/showcase.ts`, `dev/dock.ts` and `dev/crew-life.ts` frames (the last renders the four characters catching a message and every family arriving and leaving in every place) (the crew, the message trails, the crew rows under the scene with their logos, peer lane and root graph, and the quota line come from the real builders and Wake's own logo images, at Wake's own `SCENE_H`, one scene pixel per terminal column and two per row, rows one cell high, as the terminal draws them; the call-outs are placed from the scene's hover map); `statusline.py`; `../hero.html` |
+| `readme_gifs.py` | `hero.gif`, `wake-tour.gif`, `wake-landscapes.gif`, `wake-dock.gif`, `wake-characters.gif`, `wake-passages.gif`, `wake-cast.gif`, `wake-sequence.gif`, `wake-strike.gif` | Wake's real renderer through `dev/showcase.ts`, `dev/readme-tour.ts`, `dev/dock.ts`, `dev/crew-life.ts` and `dev/readme-crew.ts`; the native row builders and logo images; `statusline.py`; `../hero.html` |
 | `baton_gif.py` | `baton.gif` | The real Baton page server, screenshotted by Chrome; `baton-toast.png` is a real capture of its toast |
 | `flow_gifs.py` | one GIF per diagram in `flows/*.svg` | The SVG itself, rendered by Chrome with a packet on every arrow |
 | `model_effort.py` | `flows/model-effort.svg` | Exact model/setting rows in Model Guide's public benchmark snapshot, with its retrieval timestamp; no account data |
@@ -26,6 +26,12 @@ Every layer is scaled by a whole number and text is drawn at its native size, so
 share one palette and `gifsicle -O3` stores only what changes, which keeps each file small.
 Edit a diagram in `flows/`, then regenerate its GIF.
 Chrome renders use a separate headless profile under `README_WORK`.
+
+Run `readme_gifs.py` without selectors to refresh the complete Wake set, including
+the root README banner and annotated overview. The tour features class-4 crews at
+native animation speed; the banner and landscape gallery compress a day into a loop.
+The cast gallery blends between day and night. The overview uses class 3 to leave
+space for its labels and rows. Inspect both lighting states and action transitions.
 
 Overview, selection, account, Lab, resource and Codex notification diagrams use the
 same renderer; pass their SVG stems to regenerate only the changed assets. Claude

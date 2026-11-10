@@ -1,36 +1,37 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Dotfiles with agency</title>
-<!-- Base of images/hero.gif (readme_gifs.py draws the animated strips over the black band):
-     google-chrome --headless --screenshot --window-size=1200,866 --force-device-scale-factor=1
-     (the band is four scenes of Wake's SCENE_H x 6 pixels: 4 x 20 x 6 = 480) -->
+<!-- readme_gifs.py supplies the scene band height and overlays the rendered time-lapse. -->
 <style>
-  :root { --bg: #1b1b26; --ink: #eceaf4; --mute: #a3a1b5; --line: #34344a; }
+  :root { --scene-band: 480px; --bg: #1b1b26; --ink: #eceaf4; --mute: #a3a1b5; --line: #34344a; }
   * { box-sizing: border-box; margin: 0; }
-  html, body { width: 1200px; height: 866px; background: var(--bg); color: var(--ink);
+  html, body { width: 1200px; height: calc(250px + var(--scene-band) + 260px); background: var(--bg); color: var(--ink);
     font-family: "Inter", "Segoe UI", "DejaVu Sans", system-ui, sans-serif; overflow: hidden; position: relative; }
   .head { position: absolute; left: 60px; top: 54px; }
   .eyebrow { font-size: 13px; letter-spacing: .22em; color: var(--mute); text-transform: uppercase; }
   h1 { font-size: 64px; letter-spacing: -.02em; font-weight: 700; margin: 10px 0 8px; }
   h1 span { color: #a99bd6; }
   .tag { font-size: 21px; color: var(--mute); max-width: 860px; line-height: 1.4; }
-  .band { position: absolute; left: 0; top: 250px; width: 1200px; height: 480px; background: #000; }
-  .cards { position: absolute; left: 0; top: 730px; width: 1200px; padding: 28px 60px 0; display: grid;
-    grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .band { position: absolute; left: 0; top: 250px; width: 1200px; height: var(--scene-band); background: #000; }
+  .cards { position: absolute; left: 0; top: calc(250px + var(--scene-band)); width: 1200px; padding: 24px 60px 0; display: grid;
+    grid-template-columns: repeat(3, 1fr); gap: 14px; }
   .card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 15px; background: #222232; }
   .card b { display: block; font-size: 18px; margin-bottom: 5px; }
   .card i { font-style: normal; font-size: 14px; line-height: 1.4; color: var(--mute); }
-  .wake b { color: #a99bd6; } .bridge b { color: #5cc4b4; } .baton b { color: #e8876b; } .install b { color: #dcb870; }
+  .wake b { color: #a99bd6; } .bridge b { color: #5cc4b4; } .baton b { color: #e8876b; }
+  .inbox b { color: #89b4fa; } .models b { color: #dcb870; } .accounts b { color: #a6d99c; }
 </style>
 <div class="head">
   <div class="eyebrow">WSL2 &middot; Claude Code &middot; Codex &middot; Antigravity &middot; OpenCode</div>
   <h1>dotfiles <span>with agency.</span></h1>
-  <p class="tag">A workspace where AI agents work together, hand off to you when it matters, and a small town grows above your prompt.</p>
+  <p class="tag">Watch the work. Pick the right model. Keep the conversation going.<br>One shared setup for your terminal and your phone.</p>
 </div>
 <div class="band"></div>
 <div class="cards">
-  <div class="card wake"><b>Wake</b><i>A living town above the Claude Code prompt</i></div>
-  <div class="card bridge"><b>Bridge</b><i>Delegate across Codex, agy, Claude and OpenCode</i></div>
-  <div class="card baton"><b>Baton</b><i>Hand logins and secrets to a human, privately</i></div>
-  <div class="card install"><b>install.sh</b><i>Dry-run first; never overwrites your files</i></div>
+  <div class="card wake"><b>Wake</b><i>Workers, messages and weather in a living pixel scene</i></div>
+  <div class="card inbox"><b>Inbox</b><i>Your existing sessions and native controls on your phone</i></div>
+  <div class="card bridge"><b>Bridge</b><i>Persistent workers and direct messages across harnesses</i></div>
+  <div class="card models"><b>Model Guide</b><i>Task evidence, effort, speed and account context</i></div>
+  <div class="card accounts"><b>Accounts</b><i>Remaining allowance and reset windows in one view</i></div>
+  <div class="card baton"><b>Baton</b><i>Human answers and private credential handoffs</i></div>
 </div>

@@ -22,7 +22,7 @@ const clear = { cloud: 0.2, rain: 0, snow: 0, fog: false, thunder: false, wind: 
 const base: SceneInput = {
   width: W, frame: 0, hour: 22, sun: { rise: 5.9, set: 17.5 }, moonPhase: 0.3, season: 'summer', snowy: false, weather: clear,
   preset: 'city', seed: 12345, turns, live: { kinds: ['read', 'read', 'edit', 'test', 'edit'] }, mood: 'work',
-  jobs: [crew('a', 3, 'codex', 2), crew('b', 8, 'agy', 3), crew('c', 13, 'opencode', 1)], agents: [{ seed: 1, tier: 1 }, { seed: 2, tier: 2 }], plan: { done: 2, total: 5 }, effect: null,
+  jobs: [crew('a', 3, 'codex', 4), crew('b', 8, 'agy', 4), crew('c', 13, 'opencode', 3)], agents: [{ seed: 1, tier: 4 }], plan: { done: 2, total: 5 }, effect: null,
 }
 const calm = { live: null, agents: [], mood: 'idle' as const }
 const fx = (kind: NonNullable<SceneInput['effect']>['kind']) => ({ kind, age: 0 })
@@ -31,7 +31,7 @@ const fx = (kind: NonNullable<SceneInput['effect']>['kind']) => ({ kind, age: 0 
 export const SCENES: [string, Partial<SceneInput>][] = [
   ['City · working · turns become buildings', {}],
   ['Harbor · needs input · Codex boats and agy crew', { preset: 'harbor', hour: 19.8, mood: 'alert', agents: [], live: null }],
-  ['Beach · working · bridge jobs and Claude subagent kites', { preset: 'beach', hour: 13 }],
+  ['Beach · working · machines, flamingos and constellations', { preset: 'beach', hour: 13 }],
   ['Mountains · tests passed · fireworks', { ...calm, preset: 'mountains', hour: 20.2, mood: 'happy', effect: fx('fireworks') }],
   ['Countryside · tests pass after a failure · rainbow', { ...calm, preset: 'countryside', hour: 14, mood: 'happy', plan: { done: 3, total: 5 }, effect: fx('rainbow') }],
   ['Forest · rain · command failed', { ...calm, preset: 'forest', hour: 15, mood: 'sad', weather: { ...clear, cloud: 0.9, rain: 2, wind: 18 }, effect: fx('storm') }],
@@ -46,7 +46,11 @@ for (const [index, [, state]] of SCENES.entries()) {
   const talks = index < 3 && (state.jobs ?? base.jobs).length > 1 // where workers are busy, two of them message each other
   for (let i = 0; i < FRAMES; i++) {
     const effect = state.effect ? { ...state.effect, age: (i * STEP) % EFFECT_FRAMES[state.effect.kind] } : null
-    data.set(scenePixels({ ...base, ...state, ...(talks ? talking(i) : {}), messageTrails, effect, frame: 37 + i * STEP }), at)
+    const hour = ((state.hour ?? base.hour) + 24 * i / FRAMES) % 24
+    const weather = state.weather ?? base.weather!
+    const swell = Math.sin(Math.PI * i / FRAMES) ** 2
+    data.set(scenePixels({ ...base, ...state, ...(talks ? talking(i) : {}), messageTrails, effect, hour,
+      weather: { ...weather, cloud: Math.min(1, weather.cloud + .5 * swell), rain: weather.rain * (.35 + .65 * swell), snow: weather.snow * (.35 + .65 * swell) }, frame: 37 + i * STEP }), at)
     at += W * SCENE_H
   }
 }

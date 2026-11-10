@@ -110,51 +110,30 @@ Agent Inbox does not intercept these questions. See its [Claude limitations](../
 
 ## Wake mod (live)
 
-`.claude/mods/wake` is a Claude Code mod: the animated diorama above the prompt
-(the session as a town in the real weather where you are), the crew row
-(subagents, Bridge jobs), recaps, the plan in the spinner and the Bridge job tidy scan.
-Retired Bridge jobs leave the crew row. The tidy scan counts only retired jobs past their
-purge date, excludes dirty worktrees, and asks the root to run `agent-bridge purge`;
-it never recommends deleting jobs still within retention. `agent-bridge restore` reactivates
-a retained job with its original session.
-Unlike the snapshot files, the mod is used in place and reloads as its files change.
-It is Claude-only; [Agent Bridge](../agent-bridge/README.md) and
-[Agent Baton](../agent-baton/README.md) work in every harness.
+Your workers have somewhere to be. A mechanical dragon folds into a warp above the city;
+an owl settles onto a branch; a constellation gathers light to send a message.
+Wake turns live agent activity into a pixel landscape above the Claude Code prompt.
 
-### Landscapes and session state
+<img src="../docs/images/wake-tour.gif" alt="Class-4 crew close-ups: a dragon warps through the night city, an owl rests and takes flight by day, a scorpion constellation exchanges messages, and mountain lanterns arrive and depart as a formation." width="100%">
 
-<img src="../docs/images/wake-landscapes.gif" alt="Eight animated Wake landscapes: city at work, harbor awaiting input, beach with workers, mountains with fireworks after passed tests, countryside with a rainbow after tests pass again, rainy forest after a failure, desert with a shooting star after a completed job, and sleeping winter tundra." width="100%">
+*Four families in motion, rendered by Wake. The reel follows each action at its native pace.*
 
-*Actual renderer output, animating. Each scene is an example state, time and weather. `/wake tour` visits them all; `/wake scene <name>` pins one.*
+[The cast](#the-crew-at-work) · [Messages](#messages) · [Arrivals and exits](#arrivals-and-exits) ·
+[Weather and landscapes](#landscapes-and-session-state) · [Read the rows](#crew-and-quota-rows) · [Setup](#use-and-check)
 
-| What changes | What Wake draws |
-| --- | --- |
-| Turns and tool calls | Structures and coloured windows; the current turn is under construction |
-| Bridge workers and Claude subagents | Crew sprites by harness and model class, plus compact crew rows |
-| Job stops making progress | Amber stale marker |
-| Tests pass / command fails / Bridge job finishes | Fireworks / storm / shooting star, in the local style (harbor and beach fireworks mirror in the water; the desert storm is sand and the tundra's a blizzard; a tundra job lights the aurora); the shooting star is a streak with a tapering tail and a few embers hanging behind it |
-| Every plan step done / tests pass right after a failed turn | Paper lanterns drift up from the ground / a rainbow draws itself over the scene (the biggest milestone of a turn gets the scene: failure, then a finished plan, then the rainbow, then fireworks) |
-| Plan steps / session mood | Lit lamps / Mochi working, waiting, happy, sad or asleep |
-| A message reaches a worker, or leaves one | The sender pulses as the comet launches and the receiver lights up as it lands, each harness in its own way: Codex a circuit packet, Claude notes, agy a shooting star, OpenCode a floating ember |
-| A message reaches Mochi (or she sends one) | A gadget pops out of her head, one per character: a satellite dish with signal arcs (Mochi), whiskers turned radar with rings sliding in (Tabby), an ear trumpet with notes drifting into it (Tuxedo), rabbit-ear antennae with TV static between them (Bun) |
-| Place, time and weather | Landscape, sun, moon phase and local weather |
-
-### Characters, arrivals and exits
-
-<img src="../docs/images/wake-characters.gif" alt="Four characters stand where Mochi does, each catching a message from a worker in its own way: Mochi raises a satellite dish between her ears, Tabby's whiskers turn to radar, Tuxedo unfolds an ear trumpet and Bun's ears stretch into antennae with TV static between them." width="860">
-
-*Mochi, Tabby, Tuxedo and Bun (`/wake mochi <name>`), each catching a message with its own gadget. Actual renderer output.*
+The mod lives at `.claude/mods/wake` and reloads as its files change. It displays native Claude
+subagents and workers from every [Bridge harness](../agent-bridge/README.md). The display itself
+runs in Claude Code; Bridge and [Baton](../agent-baton/README.md) also work in other harnesses.
 
 ### The crew at work
 
-Every worker has motion suited to its material: a plated wave, a wingbeat, billowing fabric,
-or light traveling through a fixed star map. Each family has one idea, drawn differently in every
-place, and four classes that grow the same design (1 Haiku/Luna, 2 Sonnet/Terra, 3 Opus/Sol, 4 Fable/Astra; unknown models
-are class 2). Only designs that declare escorts bring them at classes 3 and 4.
+**32 designs, four sizes each.** Machines bend at their joints, creatures beat their wings,
+cloth catches the wind and light travels through constellations. The gallery features class 4,
+with the larger bodies and companions, as daylight gives way to night.
 
-<img src="../docs/images/wake-cast.gif" alt="Eight landscapes and four worker families at class 4: clockwork machines, living creatures, constellations and lit paper crafts." width="860">
+<img src="../docs/images/wake-cast.gif" alt="All 32 class-4 designs transition from day to night: clockwork machines, living creatures, constellations and lit paper crafts, with companions on designs that support them." width="100%">
 
-*Every family in every place at class 4, working. Actual renderer output.*
+*Day → dusk → night. Shaded bodies recede; eyes, engines, star nodes and lanterns stay lit.*
 
 | Family | The idea | By place |
 | --- | --- | --- |
@@ -163,6 +142,9 @@ are class 2). Only designs that declare escorts bring them at classes 3 and 4.
 | agy | Constellations with a moving pulse of light | Crown, sail, starfish, condor, plough, tree, scorpion and aurora arch |
 | OpenCode | Paper and cloth with a warm window | Crane, paper boat, kite, sky lantern, carp streamer, lantern string, flying carpet and paper star |
 
+Model classes grow the same design: 1 Haiku/Luna, 2 Sonnet/Terra, 3 Opus/Sol, 4 Fable/Astra;
+unrecognized models use class 2. Companions belong to particular designs at classes 3 and 4.
+
 Each design declares how it faces, moves and turns (`hooks/landscapes/design.ts`): the dragon coils, headed designs bank or
 show a hand-drawn mid-turn pose, and face-on designs do not turn. The tug and paper boat ride harbor water; the crab,
 snowcat and fox use the ground, the flamingo flies the shoreline, and the sun skiff and crop drone cruise low. The dragon, bat, owl, puffin and lantern string
@@ -170,19 +152,31 @@ settle on perches when stale or waiting. Other workers fly. Mochi and her laptop
 
 ### Messages
 
-When a worker has a message for Mochi it does not fly backward to say it. It **brakes to a hover** with momentum, its wings
-still beating, turns if needed and then sends. Mochi (or Tabby, Tuxedo, Bun) catches it with a gadget. The worker keeps its new
-heading when its old course is about to reverse, otherwise it turns back and gathers speed. It works the same way for a Bridge worker and for a native Claude subagent (the engine's
-`session.send` reports every SendMessage), in both directions.
+**Slow down. Aim. Send.** A machine vents a packet, a creature sings, a constellation releases
+light and paper craft sheds an ember. The receiver catches it with a flash or a gadget; the
+sender gathers speed again. Bridge workers and native Claude subagents share this behavior.
 
 <img src="../docs/images/wake-sequence.gif" alt="A worker in each of the four families, flying over the city, has a message for the root: it brakes to a hover, turns to face Mochi, sends it as a call and a packet that crosses to her, then turns back and sets off again." width="860">
 
-*Brake, turn, send, catch, turn back, resume, per family. Actual renderer output.*
+*Class-4 crews: brake, aim, release, catch and resume.*
 
 Each projectile travels independently after release. Its faint trace records only the cells it has crossed and fades in place
 as the crew moves on. Notes and embers leave their own curved path; a harbor tug launches its dart upward before it turns.
 
+<a id="characters-arrivals-and-exits"></a>
+<details>
+<summary>On the receiving end: Mochi, Tabby, Tuxedo and Bun</summary>
+
+<img src="../docs/images/wake-characters.gif" alt="Mochi's satellite dish, Tabby's radar whiskers, Tuxedo's ear trumpet and Bun's antennae catch incoming messages." width="100%">
+
+Choose a character with `/wake mochi <name>`. Each has its own signal-catching gadget.
+
+</details>
+
 ### Interrupts
+
+<details>
+<summary>When a turn is interrupted: sparks, feathers, starlight and paper</summary>
 
 A worker whose turn is cut off by the root (a native subagent's aborted turn, or a Bridge job's interrupted turn) does not
 take a bow: a bolt strikes it, it flashes white, shudders and falls dissolving, shedding what it is made of.
@@ -191,23 +185,59 @@ take a bow: a bolt strikes it, it flashes white, shudders and falls dissolving, 
 
 *Struck down, in each family's own debris. Actual renderer output.*
 
+</details>
+
 ### Arrivals and exits
 
 A worker is a visitor with a life of its own. It **arrives** when its job starts, or when a reply wakes it, and it **leaves the
 moment it is done**: a Bridge job parked waiting for the root leaves then, not only when it is finally retired; a native
 subagent leaves when it goes idle. Each craft does both in its own way, and each landscape changes how:
 
-<img src="../docs/images/wake-passages.gif" alt="Eight landscapes and four worker families, each arriving, working and leaving in its own way." width="860">
+<img src="../docs/images/wake-passages.gif" alt="Eight landscapes and four worker families at class 4, each arriving, working and leaving in its own way." width="100%">
 
-*Every family in every place: arriving (2.4 s), working, then leaving (3.2 s). Actual renderer output.*
+*Class-4 crews in every place: arriving (2.4 s), working, then leaving (3.2 s).*
 
 The dragon charges and warps; probes and saucers lift through a beam. Boats travel over water, ground creatures walk out,
 birds follow their scene's flight path, and constellations assemble from streaking stars. Paper folds and opens; floating
-lanterns rise and disperse. Arrivals reverse the departure sequence. A subagent is kept in the scene only while it leaves, and nothing else (the crew rows, the counts,
+lanterns rise and disperse. Companions pass through the same effect around their own bodies.
+Arrivals reverse the departure sequence. A subagent is kept in the scene only while it leaves, and nothing else (the crew rows, the counts,
 `/wake`) counts it; a worker already running when Wake starts does not replay its arrival. Each style is one small function in
 `hooks/passage-styles.ts` or `hooks/exit-styles.ts`; `hooks/exits.ts` runs them.
 
+### Landscapes and session state
+
+Daylight gives way to lit windows, engine glow and star nodes. Wind carries smoke and loose paper;
+rain crosses the forest and snow settles over the tundra. `/wake tour` visits all eight places;
+`/wake scene <name>` pins one.
+
+<details>
+<summary>Watch a day pass in all eight landscapes</summary>
+
+<img src="../docs/images/wake-landscapes.gif" alt="Eight time-lapses: city, harbor, beach, mountains, countryside, rainy forest, desert and snowy tundra move through day and night with working crews and session effects." width="100%">
+
+*Time and weather are accelerated here; crew movement uses the renderer's animation clock.*
+
+| Session event | In the scene |
+| --- | --- |
+| Turns and tool calls | Structures grow; colored windows record the tools used |
+| Workers start, wait or finish | Crews arrive, slow down, perch or depart |
+| Tests pass | Fireworks, reflected in harbor and beach water |
+| A command fails | A storm, sandstorm or blizzard, depending on the place |
+| A Bridge job finishes | A shooting star, or an aurora in the tundra |
+| The plan completes | Paper lanterns rise |
+| Tests recover after a failure | A rainbow appears |
+| Plan progress and session mood | Lamps light; Mochi works, waits, celebrates or sleeps |
+
+When milestones coincide, failure takes priority, then a finished plan, recovery and passing tests.
+
+</details>
+
 ### Crew and quota rows
+
+<img src="../docs/images/wake-dock.gif" alt="A labeled harbor scene over worker rows, a message graph and colored quota meters." width="100%">
+
+<details>
+<summary>Reading the rows, hover cards and account windows</summary>
 
 Bridge crew has one line per job: title, harness and model class, state, effort,
 time since the last event, memory against its cap, and peer links from the last
@@ -310,7 +340,7 @@ first sees new messages on a link, one packet per message (up to five, a beat ap
 lane once from sender to recipient, then the lane rests. History Wake never saw arrive does not
 move, nor does a wait. A worker's state mark lights when it acts, then settles. In the scene the
 family's packet, notes, starfall or ember travels between the workers' current body points.
-The trail is drawn behind buildings, crew, weather and Mochi; each family has its own landing.
+Flights pass above atmospheric effects; each family has its own landing reaction.
 Message links fade gradually and are gone after 15 minutes. The gutter
 shrinks with the terminal; where a group cannot fit, the existing ↗/↙ peer marks remain.
 Root messages use the root graph at the right edge (above). Arcs connect workers
@@ -340,6 +370,12 @@ active-account mark describes the current CLI profile, not every running convers
 stale reading or one without a known sample time. Idle accounts of one CLI with the same
 numbers fold into a range (`02–06~ m0%`) however long ago each was read, because a window
 stays at its numbers until it resets; one stale reading marks the range.
+
+Retired Bridge jobs leave the crew row. The tidy scan counts retired jobs past their purge date,
+excludes dirty worktrees, and asks the root to run `agent-bridge purge`. `agent-bridge restore`
+reactivates a retained job with its original session.
+
+</details>
 
 ### Use and check
 

@@ -27,7 +27,7 @@ WAKE = ROOT / "claude/.claude/mods/wake"
 IMAGES = ROOT / "docs/images"
 WORK = Path(os.environ.get("README_WORK", "/tmp/readme-work"))
 FRAMES = 48
-DELAY_MS = 120
+DELAY_MS = 150
 # the scene's height in pixels is Wake's own constant, so a taller sky reaches the images without an edit here
 SCENE_H = int(re.search(r"SCENE_H = (\d+)", (WAKE / "hooks/landscapes/kit.ts").read_text()).group(1))
 
@@ -85,7 +85,7 @@ def landscapes():
     titles = [
         "City · working · turns become buildings",
         "Harbor · needs input · Codex boats and agy crew",
-        "Beach · working · bridge jobs and Claude subagent kites",
+        "Beach · working · machines, flamingos and constellations",
         "Mountains · tests passed · fireworks",
         "Countryside · tests pass after a failure · rainbow",
         "Forest · rain · command failed",
@@ -111,17 +111,19 @@ def landscapes():
 
 def hero():
     base = WORK / "hero-base.png"
+    source = WORK / "hero.html"
+    source.write_text((ROOT / "docs/hero.html").read_text().replace("--scene-band: 480px", f"--scene-band: {4 * SCENE_H * 6}px"))
     run(
         "google-chrome", "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-        "--force-device-scale-factor=1", f"--window-size=1200,{250 + 4 * SCENE_H * 6 + 136}", f"--screenshot={base}",
-        f"file://{ROOT / 'docs/hero.html'}",
+        "--force-device-scale-factor=1", f"--window-size=1200,{250 + 4 * SCENE_H * 6 + 260}", f"--screenshot={base}",
+        f"file://{source}",
     )
     page = Image.open(base).convert("RGB")
     data, size = cells(WORK / "showcase200.bin", 200)
     frames = []
     for i in range(FRAMES):
         frame = page.copy()
-        for k, s in enumerate((1, 2, 3, 7)):  # harbor, beach, mountains, tundra
+        for k, s in enumerate((0, 2, 5, 7)):  # city, beach, rain, snow
             frame.paste(scene(data, size, s * FRAMES + i, 6), (0, 250 + k * SCENE_H * 6))
         frames.append(frame)
     save_gif(frames, IMAGES / "hero.gif")
@@ -129,13 +131,11 @@ def hero():
 
 # ── dock: the scene with call-outs, the crew and quota rows, a prompt and the real status line ────
 
-SKY = (137, 220, 235)
 LEGEND = {  # name: (title, what it is, colour); the call-outs sit in the order their things stand, left to right
     "lamps": ("Plan lamps", "lit = steps done", YELLOW),
     "codex": ("Codex worker", "a boat, sized by model", BLUE),
-    "claude": ("Claude subagent", "a kite here; a creature per place", PEACH),
-    "agy": ("agy worker", "sparks, comets, stars", MAUVE),
-    "trail": ("A message", "a comet, sender to receiver", SKY),
+    "claude": ("Claude subagent", "a crab along the quay", PEACH),
+    "agy": ("AGY worker", "a drifting constellation", MAUVE),
     "live": ("This turn", "a building going up", TEAL),
     "mochi": ("Mochi", "the session's mood", PINK),
 }
@@ -330,14 +330,11 @@ def dock():
             cx = int((k + 0.5) * slot)
             lx0, lx1, ly0, ly1 = cx - int(slot / 2) + 6, cx + int(slot / 2) - 6, 12, 58
             if found:
-                if name != "trail":  # the comet is wherever it is lit just now: marked with a dot, not boxed
-                    for box in found:
-                        d.rounded_rectangle([box["x"] * S - 1, scene_y + box["y"] * SY - 2, (box["x"] + box["w"]) * S, scene_y + (box["y"] + box["h"]) * SY + 1], 5, outline=color, width=2)
+                for box in found:
+                    d.rounded_rectangle([box["x"] * S - 1, scene_y + box["y"] * SY - 2, (box["x"] + box["w"]) * S, scene_y + (box["y"] + box["h"]) * SY + 1], 5, outline=color, width=2)
                 near = min(found, key=lambda b: abs((b["x"] + b["w"] / 2) * S - cx))
                 ax, top = (near["x"] + near["w"] / 2) * S, scene_y + near["y"] * SY
                 d.line([(cx, ly1), (cx, ly1 + 10), (ax, top - 16), (ax, top - 5)], fill=color, width=2)
-                if name == "trail":
-                    d.ellipse([ax - 5, scene_y + (near["y"] + near["h"] / 2) * SY - 5, ax + 5, scene_y + (near["y"] + near["h"] / 2) * SY + 5], outline=color, width=2)
             d.rounded_rectangle([lx0, ly0, lx1, ly1], 10, fill=(38, 38, 56), outline=color, width=2)
             d.text((cx, ly0 + 15), title, font=title_font, fill=color, anchor="mm")
             d.text((cx, ly0 + 35), what, font=small, fill=(166, 173, 200), anchor="mm")
@@ -474,11 +471,37 @@ def strike():
           captions=("city", "mountains", "desert", "tundra"))
 
 
+def tour():
+    """One large scene at a time, with chapter labels and native playback timing."""
+    meta = json.loads((WORK / "tour.json").read_text())
+    data, size = cells(WORK / "tour.bin", meta["width"], meta["height"])
+    assert len(data) == size * meta["frames"]
+    scale, head, foot = 8, 72, 12
+    width = meta["width"] * scale
+    title_font, caption_font = label_font(True, 22), label_font(False, 15)
+    frames = []
+    for n, clip in enumerate(meta["clips"]):
+        for i in range(clip["start"], clip["end"]):
+            frame = Image.new("RGB", (width, head + SCENE_H * scale + foot), BASE)
+            draw = ImageDraw.Draw(frame)
+            draw.text((18, 10), clip["title"], font=title_font, fill=TEXT)
+            draw.text((18, 40), clip["caption"], font=caption_font, fill=(166, 173, 200))
+            draw.text((width - 18, 16), f'{n + 1:02} / {len(meta["clips"]):02}', font=caption_font, fill=TEAL, anchor="ra")
+            frame.paste(scene(data, size, i, scale), (0, head))
+            y = head + SCENE_H * scale + 4
+            draw.rectangle((0, y, width * (i - clip["start"] + 1) / (clip["end"] - clip["start"]), y + 2), fill=TEAL)
+            frames.append(frame)
+    assert len(frames) == meta["frames"]
+    save_gif(frames, IMAGES / "wake-tour.gif", delay=meta["delay"])
+
+
 NEW = {"cast": cast, "sequence": sequence, "strike": strike}
 
 if __name__ == "__main__":
     WORK.mkdir(parents=True, exist_ok=True)
-    want = sys.argv[1:] or ["dock", "landscapes", "hero", "crew", "cast", "sequence", "strike"]
+    want = sys.argv[1:] or ["tour", "dock", "landscapes", "hero", "crew", "cast", "sequence", "strike"]
+    if "tour" in want:
+        run("bun", "dev/readme-tour.ts", str(WORK / "tour"), cwd=WAKE)
     if any(name in NEW for name in want):
         run("bun", "dev/readme-crew.ts", str(WORK / "readme-crew"), str(FRAMES), cwd=WAKE)
     if "landscapes" in want or "hero" in want:
@@ -489,4 +512,4 @@ if __name__ == "__main__":
     if "crew" in want:
         run("bun", "dev/crew-life.ts", str(WORK / "crew"), str(FRAMES), cwd=WAKE)
     for name in want:
-        {"dock": dock, "landscapes": landscapes, "hero": hero, "crew": crew, **NEW}[name]()
+        {"tour": tour, "dock": dock, "landscapes": landscapes, "hero": hero, "crew": crew, **NEW}[name]()

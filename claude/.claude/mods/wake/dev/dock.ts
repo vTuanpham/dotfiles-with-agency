@@ -2,7 +2,7 @@
 // uint32 0xRRGGBB, width x SCENE_H each) plus out.json: per frame, where each thing the legend names is (its bounding box in
 // cells, read from the scene's own hover map) and the crew rows under the scene as the real builders draw them while two
 // workers message each other and the root.
-import { arcCells, sceneFrame, scenePixels, type SceneInput } from '../hooks/scene.ts'
+import { MessageTrails, sceneFrame, scenePixels, type SceneInput } from '../hooks/scene.ts'
 import { SCENE_H } from '../hooks/landscapes/kit.ts'
 import { CLASS_GLYPH, crewLayout, harnessSpin, packetWindow, quotaRows, rootSpine, type RootLink } from '../hooks/crew-row.ts'
 import { LOGOS } from '../hooks/logos.ts'
@@ -23,10 +23,10 @@ const state: SceneInput = {
   weather: { cloud: 0.2, rain: 0, snow: 0, fog: false, thunder: false, wind: 8 },
   preset: 'harbor', seed: 12345, turns, live: { turn: 17, kinds: ['read', 'read', 'edit', 'test', 'edit'] }, mood: 'work',
   jobs: [
-    { isStale: false, seed: 3, tier: 2, kind: 'codex', lift: 0, hit: { id: 'parser', title: 'parser', details: [] } },
+    { isStale: false, seed: 3, tier: 3, kind: 'codex', lift: 0, hit: { id: 'parser', title: 'parser', details: [] } },
     { isStale: false, seed: 8, tier: 3, kind: 'agy', lift: 0, hit: { id: 'review', title: 'review', details: [] } },
   ],
-  agents: [{ seed: 1, tier: 2, hit: { id: 'explore', title: 'Explore', details: [] } }], plan: { done: 3, total: 5 }, effect: null,
+  agents: [{ seed: 1, tier: 3, hit: { id: 'explore', title: 'Explore', details: [] } }], plan: { done: 3, total: 5 }, effect: null,
 }
 
 // ── the conversation: parser messages review every 2.4 s, and review reports to the root once a loop (at 3.6 s) ─────────────────
@@ -38,7 +38,7 @@ const talking = (i: number): Partial<SceneInput> => {
   const ms = msAt(i)
   return {
     peerEdges: [
-      { source: 'parser', target: 'review', strength: 0.9, preview: 'x', count: 1, family: 'codex', arriving: sinceParser(ms), fresh: 1 },
+      { source: 'parser', target: 'review', stamp: String(Math.floor(ms / 2400)), strength: 0.9, preview: 'x', count: 1, family: 'codex', arriving: sinceParser(ms), fresh: 1 },
       { source: 'review', target: 'mochi', strength: 0.8, preview: 'x', count: 1, family: 'agy', messageState: 'observed', arriving: sinceRoot(ms) <= packetWindow(1) ? sinceRoot(ms) : undefined, fresh: 1 },
       { source: 'mochi', target: 'parser', strength: 0.4, preview: 'working for the root', count: 1, family: 'codex' },
     ],
@@ -80,7 +80,7 @@ const rowsAt = (i: number) => {
   ]
   const spine = rootSpine(links, now)
   return [
-    { kind: 'native', backend: 'claude', title: 'Explore', mark: CLASS_GLYPH[1], glyph: '', spin: harnessSpin('claude', i), beat: 0, effort: { lit: 2, total: 3 }, after: ' 1m', gutter: [], cell: spine[0]! },
+    { kind: 'native', backend: 'claude', title: 'Explore', mark: CLASS_GLYPH[2], glyph: '', spin: harnessSpin('claude', i), beat: 0, effort: { lit: 2, total: 3 }, after: ' 1m', gutter: [], cell: spine[0]! },
     ...rows.map((row, k) => ({
       kind: 'bridge', backend: jobs[k]!.backend, title: row.title, mark: [...row.family][1] ?? '', glyph: row.glyph, spin: harnessSpin(jobs[k]!.backend, i), beat: row.beat,
       effort: row.effortSlot ? { lit: row.effortSlot.lit, total: row.effortSlot.total, before: row.effortSlot.before, size: row.effortSlot.size, after: row.effortSlot.after } : null,
@@ -140,16 +140,6 @@ function changed(a: Uint32Array, b: Uint32Array): Box[] {
     return { x, y, w: Math.max(...xs) - x + 1, h: Math.max(...ys) - y + 1 }
   })
 }
-/** The comet between the two workers while a message flies (its head, run at the trail's own pace), else the middle of the arc. */
-function trailMark(hits: ReturnType<typeof sceneFrame>['hits'], arriving: number): Box | null {
-  const [from] = boxes(hits, IDS.codex!), to = boxes(hits, IDS.agy!, 6)[0]
-  if (!from || !to) return null
-  const arc = arcCells({ x: from.x + (from.w >> 1), y: Math.max(0, (from.y & ~1) - 1) }, { x: to.x + (to.w >> 1), y: Math.max(0, (to.y & ~1) - 1) }, W, H, 0)
-  const tail = Math.max(5, Math.min(12, arc.length * 0.25)) // the trail's own fade length, as drawTrails has it
-  const head = arriving <= packetWindow(1) ? Math.min(arc.length - 1, Math.floor((arriving / 1_400) * (arc.length + 4 * tail))) : arc.length >> 1
-  const at = arc[head]
-  return at === undefined ? null : { x: (at % W) - 1, y: Math.floor(at / W) - 1, w: 3, h: 3 }
-}
 const IDS: Record<string, string> = { codex: 'parser', agy: 'review', claude: 'explore', live: 'turn:17', mochi: 'mochi', lamps: 'plan-lamps' }
 
 // start where the subagent's bird stays on screen for the whole loop, so its callout never blinks out
@@ -160,17 +150,16 @@ while (start < 600 && !Array.from({ length: FRAMES }, (_, i) => start + i * STEP
 const pixels = new Uint32Array(FRAMES * W * H)
 const anchors: Record<string, Box[]>[] = []
 const rows: ReturnType<typeof rowsAt>[] = []
+const messageTrails = new MessageTrails()
 for (let i = 0; i < FRAMES; i++) {
   const at = { ...state, frame: start + i * STEP }
   const talk = { ...at, ...talking(i) }
-  pixels.set(scenePixels(talk), i * W * H)
+  pixels.set(scenePixels({ ...talk, messageTrails }), i * W * H)
   rows.push(rowsAt(i))
   const hits = sceneFrame(at).hits
-  const trail = trailMark(hits, sinceParser(msAt(i)))
   anchors.push({
     ...Object.fromEntries(Object.entries(IDS).map(([name, id]) => [name, boxes(hits, id, name === 'agy' ? 6 : 2)])),
     lamps: changed(scenePixels(at), scenePixels({ ...at, plan: null })), // lit lamps are the steps done; without a plan they only light at night
-    trail: trail ? [trail] : [],
   })
 }
 await Bun.write(out, pixels)
