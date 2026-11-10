@@ -27,7 +27,7 @@ import type { WakePreset } from '../../types'
 type Kind = NonNullable<Job['kind']>
 type Frames = readonly (readonly string[])[]
 // A sprite module may export `emissive: string` for additional glowing cell letters.
-const SPRITES = { codex: craftSprite, claude: creatureSprite, agy: agySprite, opencode: lanternSprite } as Record<Kind, { emissive?: string; rest?: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> }>
+const SPRITES = { codex: craftSprite, claude: creatureSprite, agy: agySprite, opencode: lanternSprite } as Record<Kind, { emissive?: string; rest?: Partial<Record<WakePreset, Record<Tier, readonly string[]>>>; turnPose?: Partial<Record<WakePreset, Record<Tier, readonly string[]>>> }>
 const TEMPO: Record<Kind, number> = { codex: 4, claude: 3, agy: 4, opencode: 5 }
 
 const drawWithHit = <T>(c: Canvas, job: Job, draw: () => T): T => job.hitOwner ? c.withHit(job.hitOwner, draw) : draw()
@@ -224,12 +224,13 @@ export function orient(path: (ago: number) => Vec, drawn: 'left' | 'right', ago:
  * runs down the length from the head to the tail, and eases in and out, so the sprite starts and ends straight. Mid-turn the
  * whole body is coiled, and that is when the craft reverses (see `orient`): the spiral is the same either way, so nothing jumps.
  */
-export function shape(rows: readonly string[], mirror: 1 | -1, roll?: number, turn: Turn = 'coil'): string[] {
+export function shape(rows: readonly string[], mirror: 1 | -1, roll?: number, turn: Turn = 'coil', turnPose?: readonly string[]): string[] {
   const h = rows.length, w = rows[0]!.length
   const reversed = (grid: readonly string[]) => (mirror < 0 ? grid.map(r => [...r].reverse().join('')) : [...grid])
   if (roll === undefined || turn === 'none' || roll === 0 || roll === 1) return reversed(rows)
+  if (turn === 'pose' && turnPose && roll >= 0.35 && roll <= 0.65) return [...turnPose]
   const out = Array.from({ length: h }, () => Array<string>(w).fill('.'))
-  if (turn === 'bank') {
+  if (turn === 'bank' || turn === 'pose') {
     // A rigid body wheels through edge-on: foreshorten the length, flatten the wings and tilt, then open the other way.
     const cx = (w - 1) / 2, cy = (h - 1) / 2, wheel = Math.sin(Math.PI * roll)
     const sx = 1 - 0.78 * wheel * wheel, sy = 1 - 0.45 * Math.sin(2 * Math.PI * roll) ** 2
@@ -278,8 +279,8 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
   const beat = (Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length
   const blast = kind === 'opencode' && !compact && !look.crewRest && job.talk?.sending && job.talk.over === undefined && job.talk.ms >= TURN_LEAD_MS && job.talk.ms < TURN_LEAD_MS + 300
   const frame = blast ? lanternFlare(look.place ?? 'city', job.tier ?? 1, beat) : frames[beat]!
-  const art = drawn ? shape(frame, turning.mirror, turning.roll, design.turn) : [...frame]
-  if (kind === 'agy' && drawn && turning.roll !== undefined) {
+  const art = drawn ? shape(frame, turning.mirror, turning.roll, design.turn, SPRITES[kind].turnPose?.[look.place ?? 'city']?.[compact ? 1 : job.tier ?? 1]) : [...frame]
+  if (kind === 'agy' && drawn && turning.roll !== undefined && design.turn !== 'pose') {
     // Projection can merge cells; keep the core in its own projected cell rather than losing it behind a filament.
     shape(frame.map(row => row.replace(/[^M]/g, '.')), turning.mirror, turning.roll, design.turn).forEach((row, y) => {
       const x = row.indexOf('M')
@@ -328,7 +329,7 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
       const small = airFrames(look, kind, e.tier), [px, py] = path(e.lag)
       const next = small[(Math.floor((job.phase ?? look.frame) / tempo) + job.seed + 3 * i) % small.length]!
       const o = drawn ? orient(path, drawn, e.lag) : undefined // (each rolls when the leader's path reached the turn, a moment later)
-      const piece = o ? shape(next, o.mirror, o.roll, design.turn) : next
+      const piece = o ? shape(next, o.mirror, o.roll, design.turn, SPRITES[kind].turnPose?.[look.place ?? 'city']?.[e.tier]) : next
       const top = Math.round(py + e.dy) - (piece.length >> 1)
       if (top < 0 || top + piece.length > (look.crewGround ?? c.H)) continue
       const left = Math.round(px + (e.dx ?? 0)) - (piece[0]!.length >> 1)
@@ -362,7 +363,7 @@ function placeSurface(c: Canvas, look: Look, x: number, job: Job, right: number)
   const beat = (Math.floor((job.phase ?? look.frame) / tempo) + job.seed) % frames.length
   const pose = frames[beat]!
   const turning = design.facing ? orient(() => [0, 0], design.facing, 0, job.talk) : undefined
-  const shown = turning ? shape(pose, turning.mirror, turning.roll, design.turn) : pose
+  const shown = turning ? shape(pose, turning.mirror, turning.roll, design.turn, SPRITES[job.kind ?? 'codex'].turnPose?.[look.place ?? 'city']?.[job.tier ?? 1]) : pose
   const initialBottom = Math.max(...shown.flatMap((row, y) => /[^.]/.test(row) ? [y] : []))
   const bottoms = frames.map(frame => Math.max(...frame.flatMap((row, y) => /[^.]/.test(row) ? [y] : [])))
   const minBottom = Math.min(initialBottom, ...bottoms), maxBottom = Math.max(initialBottom, ...bottoms)

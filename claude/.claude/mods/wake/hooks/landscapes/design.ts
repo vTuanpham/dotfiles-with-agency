@@ -2,7 +2,7 @@ import type { WakePreset } from '../../types'
 import type { Job } from './kit'
 
 export type Tier = 1 | 2 | 3 | 4
-export type Turn = 'coil' | 'bank' | 'none'
+export type Turn = 'coil' | 'bank' | 'none' | 'pose'
 export type Design = {
   /** null means symmetric: no heading, no mirroring. */
   facing: 'left' | 'right' | null
