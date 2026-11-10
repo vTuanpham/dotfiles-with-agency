@@ -11,6 +11,8 @@ type Point = readonly [number, number]
 type Pose = { rows: readonly string[]; beak: Point; feather: { x: number; y: number; force: number } }
 type Species = Record<Tier, Frames>
 
+/** At night the body darkens with the sky; the eye (and a bright bill or foot) still catches the light. */
+export const emissive = 's'
 export const CREATURE_BEATS = 12
 export const CREATURE_SIZE: Record<Tier, { w: number; h: number }> = {
   1: { w: 5, h: 3 }, 2: { w: 7, h: 5 }, 3: { w: 11, h: 6 }, 4: { w: 15, h: 7 },

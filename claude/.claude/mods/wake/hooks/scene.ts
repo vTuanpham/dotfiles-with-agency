@@ -906,7 +906,7 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
     }
     for (let packet = 0; packet < trails.count(edge); packet++) {
       const path = trails.path(edge, () => {
-        const launch = missile ? { x: from.x, y: Math.max(1, from.y - 5) } : from
+        const launch = missile ? { x: from.x, y: Math.max(1, from.y - 8) } : from
         const route = arcCells(launch, to, c.W, H, lane)
         if (missile) route.unshift(...Array.from({ length: from.y - launch.y }, (_, i) => (from.y - i) * c.W + from.x))
         // The wave belongs to the flight's geometry, so its residue occupies exactly the same cells.
@@ -929,7 +929,7 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
         ],
       })
       // After delivery, embers fade along the recorded flight path while the crew moves on.
-      const accent = style === 'ember' ? P.peach : jobAccent({ kind: family } as Job, P.teal)
+      const accent = style === 'ember' ? P.peach : missile ? P.overlay2 : jobAccent({ kind: family } as Job, P.teal) // a rocket leaves smoke, not light
       const tail = Math.max(2.5, Math.min(6, length * 0.125)) // cells over which the light fades to a third (a short, quick fade)
       const ember = 0.14 * Math.min(1, Math.max(0, edge.strength - 0.04) / 0.65)
       const light = new Float32Array(length) // how bright each cell of the trail is just now, 0..1
@@ -967,14 +967,21 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
         if (glow === 1 && style === 'packet') {
           const previous = path[Math.max(0, k - 1)]!, dx = Math.sign(x - previous % c.W), dy = Math.sign(y - Math.floor(previous / c.W))
           if (missile) {
+            // A rocket: red nose, white body, a flickering flame and a column of smoke that billows along the cells it has flown.
+            const back = (n: number) => { const cell = path[Math.max(0, k - n)]!; return [cell % c.W, Math.floor(cell / c.W)] as const }
+            const tick = Math.floor((edge.arriving ?? 0) / 80)
+            for (let n = Math.min(k, 13); n >= 5; n--) {
+              const [sx, sy] = back(n), puff = (n + tick) % 3 - 1
+              c.glow(sx, sy, P.overlay2, .6 - n * .035)
+              c.glow(sx + (dy ? puff : 0), sy + (dy ? 0 : puff), P.overlay1, .34 - n * .02)
+            }
+            if (k < 7) for (const ox of [-3, -2, -1, 1, 2, 3]) c.glow(from.x + ox, from.y + (Math.abs(ox) > 1 ? 0 : -1), Math.abs(ox) > 1 ? P.overlay2 : P.yellow, (1 - k / 7) * (Math.abs(ox) > 2 ? .4 : .8)) // the launch: a flash on deck, smoke rolling out to both sides
+            const [fx, fy] = back(3), [gx, gy] = back(4), [bx, by] = back(2), [wx, wy] = back(1)
+            if (k >= 4) c.glow(gx, gy, tick % 2 ? P.peach : P.red, .8)
+            if (k >= 3) c.glow(fx, fy, P.yellow, 1)
+            if (k >= 2) c.set(bx, by, P.snow)
+            if (k >= 1) c.set(wx, wy, P.white)
             c.set(x, y, P.red)
-            c.set(x - dx, y - dy, P.white)
-            c.set(x - 2 * dx, y - 2 * dy, P.snow)
-            for (const sign of [-1, 1]) c.set(x - 2 * dx - dy * sign, y - 2 * dy + dx * sign, P.sky)
-            const flame = Math.floor((edge.arriving ?? 0) / 100) % 2
-            c.glow(x - 3 * dx, y - 3 * dy, P.yellow, .95)
-            c.glow(x - 4 * dx, y - 4 * dy, flame ? P.peach : P.red, .7)
-            c.glow(x - (5 + flame) * dx, y - (5 + flame) * dy, P.overlay1, .3)
           } else if (input.preset === 'city' || input.preset === 'desert') {
             const color = input.preset === 'city' ? P.teal : P.peach
             for (const sign of [-1, 1]) c.glow(x - dy * sign, y + dx * sign, color, .55)
