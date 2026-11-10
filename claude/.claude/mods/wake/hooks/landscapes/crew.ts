@@ -526,6 +526,7 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
   const placed = placeSurface(c, look, x, job, right)
   if (placed) return placed
   if (design.altitude === 'low') y = (look.crewGround ?? c.H) - 2
+  if (design.altitude === 'high') y = 3 // the top of the sky, clear of a busy skyline
   const zones = look.crewZones ??= []
   const anchors = look.crewAnchors ??= []
   const sprites = look.crewSpriteZones ??= []
