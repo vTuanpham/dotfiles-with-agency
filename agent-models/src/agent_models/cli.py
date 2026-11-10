@@ -6,6 +6,7 @@ import math
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from importlib.metadata import version
 
 from . import (
     benchmarks,
@@ -121,6 +122,7 @@ def suggestions(args, context, routing):
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(prog="model-guide", description="Shared model selection reference.")
+    parser.add_argument("--version", action="version", version=version("agent-models"))
     commands = parser.add_subparsers(dest="command", required=True)
     history = commands.add_parser("usage", help="summarize attributable local Bridge turn outcomes")
     history.add_argument("--backend", choices=decision_context.BACKENDS)

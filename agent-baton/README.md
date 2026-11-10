@@ -198,5 +198,12 @@ avoids Android secure-DNS trouble with `.ts.net` names. A fixed forwarded port c
 serve only one open request at a time; further requests are local-only. Run
 `agent-baton doctor` after setup.
 
-The push to the phone carries no detail, only "needs you"; what and why are on the page. Develop: `uv run
-pytest` and `uv run ruff check .` in this directory.
+The push to the phone carries no detail, only "needs you"; what and why are on the page.
+
+Checks (from this directory):
+
+```sh
+uv sync --locked
+uv run --locked pytest
+uv run --locked ruff check src tests
+```

@@ -209,8 +209,13 @@ output waiting for an idle parent; neither permits answering a human question.
 
 ## Checks and remaining live verification
 
-From this directory: `uv run --locked pytest` and
-`uv run --locked ruff check src tests`.
+From this directory:
+
+```sh
+uv sync --locked
+uv run --locked pytest
+uv run --locked ruff check src tests
+```
 
 Verify automatic delivery in the target TUI after installing and trusting the
 snapshot. Use these integration checks in addition to unit tests:

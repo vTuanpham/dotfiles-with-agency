@@ -168,7 +168,13 @@ Notes:
 - **A worker cannot start jobs**: it carries `AGENT_BRIDGE_WORKER`, which the CLI refuses.
 - **Reference updates:** `model-guide read maintenance` owns the review workflow.
 
-Develop: `uv run pytest` and `uv run ruff check .` in this directory.
+Checks (from this directory):
+
+```sh
+uv sync --locked
+uv run --locked pytest
+uv run --locked ruff check src tests
+```
 
 ## Resource integration
 

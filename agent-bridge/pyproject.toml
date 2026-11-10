@@ -1,7 +1,7 @@
 [project]
 name = "agent-bridge"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.15"
 dependencies = ["codex-wake==0.1.0", "agent-models==0.1.0", "agent-resources==0.1.0",
                 "agent-accounts==0.1.0", "agent-session==0.1.0"]
 

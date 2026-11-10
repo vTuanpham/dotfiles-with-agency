@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from importlib.metadata import version
 from pathlib import Path
 
 from . import monitor
@@ -30,6 +31,7 @@ def main(argv=None):
             "Use SUBCOMMAND --help for explicit target options."
         ),
     )
+    parser.add_argument("--version", action="version", version=version("codex-wake"))
     commands = parser.add_subparsers(dest="action", required=True)
     commands.add_parser("hook", help="internal host lifecycle hook (JSON on stdin)")
     watch = commands.add_parser(

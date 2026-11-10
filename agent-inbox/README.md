@@ -441,8 +441,8 @@ also requires updating `--state`, `StateDirectory` and `ReadWritePaths` together
 
 ```sh
 uv sync --locked
-uv run pytest -q
-uv run ruff check src tests
+uv run --locked pytest
+uv run --locked ruff check src tests
 node tests/test_ui.mjs
 ```
 

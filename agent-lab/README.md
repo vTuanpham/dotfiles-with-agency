@@ -84,8 +84,9 @@ with `./install.sh --apply links systemd`; disable with
 ## Checks
 
 ```sh
-uv run ruff format --check src tests
-uv run ruff check src tests
-uv run ty check src
-uv run pytest
+uv sync --locked
+uv run --locked pytest
+uv run --locked ruff check src tests
+uv run --locked ruff format --check src tests
+uv run --locked ty check src
 ```

@@ -1,5 +1,6 @@
 import argparse
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 from . import control, heavy
@@ -7,6 +8,7 @@ from . import control, heavy
 
 def main():
     parser = argparse.ArgumentParser(description="Host admission for heavy foreground commands.")
+    parser.add_argument("--version", action="version", version=version("agent-resources"))
     commands = parser.add_subparsers(dest="action", required=True)
     run = commands.add_parser("run", help="wait for headroom, then exec the command unchanged")
     run.add_argument("--mem", help="expected peak memory, such as 1G or 2500M")

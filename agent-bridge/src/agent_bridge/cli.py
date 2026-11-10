@@ -4,6 +4,7 @@ import os
 import sys
 import time
 from contextlib import ExitStack, nullcontext
+from importlib.metadata import version
 from pathlib import Path
 
 from agent_models import reference
@@ -296,6 +297,7 @@ def main():
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    p.add_argument("--version", action="version", version=version("agent-bridge"))
     sub = p.add_subparsers(dest="command", required=True, metavar="COMMAND")
     g = sub.add_parser("guide", help="read workflow, model, subscription, source or status guidance")
     g.add_argument("topic", nargs="?",

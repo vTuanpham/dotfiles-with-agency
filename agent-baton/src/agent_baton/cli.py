@@ -5,6 +5,7 @@ import shlex
 import subprocess
 import sys
 import time
+from importlib.metadata import version
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -355,6 +356,7 @@ def build_parser():
         epilog=guide(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=version("agent-baton"))
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("mcp", help="serve native handoff tools over MCP stdio").set_defaults(run=mcp)
     p = sub.add_parser("question", help="agent: ask a nonsecret question; wait returns the human's answer")

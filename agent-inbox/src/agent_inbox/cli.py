@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import uuid
+from importlib.metadata import version
 from pathlib import Path
 
 from .adapters import ADAPTERS, adapter
@@ -24,6 +25,7 @@ def state_home():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--version", action="version", version=version("agent-inbox"))
     parser.add_argument("--state", type=Path, default=Path(os.environ.get(
         "AGENT_INBOX_HOME", str(state_home() / "agent-inbox"))))
     sub = parser.add_subparsers(dest="action", required=True)

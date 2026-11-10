@@ -95,8 +95,9 @@ writes. State and device URLs stay outside Git.
 Run from this directory; UV locks both runtime and development dependencies:
 
 ```sh
-uv run --frozen pytest -q
-uv run --frozen ruff check .
+uv sync --locked
+uv run --locked pytest
+uv run --locked ruff check src tests
 ```
 
 Sources: [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve),

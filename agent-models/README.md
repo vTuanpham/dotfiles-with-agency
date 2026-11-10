@@ -170,5 +170,12 @@ does not establish the result for a standalone CLI session.
 
 Shared orchestration does not own provider protocols or account lifecycle.
 
-Checks: `uv run pytest`, `uv run ruff check src tests` and `uv run ty check`.
+Checks (from this directory):
+
+```sh
+uv sync --locked
+uv run --locked pytest
+uv run --locked ruff check src tests
+uv run --locked ty check
+```
 The ordinary suite is offline.

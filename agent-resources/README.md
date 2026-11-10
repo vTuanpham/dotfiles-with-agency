@@ -50,5 +50,13 @@ An explicit memory cap must be enforceable; an unavailable systemd scope is an
 error. Existing inherited caps are preserved. Inspect actual limits and use
 real-workload peak measurements when choosing a memory estimate.
 
-Checks: `uv run pytest` and `uv run ruff check src tests`. See `agent-resources guide`
+Checks (from this directory):
+
+```sh
+uv sync --locked
+uv run --locked pytest
+uv run --locked ruff check src tests
+```
+
+See `agent-resources guide`
 for admission policy, inherited limits, cancellation and its sources.

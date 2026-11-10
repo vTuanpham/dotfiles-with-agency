@@ -111,4 +111,10 @@ steps. The rate is the account's, not one session's.
 Inbox continues to read allowance from the selected native daemon; a machine-wide
 cache must not substitute for a conversation's account.
 
-Checks: `uv run pytest` and `uv run ruff check src tests`.
+Checks (from this directory):
+
+```sh
+uv sync --locked
+uv run --locked pytest
+uv run --locked ruff check src tests
+```

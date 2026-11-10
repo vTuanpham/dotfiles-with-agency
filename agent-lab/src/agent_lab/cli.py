@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 from .context import infer
@@ -46,6 +47,7 @@ def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(
         description="Persistent experiments with safe retirement. Caller context is detected automatically."
     )
+    root.add_argument("--version", action="version", version=version("agent-lab"))
     sub = root.add_subparsers(dest="action", required=True)
     new = sub.add_parser("new", help="create a private workspace; print its ID")
     new.add_argument("name", help="short lowercase name; a unique suffix is added")

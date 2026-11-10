@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 import time
+from importlib.metadata import version
 from urllib.parse import urlsplit
 
 import segno
@@ -71,6 +72,7 @@ def main():
     parser = argparse.ArgumentParser(
         prog="portlink", description="Private, expiring links to local previews.",
         epilog="Phone and host need Tailscale. Links expire after 1h by default; use open --ttl or --keep.")
+    parser.add_argument("--version", action="version", version=version("portlink"))
     sub = parser.add_subparsers(dest="command", required=True)
     opening = sub.add_parser("open", help="share a local HTTP port, file or directory")
     opening.add_argument("target")

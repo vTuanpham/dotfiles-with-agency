@@ -41,4 +41,9 @@ their root controller; `native()` still identifies the child's own `CODEX_THREAD
 `VARIABLES` includes both IDs so independent launches discard the enclosing session.
 
 Installed through its consumers (`install.sh` passes `--with-editable`). Checks:
-`uv run --locked pytest` and `uv run --locked ruff check src tests`.
+
+```sh
+uv sync --locked
+uv run --locked pytest
+uv run --locked ruff check src tests
+```

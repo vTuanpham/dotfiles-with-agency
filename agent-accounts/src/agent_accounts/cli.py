@@ -4,12 +4,14 @@ import subprocess
 import sys
 from dataclasses import asdict
 from datetime import datetime, timezone
+from importlib.metadata import version
 
 from . import providers, refresh
 
 
 def main():
     parser = argparse.ArgumentParser(description="Account observations, independent of job state.")
+    parser.add_argument("--version", action="version", version=version("agent-accounts"))
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("snapshot", help="read cached account observations as JSON; no provider refresh")
     refresh_parser = commands.add_parser("refresh", help="query existing provider account allowance")
