@@ -1,5 +1,6 @@
 import type { WakePreset } from '../../types'
 import type { Tier } from './design'
+import { flex, type Flex } from './flex'
 
 // Claude's crew is alive: a different rose-plumaged creature for each place, not one bird in eight coats. Each is a shape you can
 // name at a glance (a pelican's bill and pouch, a flamingo's neck and legs, a butterfly's wings, an owl's face), hand-drawn in the
@@ -16,6 +17,15 @@ export const CREATURE_SIZE: Record<Tier, { w: number; h: number }> = {
 }
 
 /** One creature: its wings up and its wings down in each class, how many strokes fit the twelve-pose loop, and where its face is. */
+/** The parts that move freely between the drawn strokes: the swallow's streamers, the eagle's fanned tail, the fox's brush and
+ *  the puffin's trailing feet stream and sway on every beat. */
+const LOOSE: Partial<Record<WakePreset, Flex>> = {
+  city: { from: 0.8, amp: 1, wave: 0.9 },
+  mountains: { from: 0.78, amp: 1, wave: 0.5 },
+  desert: { from: 0.68, amp: 1.3, wave: 0.6, rows: [0, 0.6] },
+  tundra: { from: 0.7, amp: 1, wave: 0.7 },
+}
+
 type Creature = { name: string; strokes: 1 | 2 | 3 | 6; face: 'left' | 'centre'; art: Record<Tier, readonly [up: readonly string[], down: readonly string[]]> }
 
 const CREATURES: Record<WakePreset, Creature> = {
@@ -110,7 +120,7 @@ const CREATURES: Record<WakePreset, Creature> = {
 
 function pose(place: WakePreset, tier: Tier, beat: number): Pose {
   const { w, h } = CREATURE_SIZE[tier], kind = CREATURES[place], down = Math.floor(beat * kind.strokes / 6) % 2
-  const rows = Array.from({ length: h }, (_, y) => (kind.art[tier][down]![y] ?? '').padEnd(w, '.').slice(0, w))
+  const rows = flex(Array.from({ length: h }, (_, y) => (kind.art[tier][down]![y] ?? '').padEnd(w, '.').slice(0, w)), LOOSE[place], beat, CREATURE_BEATS)
   const cells = rows.flatMap((row, y) => [...row].flatMap((ink, x) => ink === '.' ? [] : [[x, y, ink] as const]))
   const mid = w >> 1
   // The face: the foremost cell of a creature in profile, the eye or bill on the centre line of one seen face on.

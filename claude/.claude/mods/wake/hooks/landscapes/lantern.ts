@@ -1,5 +1,6 @@
 import type { WakePreset } from '../../types'
 import type { Tier } from './design'
+import { flex, type Flex } from './flex'
 import { hash } from '../pixels'
 import { P } from './kit'
 
@@ -31,6 +32,14 @@ export const LANTERN_SIZE: Record<Tier, { w: number; h: number }> = {
 
 type Drawn = readonly (readonly string[])[]
 /** A craft is either drawn pose by pose (`cycles` loops of its poses fit the eight beats) or generated, when it ripples. */
+/** What the wind moves between the drawn poses: the crane's tail point, the kite's whole tail of bows snaking behind it, and
+ *  the string of lanterns riding one long swell. */
+const LOOSE: Partial<Record<WakePreset, Flex>> = {
+  city: { from: 0.78, amp: 1, wave: 0.6 },
+  beach: { from: 0.5, amp: 1.4, wave: 1.1 },
+  forest: { from: 0.3, amp: 1, wave: 0.5 },
+}
+
 type Craft = { name: string } & ({ cycles: 1 | 2; art: Record<Tier, Drawn> } | { wave: (w: number, h: number, phase: number) => string[] })
 
 function sheet(w: number, h: number) {
@@ -142,7 +151,7 @@ const CRAFTS: Record<WakePreset, Craft> = {
 function pose(place: WakePreset, tier: Tier, beat: number): Pose {
   const { w, h } = LANTERN_SIZE[tier], craft = CRAFTS[place]
   const drawn = 'wave' in craft ? craft.wave(w, h, beat * Math.PI * 2 / BEATS) : craft.art[tier][Math.floor(beat * craft.cycles * craft.art[tier].length / BEATS) % craft.art[tier].length]!
-  const rows = Array.from({ length: h }, (_, y) => (drawn[y] ?? '').padEnd(w, '.').slice(0, w))
+  const rows = flex(Array.from({ length: h }, (_, y) => (drawn[y] ?? '').padEnd(w, '.').slice(0, w)), LOOSE[place], beat, BEATS)
   const cells = rows.flatMap((row, y) => [...row].flatMap((ink, x) => ink === '.' ? [] : [[x, y, ink] as const]))
   const xs = cells.map(c => c[0]), ys = cells.map(c => c[1])
   const shade: Rect = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs) + 1, h: Math.max(...ys) - Math.min(...ys) + 1 }
