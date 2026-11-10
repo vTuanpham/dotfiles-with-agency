@@ -6,7 +6,7 @@ import { canvas } from '../hooks/pixels'
 import { scenePixels, type SceneInput } from '../hooks/scene'
 import { LANDSCAPES } from '../hooks/landscapes'
 import { craftFrames } from '../hooks/landscapes/craft'
-import { creatureFrames } from '../hooks/landscapes/creatures'
+import { creatureFrames, rest as creatureRest } from '../hooks/landscapes/creatures'
 import { lanternFrames } from '../hooks/landscapes/lantern'
 
 test('real scenes keep each surface-habit worker on its declared surface', { timeoutMs: 30_000 }, () => {
@@ -30,13 +30,25 @@ test('real scenes keep each surface-habit worker on its declared surface', { tim
       scenePixels(input, anchors, hits)
       expect(anchors.length, `${kind}.${place} width ${width} count ${count}`).toBe(count)
       expect(new Set(anchors).size, `${kind}.${place} width ${width} distinct anchors`).toBe(count)
-      expect(anchors.map(anchor => Math.floor(anchor / width)).sort((a, b) => a - b), `${kind}.${place} width ${width} count ${count} varied ${varied}`).toEqual(expected)
+      // A bank changes the sprite's height; its feet, rather than its centre, keep the surface contact.
+      for (const [i, y] of anchors.map(anchor => Math.floor(anchor / width)).sort((a, b) => a - b).entries()) expect(Math.abs(y - expected[i]!), `${kind}.${place} contact during turn`).toBeLessThanOrEqual(2)
       for (const job of jobs) {
         const owner = hits.targets.findIndex(target => target.id === job.hit!.id) + 1
         expect(owner, `${kind}.${place} hit target`).toBeGreaterThan(0)
         expect(hits.owners.includes(owner), `${kind}.${place} width ${width} visible ${job.hit!.id}`).toBe(true)
       }
     }
+  }
+})
+
+test('grounded crews keep their actual feet planted while walking and turning to speak', () => {
+  for (const [kind, place] of [['claude', 'desert'], ['claude', 'beach'], ['codex', 'countryside'], ['codex', 'tundra']] as const) for (const tier of [1, 2, 3, 4] as const) for (const phase of [0, 18, 40, 70]) for (const ms of [undefined, 150, 450, 750, 1200]) {
+    const c = canvas(100, 24, true)
+    const look = { place, frame: phase, night: 0, effects: false, crewSurface: { ground: { y: 18, x0: 0, x1: 95 }, perches: [] }, crewGround: 18 } as unknown as Look
+    const job: Job = { kind, tier, seed: 6, phase, isStale: false, pace: .8, hitOwner: 1, hit: { id: 'one', title: 'one', details: [] }, ...(ms === undefined ? {} : { talk: { ms, sending: true, targetX: 90 } }) }
+    placeFly(c, look, 35, 8, job, 95)
+    const feet = Math.max(...Array.from(c.hitOwners!).flatMap((owner, cell) => owner === 1 ? [Math.floor(cell / c.W)] : []))
+    expect(feet, `${kind}.${place} class ${tier} phase ${phase} talk ${ms}`).toBe(18)
   }
 })
 
@@ -98,12 +110,20 @@ test('resting workers claim distinct scenery perches', () => {
     crewSurface: { ground: { y: 15, x0: 0, x1: 85 }, perches: [{ x: 18, y: 10 }, { x: 45, y: 10 }, { x: 70, y: 10 }] },
     crewZones: [], crewSpriteZones: [], crewHard: [], crewBoxes: {} } as unknown as Look
   const first = placeFly(c, look, 18, 5, { kind: 'claude', tier: 1, seed: 0, isStale: true, hit: { id: 'one', title: 'one', details: [] }, hitOwner: 1 }, 85)!
-  const second = placeFly(c, look, 18, 5, { kind: 'claude', tier: 1, seed: 1, isStale: true }, 85)!
+  const second = placeFly(c, look, 18, 5, { kind: 'claude', tier: 1, seed: 1, isStale: true, hitOwner: 2 }, 85)!
   expect(first.x).not.toBe(second.x)
   const point = look.crewMessagePoints!.one!
   expect(c.hitOwners![point.y * c.W + point.x]).toBe(1)
-  expect(look.crewSurface!.perches.some(p => p.x === first.x + (first.w >> 1))).toBe(true)
-  expect(look.crewSurface!.perches.some(p => p.x === second.x + (second.w >> 1))).toBe(true)
+  for (const owner of [1, 2]) expect(look.crewSurface!.perches.some(p => c.hitOwners![p.y * c.W + p.x] === owner)).toBe(true)
+})
+
+test('a resting tundra worker settles on the snow floor by day and night', () => {
+  for (const hour of [12, 0]) {
+    const anchors: number[] = [], width = 80
+    scenePixels({ width, frame: 37, hour, sun: { rise: 6, set: 18 }, moonPhase: 0.3, season: 'summer', snowy: false, weather: null, preset: 'tundra', seed: 7, turns: [], live: null, mood: 'work', jobs: [{ kind: 'claude', tier: 4, seed: 6, isStale: true, pace: 0.1 }], agents: [], plan: null, effect: null }, anchors)
+    const art = creatureRest.tundra![4], bottom = art.findLastIndex(row => /[^.]/.test(row))
+    expect(Math.floor(anchors[0]! / width) - (art.length >> 1) + bottom).toBe(LANDSCAPES.tundra.ground - 1)
+  }
 })
 
 test('each resting design records its own painted message point and box', () => {
@@ -118,11 +138,24 @@ test('each resting design records its own painted message point and box', () => 
       const placed = placeFly(c, look, 55, 5, job, 105)!
       const point = look.crewMessagePoints!.one!, box = look.crewBoxes!.one!
       expect(look.crewPerchesUsed?.length, `${kind}.${place} class ${tier} rests`).toBe(1)
+      expect(c.hitOwners![13 * c.W + 55], `${kind}.${place} class ${tier} touches the perch`).toBe(1)
       expect(point, `${kind}.${place} class ${tier}`).toBeDefined()
       expect(c.hitOwners![point.y * c.W + point.x]).toBe(1)
       expect(box.x0).toBe(placed.x)
       expect(box.y0).toBe(placed.y)
     }
+  }
+})
+
+test('a perched sparrow rests on its feet at every size', () => {
+  for (const tier of [1, 2, 3, 4] as const) {
+    const c = canvas(80, 24, true)
+    const look = { place: 'city', frame: 0, night: 0, top: 0, wind: 0, effects: false,
+      crewSurface: { perches: [{ x: 40, y: 12 }] }, crewHard: [], crewZones: [], crewSpriteZones: [] } as unknown as Look
+    const box = placeFly(c, look, 40, 5, { kind: 'claude', tier, seed: 0, isStale: true, settle: 1, hitOwner: 1 }, 70)!
+    const art = creatureRest.city![tier]
+    expect(art[12 - box.y]![40 - box.x]).toBe('r')
+    expect(c.hitOwners![12 * c.W + 40]).toBe(1)
   }
 })
 

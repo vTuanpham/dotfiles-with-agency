@@ -135,7 +135,7 @@ It is Claude-only; [Agent Bridge](../agent-bridge/README.md) and
 | Tests pass / command fails / Bridge job finishes | Fireworks / storm / shooting star, in the local style (harbor and beach fireworks mirror in the water; the desert storm is sand and the tundra's a blizzard; a tundra job lights the aurora); the shooting star is a streak with a tapering tail and a few embers hanging behind it |
 | Every plan step done / tests pass right after a failed turn | Paper lanterns drift up from the ground / a rainbow draws itself over the scene (the biggest milestone of a turn gets the scene: failure, then a finished plan, then the rainbow, then fireworks) |
 | Plan steps / session mood | Lit lamps / Mochi working, waiting, happy, sad or asleep |
-| A message reaches a worker, or leaves one | The sender pulses as the comet launches and the receiver lights up as it lands, each harness in its own way: Codex a widening ripple, Claude twinkling stars, agy rising sparks, OpenCode a burst of confetti |
+| A message reaches a worker, or leaves one | The sender pulses as the comet launches and the receiver lights up as it lands, each harness in its own way: Codex a circuit packet, Claude notes, agy a shooting star, OpenCode a floating ember |
 | A message reaches Mochi (or she sends one) | A gadget pops out of her head, one per character: a satellite dish with signal arcs (Mochi), whiskers turned radar with rings sliding in (Tabby), an ear trumpet with notes drifting into it (Tuxedo), rabbit-ear antennae with TV static between them (Bun) |
 | Place, time and weather | Landscape, sun, moon phase and local weather |
 
@@ -147,10 +147,10 @@ It is Claude-only; [Agent Bridge](../agent-bridge/README.md) and
 
 ### The crew at work
 
-Every worker is a small, slim design whose **structure itself moves**: a travelling wave, a wingbeat, billowing fabric,
-a breathing paper shade, not a fixed sprite with a blinking pixel. Each family has one idea, drawn differently in every
+Every worker has motion suited to its material: a plated wave, a wingbeat, billowing fabric,
+or light traveling through a fixed star map. Each family has one idea, drawn differently in every
 place, and four classes that grow the same design (1 Haiku/Luna, 2 Sonnet/Terra, 3 Opus/Sol, 4 Fable/Astra; unknown models
-are class 2) by length, with escorts flying beside the biggest.
+are class 2). Only designs that declare escorts bring them at classes 3 and 4.
 
 <img src="../docs/images/wake-cast.gif" alt="Eight landscapes and four worker families at class 4: clockwork machines, living creatures, constellations and lit paper crafts." width="860">
 
@@ -158,26 +158,29 @@ are class 2) by length, with escorts flying beside the biggest.
 
 | Family | The idea | By place |
 | --- | --- | --- |
-| Codex | Mint clockwork with a glass eye and gear | Dragon, whale, jellyfish, airship, bee, spider, scarab and narwhal |
-| Claude | Living winged creatures in the family's pink | Pigeon, pelican, flamingo, eagle, butterfly, owl, dragonfly and puffin |
+| Codex | Mint clockwork with a glass eye and gear | Dragon, tug, saucer, airship, strider, probe, sun skiff and snowcat |
+| Claude | Living creatures in the family's pink | Sparrow, crab, flamingo, eagle, butterfly, owl, fox and puffin |
 | agy | Constellations with a moving pulse of light | Crown, sail, starfish, condor, plough, tree, scorpion and aurora arch |
-| OpenCode | Paper and cloth with a warm window | Crane, carp streamer, kite, sky lantern, balloon, lantern string, flying carpet and paper star |
+| OpenCode | Paper and cloth with a warm window | Crane, paper boat, kite, sky lantern, carp streamer, lantern string, flying carpet and paper star |
 
-Each design declares how it faces and turns (`hooks/landscapes/design.ts`): a dragon coils into a spiral and uncurls the
-other way, a headed craft or bird banks, and a symmetric design never turns. Workers may pass through one another in the open
-sky (only Mochi and her laptop are hard boundaries), and they hide a little scenery when they must.
+Each design declares how it faces, moves and turns (`hooks/landscapes/design.ts`): the dragon coils, headed designs bank or
+show a hand-drawn mid-turn pose, and face-on designs do not turn. The tug and paper boat ride harbor water; the crab, strider,
+snowcat, flamingo and fox use the ground, and the sun skiff cruises low. The dragon, sparrow, owl, puffin and lantern string
+settle on perches when stale or waiting. Other workers fly. Mochi and her laptop are hard boundaries.
 
 ### Messages
 
 When a worker has a message for Mochi it does not fly backward to say it. It **brakes to a hover** with momentum, its wings
-still beating, **turns to face her**, and only then **sends**: the call, the packet along the trail and the pulse on
-the sender. Mochi (or Tabby, Tuxedo, Bun) catches it with a gadget, the worker **turns back** to the course it is about to fly and
-gathers speed again. It works the same way for a Bridge worker and for a native Claude subagent (the engine's
+still beating, turns if needed and then sends. Mochi (or Tabby, Tuxedo, Bun) catches it with a gadget. The worker keeps its new
+heading when its old course is about to reverse, otherwise it turns back and gathers speed. It works the same way for a Bridge worker and for a native Claude subagent (the engine's
 `session.send` reports every SendMessage), in both directions.
 
 <img src="../docs/images/wake-sequence.gif" alt="A worker in each of the four families, flying over the city, has a message for the root: it brakes to a hover, turns to face Mochi, sends it as a call and a packet that crosses to her, then turns back and sets off again." width="860">
 
 *Brake, turn, send, catch, turn back, resume, per family. Actual renderer output.*
+
+Each projectile travels independently after release. Its faint trace records only the cells it has crossed and fades in place
+as the crew moves on. Notes and embers leave their own curved path; a harbor tug launches its dart upward before it turns.
 
 ### Interrupts
 
@@ -198,12 +201,11 @@ subagent leaves when it goes idle. Each craft does both in its own way, and each
 
 *Every family in every place: arriving (2.4 s), working, then leaving (3.2 s). Actual renderer output.*
 
-Codex machines hyperdrive, sail, roar off or lift away in their place's way (the city dragon charges, shakes, goes white and
-warps off in a streak of light), Claude's creatures soar, skim, loop or fade, agy's light gathers and ends as a ring, ripples,
-glints or an aurora ribbon, and OpenCode's lanterns rise and burn out into petals, spores or a flurry. An arrival is the same
-thing played backwards. A subagent is kept in the scene only while it leaves, and nothing else (the crew rows, the counts,
+The dragon charges and warps; probes and saucers lift through a beam. Boats travel over water, ground creatures walk out,
+birds follow their scene's flight path, and constellations assemble from streaking stars. Paper folds and opens; floating
+lanterns rise and disperse. Arrivals reverse the departure sequence. A subagent is kept in the scene only while it leaves, and nothing else (the crew rows, the counts,
 `/wake`) counts it; a worker already running when Wake starts does not replay its arrival. Each style is one small function in
-`hooks/exit-styles.ts`; `hooks/exits.ts` runs them, so a new style or place is a single entry.
+`hooks/passage-styles.ts` or `hooks/exit-styles.ts`; `hooks/exits.ts` runs them.
 
 ### Crew and quota rows
 
@@ -235,10 +237,10 @@ every new design is held to.
 [`hooks/landscapes/CREW.md`](.claude/mods/wake/hooks/landscapes/CREW.md)). Every effect is an emitter or a light
 described in a table, stateless, so any frame draws alone and a trail is exactly the sprite's own path:
 
-- **They touch their place.** The dragon trails data packets and a booster jet; the whale throws spray, the spider sheds silk
-  glints and the scarab kicks up dust; feathers shake loose off wings and paper scraps trail the crane.
-- **Dusk and night change the crew, only where the design motivates it.** The dragon's head glows, planes show navigation
-  lights, lanterns glow from the flame and light the ground under them, agy's light lights its halo, owls have eyeshine.
+- **They touch their place.** Water workers leave wakes and reflections, ground workers stir their footing, feathers shake
+  loose off wings and paper scraps trail the crane.
+- **Dusk and night change the crew.** Bodies darken with the sky; eyes, glass, lamps and flames stay bright and bloom.
+  Night-only effects add light to each family, while agy's faint links tint the sky beneath them.
 - **Wind is real.** Gusts cross the whole sky faster the harder it blows, each place blows its own things about (dust, spray,
   sand, snow, petals, leaves), and trails and smoke lean downwind.
 - **Motion follows what the worker really does.** A worker's pace is high just after an event and eases off over two
@@ -248,8 +250,7 @@ described in a table, stateless, so any frame draws alone and a trail is exactly
 - **Lanes, not slots.** The whole width of the sky is shared out among the flyers by size, so one worker roams the sky end to
   end and four a quarter each.
 - **Hand-made moments.** Arrivals, exits and message reactions are handcrafted pixels, not particles: the sender pulses as
-  the comet launches and the receiver as it lands (Codex a widening ripple, Claude twinkling stars, agy rising sparks, OpenCode
-  a burst of colour), and Mochi or another character catches it with a gadget that pops out of their head.
+  a packet, note, star or ember launches and the receiver as it lands, and Mochi or another character catches it with a gadget that pops out of their head.
 
 A worker's arrival and exit run from the moment Wake sees it start or stop (Bridge's own times are already seconds old), and
 Wake looks at Bridge every five seconds while a worker runs and straight after an `agent-bridge start`, `resume`, `steer`,
@@ -278,8 +279,9 @@ to export them in Bash calls that invoke `agent-resources`, including through sc
 best effort: unattributed commands have no worker mark. Cards open upward inside
 their full row's bounds, including at narrow widths. Peer cards distinguish previews
 withheld by Bridge from missing message metadata; withheld text is never reconstructed
-from raw logs or replaced with an older message. The scene draws a line between
-a worker and Mochi only for a real message, never for merely working for the root.
+from raw logs or replaced with an older message. Messages leave faint, fading paths
+where they travelled, between workers or to and from Mochi. Once delivered, the path
+stays put as the crew moves on; messages unseen by this view have no invented trail.
 Worker, quota and actionable rows get room before decorative sky or optional
 recap details. The scene trims its upper sky from ten rows down to six when
 needed, preserving its ground, character, animation and matching hover targets.
@@ -306,11 +308,10 @@ backoff stay normal known states. Colored gutter lanes join connected peers;
 and ┄/┆ show a declared peer or dependency wait. Motion means a message just arrived: when Wake
 first sees new messages on a link, one packet per message (up to five, a beat apart) crosses the
 lane once from sender to recipient, then the lane rests. History Wake never saw arrive does not
-move, nor does a wait. A worker's state mark lights when it acts, then settles. In the scene a
-message is a comet in the sender's harness colour whose short tail fades quickly behind it, running an
-arc between the two workers' fixed places (never their moving sprites). The trail is drawn
-behind the sky's buildings, crew, weather and Mochi, so it takes nothing from them, and a soft
-splash marks where it lands. Message links fade gradually and are gone after 15 minutes. The gutter
+move, nor does a wait. A worker's state mark lights when it acts, then settles. In the scene the
+family's packet, notes, starfall or ember travels between the workers' current body points.
+The trail is drawn behind buildings, crew, weather and Mochi; each family has its own landing.
+Message links fade gradually and are gone after 15 minutes. The gutter
 shrinks with the terminal; where a group cannot fit, the existing ↗/↙ peer marks remain.
 Root messages use the root graph at the right edge (above). Arcs connect workers
 to Mochi. Hover details show the scrubbed preview and distinguish
@@ -356,7 +357,7 @@ interactive session reloads it when its files change, so edits here apply live.
 independently of Wake. Setup, delivery receipts and limits belong to
 `agent-bridge guide messages`; no extra mod or UI input is involved.
 
-- `/wake` summarises; `/wake legend` explains the crew; `/wake tour` plays every landscape for 12 s, a whole day in each; `/wake crew` shows demo workers arriving, working at each class, sending a message, being interrupted and leaving in each landscape by day and night; `/wake scene <city|harbor|beach|mountains|countryside|forest|desert|tundra|auto>`
+- `/wake` summarises; `/wake legend` explains the crew; `/wake tour` plays every landscape for 12 s, a whole day in each; `/wake crew` shows each demo family flying, turning, sending, receiving, resting, arriving and leaving in the current landscape by day and night; `/wake scene <city|harbor|beach|mountains|countryside|forest|desert|tundra|auto>`
   pins a landscape to the current place; `/wake place <city|auto>` overrides the
   IP-based location (GeoJS, then ipwho.is; weather from Open-Meteo; all keyless).
 - `/wake mochi <mochi|tabby|tuxedo|bun>` chooses who stands in Mochi's place: Mochi (lavender, belled collar),
@@ -386,6 +387,13 @@ independently of Wake. Setup, delivery receipts and limits belong to
   `bun dev/crew-review.ts` renders synthetic before/after rows at three widths.
 - The crew, for design review: `bun dev/cast.ts [place|all]` draws the whole cast large; `bun dev/passages.ts <place> [class]`
   shows every family arriving and leaving frame by frame; `bun dev/fx.ts <place> [pace] [wind] [hour]` shows the air effects;
+  `bun dev/review-server.ts` opens a local review at `http://localhost:18761` with
+  scrubbable scenes, design assessments and feedback boxes. Drafts and submitted
+  batches stay in the ignored `feedback.local/wake-review/` folder. Run this
+  long-lived server through `agent-resources`; stop it when the review is finished.
+  `bun dev/review-sheet.ts <place> <mode> [out.png] [width] [hour] [class]` samples
+  the same timeline into a four-family comparison sheet. Test the feedback server
+  separately with `bun test dev/review-server.spec.ts`.
   `bun dev/roam.ts [place]` prints how far each family travels and its largest step per paint; `bun dev/perf.ts` prints
   milliseconds a painted frame (the scene repaints twenty times a second, a 50 ms budget; it runs 1 to 6 ms: compare before and
   after a change).

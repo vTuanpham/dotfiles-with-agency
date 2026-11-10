@@ -1,7 +1,7 @@
 // bun dev/crew-life.ts [out prefix] [frames]: the two crew-life sheets for the README, as raw little-endian uint32 0xRRGGBB, cell-major,
 // `width` x SCENE_H per frame: `<prefix>-characters.bin` (4 characters x frames, 34 wide) and `<prefix>-passages.bin`
 // (8 places x 4 families x frames, 64 wide). docs/tools/readme_gifs.py turns them into GIFs.
-import { scenePixels, type SceneInput } from '../hooks/scene.ts'
+import { MessageTrails, scenePixels, type SceneInput } from '../hooks/scene.ts'
 import { SCENE_H } from '../hooks/landscapes/kit.ts'
 import { ARRIVE_MS, EXIT_MS } from '../hooks/exits.ts'
 import { CHARACTER_IDS } from '../hooks/mochi.ts'
@@ -23,10 +23,11 @@ const base = (width: number, preset: SceneInput['preset']): SceneInput => ({
   const data = new Uint32Array(CHARACTER_IDS.length * FRAMES * W * SCENE_H)
   let at = 0
   for (const character of CHARACTER_IDS) {
+    const messageTrails = new MessageTrails()
     for (let i = 0; i < FRAMES; i++) {
       const arriving = (i * MS_PER_FRAME + 400) % 2400
       const worker = { isStale: false, seed: 3, kind: 'opencode' as const, tier: 2 as const, hit: { id: 'w', title: 'w', details: [] } }
-      data.set(scenePixels({ ...base(W, 'countryside'), character, frame: 37 + i * STEP, jobs: [worker], peerEdges: [{ source: 'w', target: 'mochi', strength: 0.9, preview: 'x', count: 1, family: 'opencode', arriving, fresh: 1 }] }), at)
+      data.set(scenePixels({ ...base(W, 'countryside'), character, messageTrails, frame: 37 + i * STEP, jobs: [worker], peerEdges: [{ source: 'w', target: 'mochi', stamp: String(Math.floor((i * MS_PER_FRAME + 400) / 2400)), strength: 0.9, preview: 'x', count: 1, family: 'opencode', arriving, fresh: 1 }] }), at)
       at += W * SCENE_H
     }
   }

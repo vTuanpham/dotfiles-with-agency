@@ -1,14 +1,14 @@
 import type { WakePreset } from '../../types'
-import { type Canvas } from '../pixels'
+import { type Canvas, mix } from '../pixels'
 import { type Emitter, type Light, type Vec, coneEnd, emit, shine, thrustPuff } from './particles'
 import { craftLamp, craftNose, craftPush, dragonCrests } from './craft'
-import { agyCore, agyOrbit, agyPulse } from './agy'
+import { AGY_TEMPO, agyCore, agyOrbit, agyPulse } from './agy'
 import { lanternNose, lanternPose } from './lantern'
 import { creatureNose, creatureStroke } from './creatures'
 import { TURN_LEAD_MS } from '../crew-row'
 import { clockRate } from './gait'
-import type { Tier } from './design'
-import { type Look, P } from './kit'
+import { designFor, type Tier } from './design'
+import { type Look, type SurfaceLight, P } from './kit'
 
 // What the air is doing, as data for the engine in particles.ts: the wind, and what each member of the crew stirs up and lights.
 //
@@ -33,7 +33,7 @@ type FamilyCells = Partial<Record<WakePreset | 'any' | 'night', Cell>> & { messa
 const TAU = Math.PI * 2
 const UP = -Math.PI / 2, DOWN = Math.PI / 2
 const clamp = (v: number, lo = 0, hi = 1) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : lo)
-const NIGHT_GAIN = 0.4 // full night adds 40% brightness and reach
+export const NIGHT_GAIN = 0.4 // full night adds 40% brightness and reach
 const NIGHT_FROM = 0.12
 const nightLight = (color: number): Cell => ({ lights: [{ at: 'centre', light: { shape: 'halo', color, alpha: 0.25, reach: 2, from: NIGHT_FROM } }] })
 
@@ -206,6 +206,7 @@ export const CREW: Record<Kind, FamilyCells> = { codex: CODEX, claude: CLAUDE, a
 
 /** The sprite's own box and where its centre was `ago` seconds ago, as `fly` knows them. */
 export type Aura = {
+  id?: string
   x0: number; y0: number; w: number; h: number; cx: number; cy: number
   kind: Kind; tier: number; seed: number
   /** 0..1: how busy the worker is */
@@ -261,7 +262,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
   }
   if (a.kind === 'agy' && !a.nose) {
-    const [x, y] = agyCore(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed)
+    const [x, y] = agyCore(place, a.tier as Tier, Math.floor(a.phase / AGY_TEMPO) + a.seed)
     a = { ...a, nose: [x - (a.w >> 1), y - (a.h >> 1)] }
   }
   if (a.kind === 'claude' && !a.nose) {
@@ -277,7 +278,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
   const boostEmitter = (e: Emitter): Emitter => dark ? { ...e, alpha: e.alpha * gain, speed: [e.speed[0] * gain, e.speed[1] * gain] } : e
   const boostLight = (l: Light): Light => dark ? { ...l, alpha: l.alpha * gain, reach: Math.round(l.reach * gain) } : l
   const strength = 0.35 + 0.65 * a.pace + 0.5 * a.lift
-  const t = a.phase / 10
+  const t = a.phase / (a.kind === 'agy' ? 30 : 10)
   if (a.kind === 'codex' && place === 'city' && a.turn === undefined) {
     for (const crest of dragonCrests(a.tier as Tier)) {
       const delta = ((a.phase / 1.5 + a.seed - crest.beat) % 8 + 8) % 8, age = delta * 0.15
@@ -301,9 +302,9 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
         : craftPush(machine!, a.tier as Tier, Math.floor((a.phase - ago * 10) / 1.5) + a.seed)
       const origin = (ago: number): Vec => {
         if (a.kind === 'agy') {
-          const beat = a.phase / 1.5 + a.seed
+          const beat = a.phase / AGY_TEMPO + a.seed
           const point = s.at === 'centre' ? agyOrbit(place, a.tier as Tier, beat, i * Math.PI) : (() => {
-            const pulse = agyPulse(place, a.tier as Tier, Math.floor(beat - ago * 10 / 1.5))
+            const pulse = agyPulse(place, a.tier as Tier, Math.floor(beat - ago * 30 / AGY_TEMPO))
             return [pulse.x, pulse.y + (place === 'desert' || place === 'tundra' ? -1 : 1)] as const
           })()
           const dx = point[0] - (a.w >> 1), [px, py] = s.follow ? a.path(ago / clockRate(a.pace)) : [a.cx, a.cy]
@@ -324,7 +325,7 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
         const [px, py] = s.follow ? a.path(ago) : [a.cx, a.cy]
         return [px + ox, py + oy]
       }
-      const beat = (a.phase / 1.5 + a.seed) % 8
+      const beat = (a.phase / (a.kind === 'agy' ? AGY_TEMPO : 1.5) + a.seed) % 8
       const stroke = a.kind === 'agy' && s.at === 'tail' ? agyPulse(place, a.tier as Tier, Math.floor(beat)).force : machine ? pose(0).force : s.beats ? 0.2 + 0.8 * Math.max(...s.beats.map(b => Math.max(0, Math.cos((beat - b) * Math.PI / 4)) ** 6)) : 1
       const emitter = boostEmitter(s.emitter)
       emit(c, a.flip ? mirrored(emitter) : emitter, { at: origin, t, seed: a.seed * 31 + i, strength: strength * stroke, ...(creature ? { strengthAtBirth: (ago: number) => pose(ago).force } : a.kind === 'opencode' ? { strengthAtBirth: (ago: number) => lanternPose(place, a.tier as Tier, Math.floor((a.phase - ago * 10) / 1.5) + a.seed).force } : {}), wind })
@@ -339,6 +340,16 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
     }
     for (const l of cell.lights ?? []) {
       if (l.tiers && !l.tiers.includes(a.tier)) continue
+      if (l.light.shape === 'pool') {
+        if (designFor(a.kind, place).depth === 'far') continue
+        const level = l.always === 'day' ? 1 - look.night : dark
+        if (level < (l.light.from ?? .12)) continue
+        const pulse = l.light.modulate === 'pulse' ? .65 + .35 * Math.sin(t * 5 + a.seed) : 1
+        const source: SurfaceLight = { id: a.id, x: a.cx, y: a.y0 + a.h, color: l.light.color, radius: l.light.reach, alpha: l.light.alpha * level * pulse }
+        if (look.crewLights) look.crewLights.push(source)
+        else surfaceLights(c, look, [source])
+        continue
+      }
       if (a.kind === 'opencode' && l.at === 'nose') {
         for (const [i, lamp] of lanternPose(place, a.tier as Tier, Math.floor(a.phase / 1.5) + a.seed).lamps.entries()) {
           const [x, y] = a.lamps?.[i] ?? [a.cx + (a.flip ? (a.w >> 1) - lamp.flame[0] : lamp.flame[0] - (a.w >> 1)), a.cy + lamp.flame[1] - (a.h >> 1)]
@@ -356,6 +367,30 @@ export function crewFx(c: Canvas, look: Look, a: Aura): void {
       const level = (l.always === 'day' ? 1 - look.night : l.always || l.toGround ? 1 : dark) * burner
       shine(c, light, x, y, t, level, a.seed)
       if (l.lands) { const [ex, ey] = coneEnd(light, x, y, t, a.seed); shine(c, boostLight(l.lands), ex, Math.min((look.crewGround ?? c.H) - 1, ey), t, dark, a.seed) }
+    }
+  }
+}
+
+/** Project lights onto visible surfaces; their pixels never become part of a moving crew sprite. */
+export function surfaceLights(c: Canvas, look: Pick<Look, 'frame' | 'crewSurfaceAt' | 'crewGround' | 'crewBoxes' | 'crewSurface'>, lights: readonly SurfaceLight[]): void {
+  const bodies = Object.values(look.crewBoxes ?? {})
+  for (const light of lights) {
+    if (light.x < 0 || light.x >= c.W || light.y < 0 || light.y >= c.H) continue
+    for (let dx = -light.radius; dx <= light.radius; dx++) {
+      const x = Math.round(light.x + dx)
+      if (x < 0 || x >= c.W) continue
+      const y = look.crewSurfaceAt?.(x, light.y) ?? (look.crewSurfaceAt ? undefined : look.crewGround)
+      if (y === undefined || y >= c.H) continue
+      const distance = Math.max(0, y - light.y), attenuation = 1 / (1 + distance * distance / 24)
+      const water = look.crewSurface?.water
+      const rippled = water && y >= water.y && water.spans.some(s => x >= s.x0 && x <= s.x1)
+      const alpha = light.alpha * attenuation * (1 - Math.abs(dx) / (light.radius + 1))
+      for (let row = 0; row < (rippled ? 3 : 1); row++) {
+        const py = y + row, i = py * c.W + x
+        if (py >= c.H || bodies.some(b => x >= b.x0 && x <= b.x1 && py >= b.y0 && py <= b.y1)) continue
+        const ripple = rippled ? .5 + .5 * Math.sin(x * .8 + row * 2 - look.frame * .13) : 1
+        c.px[i] = mix(c.px[i]!, light.color, alpha * ripple / (row + 1))
+      }
     }
   }
 }

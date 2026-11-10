@@ -1,5 +1,17 @@
 import { expect, test } from 'claude-code/testing'
 import { shape } from '../hooks/landscapes/crew'
+import { DESIGNS } from '../hooks/landscapes/design'
+import { turnPose as craft } from '../hooks/landscapes/craft'
+import { turnPose as creatures } from '../hooks/landscapes/creatures'
+import { turnPose as lantern } from '../hooks/landscapes/lantern'
+
+test('every supplied turn pose is selected for its design', () => {
+  for (const [kind, poses] of [['codex', craft], ['claude', creatures], ['opencode', lantern]] as const) {
+    for (const place of Object.keys(DESIGNS[kind]) as (keyof typeof DESIGNS[typeof kind])[]) {
+      expect(DESIGNS[kind][place].turn === 'pose', `${kind} ${place}`).toBe(!!poses[place])
+    }
+  }
+})
 
 test('a pose turn holds its hand-drawn midpoint and resumes mirrored flight', () => {
   const flight = ['aa...', '.ag..', '..aaa'], pose = ['..s..', '.aaa.', '..a..']

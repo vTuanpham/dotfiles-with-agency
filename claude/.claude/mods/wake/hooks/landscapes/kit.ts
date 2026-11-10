@@ -25,6 +25,7 @@ import { type Canvas, hash, mix } from '../pixels'
 export const SCENE_H = 20 // ten terminal rows: landscapes stand on the ground at the bottom, the extra height is sky for the crew
 
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter'
+export type SurfaceLight = { id?: string; x: number; y: number; color: number; radius: number; alpha: number }
 
 /**
  * The part of the day, from the real sunrise and sunset where the person is. Every
@@ -65,7 +66,7 @@ export type Look = {
   crewMessageStars?: Record<string, { x: number; y: number }[]>
   crewStarTargets?: Set<string>
   /** Deferred sprite painting when peer directions need both placements first. */
-  crewDeferred?: (() => void)[]
+  crewDeferred?: { job: Job; draw: () => void }[]
   crewLocateOnly?: boolean
   crewPaths?: Record<string, (ago: number) => readonly [number, number]>
   /** Where this pass's own anchors begin in `crewAnchors` (it is shared across a scene's passes), so overlapping crew still keep an anchor each (placeFly). */
@@ -74,6 +75,9 @@ export type Look = {
   crewCount?: number
   crewSurface?: { ground: { y: number; x0: number; x1: number }; water?: { y: number; spans: { x0: number; x1: number }[] }; perches: { x: number; y: number }[] }
   crewSurfaceObstacles?: { x: number; y: number; w: number; h: number }[]
+  /** Nearest real surface below a light, and light sources kept separate from sprite pixels. */
+  crewSurfaceAt?: (x: number, below: number) => number | undefined
+  crewLights?: SurfaceLight[]
   crewPerchesUsed?: { x: number; y: number; w: number; h: number }[]
   crewRest?: boolean
   /** false draws bare sprites: no wind, trails, lights or particles (a switch for tests, and for a terminal that wants it quiet). */
@@ -116,6 +120,8 @@ export type Landscape = {
   water?: number // first open-water row, if the landscape has one
   waterStart?: number // headlands may occupy the left edge of a water row
   waterFreezes?: boolean
+  /** Rest on the walkable floor rather than the tops of background structures. */
+  groundPerches?: boolean
   backdrop(c: Canvas, look: Look): void
   floor(c: Canvas, look: Look): void
   /** Size of a turn's structure: grows with calls (kinds.length) and edits. Height <= ground - 1. */

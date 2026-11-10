@@ -17,11 +17,20 @@ const base: SceneInput = {
   mood: 'work', jobs: [], agents: [], plan: { done: 2, total: 5 }, effect: null,
 }
 const rows: string[] = []
-for (const preset of PLACES) for (const [label, jobs] of [['no crew', []], ['4 crew', crew(4)], ['8 crew', crew(8)], ['4 crew, one arriving', crew(4, 'arriving')], ['4 crew, one leaving', crew(4, 'leaving')]] as const) {
+const cases: [string, Partial<SceneInput>][] = [
+  ['no crew', { jobs: [] }], ['4 crew', { jobs: crew(4) }], ['8 crew', { jobs: crew(8) }],
+  ['4 crew, one arriving', { jobs: crew(4, 'arriving') }], ['4 crew, one leaving', { jobs: crew(4, 'leaving') }],
+  ['live message', { jobs: crew(4), peerEdges: [{ source: 'job-0', target: 'mochi', family: 'codex', strength: 1, preview: 'hello', arriving: 1200, fresh: 1 }] }],
+  ['resting worker', { jobs: [{ ...crew(1)[0]!, isStale: true, pace: 0.1 }] }],
+  ['midnight', { hour: 0, jobs: crew(4) }],
+]
+for (const preset of PLACES) for (const [label, state] of cases) {
   const times: number[] = []
+  // Warm each case before measuring, as the live band repeatedly redraws its scene.
+  for (let f = 0; f < 150; f++) scenePixels({ ...base, ...state, preset, frame: f % 120 })
   for (let f = 0; f < frames; f++) {
     const t = performance.now()
-    scenePixels({ ...base, preset, jobs: jobs as any, frame: f })
+    scenePixels({ ...base, ...state, preset, frame: f })
     times.push(performance.now() - t)
   }
   times.sort((a, b) => a - b)

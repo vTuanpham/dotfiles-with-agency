@@ -69,13 +69,13 @@ export function paceOf(job: { state?: string; isStale: boolean; waitingForRoot?:
  * How fast a worker's ROUTE runs while it has a message for, or from, the root (0..1). It does not fly backward to say it: at the
  * message it brakes to a hover (the wings go on beating), turns to face her, sends, turns back to its own course and only then
  * builds up speed again. It has MOMENTUM: it does not stop dead, it coasts forward while the turn winds it round (a speed that
- * falls away as (1 - t)^2 over the turn's own time, `back`), and after the send it gathers speed gently over one and a half turns
+ * eases down over the turn's own time, `back`), and after the send it gathers speed gently over one and a half turns
  * rather than snapping to cruise. `since` is ms since the message arrived in view, `window` how long it is held facing her.
  */
 export function routeRate(since: number, window: number, back: number): number {
   const launch = back * 1.5
   if (since < 0 || since > window + launch) return 1
-  if (since < back) return (1 - since / back) ** 2 // coasting, slowing as it turns
+  if (since < back) return 1 - ease(since / back)
   if (since < window) return 0 // hovering, facing her, while it sends
   const t = (since - window) / launch
   return t * t * (3 - 2 * t) // gathering speed on its own course

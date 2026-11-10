@@ -8,13 +8,17 @@ const ease = (n: number) => { const t = clamp(n); return t * t * (3 - 2 * t) }
 
 /** These are exits; arrivals play the same passage in reverse. */
 const surface: Style = k => {
-  const depth = k.y1 + 1, q = ease(k.p / 0.8), fade = 1 - k.p
-  k.sprite({ dy: q * (k.y1 - k.y0 + 3), clipBelow: depth, dissolve: clamp((k.p - 0.72) / 0.28) })
-  if (k.p > 0) for (let i = 1; i <= 4; i++) {
-    const r = 1 + Math.round(k.p * (i + 2)), a = fade * (0.7 - i * 0.12)
-    k.lit(k.cx - r, depth, P.sky, a); k.lit(k.cx + r, depth, P.white, a)
-    if (k.p < 0.55) k.lit(k.cx + (i % 2 ? r : -r), depth - 1 - i * k.p * 2, P.white, fade * 0.55)
-  }
+  const dir = (k.heading ?? 1) * (k.arriving ? -1 : 1), q = ease(k.p), dx = dir * q * k.c.W * .65
+  k.sprite({ dx, dy: Math.sin(k.p * 12) * .5, dissolve: clamp((k.p - .7) / .3) })
+  if (k.p > 0) for (let i = 1; i <= 6; i++) k.lit(k.cx + dx - dir * k.flip * i * 2, k.y1 + 1, i % 2 ? P.sky : P.white, (1 - k.p) * .35 * (1 - i / 7))
+}
+
+const walk: Style = k => {
+  const dir = (k.heading ?? -1) * (k.arriving ? -1 : 1), q = ease(k.p)
+  const distance = dir > 0 ? k.c.W - k.x0 + 2 : k.x1 + 2
+  k.sprite({ dx: dir * q * distance })
+  // Footfalls stay on the ground, behind the departing body.
+  if (k.p > .08 && k.p < .9) for (let i = 1; i <= 3; i++) k.lit(k.cx + dir * q * distance - dir * k.flip * i * 2, k.y1, P.overlay2, .3 * (1 - k.p) / i)
 }
 
 const ignite: Style = k => {
@@ -23,18 +27,21 @@ const ignite: Style = k => {
   const lines = clamp(k.p / 0.45), stars = clamp((k.p - 0.4) / 0.6)
   k.sprite({
     filter: d => bright(d) ? order(d) >= stars : order(d) >= lines,
-    offset: d => bright(d) && stars > 0 ? [stars * (0.5 + order(d) * 2), stars * stars * (4 + order(d) * 6)] : [0, 0],
+    offset: d => bright(d) && stars > 0 ? [stars * stars * (d.x - k.cx) * 3, -stars * stars * (6 + order(d) * 12)] : [0, 0],
+    tint: P.ink, tintBy: k.p * 0.12,
   })
   if (stars > 0 && stars < 1) for (let i = 0; i < 5; i++) {
-    const x = k.cx + (i - 2) * 2 + stars * (1 + i % 2), y = k.cy + stars * stars * (4 + i)
-    k.lit(x - 1, y - 1, P.lavender, 0.45 * (1 - stars))
+    const x = k.cx + (i - 2) * (1 + stars * stars * 8), y = k.cy - stars * stars * (6 + i)
+    k.lit(x, y + 1, P.lavender, 0.45 * (1 - stars))
     k.lit(x, y, P.white, 0.65 * (1 - stars))
   }
 }
 
 const unfold: Style = k => {
   const fold = ease(k.p / 0.55), drift = clamp((k.p - 0.45) / 0.55)
-  k.sprite({ sx: 1 - 0.8 * fold, sy: 1 - 0.7 * fold, dx: Math.sin(drift * 12) * drift * 3, dy: drift * drift * 12, dissolve: clamp((k.p - 0.72) / 0.28) })
+  const dir = (k.heading ?? 1) * (k.arriving ? -1 : 1)
+  k.sprite({ sx: 1 - 0.6 * fold, sy: 1 - 0.65 * fold, dx: dir * drift * drift * (k.c.W + 12), dy: -Math.sin(drift * Math.PI) * 4, dissolve: clamp((k.p - 0.9) / 0.1) })
+  if (k.p > .15 && k.p < .55) k.lit(k.cx, k.cy, P.snow, Math.sin((k.p - .15) / .4 * Math.PI) * .6)
 }
 
 const swoop: Style = k => {
@@ -43,12 +50,20 @@ const swoop: Style = k => {
 }
 
 const boot: Style = k => {
-  const columns = clamp(k.p / 0.8), drop = ease((k.p - 0.55) / 0.45)
-  k.sprite({ filter: d => columns < 1 && (d.x - k.x0) / Math.max(1, k.x1 - k.x0) <= 1 - columns, dy: drop * drop * 10, tint: P.ink, tintBy: clamp(k.p / 0.25) * 0.35 })
-  if (k.p > 0 && k.p < 0.8) for (let i = 0; i < 4; i++) {
-    const edge = k.x1 - columns * (k.x1 - k.x0), y = k.cy + (i - 1.5) * 1.4
-    k.lit(edge + (i % 2 ? 1 : -1), y, i % 2 ? P.yellow : P.sky, (1 - k.p) * 0.7)
+  const charge = ease(k.p / .25), rise = clamp((k.p - .25) / .75), dy = -rise * rise * (k.y1 + 8)
+  k.sprite({ dy, sy: 1 - rise * .6, tint: P.sky, tintBy: charge * .2, dissolve: clamp((rise - .85) / .15) })
+  if (k.p > 0 && k.p < 1) {
+    const glow = Math.sin(k.p * Math.PI), radius = (k.x1 - k.x0) / 2 + 2
+    const floor = k.surfaceAt?.(Math.round(k.cx), k.y1 + 1)
+    if (floor !== undefined) for (let i = -radius; i <= radius; i += 2) {
+      const y = k.surfaceAt?.(Math.round(k.cx + i), k.y1 + 1)
+      if (y !== undefined) k.lit(k.cx + i, y, P.teal, glow * .4 * (1 - Math.abs(i) / (radius + 1)))
+    }
+    for (let y = k.y1 + dy; floor !== undefined && y < floor && rise > 0; y++) {
+      k.lit(k.cx - radius * (1 - rise), y, P.sky, glow * .2)
+      k.lit(k.cx + radius * (1 - rise), y, P.sky, glow * .2)
+    }
   }
 }
 
-export const PASSAGE_STYLES: Record<PassageStyle, Style> = { surface, ignite, unfold, swoop, boot }
+export const PASSAGE_STYLES: Record<PassageStyle, Style> = { surface, ignite, unfold, swoop, boot, walk }

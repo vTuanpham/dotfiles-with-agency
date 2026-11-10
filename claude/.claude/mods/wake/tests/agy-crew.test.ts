@@ -1,9 +1,9 @@
 import { expect, test } from 'claude-code/testing'
-import { ALL_AGY, agyCore, agyOrbit, agyPulse } from '../hooks/landscapes/agy'
+import { AGY_TEMPO, ALL_AGY, agyCore, agyOrbit, agyPulse } from '../hooks/landscapes/agy'
 import { CRAFT_MAX } from '../hooks/landscapes/craft'
 import { DESIGNS, type Tier } from '../hooks/landscapes/design'
 import { CREW } from '../hooks/landscapes/fx'
-import { fly, shape } from '../hooks/landscapes/crew'
+import { fly, orient, shape } from '../hooks/landscapes/crew'
 import { canvas, mix } from '../hooks/pixels'
 import { P, type Look } from '../hooks/landscapes/kit'
 
@@ -15,6 +15,21 @@ const look: Look = {
   blend: { dawn: 0, morning: 0, noon: 0, afternoon: 1, dusk: 0, night: 0 }, top: P.blue, horizon: P.sky,
   season: 'summer', snowy: false, wet: false, wind: 0, working: false, effects: false,
 }
+
+test('star lighting crosses each beat boundary continuously in daylight and at night', () => {
+  for (const night of [0, 1]) for (let beat = 1; beat <= 8; beat++) {
+    const render = (phase: number) => {
+      const c = canvas(50, 24)
+      c.px.fill(0x334455)
+      fly(c, { ...look, place: 'city', night, effects: false }, 25, 10,
+        { kind: 'agy', tier: 4, seed: 0, isStale: false, phase }, 'agy', false, () => [25, 10], [])
+      return c.px
+    }
+    const before = render(beat * AGY_TEMPO - .01), after = render(beat * AGY_TEMPO + .01)
+    for (let i = 0; i < before.length; i++) for (const shift of [0, 8, 16])
+      expect(Math.abs((before[i]! >> shift & 255) - (after[i]! >> shift & 255))).toBeLessThan(3)
+  }
+})
 
 test('agy has eight shaded beats of a few stars within the shared footprint, growing through four classes', () => {
   for (const place of places) {
@@ -63,12 +78,19 @@ test('agy sends from its current luminous face and preserves solid light under e
     expect(DESIGNS.agy[place].escorts).toEqual({})
     expect(CREW.agy[place]!.talking![0]!.at).toBe('nose')
     for (const tier of tiers) for (let beat = 0; beat < 8; beat++) {
-      const job = { kind: 'agy' as const, tier, seed: 0, isStale: false, phase: beat * 1.5, talk: { ms: 1200, sending: true } }
-      const maskCanvas = canvas(50, 24), bare = canvas(50, 24), lit = canvas(50, 24)
-      fly(maskCanvas, { ...look, place }, 25, 10, job, 'agy', false, () => [25, 10], [])
+      const job = { kind: 'agy' as const, tier, seed: 0, isStale: false, phase: beat * AGY_TEMPO, talk: { ms: 1200, sending: true } }
+      const bare = canvas(50, 24), lit = canvas(50, 24)
       fly(bare, { ...look, place, night: 1 }, 25, 10, job, 'agy', false, () => [25, 10], [])
       fly(lit, { ...look, place, night: 1, effects: true }, 25, 10, job, 'agy', false, () => [25, 10], [])
-      for (let i = 0; i < bare.px.length; i++) if (maskCanvas.px[i]) expect(lit.px[i], `${place} ${tier} body stays solid`).toBe(bare.px[i])
+      const facing = DESIGNS.agy[place].facing
+      const mirror = facing ? orient(() => [25, 10], facing, 0, job.talk).mirror : 1
+      const solid = shape(ALL_AGY[place][tier][beat]!, mirror, undefined, DESIGNS.agy[place].turn)
+      solid.forEach((row, y) => [...row].forEach((ch, x) => {
+        if (ch !== '.' && ch !== 'e') {
+          const i = (10 - (solid.length >> 1) + y) * 50 + 25 - (row.length >> 1) + x
+          expect(lit.px[i], `${place} ${tier} solid star stays solid`).toBe(bare.px[i])
+        }
+      }))
       for (const mirror of [1, -1] as const) {
         const rows = shape(ALL_AGY[place][tier][beat]!, mirror, undefined, DESIGNS.agy[place].turn)
         const [x, y] = agyCore(place, tier, beat)
@@ -78,19 +100,19 @@ test('agy sends from its current luminous face and preserves solid light under e
   }
 })
 
-test('agy keeps its projected core visible through the turn before speech', () => {
+test('agy keeps its figure and core fixed while aiming a message in either direction', () => {
   for (const place of places) {
     const design = DESIGNS.agy[place]
-    if (!design.facing) continue
+    expect(design.facing).toBe(null)
     for (const tier of tiers) for (const ms of [150, 300, 450, 600, 750]) {
-      const roll = ms / 900, mirror = roll < 0.5 ? 1 : -1
-      const marker = shape(ALL_AGY[place][tier][0]!.map(row => row.replace(/[^M]/g, '.')), mirror, roll, design.turn)
-      const c = canvas(50, 24)
-      fly(c, { ...look, place }, 25, 10, { kind: 'agy', tier, seed: 0, isStale: false, phase: 0, talk: { ms, sending: true } }, 'agy', false, ago => [25 + ago, 10], [])
-      for (const [y, row] of marker.entries()) {
-        const x = row.indexOf('M')
-        if (x >= 0) expect(c.get(25 - (row.length >> 1) + x, 10 - (marker.length >> 1) + y), `${place} ${tier} core at ${ms}ms`).toBe(mix(P.mauve, P.white, 0.7))
-      }
+      const frames = [5, 45].map(targetX => {
+        const c = canvas(50, 24)
+        fly(c, { ...look, place }, 25, 10, { kind: 'agy', tier, seed: 0, isStale: false, phase: 0, talk: { ms, sending: true, targetX } }, 'agy', false, ago => [25 + ago, 10], [])
+        const art = ALL_AGY[place][tier][0]!, [x, y] = agyCore(place, tier, 0)
+        expect(c.get(25 - (art[0]!.length >> 1) + x, 10 - (art.length >> 1) + y), `${place} ${tier} core at ${ms}ms`).toBe(mix(P.mauve, P.white, 0.7))
+        return c.px
+      })
+      expect(frames[0]).toEqual(frames[1])
     }
   }
 })

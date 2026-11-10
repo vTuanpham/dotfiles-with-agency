@@ -41,7 +41,7 @@ test('every family/place has a complete motion design with an explicit front, cr
     expect(d, `${kind}.${place}`).toBeDefined()
     expect([null, 'left', 'right']).toContain(d.facing)
     expect(typeof d.cruise).toBe('boolean')
-    expect(['coil', 'bank', 'none']).toContain(d.turn)
+    expect(['coil', 'bank', 'none', 'pose']).toContain(d.turn)
     if (d.facing === null) expect(d.turn, `${kind}.${place} is symmetric`).toBe('none')
     expect(d.escorts).toBeDefined()
   }

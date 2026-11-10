@@ -50,7 +50,7 @@ test('Claude species have distinct silhouettes and move occupied structure acros
 test('Claude fronts, turns, cruise and flock belong to every species', () => {
   for (const place of places) {
     const d = DESIGNS.claude[place]
-    expect(d.turn, `${place}: a creature seen face on has no heading to turn`).toBe(d.facing ? 'bank' : 'none')
+    expect(d.turn, `${place}: a creature seen face on has no heading to turn`).toBe(d.facing ? 'pose' : 'none')
     const flocking = ['city', 'countryside', 'tundra'].includes(place)
     expect(d.escorts[3]?.length ?? 0).toBe(flocking ? 1 : 0); expect(d.escorts[4]?.length ?? 0).toBe(flocking ? 2 : 0)
     expect(CREW.claude[place]!.talking![0]!.emitter.arc).toBe(true)

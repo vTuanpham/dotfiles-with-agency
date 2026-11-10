@@ -2,7 +2,7 @@
 // `width` x SCENE_H per frame: `<prefix>-cast.bin` (8 places x 4 families, class 4, 72 wide), `<prefix>-sequence.bin` (a worker
 // with a message for the root, in four families, 110 wide) and `<prefix>-strike.bin` (an interrupted worker struck down, in four
 // families and places, 64 wide). docs/tools/readme_gifs.py turns them into GIFs.
-import { scenePixels, type SceneInput } from '../hooks/scene.ts'
+import { MessageTrails, scenePixels, type SceneInput } from '../hooks/scene.ts'
 import { SCENE_H } from '../hooks/landscapes/kit.ts'
 import { EXIT_MS } from '../hooks/exits.ts'
 import { PhaseClock, routeRate } from '../hooks/landscapes/gait.ts'
@@ -44,15 +44,15 @@ const families = ['codex', 'claude', 'agy', 'opencode'] as const
   const data = new Uint32Array(families.length * FRAMES * W * SCENE_H)
   let at = 0
   for (const kind of families) {
-    const phase = new PhaseClock(), route = new PhaseClock()
+    const phase = new PhaseClock(), route = new PhaseClock(), messageTrails = new MessageTrails()
     let now = 1_000_000 + startMs, i = 0
     for (let ms = startMs; i < FRAMES; ms += 50, now += 50) {
       const rate = routeRate(ms, window, TURN_LEAD_MS), p = phase.advance('j', 0.85, now), r = route.advance('j', 0.85, now, rate)
       if (ms < startMs + i * MS_PER_FRAME) continue
       const since = ms >= 0 && ms <= window + TURN_LEAD_MS ? ms : undefined
       const job = { isStale: false, seed: 11, kind, tier: 3 as const, pace: 0.85, phase: p, route: r, hit: { id: 'j', title: 'j', details: [] } }
-      const peerEdges = since === undefined ? [] : [{ source: 'j', target: 'mochi', strength: 0.9, preview: 'x', count: 1, family: kind, arriving: since, fresh: 1, lead: TURN_LEAD_MS }]
-      data.set(scenePixels({ ...base(W, place), frame: Math.round(p), jobs: [job], peerEdges }), at)
+      const peerEdges = ms < 0 ? [] : [{ source: 'j', target: 'mochi', strength: 0.9, preview: 'x', count: 1, family: kind, arriving: since, fresh: 1, lead: TURN_LEAD_MS }]
+      data.set(scenePixels({ ...base(W, place), frame: Math.round(p), jobs: [job], peerEdges, messageTrails }), at)
       at += W * SCENE_H
       i++
     }

@@ -1,72 +1,80 @@
-# The crew: how it is built, and where to add things
+# The crew: designs and engine
 
-## The standard
+Each family has a design for each place, in four classes. The sprite modules own the art;
+`design.ts` owns facing, motion, habitat, turns, passages and escorts.
 
-1. Each family has a different, recognisable design in each place: 32 designs, not one design in eight coats.
-2. Read the silhouette first. Leave air around it; avoid slabs and clouds of dots. A large body needs markings or plates. Use at least three tones and a bright accent.
-3. Each design moves its own part. Only the city dragon undulates and coils; nothing else borrows its travelling wave.
-4. Hand-drawn pairs of poses per class are the norm. Generate a shape only when it ripples or is a figure of points: the dragon, constellations, carp tail and carpet ends.
-5. Material and colour hold a family together: Codex is mint clockwork with a glass eye `Wg` and gear `k`; Claude is alive, with rose plumage and a bright eye or bill; agy is a constellation with bright stars, dim links, a core and a travelling pulse; OpenCode is paper and cloth in the worker's colour with a warm window.
-6. Each family gets its own trail, glow, voice, local accent, struck exit and escorts at classes 3 and 4. Add counterparts to all families when adding one of these.
-7. A front-facing design banks through turns; a face-on design has `facing: null`, `turn: 'none'` and drifts. The dragon alone coils.
-8. A sender turns before the packet, voice and reaction leave, after `TURN_LEAD_MS`. An interrupt is a strike; a worker leaves when done. Effects never repaint body cells. Keep per-frame cost flat.
+`depth: 'far'` places a crew behind terrain and buildings, including its passage
+effects. Constellations, the mountain airship and sky lanterns use this layer.
+Nearby crews draw in front. Surface lights are projected separately onto the
+nearest roof, ground or water; their intensity falls with height, and they are
+not captured in the moving sprite. Distant crews cast no local surface light.
 
-## Codex concepts
+| Place | Codex | Claude | agy | OpenCode |
+| --- | --- | --- | --- | --- |
+| City | dragon | sparrow | crown | origami crane |
+| Harbor | tug | crab | sail | paper boat |
+| Beach | saucer | flamingo | starfish | kite |
+| Mountains | airship | eagle | condor | sky lantern |
+| Countryside | strider | butterfly | plough | carp streamer |
+| Forest | probe | owl | tree | lantern string |
+| Desert | sun skiff | fox | scorpion | flying carpet |
+| Tundra | snowcat | puffin | aurora arch | paper star |
 
-- City: dragon; its plated wave pushes air in blue arcs and sheds packets.
-- Harbor: whale; its fluke throws spray.
-- Beach: jellyfish; its wires drip light and its bell glows.
-- Mountains: airship; its propeller leaves slipstream and its gondola has a lamp.
-- Countryside: bee; its wings shed pollen.
-- Forest: spider; its legs leave silk glints.
-- Desert: scarab; its legs kick dust as it rolls a glowing sun.
-- Tundra: narwhal; its fluke sheds ice crystals and its tusk glints.
+The tug and paper boat ride harbor water; the crab walks its quay. The strider,
+snowcat, flamingo and fox walk the ground; the sun skiff cruises low. Other designs
+fly. A surface worker rests when stale or its pace falls to 0.15 or below. Air
+designs marked `rests` settle at an available perch: the dragon, sparrow, owl,
+puffin and lantern string. `rest` is an optional sprite-module map of place to
+class to rows; missing entries use flight frame 0. An optional `restContact` map
+identifies a supporting pixel when a tail hangs below the feet. Perches and surface spans come
+from the scene, and Mochi and her laptop remain hard boundaries.
 
-## Claude concepts
+The dragon coils to turn. Headed designs bank or use the optional `turnPose` map
+(place → class → rows); a missing pose falls back to a bank. Face-on designs do
+not turn. The supplied poses cover the Codex airship, strider, skiff and snowcat;
+Claude sparrow, flamingo, eagle, fox and puffin; and OpenCode crane, kite, carp and
+carpet. `flex.ts` bends loose parts between strokes, creatures may have an
+intermediate stroke, and the saucer's rim lamps chase across its frames. Constellations
+keep their star arrangement while drifting; their light moves within that figure.
+Star lighting cross-fades between beats; connecting lines stay faint while the
+nodes bloom softly into the sky.
 
-- City: pigeon; fast wings shed grey down.
-- Harbor: pelican; heavy wings move as water drips from its pouch.
-- Beach: flamingo; wings beat above trailing legs and shed rose feathers.
-- Mountains: eagle; broad wings flex and shed streaming air.
-- Countryside: butterfly; paired wings open and close, shedding pollen.
-- Forest: owl; silent wings stir leaves and its eyes shine.
-- Desert: dragonfly; four glass wings whir and shed glints.
-- Tundra: puffin; rapid wings shed a flurry.
+`fx.ts` describes streams, lights and the family message style. Night mixes body
+colours toward the dark sky, keeps emissive cells bright and blooms them by one
+cell; night-only effects use the optional `night` table cell. Beaks and feathers reflect
+ambient light; machine lamps and paper windows emit it. agy uses `e` for
+links that tint the existing sky rather than cover it. Effects draw before solid
+body cells. On the water, workers bob, wake and reflect; ground workers disturb
+their footing.
 
-## agy concepts
+Messages use Codex `packet`, Claude `song`, agy `starfall` and OpenCode `ember`.
+The sender charges and aims from its visible body. Each projectile freezes its route
+at release; only crossed cells leave residue, which fades in place. A burst records
+separate launches. Codex harbor darts rise from the tug before curving toward their
+recipient. Flights pass above atmospheric effects. A worker turns when its heading
+requires it and may keep its new heading after a message. Face-on workers direct
+light from their node or lamp. The receiver has its own reaction.
 
-- City: crown; jewels rise and settle, shedding neon.
-- Harbor: sail; mast and hull rock, shedding spray.
-- Beach: starfish; its arms turn and scatter sand glitter.
-- Mountains: condor; its wings open and fold, shedding ice glints.
-- Countryside: plough; its handle swings and sheds pollen.
-- Forest: tree; boughs sway amid fireflies.
-- Desert: scorpion; claws snap and tail curls as heat rises.
-- Tundra: aurora arch; curtains sway and shed a ribbon of light.
+Passages follow the body and habitat. The dragon charges and warps, the saucer and
+probe lift through a beam, the airship climbs and the skiff accelerates away. Boats
+travel on water; ground creatures and machines walk or drive out. Birds use their
+scene's flight path. Constellations assemble from streaking stars; folded paper
+opens on arrival, while floating lanterns rise and disperse. `enter` and `leave`
+can select a shared style; otherwise `exit-styles.ts` supplies the scene's style.
+Interrupts use the family's strike and debris.
 
-## OpenCode concepts
+Escorts are explicit in `design.ts`, not automatic for large classes: the dragon
+has whelps, the sparrow, butterfly and puffin flock, and the sky lantern and
+paper star have sisters. Other designs, including every agy constellation, have
+none. Each escort follows the patrol with its own wing clock and bounded lateral
+and vertical drift; its heading follows that path.
 
-- City: origami crane; its wing beats and sheds paper.
-- Harbor: carp streamer; its tail ripples and sheds spray.
-- Beach: kite; its tail of bows snakes and sheds ribbon.
-- Mountains: sky lantern; its flame gutters and smoke rises.
-- Countryside: balloon; its burner flares and throws a jet.
-- Forest: lantern string; lanterns bob among fireflies.
-- Desert: flying carpet; its ends ripple and shed magic dust.
-- Tundra: paper star; its points turn and shed frost glitter.
-
-## Owners and effects
-
-`craft.ts`, `creatures.ts`, `agy.ts` and `lantern.ts` own the four families' frames and physical anchors. `design.ts` owns facing, cruise, turns and escort formation. `fx.ts` owns each family's streams, lights and voice; `particles.ts` draws stateless emitters and lights. `exit-styles.ts` owns passages and strikes, `exits.ts` their timing, and `reactions.ts` the send and receive reactions. `gait.ts` owns motion clocks; `crew.ts` places, orients and shapes the crew.
-
-Streams follow their source's earlier path; wind carries them and local material supplies their colour. Paint effects before solid sprites. Lights use `from` for dusk, except a motivated always-lit source such as the scarab's sun. `lanternPose` supplies window, heat and force; `lanternNose` is the lead flame, and `lanternFlare` brightens windows after the turn. `craftNose`, `craftPush`, `creatureNose`, `creatureStroke`, `agyCore` and `agyPulse` follow their current poses.
-
-`PhaseClock` advances at a worker's pace without jumps. `lanes` divides available sky by identity and size; Mochi and her laptop are hard obstacles, scenery is a soft preference. Escorts follow the leader with the lag and offsets in `DESIGNS`. A strike uses the family's debris; a normal exit uses the place's passage, and an arrival plays it backwards.
-
-## Recipes
-
-For a new place, add the preset and landscape, a design and sprite for each family, its `CREW` and `CARRIED` effects and each passage. For a new family, add its sprite and design rows, effects, reactions and passages. For a new effect, use an existing anchor, `follow` for a trail and `from` for a dusk light. Preserve pose-derived anchors and verify the four classes, escorts, message timing and exits. `tests/crew-matrix.test.ts` checks the matrix; the family tests cover frames and effects.
-
-## Look at it
-
-Use `bun dev/cast.ts`, `bun dev/crew.ts <family>`, `bun dev/passages.ts <place> [class]` (with `STRUCK=1` for interrupts), `bun dev/fx.ts <place>`, and `bun dev/motion.ts` to inspect the cast, passages and messages. Check day, dusk, night and narrow widths. `look.effects = false` shows bare sprites. Run `bun dev/perf.ts` to check frame cost; the frame budget is 50 ms. Keep review artifacts local.
+`crew.ts` places and paints bodies, `gait.ts` owns movement and clocks,
+`particles.ts` draws effects, `peer-messages.ts` tracks messages, and
+`passage-styles.ts` and `exit-styles.ts` supply passages to `exits.ts`. To review,
+use `bun dev/cast.ts all`, `bun dev/passages.ts <place> <class>`, and scene
+renders at day, night and narrow widths; `bun dev/perf.ts` measures painted frames.
+`dev/review-server.ts` serves the interactive review; `dev/review-sheet.ts` renders
+the same continuously stepped timelines as contact sheets. Review silhouettes first,
+then complete motion and passage sequences, then mixed crews at terminal width.
+Keep scene texture, readable small forms and a clear main action in each effect.

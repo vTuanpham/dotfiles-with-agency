@@ -22,6 +22,8 @@ export type Ctx = {
   p: number
   seed: number
   arriving: boolean
+  heading?: 1 | -1
+  surfaceAt?: (x: number, below: number) => number | undefined
   cx: number
   cy: number
   x0: number
@@ -41,7 +43,7 @@ export type Style = (k: Ctx) => void
 
 const clamp = (v: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v))
 const ease = (t: number) => clamp(t) * clamp(t) * (3 - 2 * clamp(t))
-const dirOf = (k: Ctx) => (k.seed % 2 ? 1 : -1)
+const dirOf = (k: Ctx) => (k.heading ?? (k.seed % 2 ? 1 : -1)) * (k.arriving ? -1 : 1)
 const spot = (k: Ctx, i: number, salt: number, range: number) => (hash(i * salt + k.seed) % (range * 2 + 1)) - range // a stable offset
 
 // ── Codex: the machine each place builds ─────────────────────────────────────────────────────────────────────────────────────
@@ -59,11 +61,11 @@ const hyperdrive: Style = k => {
     }
     return
   }
-  const q = (p - 0.55) / 0.45, dx = q * q * (c.W - cx + 30), y = cy - rise
+  const dir = dirOf(k), q = (p - 0.55) / 0.45, dx = dir * q * q * ((dir > 0 ? c.W - cx : cx) + (k.x1 - k.x0 + 1) * 3), y = cy - rise
   // stretched along its flight and thinned across it, so the dragon turns into a bolt of light
-  k.sprite({ dy: -rise, dx, sx: 1 + q * q * 14, sy: Math.max(0.25, 1 - q * 0.8), tint: P.white, tintBy: 0.5 + 0.5 * q })
+  k.sprite({ dy: -rise, dx, sx: 1 + q * q * 4, sy: Math.max(0.25, 1 - q * 0.8), tint: P.white, tintBy: 0.5 + 0.5 * q })
   if (q < 0.15) for (let a = 0; a < 12; a++) k.lit(cx + Math.cos(a) * (1 + q * 40) * 1.4, y + Math.sin(a) * (1 + q * 40) * 0.8, P.white, 0.8 * (1 - q / 0.15)) // the flash
-  for (let x = Math.max(0, cx - 4); x < Math.min(c.W, cx + dx); x++) k.lit(x, y, P.white, 0.55 * (1 - q) * clamp(1 - (cx + dx - x) / 44)) // the streak it leaves
+  for (let x = Math.max(0, Math.min(cx, cx + dx)); x < Math.min(c.W, Math.max(cx, cx + dx)); x++) k.lit(x, y, P.white, 0.55 * (1 - q) * clamp(1 - Math.abs(cx + dx - x) / 44))
 }
 
 /** A boat under sail for the horizon, its wake behind the hull, dissolving into the haze. `chop` is how much the water throws it about. */

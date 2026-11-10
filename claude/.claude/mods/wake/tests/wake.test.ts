@@ -6,6 +6,7 @@ import { CAT_COLUMNS, MIN_SCENE_ROWS, SCENE_ROWS, sceneCardBounds, sceneFrame, t
 import { COLOR, crewTiming, isTestCommand } from '../hooks/util'
 import ScenePointer from '../hooks/scene-hover'
 import type { WakeAgent, WakeChip, WakeRecap } from '../types'
+import { crewTour, CREW_CYCLE } from '../hooks/crew-tour'
 
 type Node = string | { type: string; props?: Record<string, unknown>; hover?: { scope?: string }; children?: Node[] }
 
@@ -84,9 +85,32 @@ test('/wake crew starts the demo and shows its tour label', async ($, on) => {
   const bar = await mount($, 'AbovePrompt', false, 100, 16)
   const result = await $.command.run({ command: 'wake', args: 'crew', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as never)
   expect(result.text).toContain('demo')
+  expect(result.text).toContain('this landscape')
   await clock.advance(1_000)
   expect(flat((await bar.drawn()) as Node)).toContain('touring')
   await bar.unmount()
+})
+
+test('the crew demo gives every family its own send, receive, rest and passages', () => {
+  const seen = new Map<string, Set<string>>()
+  const sizes = new Map<string, Set<number>>()
+  for (let frame = 0; frame < CREW_CYCLE; frame++) {
+    const state = crewTour({ preset: 'forest' } as SceneInput, frame)
+    const job = state.jobs[0]!, kind = job.kind!
+    const phases = seen.get(kind) ?? new Set<string>()
+    if (job.struck) phases.add('strike')
+    const tiers = sizes.get(kind) ?? new Set<number>()
+    tiers.add(job.tier!)
+    sizes.set(kind, tiers)
+    phases.add(job.arriving !== undefined ? 'arrive' : job.leaving !== undefined ? 'leave' : job.isStale ? 'rest' : state.peerEdges?.[0]?.turning !== undefined ? 'turn' : state.peerEdges?.[0]?.source === 'mochi' ? 'receive' : state.peerEdges?.length ? 'send' : 'work')
+    expect(state.preset).toBe('forest')
+    if (state.peerEdges?.length) expect(state.peerEdges[0]!.family).toBe(kind)
+    seen.set(kind, phases)
+  }
+  for (const kind of ['codex', 'claude', 'agy', 'opencode']) {
+    expect([...seen.get(kind)!].sort()).toEqual(['arrive', 'leave', 'receive', 'rest', 'send', 'strike', 'turn', 'work'])
+    expect([...sizes.get(kind)!].sort()).toEqual([1, 2, 3, 4])
+  }
 })
 
 test('native subagent resource commands keep native execution and show their own admission state', async ($, on) => {

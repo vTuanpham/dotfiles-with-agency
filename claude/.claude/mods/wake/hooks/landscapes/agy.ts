@@ -2,13 +2,12 @@ import type { WakePreset } from '../../types'
 import type { Tier } from './design'
 import type { Vec } from './particles'
 
-// agy is a constellation: a few bright stars joined by dashed lines of light, one figure for each place. The figure itself moves
-// (its stars shift against each other), a pulse of light runs along one line after another, and the lesser stars twinkle in turn.
-// Few stars and clear lines: the figure has to read at a glance.
+// A fixed celestial figure: faint connections, bright stars and a slow pulse travelling between them.
 type Pose = { rows: readonly string[]; core: Vec; pulse: { x: number; y: number; force: number } }
 /** The first star is the core (the maker's mark, where the voice and the glow sit); the last is the tip that sheds light. */
 type Figure = { stars: Vec[]; links: (readonly [number, number])[] }
 const BEATS = 8, H = 7
+export const AGY_TEMPO = 4.5
 const TAU = Math.PI * 2
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
 const chain = (n: number, from = 0) => Array.from({ length: n - 1 }, (_, i) => [from + i, from + i + 1] as const)
@@ -84,7 +83,7 @@ function generate(place: WakePreset, tier: Tier, beat: number): Pose {
   }
   const head = Math.floor(beat * wire.length / BEATS)
   // The lines are only a tint of the sky (`e`), enough to hold the figure together; what shows is the shot and its fading tail.
-  for (const [i, [x, y]] of wire.entries()) put(x, y, i === head ? 'W' : i === head - 1 ? 'a' : i === head - 2 || i === head - 3 ? 'd' : 'e')
+  for (const [i, [x, y]] of wire.entries()) put(x, y, i === head ? 'l' : 'e')
   for (const [i, [x, y]] of at.entries()) if (i) put(x, y, (i + beat) % 4 ? 'W' : 'a')
   const [cx, cy] = at[0]!
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) put(cx + dx, cy + dy, 'l', false) // the core's four rays

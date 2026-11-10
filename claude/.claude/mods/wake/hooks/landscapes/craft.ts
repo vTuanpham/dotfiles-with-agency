@@ -4,9 +4,8 @@ import { flex } from './flex'
 
 // Codex is the clockwork crew: every place has its own automaton, built of the same plated metal with a glass eye and a gear.
 // Over the city the clockwork dragon (a generator, see `dragon` below: one design that grows from a small, slim whelp to a long
-// plated one); elsewhere a hand-drawn machine animal that belongs there: a whale that spouts in the harbor, a jellyfish over the
-// beach, an airship in the mountains, a bee over the fields, a spider on its thread in the forest, a scarab rolling a sun across the
-// desert and a narwhal on the tundra. Four classes grow the same machine, each a rectangle inside CRAFT_MAX and larger than the
+// plated one); elsewhere a tug, saucer, airship, field strider, probe, sun skiff and snowcat.
+// Four classes grow the same machine, each a rectangle inside CRAFT_MAX and larger than the
 // one before. Sprite keys are crew.ts's: a body, W highlight, l light plate, d shade, s lamp, g glass, k grey metal. Only the
 // dragon undulates; the others move a part of their own (a fluke, a bell, a propeller, wings, pincers, legs).
 // What a craft stirs up, lights and trails is data in fx.ts, not drawn here.
@@ -64,7 +63,7 @@ function dragon(tier: Tier, beat: number): string[] {
   for (let x = head; x < w; x++) {
     const plate = Math.floor((x - head) / 3), seam = (x - head) % 3 === 2 && x < w - 1, tail = x >= w - 2
     const n = tail ? 1 : thick, top = Math.round(at(x) - (thick - 1) / 2) + (tail ? Math.floor((thick - 1) / 2) : 0)
-    for (let r = 0; r < n; r++) set(x, top + r, seam ? 'd' : r === 0 ? (plate === lit ? 'W' : 'l') : r === n - 1 && n > 1 ? 'd' : 'a')
+    for (let r = 0; r < n; r++) set(x, top + r, seam ? r === 0 && plate % 2 === 0 ? 'g' : 'd' : r === 0 ? (plate === lit ? 'W' : 'l') : r === n - 1 && n > 1 ? 'd' : 'a')
     if (!seam && !tail && tier >= 2 && (x - head) % 3 === 1) set(x, top - 1, 'k') // a gear tooth on the spine, one to a plate
   }
   set(w - 1, Math.round(at(w - 1)) + [1, 0, -1, 0][beat % 4]!, 'l') // the tail's blade sweeps up and down (a cycle of four: no two neighbouring frames match)
@@ -117,16 +116,16 @@ const AUTOMATA: Record<Exclude<WakePreset, 'city'>, Machine> = {
       ['...llllllll..d.', '.lalalalalaaadd', 'Waapaaapaaapaad', '.dadadadadaddd.', '...ddddddd...d.', '.....lWgadkk...', '......s........'],
     ],
   } },
-  countryside: { name: 'strider', strokes: 2, art: { // a walker: a boxy head with a headlamp and a windscreen, on two long legs that stride
+  countryside: { name: 'strider', strokes: 2, art: { // a field surveyor: forward visor, antenna, articulated hips and broad feet
     1: [['sWgkd', '.d.d.', 'd...d'], ['sWgkd', '..d..', '.d.d.']],
-    2: [['.llld..', 'sWgakd.', '..d.d..', '.d...d.', 'dd...dd'], ['.llld..', 'sWgakd.', '..d.d..', '..d.d..', '.dd.dd.']],
+    2: [['....r..', '.Wgald.', 'slaak..', '..d.d..', '.ll..ll'], ['....r..', '.Wgald.', 'slaak..', '...kd..', '..ll.ll']],
     3: [
-      ['...lllld...', '..sWgapdd..', '...ddkdd...', '...d...d...', '..d.....d..', '.dd.....dd.'],
-      ['...lllld...', '..sWgapdd..', '...ddkdd...', '....d.d....', '....d.d....', '...dd.dd...'],
+      ['......r....', '..lWglk....', '.saaadlaad.', '..ddkakkd..', '...d...d...', '..ll....ll.'],
+      ['......r....', '..lWglk....', '.saaadlaad.', '..ddkakkd..', '....k.d....', '...ll..ll..'],
     ],
     4: [
-      ['..........k....', '....lllllld....', '...sWgapaadd...', '....dddkddd....', '.....d...d.....', '....d.....d....', '...dd.....dd...'],
-      ['...........k...', '....lllllld....', '...sWgapaadd...', '....dddkddd....', '......d.d......', '......d.d......', '.....dd.dd.....'],
+      ['.......r.......', '...llllk.......', '..sWggld.llld..', '.saaaaaklaaad..', '..ddddkkdkdd...', '....k....k.....', '..lll.....lll..'],
+      ['.......r.......', '...llllk.......', '..sWggld.llld..', '.saaaaaklaaad..', '..ddddkkdkdd...', '.....k..k......', '....lll..lll...'],
     ],
   } },
   forest: { name: 'probe', strokes: 2, art: { // a probe droid, face on: aerials, one glass eye between two lamps, and jointed arms that reach and tuck

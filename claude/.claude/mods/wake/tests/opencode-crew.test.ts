@@ -75,7 +75,7 @@ test('seed ink stays with each worker and designs match their heading', () => {
   }
   for (const place of places) {
     const d = DESIGNS.opencode[place]
-    expect(d.turn).toBe(d.facing === null ? 'none' : 'bank')
+    expect(d.turn).toBe(d.facing === null ? 'none' : 'pose')
     const sisters = ['mountains', 'tundra'].includes(place)
     expect(d.escorts[3]?.length ?? 0).toBe(sisters ? 1 : 0); expect(d.escorts[4]?.length ?? 0).toBe(sisters ? 2 : 0)
   }

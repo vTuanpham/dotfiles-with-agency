@@ -62,7 +62,8 @@ test('message heading uses the recipient and the next natural reversal', () => {
   expect(orient(far, 'left', 0, { ms: 1600, over: 100, targetX: -20 }, 10).roll).toBe(0)
   expect(orient(far, 'left', 0, { ms: MIN_TURN_GAP_MS + 300, over: MIN_TURN_GAP_MS - 1200, targetX: -20 }, 10).roll).toBeGreaterThan(0)
   const recentlyTurned = (ago: number) => [10 - (ago - 0.5) ** 2, 0] as const
-  expect(orient(recentlyTurned, 'left', 0, { ms: 0, targetX: 20 }, 10).roll).toBeUndefined()
+  expect(orient(recentlyTurned, 'left', 0, { ms: 0, targetX: 20 }, 10).roll).toBe(0)
+  expect(orient(recentlyTurned, 'left', 0, { ms: 900, targetX: 20 }, 10).mirror).toBe(-1)
 })
 
 test('face-on designs direct their light without turning the body', () => {
@@ -79,8 +80,8 @@ test('face-on designs direct their light without turning the body', () => {
   }
 })
 
-test('message points stay on the leader body for every design, beat, heading and turn', () => {
-  for (const place of Object.keys(ALL_CRAFT) as (keyof typeof ALL_CRAFT)[]) for (const kind of kinds) for (const tier of tiers)
+for (const kind of kinds) test(`${kind} message points stay on the leader body for every design, beat, heading and turn`, () => {
+  for (const place of Object.keys(ALL_CRAFT) as (keyof typeof ALL_CRAFT)[]) for (const tier of tiers)
     for (const heading of [-1, 1]) for (const phase of [0, 1.5, 3, 6, 10.5]) for (const ms of [undefined, 200, 450, 700, 1200]) {
       const c = canvas(60, 24)
       const state = { ...look, place, crewMessagePoints: {} } as Look
@@ -147,12 +148,13 @@ test('every place-built Codex craft is a rectangle inside the sky slot, grows wi
   }
 })
 
-test('non-city machines have two poses, an eye and a gear in each', () => {
+test('non-city machines animate with a complete eye and gear in every frame', () => {
   for (const [place, classes] of Object.entries(ALL_CRAFT)) for (const tier of tiers) {
     if (place === 'city') continue
-    expect(new Set(classes[tier].map(art => art.join('\n'))).size, `${place} ${tier} poses`).toBe(2)
+    expect(new Set(classes[tier].map(art => art.join('\n'))).size, `${place} ${tier} poses`).toBeGreaterThanOrEqual(2)
     for (const art of classes[tier]) {
       expect({ w: art[0]!.length, h: art.length }).toEqual(MACHINE_SIZE[tier])
+      expect(art.every(row => row.length === MACHINE_SIZE[tier].w)).toBe(true)
       expect(art.join('')).toContain('Wg')
       expect(art.join('')).toContain('k')
     }

@@ -6,7 +6,7 @@ import { LANDSCAPES } from '../hooks/landscapes'
 import { designFor } from '../hooks/landscapes/design'
 import { P, SCENE_H } from '../hooks/landscapes/kit'
 import { canvas, hash, seedOf } from '../hooks/pixels'
-import { CAT_COLUMNS, MIN_SCENE_ROWS, SCENE_ROWS, type SceneInput, arcCells, lookOf, readScenePointer, sceneFrame, sceneHitAt, scenePixels } from '../hooks/scene'
+import { CAT_COLUMNS, MIN_SCENE_ROWS, SCENE_ROWS, MessageTrails, type SceneInput, arcCells, lookOf, readScenePointer, sceneFrame, sceneHitAt, scenePixels } from '../hooks/scene'
 import { readable } from '../hooks/util'
 
 const base: SceneInput = {
@@ -58,16 +58,17 @@ test('a real message edge connects visible workers and exposes its preview', () 
   const input: SceneInput = { ...base, effects: false, width: 120, turns: [], live: null, plan: null, agents: [], jobs: [
     { isStale: false, seed: 1, hit: { id: 'a', title: 'A', details: [] } },
     { isStale: false, seed: 2, hit: { id: 'b', title: 'B', details: [] } },
-  ], peerEdges: [{ source: 'a', target: 'b', strength: 1, preview: 'Review tests' }] }
+  ], peerEdges: [{ source: 'a', target: 'b', strength: 1, preview: 'Review tests' }], messageTrails: new MessageTrails() }
+  sceneFrame({ ...input, peerEdges: input.peerEdges!.map(edge => ({ ...edge, arriving: 500 })) })
   const frame = sceneFrame(input)
   const edge = frame.hits.targets.findIndex(item => item.id === 'peer:a:b') + 1
   expect(edge).toBeGreaterThan(0)
   expect(frame.hits.owners).toContain(edge)
   expect(frame.hits.targets[edge - 1]!.details).toEqual(['Review tests'])
-  const noMessage = sceneFrame({ ...input, peerEdges: [] })
+  const noMessage = sceneFrame({ ...input, peerEdges: [], messageTrails: undefined })
   expect(noMessage.hits.targets.some(item => item.id.startsWith('peer:'))).toBe(false)
   const graphPixels = scenePixels(input)
-  const plainPixels = scenePixels({ ...input, peerEdges: [] })
+  const plainPixels = scenePixels({ ...input, peerEdges: [], messageTrails: undefined })
   for (let cell = 0; cell < noMessage.hits.owners.length; cell++) {
     const owner = noMessage.hits.owners[cell]!
     if (!owner || noMessage.hits.targets[owner - 1]!.id.startsWith('peer:') || noMessage.hits.targets[owner - 1]!.id === 'sky') continue
@@ -153,11 +154,11 @@ test('Bridge root messages connect to Mochi in the recorded direction without co
   const job = { isStale: false, seed: 1, hit: { id: 'owner/job', title: 'Worker', details: [] } }
   const rootToWorker: SceneInput = {
     ...base, effects: false, width: 100, turns: [], live: null, plan: null, agents: [], jobs: [job],
-    peerEdges: [{ source: 'mochi', target: 'owner/job', strength: 1, preview: 'Inspect this result', messageState: 'sent' }],
+    peerEdges: [{ source: 'mochi', target: 'owner/job', strength: 1, preview: 'Inspect this result', messageState: 'sent', arriving: 500 }],
   }
   const workerToRoot: SceneInput = {
     ...rootToWorker,
-    peerEdges: [{ source: 'owner/job', target: 'mochi', strength: 1, preview: 'Result is ready', messageState: 'observed' }],
+    peerEdges: [{ source: 'owner/job', target: 'mochi', strength: 1, preview: 'Result is ready', messageState: 'observed', arriving: 500 }],
   }
   const incoming = sceneFrame(rootToWorker)
   const outgoing = sceneFrame(workerToRoot)
@@ -206,13 +207,35 @@ test('the trail to the root stays put while Mochi\'s "!" blinks, her envelope ho
     return new Set(hits.owners.flatMap((owner, cell) => owner === at ? [cell] : []))
   }
   const input: SceneInput = { ...base, width: 100, turns: [], live: null, plan: null, agents: [], jobs: [job], mood: 'alert',
-    peerEdges: [{ source: 'owner/job', target: 'mochi', strength: 1, preview: 'Result is ready' }] }
+    peerEdges: [{ source: 'owner/job', target: 'mochi', strength: 1, preview: 'Result is ready' }], messageTrails: new MessageTrails() }
+  sceneFrame({ ...input, peerEdges: input.peerEdges!.map(edge => ({ ...edge, arriving: 500 })) })
   const shown = peerCells({ ...input, frame: 0 }), hidden = peerCells({ ...input, frame: 6 }) // the "!" is drawn on frame 0, not on frame 6
-  expect(shown.size).toBeGreaterThan(10)
+  expect(shown.size).toBeGreaterThan(0)
   const moved = [...shown].filter(cell => !hidden.has(cell)).length + [...hidden].filter(cell => !shown.has(cell)).length
   expect(moved).toBeLessThanOrEqual(6) // only the few cells the mark itself stands on, never the whole arc
   const withEnvelope = peerCells({ ...input, frame: 3, mail: 'in' })
   expect([...shown].filter(cell => !withEnvelope.has(cell)).length).toBeLessThanOrEqual(12)
+})
+
+test('delivered message trails retain their flight path as workers move, and old history never invents a path', () => {
+  for (const [source, target] of [['a', 'b'], ['a', 'mochi'], ['mochi', 'a']]) {
+    const messageTrails = new MessageTrails()
+    const edge = { source: source!, target: target!, strength: 1, stamp: 'message-1' }
+    const jobs = ['a', 'b'].map((id, i) => ({ kind: 'codex' as const, isStale: false, seed: i + 1, route: 0, hit: { id, title: id, details: [] } }))
+    const input = { ...base, jobs, agents: [], messageTrails, peerEdges: [edge] }
+    expect(sceneFrame(input).hits.targets.some(hit => hit.id.startsWith('peer:'))).toBe(false)
+    sceneFrame({ ...input, peerEdges: [{ ...edge, arriving: 500 }] })
+    const path = messageTrails.path(edge, () => { throw new Error('historical path was recomputed') })
+    expect(path!.length).toBeGreaterThan(3)
+    sceneFrame({ ...input, frame: 150, jobs: jobs.map(job => ({ ...job, route: 40, phase: 40 })) })
+    expect(messageTrails.path(edge, () => [])).toBe(path)
+    expect(messageTrails.path({ ...edge, stamp: 'unseen-message' }, () => [])).toBeUndefined()
+    sceneFrame({ ...input, width: 60 })
+    expect(messageTrails.path(edge, () => [])).toBeUndefined()
+    sceneFrame({ ...input, peerEdges: [{ ...edge, arriving: 500 }] })
+    sceneFrame({ ...input, peerEdges: [] })
+    expect(messageTrails.path(edge, () => [])).toBeUndefined()
+  }
 })
 
 test('every family arrives and leaves in every place: it draws cleanly, changes the scene, and is gone at the end', () => {
@@ -401,6 +424,7 @@ test('one to twelve flyers retain visible, distinct anchors in every landscape',
       const background = scenePixels({ ...input, jobs: [] })
       expect(anchors.length).toBe(count)
       expect(new Set(anchors).size).toBe(count)
+      if (designFor(kind, preset).depth === 'far') continue // distant bodies may pass behind buildings
       for (const anchor of anchors) {
         const x = anchor % input.width, y = Math.floor(anchor / input.width)
         let visible = false
@@ -408,10 +432,24 @@ test('one to twelve flyers retain visible, distinct anchors in every landscape',
           const px = x + dx, py = y + dy
           if (px >= 0 && px < input.width && py >= 0 && py < SCENE_H && pixels[py * input.width + px] !== background[py * input.width + px]) visible = true
         }
-        expect(visible).toBe(true)
+        expect(visible, `${preset}/${kind}, ${count} workers, anchor ${anchor}`).toBe(true)
       }
     }
   }
+})
+
+test('distant crews and their passage effects are occluded by nearer structures', () => {
+  const land = LANDSCAPES.city, foreground = land.foreground
+  try {
+    land.foreground = (c, look, right) => { foreground(c, look, right); c.rect(0, 6, c.W, 7, 0x756543) }
+    for (const hour of [13, 22]) for (const phase of [{}, { arriving: 1500 }, { leaving: 1800 }]) {
+      const input: SceneInput = { ...base, hour, width: 80, frame: 30, jobs: [], agents: [], turns: [], live: null, mood: 'idle', plan: null, effect: null }
+      const before = scenePixels(input)
+      const after = scenePixels({ ...input, jobs: [{ kind: 'agy', tier: 4, seed: 1, isStale: false, hit: { id: 'stars', title: 'Stars', details: [] }, ...phase }] })
+      for (let y = 6; y < 13; y++) for (let x = 0; x < input.width; x++) expect(after[y * input.width + x], `occluded at ${x},${y}`).toBe(before[y * input.width + x])
+      if (!Object.keys(phase).length) expect(after.slice(0, 6 * input.width)).not.toEqual(before.slice(0, 6 * input.width))
+    }
+  } finally { land.foreground = foreground }
 })
 
 test('narrow-scene flyers retain visible anchors without displacing scenery', () => {

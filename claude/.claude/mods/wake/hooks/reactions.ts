@@ -7,12 +7,12 @@
 import type { CharacterId } from './mochi'
 import { P } from './landscapes/kit'
 import { type Canvas, hash, mix } from './pixels'
-import type { MessageStyle } from './landscapes/fx'
+import { NIGHT_GAIN, type MessageStyle } from './landscapes/fx'
 
 export type ReactionKind = 'codex' | 'claude' | 'agy' | 'opencode' | CharacterId
 
 /** One worker reacting: `v` is its strength now (1 at the moment, fading to 0), `t` the ms since the message arrived in view. */
-export type Reaction = { id: string; role: 'send' | 'land'; v: number; t: number; style?: MessageStyle; point?: { x: number; y: number } }
+export type Reaction = { id: string; role: 'charge' | 'send' | 'land'; v: number; t: number; style?: MessageStyle; point?: { x: number; y: number } }
 
 export type Box = { x0: number; y0: number; x1: number; y1: number }
 /** Light one pixel toward the effect's colour (or `color`) by `strength`, 0..1. Out of bounds is ignored. */
@@ -147,7 +147,7 @@ const EFFECTS: Record<ReactionKind, Effect> = {
  * stand (the root's, so marks drawn above her never move her gadget). Several packets in flight leave several reactions for
  * one worker: the strongest of each role wins. Hit owners are never changed, so hover stays exactly where it was.
  */
-export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[], kindOf: (id: string) => ReactionKind, fixed: Record<string, Box> = {}, stars: Record<string, { x: number; y: number }[]> = {}): void {
+export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[], kindOf: (id: string) => ReactionKind, fixed: Record<string, Box> = {}, stars: Record<string, { x: number; y: number }[]> = {}, night = 0, occluded?: (id: string, x: number, y: number) => boolean): void {
   if (!c.hitOwners || reactions.length === 0) return
   const best = new Map<string, Reaction>()
   for (const reaction of reactions) {
@@ -175,19 +175,37 @@ export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[]
     const box = fixed[reaction.id] ?? scanned
     const kind = kindOf(reaction.id), accent = ACCENT[kind]
     const v = reaction.v * (reaction.role === 'send' ? SOFTER_SEND : 1)
+    const paint: Paint = (x, y, strength, color) => { if (!occluded?.(reaction.id, Math.round(x), Math.round(y))) lit(Math.round(x), Math.round(y), color ?? accent, strength * (1 + NIGHT_GAIN * night)) }
+    if (reaction.role === 'charge' && reaction.point) {
+      const { x, y } = reaction.point
+      // Light gathers at the source before release; nothing previews the flight path.
+      paint(x, y, v, P.white)
+      if (kind === 'agy') {
+        const nodes = stars[reaction.id] ?? []
+        const node = nodes[Math.floor(reaction.t / 300) % Math.max(1, nodes.length)]
+        if (node) {
+          const f = (reaction.t % 300) / 300
+          paint(node.x + (x - node.x) * f, node.y + (y - node.y) * f, v, P.lavender)
+        }
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (dx || dy) paint(x + dx, y + dy, v * .6 / (1 + dx * dx + dy * dy), P.lavender)
+      } else if (kind === 'codex') {
+        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) paint(x + dx!, y + dy!, v * .35, P.teal)
+      } else if (kind === 'opencode') paint(x, y - 1, v * .7, P.yellow)
+      else if (kind === 'claude') paint(x, y - 1, v * .4, P.pink)
+      continue
+    }
     // only the worker's own sprite glows (its box): not the escorts, trail and air painted under the same hit owner
     for (let y = Math.max(scanned.y0, box.y0); y <= Math.min(scanned.y1, box.y1); y++) for (let x = Math.max(scanned.x0, box.x0); x <= Math.min(scanned.x1, box.x1); x++) {
       if (c.hitOwners[y * c.W + x] === owner) c.px[y * c.W + x] = mix(c.px[y * c.W + x]!, mix(accent, P.white, 0.7), v * SPRITE_GLOW)
     }
-    const paint: Paint = (x, y, strength, color) => lit(Math.round(x), Math.round(y), color ?? accent, strength)
     if (!reaction.style || ['mochi', 'tabby', 'tuxedo', 'bun'].includes(kind)) EFFECTS[kind](paint, box, v, reaction.t, reaction.role)
     if (reaction.role !== 'land' || !reaction.style || !reaction.point) continue
     const { x, y } = reaction.point
     const pixel = y * c.W + x
     if (reaction.style === 'packet') {
       // A square flash and a brief dark blink at the eye/core.
-      for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]] as const) paint(x + dx, y + dy, v, P.sky)
-      if (reaction.t < 180 && pixel >= 0 && pixel < c.px.length) c.px[pixel] = mix(c.px[pixel]!, P.ink, v * 0.9)
+      for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [-1, 1], [0, 1], [1, 1]] as const) paint(x + dx, y + dy, v, P.white)
+      if (reaction.t >= 180 && reaction.t < 300 && pixel >= 0 && pixel < c.px.length) c.px[pixel] = mix(c.px[pixel]!, P.ink, v * 0.9)
     } else if (reaction.style === 'song') {
       for (const [dx, dy] of [[-2, -1], [-1, -2], [0, -1], [1, -2], [2, -1], [-1, 0], [1, 0]] as const) paint(x + dx, y + dy, v * 0.8, P.snow)
     } else if (reaction.style === 'starfall') {
@@ -210,7 +228,7 @@ export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[]
       if (nearest) for (let step = 1; step < nearest.d; step++) paint(x + (nearest.x - x) * step / nearest.d, flareY + (nearest.y - flareY) * step / nearest.d, v * 0.6, P.lavender)
       for (const [dx, dy] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]] as const) paint(x + dx, flareY + dy, v, P.white)
     } else {
-      for (const [dx, dy] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1]] as const) paint(x + dx, y + dy, v * (dx || dy ? 0.65 : 1), P.yellow)
+      for (const [dx, dy] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1]] as const) paint(x + dx, y + dy, v * (dx || dy ? 0.9 : 1), P.yellow)
     }
   }
 }

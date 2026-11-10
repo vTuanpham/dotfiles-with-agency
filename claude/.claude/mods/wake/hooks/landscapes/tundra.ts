@@ -223,6 +223,7 @@ function walker(c: Canvas, look: Look, right: number) {
 export const tundra: Landscape = {
   name: 'tundra',
   ground: GROUND,
+  groundPerches: true,
 
   backdrop(c, look) {
     if (look.night > 0.5) aurora(c, look, 0.42 * (look.wet ? 0.3 : 1))

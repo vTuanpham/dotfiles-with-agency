@@ -159,11 +159,12 @@ function nativeEdges(state: BandState, now: number) {
     return {
       source: fromRoot ? 'mochi' : m.from,
       target: toRoot ? 'mochi' : m.to,
+      stamp: m.at,
       strength: since < 2_000 ? 0.65 + 0.35 * (Math.floor(since / 400) % 2) : messageFade(since),
       preview: m.preview,
       messageState: toRoot || fromRoot ? 'sent' as const : undefined,
       count: 1,
-      arriving: since <= packetWindow(1) + lead + (toRoot || fromRoot ? TURN_LEAD_MS : 0) ? since : undefined,
+      arriving: since <= packetWindow(1) + lead + (toRoot || fromRoot ? TURN_LEAD_MS : 0) + 500 ? since : undefined,
       turning: since <= packetWindow(1) + lead + TURN_HOLD_MS ? since : undefined,
       lead: lead || undefined,
       fresh: 1,
@@ -223,12 +224,13 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
         return {
           source: rootMessage && !peer.outgoing ? 'mochi' : job.id!,
           target: rootMessage ? peer.outgoing ? 'mochi' : job.id! : peer.target,
+          stamp: peer.messageId ?? peer.lastAt,
           strength: pulse ? 0.65 + 0.35 * (Math.floor((now - peer.observedAt!) / 400) % 2) : messageFade(age),
           preview: peer.preview,
           messageState: rootMessage ? peer.messageState : undefined,
           count: peer.count,
           // packets run only for messages arriving in view right now, one per new message
-          arriving: peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1) + lead + (rootMessage ? TURN_LEAD_MS : 0) // (a root message adds the turn back to its own course)
+          arriving: peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1) + lead + (rootMessage ? TURN_LEAD_MS : 0) + 500 // keep the landing visible after the trail
             ? now - peer.observedAt : undefined,
           turning: peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1) + lead + TURN_HOLD_MS ? now - peer.observedAt : undefined,
           lead: lead || undefined,

@@ -11,7 +11,7 @@ export const lanternInk = (seed: number) => PAPER_INKS[hash(seed ^ 0x5bf03635) %
 export function lanternPaper(ink: number, night: number): number {
   const channels = [ink >> 16 & 255, ink >> 8 & 255, ink & 255]
   const floor = Math.min(...channels) * 0.75
-  const scale = (115 + 55 * night) / (Math.max(...channels) - floor)
+  const scale = (155 + 15 * night) / (Math.max(...channels) - floor)
   const [r, g, b] = channels.map(value => Math.round((value - floor) * scale))
   return r! << 16 | g! << 8 | b!
 }
@@ -226,4 +226,4 @@ export const turnPose: Partial<Record<WakePreset, Record<Tier, readonly string[]
 }
 
 /** At night the lit edge of the paper glows with its flame. */
-export const emissive = 'la' // the paper is lit from inside: only its shade and trim go dark
+// Paper folds reflect the sky; the separate flame/window cells supply their light.
