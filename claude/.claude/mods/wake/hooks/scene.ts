@@ -889,7 +889,8 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
 /** Each shot leaves a fading record of the cells it crossed, above atmospheric effects. */
 /** How each place's machine dresses the head of its packet, as [colour, strength]: lights to either side, a wake behind, a
  *  cross of light, or a tinted core. One row per place, so a new look is data, not another branch. The harbor's is a rocket. */
-const PACKET_HEAD: Partial<Record<SceneInput['preset'], { side?: [number, number]; wake?: [number, number]; cross?: [number, number]; core?: [number, number] }>> = {
+const PACKET_HEAD: Partial<Record<SceneInput['preset'], { side?: [number, number]; wake?: [number, number]; cross?: [number, number]; core?: [number, number]; rocket?: true }>> = {
+  harbor: { rocket: true }, // the tug launches straight up, then pitches over, trailing smoke
   city: { side: [P.teal, .55], wake: [P.teal, .8] }, // a neon dart
   desert: { side: [P.peach, .55], wake: [P.peach, .8] }, // a sunlit dart
   beach: { cross: [P.teal, .65] }, // the saucer's pulse
@@ -910,7 +911,7 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
     const workerId = edge.source === 'mochi' ? edge.target : edge.source
     const family = edge.family ?? input.jobs.find(job => job.hit?.id === workerId)?.kind ?? (input.agents.some(agent => agent.hit?.id === workerId) ? 'claude' : 'codex')
     const style = CREW[family].message
-    const missile = family === 'codex' && input.preset === 'harbor' && edge.source !== 'mochi'
+    const missile = family === 'codex' && !!PACKET_HEAD[input.preset]?.rocket && edge.source !== 'mochi'
     let owner: number | undefined
     if (edge.arriving !== undefined && edge.arriving < (edge.lead ?? 0)) {
       const t = Math.max(0, edge.arriving / (edge.lead ?? 1))
