@@ -80,67 +80,88 @@ export const MACHINE_SIZE: Record<Tier, { w: number; h: number }> = {
 type Machine = { name: string; strokes: 1 | 2 | 4; art: Record<Tier, readonly [readonly string[], readonly string[]]> }
 
 const AUTOMATA: Record<Exclude<WakePreset, 'city'>, Machine> = {
-  harbor: { name: 'whale', strokes: 1, art: { // it swims at the surface: the fluke beats, and it spouts on the upstroke
-    1: [['.aa.a', 'Wgkaa', '.....'], ['.aa..', 'Wgkaa', '....a']],
-    2: [['.W...a.', 'aaaa.a.', 'Wgakaa.', 'dddd...', '.......'], ['.......', 'aaaa...', 'Wgakaa.', 'dddd.a.', '.......']],
-    3: [['..W........', '..W......a.', '.aaaaa...a.', 'Wgalakaaaa.', 'aaaaaaa....', '.dddd......'], ['...........', '...........', '.aaaaa.....', 'Wgalakaaaa.', 'aaaaaaa..a.', '.dddd....a.']],
-    4: [
-      ['..WWW..........', '...W.........a.', '..aaaaaaa....a.', 'aWgalalakaaaaa.', 'aaaaaaaaaaa....', '.ddddddd.......', '...............'],
-      ['...............', '...............', '..aaaaaaa......', 'aWgalalakaaaaa.', 'aaaaaaaaaaa..a.', '.ddddddd.....a.', '...............'],
+  harbor: { name: 'tug', strokes: 2, art: { // a tugboat on the water: a lit wheelhouse, a mast lamp that blinks, a funnel puffing, a screw that churns
+    1: [['...k.', '.Wgd.', 'laaad'], ['..k..', '.Wgd.', 'laaad']],
+    2: [['....k..', 'r.Wgk..', '.paaad.', 'laaaaad', '.......'], ['.....k.', 'W.Wgk..', '.paaad.', 'laaaaad', '.......']],
+    3: [
+      ['......k.k..', '..r...k....', '..lWgl.rd..', 'l.llllddd.s', 'alapaapaaad', '.dkdkdkdkd.'],
+      ['.......k.k.', '..W....k...', '..lWgl.rd..', 'l.llllddd.s', 'alapaapaaad', '.dkdkdkdkd.'],
+    ],
+    4: [ // a high bow, a white wheelhouse, a red-banded funnel, tyres hung along the hull
+      ['.........k.k...', '....r....kk....', '...lll...rr....', '...lWgl..dd....', 'l..lllladdd..s.', 'alaapaapaapaaad', '.dkdkdkdkdkdkd.'],
+      ['..........k.k..', '....W.....k....', '...lll...rr....', '...lWgl..dd....', 'l..lllladdd..s.', 'alaapaapaapaaad', '.dkdkdkdkdkdkd.'],
     ],
   } },
-  beach: { name: 'jellyfish', strokes: 2, art: { // a glass bell that squeezes and opens, trailing wires tipped with lamps
-    1: [['kWgaa', '.d.d.', '.....'], ['kWga.', '.aaa.', '.d.d.']],
-    2: [['.laaad.', 'akWgaad', '.d.d.d.', '.s...s.', '.......'], ['..lad..', '.kWgad.', '.aaaaa.', '..d.d..', '..s.s..']],
-    3: [['..laaaaad..', '.lakWgaaad.', '.aaaaaaaaa.', '..d.d.d.d..', '..d.s.d.s..', '..s...s....'], ['...laaad...', '..lakWgad..', '..aaaaaaa..', '...d.d.d...', '...d.d.d...', '...s.s.s...']],
+  beach: { name: 'saucer', strokes: 4, art: { // seen face on: a glass dome, a rim of lamps that chase each other round, thrusters that flicker
+    1: [['.Wgl.', 'sakas', '.f.f.'], ['.Wgl.', 'askal', '..f..']],
+    2: [['...r...', '..Wgl..', 'lsakasl', '.ddddd.', '..f.f..'], ['...r...', '..Wgl..', 'laskasl', '.ddddd.', '...f...']],
+    3: [
+      ['.....r.....', '...lWggl...', '.llaaaaall.', 'dsakasakasd', '..ddddddd..', '...f...f...'],
+      ['.....r.....', '...lWggl...', '.llaaaaall.', 'daskaasksad', '..ddddddd..', '....f.f....'],
+    ],
     4: [
-      ['....laaaaad....', '...lakWgaaad...', '...aaaaaaaaa...', '....d.d.d.d....', '....d.d.d.d....', '....s.d.s.d....', '......s...s....'],
-      ['.....laaad.....', '....lakWgad....', '....aaaaaaa....', '.....aaaaa.....', '.....d.d.d.....', '.....d.d.d.....', '.....s.s.s.....'],
+      ['.......r.......', '.....lWggl.....', '...llaaaaaall..', 'dsaakaasaakaasd', '..ddddddddddd..', '....f..f..f....', '...............'],
+      ['.......r.......', '.....lWggl.....', '...llaaaaaall..', 'dasaksaaaskasad', '..ddddddddddd..', '.....f...f.....', '...............'],
     ],
   } },
   mountains: { name: 'airship', strokes: 4, art: { // a ribbed hull, a gondola with its porthole, and a propeller that spins
     1: [['.ll..', 'aaadk', '.Wg..'], ['.llk.', 'aaad.', '.Wg..']],
     2: [['.llll..', 'aWaaadk', '.dddd..', '.kWg...', '.......'], ['.llllk.', 'aaaWad.', '.ddddk.', '.kWg...', '.......']],
-    3: [['...........', '..llllll...', '.alalalaad.', 'aaWaaaaaadk', '.ddddddddd.', '...kWgk....'], ['...........', '..llllll...', '.alalalaadk', 'aaaaaWaaad.', '.dddddddddk', '...kWgk....']],
-    4: [
-      ['...............', '...llllllll....', '.aalalalalaaad.', 'aaaWaaaaaaaaadk', '.ddddddddddddd.', '....kWgk.......', '.....s.........'],
-      ['...............', '...llllllll....', '.aalalalalaaadk', 'aaaaaaaWaaaaad.', '.dddddddddddddk', '....kWgk.......', '.....s.........'],
+    3: [
+      ['..llllll.d.', 'Walalalaadd', '.dadadaddd.', '..ddddd..d.', '...lWgdk...', '....s......'],
+      ['..llllll.d.', 'Walalalaadd', '.dadadaddd.', '..ddddd..d.', '...lWgdkk..', '....s......'],
+    ],
+    4: [ // a bright nose cone, ribs along the envelope, a row of ports, two tail fins, and the gondola's propeller
+      ['...llllllll..d.', '.lalalalalaaadd', 'Waapaaapaaapaad', '.dadadadadaddd.', '...ddddddd...d.', '.....lWgadk....', '......s........'],
+      ['...llllllll..d.', '.lalalalalaaadd', 'Waapaaapaaapaad', '.dadadadadaddd.', '...ddddddd...d.', '.....lWgadkk...', '......s........'],
     ],
   } },
-  countryside: { name: 'bee', strokes: 4, art: { // feelers, a brass-and-iron striped abdomen, six legs, a sting, and glass wings that whirr
-    1: [['.W.W.', 'Wgskd', '.....'], ['.....', 'Wgskd', '.W.W.']],
-    2: [['..W.W..', 'k.lWl..', 'Wgasksd', '.dask..', '.......'], ['.......', 'k.WWW..', 'Wgasksd', '.dask..', '.......']],
-    3: [['...WW.WW...', 'k...lWl....', '.kasksks...', 'Wgasksksd..', '.dasksk....', '..k..k.....'], ['...........', 'k..WWWWW...', '.kasksks...', 'Wgasksksd..', '.dasksk....', '...k..k....']],
+  countryside: { name: 'strider', strokes: 2, art: { // a walker: a boxy head with a headlamp and a windscreen, on two long legs that stride
+    1: [['sWgkd', '.d.d.', 'd...d'], ['sWgkd', '..d..', '.d.d.']],
+    2: [['.llld..', 'sWgakd.', '..d.d..', '.d...d.', 'dd...dd'], ['.llld..', 'sWgakd.', '..d.d..', '..d.d..', '.dd.dd.']],
+    3: [
+      ['...lllld...', '..sWgapdd..', '...ddkdd...', '...d...d...', '..d.....d..', '.dd.....dd.'],
+      ['...lllld...', '..sWgapdd..', '...ddkdd...', '....d.d....', '....d.d....', '...dd.dd...'],
+    ],
     4: [
-      ['....WW...WW....', 'k....lW.Wl.....', '.kaaasksksks...', 'Wgaaasksksksad.', '.daaasksksks...', '..k..k..k......', '...............'],
-      ['...............', 'k....WWWWWW....', '.kaaasksksks...', 'Wgaaasksksksad.', '.daaasksksks...', '...k..k..k.....', '...............'],
+      ['..........k....', '....lllllld....', '...sWgapaadd...', '....dddkddd....', '.....d...d.....', '....d.....d....', '...dd.....dd...'],
+      ['...........k...', '....lllllld....', '...sWgapaadd...', '....dddkddd....', '......d.d......', '......d.d......', '.....dd.dd.....'],
     ],
   } },
-  forest: { name: 'spider', strokes: 2, art: { // it hangs on its own thread, face on: two glass eyes and eight legs that reach and tuck
-    1: [['..d..', 'kWgak', '.....'], ['..d..', '.Wga.', 'k.d.k']],
-    2: [['...d...', 'k.lal.k', 'kWgagWk', '..ddd..', '.......'], ['...d...', '..lal..', 'kWgagWk', 'k.ddd.k', '.......']],
-    3: [['.....d.....', '.k.k.d.k.k.', 'k.klaaalk.k', 'k.kWgagWk.k', '...ddddd...', '...........'], ['.....d.....', '.....d.....', '.k.laaal.k.', 'k.kWgagWk.k', 'k..ddddd..k', '...........']],
+  forest: { name: 'probe', strokes: 2, art: { // a probe droid, face on: aerials, one glass eye between two lamps, and jointed arms that reach and tuck
+    1: [['lWgl.', 'dakad', 'k.d.k'], ['lWgl.', 'dakad', '.kdk.']],
+    2: [['.k...k.', 'lsWgsl.', '.dkpkd.', 'k.d.d.k', 'k..d..k'], ['.k...k.', 'lsWgsl.', '.dkpkd.', '.kd.dk.', '.k.d.k.']],
+    3: [
+      ['...k...k...', '..lllllll..', '.asaWgasad.', '..dkpppkd..', '.k.d.d.d.k.', 'k....d....k'],
+      ['...k...k...', '..lllllll..', '.asaWgasad.', '..dkpppkd..', '..kd.d.dk..', '..k..d..k..'],
+    ],
     4: [
-      ['.......d.......', '.k..k..d..k..k.', 'k.k.klaaalk.k.k', 'k..kaWgagWak..k', '....kaaaaak....', '.....ddddd.....', '...............'],
-      ['.......d.......', '.......d.......', '.k.k.laaal.k.k.', 'k.k.aWgagWa.k.k', 'k..k.aaaaa.k..k', '.....ddddd.....', '...............'],
+      ['.....k...k.....', '....lllllll....', '...asaWgasad...', '....dkpppkd....', '...k.d.d.d.k...', '..k..d.d.d..k..', '..k....d....k..'],
+      ['.....k...k.....', '....lllllll....', '...asaWgasad...', '....dkpppkd....', '....kd.d.dk....', '....k..d..k....', '...k...d...k...'],
     ],
   } },
-  desert: { name: 'scarab', strokes: 2, art: { // it rolls a glowing sun ahead of it: the sun turns, the legs paddle
-    1: [['s.a..', 'sWgkd', '.....'], ['..a..', 'sWgkd', 's....']],
-    2: [['sW.la..', 'ssWgkd.', '.s.k.k.', '.......', '.......'], ['ss.la..', 'ssWgkd.', '.W..k..', '.......', '.......']],
-    3: [['.ss........', 'sWss.laaa..', 'ssssWgakad.', '.ss..dakd..', '.....k.k...', '...........'], ['.ss........', 'ssss.laaa..', 'ssssWgakad.', '.sW..dakd..', '......k.k..', '...........']],
+  desert: { name: 'racer', strokes: 4, art: { // a pod racer: two engines out in front with a spark arcing between them, cables, and the pilot's pod towed behind
+    1: [['sk...', 'f.Wga', 'sk...'], ['sk...', '.fWga', 'sk...']],
+    2: [['.......', 'sakf...', '.f.dWga', 'sak....', '.......'], ['.......', 'sak....', 'f..dWga', 'sakf...', '.......']],
+    3: [
+      ['.laad......', 'sakadf..p..', '..f..ddlWga', '.laad......', 'sakad......', '...........'],
+      ['.laad......', 'sakad...p..', '.f...ddlWga', '.laad......', 'sakadf.....', '...........'],
+    ],
     4: [
-      ['..sss..........', '.sssWs..laaaa..', 'ssssssWgaakaad.', '.sssss.daakaad.', '..sss..k..k.k..', '...............', '...............'],
-      ['..sss..........', '.sssss..laaaa..', 'ssssssWgaakaad.', '.sWsss.daakaad.', '..sss...k.k..k.', '...............', '...............'],
+      ['...............', '.llaaad........', 'sakaaadf....p..', '...f...ddddlWga', '.llaaad........', 'sakaaad........', '...............'],
+      ['...............', '.llaaad........', 'sakaaad.....p..', '..f....ddddlWga', '.llaaad........', 'sakaaadf.......', '...............'],
     ],
   } },
-  tundra: { name: 'narwhal', strokes: 1, art: { // a long bright tusk, a plated body, and a fluke that beats
-    1: [['....a', 'WWgka', '.....'], ['.....', 'WWgka', '....a']],
-    2: [['......a', '...la.a', 'WWWgkaa', '...dd..', '.......'], ['.......', '...la..', 'WWWgkaa', '...dd.a', '......a']],
-    3: [['...........', '.........a.', '....laa..a.', 'WWWaWgakaa.', '....dddd...', '...........'], ['...........', '...........', '....laa....', 'WWWaWgakaa.', '....dddd.a.', '.........a.']],
-    4: [
-      ['...............', '.............a.', '......laaaa..a.', 'WWWWWaWgaakaaa.', '.....ddddddd...', '...............', '...............'],
-      ['...............', '...............', '......laaaa....', 'WWWWWaWgaakaaa.', '.....ddddddd.a.', '.............a.', '...............'],
+  tundra: { name: 'snowcat', strokes: 2, art: { // a tracked crawler: a plough, a windscreen, a beacon that turns on its roof, and tracks whose wheels roll
+    1: [['.Wgr.', 'paaad', '.klkl'], ['.Wgs.', 'paaad', '.lklk']],
+    2: [['...r...', '.lWgl.k', 'plaaaad', '.klklkl', '.......'], ['...s...', '.lWgl.k', 'plaaaad', '.lklklk', '.......']],
+    3: [
+      ['....r......', '..lWgl.p.k.', 'p.aaapaaad.', 'ppaakaakad.', '.klkklkklk.', '..kkkkkkk..'],
+      ['....s......', '..lWgl.p.k.', 'p.aaapaaad.', 'ppaakaakad.', '.kklkklkkl.', '..kkkkkkk..'],
+    ],
+    4: [ // a cab up front, a flat bed with a crate and an exhaust stack behind, a plough ahead, dark tracks with bright wheels
+      ['......r........', '....llll.....k.', '...lWggal.pp.k.', 'p..aaapaaaaaad.', 'pp.aakaaaakaad.', '..klkklkklkklk.', '...kkkkkkkkk...'],
+      ['......s........', '....llll.....k.', '...lWggal.pp.k.', 'p..aaapaaaaaad.', 'pp.aakaaaakaad.', '..kklkklkklkkl.', '...kkkkkkkkk...'],
     ],
   } },
 }

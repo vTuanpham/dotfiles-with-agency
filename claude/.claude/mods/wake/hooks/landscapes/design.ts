@@ -30,13 +30,14 @@ const sisters: Design['escorts'] = {
 export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
   codex: {
     city: { facing: 'left', cruise: true, turn: 'coil', escorts: { 3: [{ tier: 1, lag: 0.45, dy: -5 }], 4: [{ tier: 1, lag: 0.4, dy: -5 }, { tier: 1, lag: 0.85, dy: 5 }] } },
-    harbor: { facing: 'left', cruise: false, turn: 'none', escorts: { 3: [{ tier: 1, lag: 0.8, dy: 1 }], 4: [{ tier: 1, lag: 0.8, dy: 1 }] } },
-    beach: { facing: null, cruise: false, turn: 'none', escorts: wingmen }, // the jellyfish has no front: it pulses and drifts
-    mountains: { facing: 'left', cruise: true, turn: 'bank', escorts: wingmen },
-    countryside: { facing: 'left', cruise: false, turn: 'bank', escorts: wingmen }, // the bee hovers and darts
-    forest: { facing: null, cruise: false, turn: 'none', escorts: wingmen }, // the spider hangs face on
-    desert: { facing: 'left', cruise: true, turn: 'bank', escorts: wingmen },
-    tundra: { facing: 'left', cruise: true, turn: 'bank', escorts: wingmen },
+    // Only the dragon keeps whelps: a second machine beside any of the others would read as another worker.
+    harbor: { facing: 'left', cruise: false, turn: 'none', escorts: {} }, // the tug
+    beach: { facing: null, cruise: false, turn: 'none', escorts: {} }, // the saucer is the same from every side: it hovers and drifts
+    mountains: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the airship
+    countryside: { facing: 'left', cruise: false, turn: 'bank', escorts: {} }, // the strider
+    forest: { facing: null, cruise: false, turn: 'none', escorts: {} }, // the probe looks straight at you
+    desert: { facing: 'left', cruise: true, turn: 'bank', escorts: {} }, // the speeder
+    tundra: { facing: 'left', cruise: false, turn: 'bank', escorts: {} }, // the snowcat
   },
   // Birds in profile cruise and bank; the butterfly and the owl are seen face on, so they have no heading and wander.
   claude: {

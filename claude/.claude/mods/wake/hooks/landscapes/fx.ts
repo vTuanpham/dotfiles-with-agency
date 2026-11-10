@@ -86,11 +86,11 @@ const CODEX: Partial<Record<WakePreset | 'any', Cell>> = {
   },
   // Each automaton sheds its own stuff from the part that drives it (a fluke, a wire, a propeller, a leg), as the dragon sheds
   // packets, and its glass eye glows after dusk. Its signal to Mochi leaves that eye.
-  harbor: { // the whale: spray thrown up by the fluke
-    streams: [WORKS([P.white, P.sky], { gravity: 3, angle: [UP - 0.6, UP + 0.6], speed: [1, 3], envelope: 'fade' })], lights: [EYE(P.teal)],
+  harbor: { // the tug: water churned up by its screw
+    streams: [WORKS([P.white, P.sky], { gravity: 3, angle: [UP - 0.6, UP + 0.6], speed: [1, 3], envelope: 'fade' })], lights: [EYE(P.yellow)],
     talking: SIGNAL('nose', 0, 0, { angle: [Math.PI - 0.3, Math.PI + 0.3], speed: [5, 9] }),
   },
-  beach: { // the jellyfish: light dripping off its wires, and the glow of its bell
+  beach: { // the saucer: light dripping from its thrusters, and the glow under its hull
     streams: [WORKS([P.yellow, P.teal], { gravity: 1.5, angle: [DOWN - 0.3, DOWN + 0.3] })],
     lights: [EYE(P.teal), { at: 'below', light: { shape: 'halo', color: P.yellow, alpha: 0.35, reach: 2, modulate: 'pulse', from: 0.05 } }],
     talking: SIGNAL('nose'),
@@ -100,17 +100,17 @@ const CODEX: Partial<Record<WakePreset | 'any', Cell>> = {
     lights: [EYE(P.teal), { at: 'below', light: { shape: 'halo', color: P.yellow, alpha: 0.4, reach: 1, from: 0.05 } }],
     talking: SIGNAL('nose', 0, 0, { speed: [6, 10] }),
   },
-  countryside: { streams: [WORKS([P.yellow, P.white], { gravity: 0.4 })], lights: [EYE(P.teal)], talking: SIGNAL('nose') }, // the bee: pollen
-  forest: { // the spider: glints of silk drifting off its legs
-    streams: [WORKS([P.white, P.snow], { count: 5, life: 1.6, speed: [0.1, 0.4], swirl: 0.8 })], lights: [EYE(P.teal)],
+  countryside: { streams: [WORKS([P.yellow, P.white], { gravity: 1.2, envelope: 'fade' })], lights: [EYE(P.teal), { at: 'left', light: { shape: 'halo', color: P.yellow, alpha: 0.4, reach: 1, from: 0.05 } }], talking: SIGNAL('nose') }, // the strider: chaff kicked up by its feet, and its headlamp
+  forest: { // the probe: sparks off its working arms
+    streams: [WORKS([P.white, P.teal], { count: 5, life: 0.8, speed: [0.3, 1], gravity: 2, envelope: 'fade' })], lights: [EYE(P.teal)],
     talking: SIGNAL('nose', 0, 0, { angle: [Math.PI - 0.2, Math.PI + 0.2] }),
   },
-  desert: { // the scarab: dust kicked up by its legs, and the sun it rolls, glowing by day and by night
-    streams: [WORKS([P.sand, P.peach], { gravity: 1.5, envelope: 'fade' })],
-    lights: [{ at: 'nose', dx: -3, always: true, light: { shape: 'halo', color: P.yellow, alpha: 0.45, reach: 3, modulate: 'pulse' } }],
+  desert: { // the speeder: a plume of dust behind its jet, and its headlamp
+    streams: [WORKS([P.sand, P.peach], { count: 9, life: 1.2, gravity: 0.6, angle: [-0.4, 0.4], speed: [1, 3], envelope: 'fade' })],
+    lights: [EYE(P.teal), { at: 'left', light: { shape: 'halo', color: P.yellow, alpha: 0.4, reach: 1, from: 0.05 } }],
     talking: SIGNAL('nose', 0, 0, { speed: [6, 9] }),
   },
-  tundra: { // the narwhal: ice crystals off its fluke, and a glint on its tusk
+  tundra: { // the snowcat: snow thrown off its tracks, and its headlamp
     streams: [WORKS([P.snow, P.sky, P.white], { gravity: 0.5, swirl: 0.8 })],
     lights: [EYE(P.teal), { at: 'left', light: { shape: 'halo', color: P.white, alpha: 0.4, reach: 1, modulate: 'pulse', from: 0.05 } }],
     talking: SIGNAL('nose', 0, 0, { speed: [10, 12] }),

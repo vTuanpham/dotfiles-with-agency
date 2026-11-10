@@ -18,8 +18,7 @@ function figure(place: WakePreset, X: number, p: number, big: boolean): Figure {
   const c = X / 2, s = Math.sin(p), k = Math.cos(p)
   switch (place) {
     case 'city': { // the Crown: three points over a band, each jewel rising and settling in its turn
-      const peak = (i: number) => 1 + 0.9 * Math.sin(p + i * 2.1)
-      const stars: Vec[] = [[c, peak(0)], [1, 5.5], [1, 1 + peak(1)], [c * 0.5 + 0.5, 3.6], [c * 1.5 - 0.5, 3.6], [X - 1, 1 + peak(2)], [X - 1, 5.5]]
+      const stars: Vec[] = [[c, 0], [1, 5.5], [1, 1.5], [c * 0.5 + 0.5, 3.6], [c * 1.5 - 0.5, 3.6], [X - 1, 1.5], [X - 1, 5.5]]
       return { stars, links: [[1, 2], [2, 3], [3, 0], [0, 4], [4, 5], [5, 6], [6, 1]] }
     }
     case 'harbor': { // the Sail: a mast, a sail and a hull that rock on the swell
@@ -47,7 +46,7 @@ function figure(place: WakePreset, X: number, p: number, big: boolean): Figure {
       return { stars, links: [[0, 1], [1, 2], [2, 3], [3, 0], ...chain(4, 3)] }
     }
     case 'forest': { // the Tree: a trunk rooted at the core, its boughs swaying further the higher they reach
-      const sway = (h: number) => 1.4 * Math.sin(p - h * 0.5) * h / 3
+      const sway = (_h: number) => 0
       const stars: Vec[] = [[c, 6], [c + sway(1), 3.5], [c - c * 0.75 + sway(2), 1.5], [c + c * 0.75 + sway(2), 1.5], [c + sway(3), 0]]
       return { stars, links: [[0, 1], [1, 2], [1, 3], [1, 4]] }
     }
@@ -75,28 +74,27 @@ function figure(place: WakePreset, X: number, p: number, big: boolean): Figure {
 function generate(place: WakePreset, tier: Tier, beat: number): Pose {
   const w = 3 + tier * 4, grid = Array.from({ length: H }, () => Array<string>(w).fill('.'))
   const put = (x: number, y: number, ink: string, over = true) => { if (x >= 0 && x < w && y >= 0 && y < H && (over || grid[y]![x] === '.')) grid[y]![x] = ink }
-  const { stars, links } = figure(place, w - 1, beat * TAU / BEATS, tier >= 3)
+  // The figure holds still, as a constellation does. What moves is light: a shot runs along the lines from star to star.
+  const { stars, links } = figure(place, w - 1, 0, tier >= 3)
   const at = stars.map(([x, y]): Vec => [clamp(Math.round(x), 0, w - 1), clamp(Math.round(y), 0, H - 1)])
-  const lit = Math.floor(beat * links.length / BEATS) // the pulse: one line after another burns solid
-  for (const [n, [from, to]] of links.entries()) {
+  const wire: Vec[] = [] // every cell of every line, in the order the shot travels them
+  for (const [from, to] of links) {
     const [ax, ay] = at[from]!, [bx, by] = at[to]!, steps = Math.max(Math.abs(bx - ax), Math.abs(by - ay))
-    for (let i = 1; i < steps; i++) put(Math.round(ax + (bx - ax) * i / steps), Math.round(ay + (by - ay) * i / steps), n === lit ? 'a' : 'd')
+    for (let i = 1; i < steps; i++) wire.push([Math.round(ax + (bx - ax) * i / steps), Math.round(ay + (by - ay) * i / steps)])
   }
+  const head = Math.floor(beat * wire.length / BEATS)
+  for (const [i, [x, y]] of wire.entries()) put(x, y, i === head ? 'W' : i === head - 1 || i === head - 2 ? 'a' : 'd') // the shot and its tail
   for (const [i, [x, y]] of at.entries()) if (i) put(x, y, (i + beat) % 4 ? 'W' : 'a')
   const [cx, cy] = at[0]!
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) put(cx + dx, cy + dy, 'l', false) // the core's four rays
   put(cx, cy, 'M')
   const [tx, ty] = at[at.length - 1]!
-  return { rows: grid.map(row => row.join('')), core: [cx, cy], pulse: { x: tx, y: ty, force: 0 } }
+  // The tip sheds light as the shot arrives at it, on the last quarter of its run.
+  return { rows: grid.map(row => row.join('')), core: [cx, cy], pulse: { x: tx, y: ty, force: beat >= BEATS * 0.75 ? 1 : 0.3 } }
 }
 
 const build = (place: WakePreset): Record<Tier, readonly Pose[]> => {
-  const frames = (tier: Tier) => {
-    const poses = Array.from({ length: BEATS }, (_, beat) => generate(place, tier, beat))
-    const low = Math.max(...poses.map(p => p.pulse.y)), high = Math.min(...poses.map(p => p.pulse.y))
-    // The tip sheds light on its low stroke: strength is measured from the tip's own excursion.
-    return poses.map(p => ({ ...p, pulse: { ...p.pulse, force: clamp(0.2 + 0.8 * (p.pulse.y - high) / Math.max(1, low - high), 0, 1) } }))
-  }
+  const frames = (tier: Tier) => Array.from({ length: BEATS }, (_, beat) => generate(place, tier, beat))
   return { 1: frames(1), 2: frames(2), 3: frames(3), 4: frames(4) }
 }
 const POSES = {
