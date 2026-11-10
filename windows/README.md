@@ -4,7 +4,8 @@
 
 Windows-side terminal config. **Not Stowed and not linked**: copy by hand, and
 exclude this package from home-directory Stow commands. The snapshots assume a
-WSL distro named `Ubuntu`; change the distro and home path for your machine.
+WSL distro named `Ubuntu`; replace `<user>` in both configs and change the distro
+and home path for your machine before copying them.
 
 ## Terminal configuration
 

@@ -90,7 +90,7 @@
                 "hidden": true,
                 "name": "Ubuntu",
                 "source": "Windows.Terminal.Wsl",
-                "startingDirectory": "\\\\wsl$\\Ubuntu\\home\\tuanpham"
+                "startingDirectory": "\\\\wsl$\\Ubuntu\\home\\<user>"
             },
             {
                 "guid": "{b453ae62-4e3d-5e58-b989-0a998ec441b8}",

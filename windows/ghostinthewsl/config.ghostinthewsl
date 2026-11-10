@@ -1,6 +1,6 @@
 font-family = SauceCodePro NFP SemiBold
 font-size = 12
-working-directory = /home/tuanpham
+working-directory = /home/<user>
 window-inherit-working-directory = false
 alpha-blending = linear
 # Match Windows Terminal: copy a selection, otherwise pass Ctrl+C to the app.
