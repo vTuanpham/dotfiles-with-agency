@@ -278,8 +278,8 @@ to export them in Bash calls that invoke `agent-resources`, including through sc
 best effort: unattributed commands have no worker mark. Cards open upward inside
 their full row's bounds, including at narrow widths. Peer cards distinguish previews
 withheld by Bridge from missing message metadata; withheld text is never reconstructed
-from raw logs or replaced with an older message. In the scene a trail of faint embers
-joins each worker (native or Bridge) to Mochi: working for the root is a relationship, not a message.
+from raw logs or replaced with an older message. The scene draws a line between
+a worker and Mochi only for a real message, never for merely working for the root.
 Worker, quota and actionable rows get room before decorative sky or optional
 recap details. The scene trims its upper sky from ten rows down to six when
 needed, preserving its ground, character, animation and matching hover targets.

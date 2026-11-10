@@ -102,7 +102,7 @@ export type SceneInput = {
   jobs: Job[]
   /** A message in flight: who to whom, how fresh (strength), how many (count, as the crew rows' ─ ━ ═ weights) and whose colour it carries. */
   /** arriving: ms since the edge's newest message reached this view, only while its packets run; fresh: one packet each */
-  peerEdges?: { source: string; target: string; strength: number; preview?: string | null; messageState?: 'observed' | 'sent'; relationship?: boolean; count?: number; family?: NonNullable<Job['kind']>; arriving?: number; turning?: number; /** ms the sender spends turning before the message leaves */ lead?: number; fresh?: number }[]
+  peerEdges?: { source: string; target: string; strength: number; preview?: string | null; messageState?: 'observed' | 'sent'; count?: number; family?: NonNullable<Job['kind']>; arriving?: number; turning?: number; /** ms the sender spends turning before the message leaves */ lead?: number; fresh?: number }[]
   /** A message to (in) or from (out) the root is passing: Mochi shows an envelope. */
   mail?: 'in' | 'out'
   /** Who stands in Mochi's place (see mochi.ts); the default is Mochi herself. */
@@ -899,7 +899,7 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
     const worker = titleOf(edge.source === 'mochi' ? edge.target : edge.source)
     const owner = registerHit({
       id: `peer:${edge.source}:${edge.target}`,
-      title: edge.relationship ? `${worker} · root connection` : rootMessage ? edge.source === 'mochi' ? `Root → ${worker}` : `${worker} → root` : `${titleOf(edge.source)} → ${titleOf(edge.target)}`,
+      title: rootMessage ? edge.source === 'mochi' ? `Root → ${worker}` : `${worker} → root` : `${titleOf(edge.source)} → ${titleOf(edge.target)}`,
       details: [
         ...(edge.messageState ? [messageStatus(edge.messageState)] : []),
         messagePreview(edge.preview),

@@ -171,12 +171,6 @@ test('Bridge root messages connect to Mochi in the recorded direction without co
     title: 'Worker → root',
     details: ['Worker report published', 'Result is ready'],
   })
-  const relation = sceneFrame({ ...rootToWorker, peerEdges: [
-    { source: 'mochi', target: 'owner/job', strength: 1, relationship: true,
-      preview: 'Bridge job · working for the root' },
-  ] }).hits.targets.find(item => item.id === 'peer:mochi:owner/job')
-  expect(relation).toMatchObject({ title: 'Worker · root connection',
-    details: ['Bridge job · working for the root'] })
   expect(incoming.hits.owners).toContain(incoming.hits.targets.indexOf(incomingTarget!) + 1)
   expect(outgoing.hits.owners).toContain(outgoing.hits.targets.indexOf(outgoingTarget!) + 1)
   expect(incoming.cells).not.toBe(outgoing.cells) // the bright terminal mark follows the recorded destination
@@ -191,7 +185,7 @@ test('Bridge root messages connect to Mochi in the recorded direction without co
   }
 })
 
-test('a root relationship remains after the last recorded message expires', () => {
+test('no line joins a worker to the root once its last recorded message expires', () => {
   const now = 1_000_000
   const state: BandState = {
     here: null, tally: { turns: 0, added: 0, removed: 0, files: [], lastTurnMs: 0 },
@@ -201,9 +195,7 @@ test('a root relationship remains after the last recorded message expires', () =
         { target: 'root', count: 1, lastAt: now - 900_001, outgoing: true, messageState: 'observed' },
       ] }],
   }
-  const [edge] = sceneInput(state, 120, 0, null, now).peerEdges!
-  expect(edge).toMatchObject({ source: 'mochi', target: 'owner/job', relationship: true })
-  expect(edge!.arriving).toBeUndefined()
+  expect(sceneInput(state, 120, 0, null, now).peerEdges ?? []).toEqual([])
 })
 
 test('the trail to the root stays put while Mochi\'s "!" blinks, her envelope hops and the other trails come and go', () => {

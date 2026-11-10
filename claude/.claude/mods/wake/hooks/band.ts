@@ -77,28 +77,6 @@ function mailAt(chips: WakeChip[], now: number): 'in' | 'out' | undefined {
 }
 
 /**
- * A running worker with no message of its own stays tied to the root: a faint, still thread from Mochi. It is a
- * relationship, not a message, so nothing travels it. Native subagents and Bridge jobs both wear one; four at most,
- * so a big crew never turns the sky into wiring.
- */
-function tethers(state: BandState, now: number): NonNullable<SceneInput['peerEdges']> {
-  const talking = new Set(state.chips.filter(job => (job.peers ?? []).some(peer => peer.target === 'root'
-    && peer.messageState !== undefined && now >= peer.lastAt && now - peer.lastAt <= 900_000)).map(job => job.id))
-  const edges: NonNullable<SceneInput['peerEdges']> = [
-    ...state.subagents.filter(agent => agent.leftAt === undefined).map(agent => ({ id: agent.id, family: 'claude' as const, name: agent.name ?? agent.description, what: `Claude subagent · ${agent.type}`, activeAt: undefined as number | undefined })),
-    ...state.chips.filter(job => isWorking(job) && job.id && !talking.has(job.id)).map(job => ({
-      id: job.id!, family: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const), name: job.title ?? job.name, what: `Bridge job · ${job.backend}`, activeAt: job.lastEventAt,
-    })),
-  ].slice(0, 4).map(worker => ({
-    source: 'mochi', target: worker.id,
-    // as present as the worker is busy: bright just after its last real event, fading over minutes of silence (a subagent has no event feed: steady)
-    strength: worker.activeAt === undefined ? 0.45 : 0.12 + 0.55 * Math.exp(-Math.max(0, now - worker.activeAt) / 180_000),
-    preview: `${worker.what} · working for the root`, count: 1, family: worker.family, relationship: true,
-  }))
-  return edges
-}
-
-/**
  * How high each worker hops right now, from real events only: it just did something (its activity flash), its message
  * is leaving (the sender hops as the packet sets off), or one is landing on it (the recipient hops as it arrives).
  */
@@ -257,7 +235,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
           fresh: peer.fresh,
           family: (['agy', 'claude', 'opencode'] as const).find(kind => kind === job.backend) ?? ('codex' as const),
         }
-      })), ...tethers(state, now), ...nativeEdges(state, now)],
+      })), ...nativeEdges(state, now)],
     jobs: state.chips.filter(job => isWorking(job) || leavingFor(job, now) !== undefined).map(job => {
       const peer = [...(job.peers ?? [])].filter(p => now - p.lastAt <= 900_000 && now >= p.lastAt).sort((a, b) => b.lastAt - a.lastAt)[0]
       return {
