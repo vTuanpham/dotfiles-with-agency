@@ -23,7 +23,6 @@ if command -v dircolors >/dev/null 2>&1; then
     alias fgrep='fgrep --color=auto'
     alias egrep='egrep --color=auto'
 fi
-alias ll='ls -alF'
 alias la='ls -A'
 alias l='ls -CF'
 [ ! -r "$HOME/.bash_aliases" ] || . "$HOME/.bash_aliases"
