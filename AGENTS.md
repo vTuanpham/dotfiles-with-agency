@@ -94,6 +94,5 @@ It reports where and why, never the matching text.
 - Layout is Stow-style packages (paths mirror `$HOME`; `install.sh` links them), one folder each with its own README (live link or snapshot, stated there). Keep
   that README true when a folder changes, and the Packages table (`docs/packages.md`) in step.
 - `./install.sh` is a dry run unless given `--apply`, and never overwrites a file that differs from the repo.
-- Tests: `python3 -B tests/test_shell_startup.py`, `tests/test_install.py`, `tests/test_public.py`, and
-  `uv run pytest` inside `agent-bridge/` and `agent-baton/`.
+- Tests: see [tests/README.md](tests/README.md) for repository checks and all tool suites.
 - This history is one clean line from the initial public snapshot. Never merge or push another history into it.

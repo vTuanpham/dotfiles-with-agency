@@ -1,6 +1,6 @@
 # gemini
 
-[← Packages](../README.md#packages) · **Live + merged hooks** · `./install.sh --apply links hooks`
+[← Packages](../README.md#packages) · **Snapshot + live + merged hooks** · `./install.sh --apply snapshots links hooks`
 
 Antigravity CLI (`agy`) configuration:
 

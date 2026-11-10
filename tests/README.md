@@ -14,13 +14,20 @@ python3 -B tests/test_rtk_filters.py     # isolated filter fixtures, actual disp
 python3 -B tests/test_claude_mod_runner.py # focused native mod staging, selection, cleanup and failure status
 python3 -B tests/test_public.py          # the public-facing check: what it refuses, and that this repo passes it
 python3 -B tests/test_docs.py            # Wake catalog descriptions and maintained README links, anchors and images
+python3 -B tests/test_browser_idle.py    # browser idle hook
+python3 -B tests/test_claude_resource_context.py # Claude resource context hook
+python3 -B tests/test_process_guard.py   # process guard
+bun test tests/test_process_guard_plugin.test.js # OpenCode plugin
+nvim --headless -u NONE -i NONE -l tests/test_nvim_clipboard.lua # clipboard integration
 ```
 
 `tests/check_public.py` is the check itself, run by the pre-commit and commit-msg hooks (`.githooks/`, enabled
 with `./install.sh --apply githooks`) and by hand as `python3 tests/check_public.py`.
 
-Neither sources credentials or touches your real `$HOME`. The tools have their own suites:
-`uv run pytest` in `agent-bridge/` and `agent-baton/`, and Ranger's plugin check under `ranger/`.
+The tools have their own suites: run `uv run pytest` in each of `agent-accounts/`,
+`agent-baton/`, `agent-bridge/`, `agent-inbox/`, `agent-lab/`, `agent-models/`,
+`agent-resources/`, `agent-session/`, `codex-wake/`, and `portlink/`. Ranger's
+plugin check is documented under `ranger/`.
 
 ## Opt-in agent decisions
 
