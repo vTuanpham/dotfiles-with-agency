@@ -4,7 +4,7 @@ import { flex } from './flex'
 
 // Codex is the clockwork crew: every place has its own automaton, built of the same plated metal with a glass eye and a gear.
 // Over the city the clockwork dragon (a generator, see `dragon` below: one design that grows from a small, slim whelp to a long
-// plated one); elsewhere a tug, saucer, airship, field strider, probe, sun skiff and snowcat.
+// plated one); elsewhere a tug, saucer, airship, crop drone, probe, sun skiff and snowcat.
 // Four classes grow the same machine, each a rectangle inside CRAFT_MAX and larger than the
 // one before. Sprite keys are crew.ts's: a body, W highlight, l light plate, d shade, s lamp, g glass, k grey metal. Only the
 // dragon undulates; the others move a part of their own (a fluke, a bell, a propeller, wings, pincers, legs).
@@ -116,16 +116,16 @@ const AUTOMATA: Record<Exclude<WakePreset, 'city'>, Machine> = {
       ['...llllllll..d.', '.lalalalalaaadd', 'Waapaaapaaapaad', '.dadadadadaddd.', '...ddddddd...d.', '.....lWgadkk...', '......s........'],
     ],
   } },
-  countryside: { name: 'strider', strokes: 2, art: { // a field surveyor: forward visor, antenna, articulated hips and broad feet
-    1: [['sWgkd', '.d.d.', 'd...d'], ['sWgkd', '..d..', '.d.d.']],
-    2: [['....r..', '.Wgald.', 'slaak..', '..d.d..', '.ll..ll'], ['....r..', '.Wgald.', 'slaak..', '...kd..', '..ll.ll']],
+  countryside: { name: 'crop drone', strokes: 4, art: { // two rotors on masts over a slim pod, a camera eye forward, a tail beacon, and a long spray boom misting the field
+    1: [['lllll', 'sWgkr', '.p.p.'], ['.lkl.', 'sWgkr', 'p.p.p']],
+    2: [['lll.lll', '.k...k.', 'sWgaadr', '.ppppp.', '..l.l..'], ['.l...l.', '.k...k.', 'sWgaadr', '.ppppp.', '.l.l.l.']],
     3: [
-      ['......r....', '..lWglk....', '.saaadlaad.', '..ddkakkd..', '...d...d...', '..ll....ll.'],
-      ['......r....', '..lWglk....', '.saaadlaad.', '..ddkakkd..', '....k.d....', '...ll..ll..'],
+      ['.lll...lll.', '..k.....k..', 'sWgaaaaaadr', '..dakakad..', '.ppppppppp.', '..l..l..l..'],
+      ['..l.....l..', '..k.....k..', 'sWgaaaaaadr', '..dakakad..', '.ppppppppp.', '.l..l..l...'],
     ],
     4: [
-      ['.......r.......', '...llllk.......', '..sWggld.llld..', '.saaaaaklaaad..', '..ddddkkdkdd...', '....k....k.....', '..lll.....lll..'],
-      ['.......r.......', '...llllk.......', '..sWggld.llld..', '.saaaaaklaaad..', '..ddddkkdkdd...', '.....k..k......', '....lll..lll...'],
+      ['.lllll...lllll.', '...k.......k...', '.sWgaaaaaaaaadr', '..ddakaaakadd..', '.....k...k.....', '.ppppppppppppp.', '..l..l...l..l..'],
+      ['..ldl.....ldl..', '...k.......k...', '.sWgaaaaaaaaadr', '..ddakaaakadd..', '.....k...k.....', '.ppppppppppppp.', '...l..l.l..l...'],
     ],
   } },
   forest: { name: 'probe', strokes: 2, art: { // a probe droid, face on: aerials, one glass eye between two lamps, and jointed arms that reach and tuck
@@ -243,11 +243,11 @@ export const turnPose: Partial<Record<WakePreset, Record<Tier, readonly string[]
     3: ['.....d.....', '...lllll...', '.d.laWad.d.', '...daaad...', '....ddd....', '....Wgk....'],
     4: ['.......d.......', '.....lllll.....', '....laaaaad....', '..d.aaWaaad.d..', '....daaaaad....', '.....ddddd.....', '......Wgk......'],
   },
-  countryside: { // the strider squared up: two headlamps either side of the windscreen, both legs planted
-    1: ['sWgWs', '.d.d.', '.d.d.'],
-    2: ['..lll..', '.sWgWs.', '..dkd..', '..d.d..', '.dd.dd.'],
-    3: ['....lll....', '...sWgWs...', '....dkd....', '....d.d....', '....d.d....', '...dd.dd...'],
-    4: ['...............', '.....lllll.....', '....saWgWas....', '.....ddkdd.....', '.....d...d.....', '.....d...d.....', '....dd...dd....'],
+  countryside: { // the drone nose on: a rotor either side of the pod, both lenses, the boom square across
+    1: ['lllll', 'kWgWk', '.p.p.'],
+    2: ['lll.lll', '.k...k.', '.dWgWd.', '.ppppp.', '..l.l..'],
+    3: ['.lll...lll.', '..k.....k..', '..daWgWad..', '....dkd....', '.ppppppppp.', '..l..l..l..'],
+    4: ['.lllll...lllll.', '...k.......k...', '...daaWgWaad...', '......dkd......', '.....k...k.....', '.ppppppppppppp.', '..l..l...l..l..'],
   },
   desert: { // the skiff bow on: its sail turned edge to you, one bright line above the prow and its two lamps
     1: ['..g..', 'sWgWs', '.dkd.'],

@@ -15,13 +15,13 @@ not captured in the moving sprite. Distant crews cast no local surface light.
 | Harbor | tug | crab | sail | paper boat |
 | Beach | saucer | flamingo | starfish | kite |
 | Mountains | airship | eagle | condor | sky lantern |
-| Countryside | strider | butterfly | plough | carp streamer |
+| Countryside | crop drone | butterfly | plough | carp streamer |
 | Forest | probe | owl | tree | lantern string |
 | Desert | sun skiff | fox | scorpion | flying carpet |
 | Tundra | snowcat | puffin | aurora arch | paper star |
 
-The tug and paper boat ride harbor water; the crab walks its quay. The strider,
-snowcat, flamingo and fox walk the ground; the sun skiff cruises low. Other designs
+The tug and paper boat ride harbor water; the crab walks its quay. The
+snowcat, flamingo and fox walk the ground; the sun skiff and crop drone cruise low. Other designs
 fly. A surface worker rests when stale or its pace falls to 0.15 or below. Air
 designs marked `rests` settle at an available perch: the dragon, bat (hanging by its feet), owl,
 puffin and lantern string. `rest` is an optional sprite-module map of place to
@@ -31,7 +31,7 @@ from the scene, and Mochi and her laptop remain hard boundaries.
 
 The dragon coils to turn. Headed designs bank or use the optional `turnPose` map
 (place → class → rows); a missing pose falls back to a bank. Face-on designs do
-not turn. The supplied poses cover the Codex airship, strider, skiff and snowcat;
+not turn. The supplied poses cover the Codex airship, crop drone, skiff and snowcat;
 Claude flamingo, eagle, fox and puffin; and OpenCode crane, kite, carp and
 carpet. `flex.ts` bends loose parts between strokes, creatures may have an
 intermediate stroke, and the saucer's rim lamps chase across its frames. Constellations

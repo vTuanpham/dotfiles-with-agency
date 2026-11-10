@@ -42,7 +42,7 @@ test('real scenes keep each surface-habit worker on its declared surface', { tim
 })
 
 test('grounded crews keep their actual feet planted while walking and turning to speak', () => {
-  for (const [kind, place] of [['claude', 'desert'], ['claude', 'beach'], ['codex', 'countryside'], ['codex', 'tundra']] as const) for (const tier of [1, 2, 3, 4] as const) for (const phase of [0, 18, 40, 70]) for (const ms of [undefined, 150, 450, 750, 1200]) {
+  for (const [kind, place] of [['claude', 'desert'], ['claude', 'beach'], ['codex', 'tundra']] as const) for (const tier of [1, 2, 3, 4] as const) for (const phase of [0, 18, 40, 70]) for (const ms of [undefined, 150, 450, 750, 1200]) {
     const c = canvas(100, 24, true)
     const look = { place, frame: phase, night: 0, effects: false, crewSurface: { ground: { y: 18, x0: 0, x1: 95 }, perches: [] }, crewGround: 18 } as unknown as Look
     const job: Job = { kind, tier, seed: 6, phase, isStale: false, pace: .8, hitOwner: 1, hit: { id: 'one', title: 'one', details: [] }, ...(ms === undefined ? {} : { talk: { ms, sending: true, targetX: 90 } }) }
@@ -93,7 +93,7 @@ test('several grounded workers stay separate and away from Mochi', () => {
 })
 
 test('surface workers still roam when foreground forces a soft placement', () => {
-  for (const [kind, preset] of [['codex', 'harbor'], ['codex', 'countryside'], ['claude', 'harbor'], ['claude', 'desert']] as const) {
+  for (const [kind, preset] of [['codex', 'harbor'], ['codex', 'tundra'], ['claude', 'harbor'], ['claude', 'desert']] as const) {
     const xs = new Set<number>()
     for (let frame = 0; frame < 600; frame += 15) {
       const anchors: number[] = []

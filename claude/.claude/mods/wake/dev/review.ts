@@ -22,7 +22,7 @@ const findings: Item[] = [
   item('surface-light', '10 · Light belongs to the surface', 'Revised', 'Crew light projects onto the nearest roof or terrain and weakens with distance. Water breaks it into ripples. A warp moves the light source; it does not carry the illuminated surface into the sky.', 'Watch the dragon lift and leave, then compare the harbor and the dry landscapes.', 'fx.ts · surfaceLights; exits.ts · light source movement.', { family: 'codex', mode: 'leave', tier: 4 }, 4100),
 ]
 const names: Record<Family, string[]> = {
-  codex: ['Mechanical dragon', 'Tug', 'Saucer', 'Airship', 'Strider', 'Forest probe', 'Sun skiff', 'Snowcat'],
+  codex: ['Mechanical dragon', 'Tug', 'Saucer', 'Airship', 'Crop drone', 'Forest probe', 'Sun skiff', 'Snowcat'],
   claude: ['City bat', 'Crab', 'Flamingo', 'Eagle', 'Butterfly', 'Owl', 'Fox', 'Puffin'],
   agy: ['Crown', 'Sail', 'Starfish', 'Condor', 'Plough', 'Tree', 'Scorpion', 'Aurora arch'],
   opencode: ['Origami crane', 'Paper boat', 'Kite', 'Sky lantern', 'Carp streamer', 'Lantern string', 'Flying carpet', 'Paper star'],
@@ -33,7 +33,7 @@ const critiques: Record<Family, string[]> = {
     'A waterborne machine fits the harbor. The risk is a generic hull with little mechanical identity; check whether the small sizes retain a readable wheelhouse and propulsion rather than becoming a bar.',
     'A saucer can be rigid without being dull. Its rim lights and hovering should carry the character; the dome should not become an oversized flat slab.',
     'The long hull gives it a silhouette, but also a large solid body. Review whether fins, gondola and moving machinery create enough structure, especially in the bigger sizes.',
-    'The field strider now has a forward visor, antenna, rear equipment and articulated hips. Check whether the smallest form still reads as the same machine.',
+    'A crop drone replaces the strider, which vanished among the barn and cattle: two spinning rotors on masts, a slim pod with a camera eye, a tail beacon and a long yellow spray boom misting the field. It works low, against the treeline.',
     'This is another priority review. A face-on probe risks reading as a glowing block. Its structure needs a clear purpose and a stronger relationship with the forest.',
     'Low flight suits the desert. The skiff needs readable propulsion and a deliberate turn rather than a generic thin flying shape; inspect the send and exit actions too.',
     'The snowcat belongs on snow, but a rectangular body and changing tread pixels may feel too plain. Check the smallest silhouette, suspension and the amount of solid body fill.',

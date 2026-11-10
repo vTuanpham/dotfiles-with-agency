@@ -42,7 +42,7 @@ export const DESIGNS: Record<Kind, Record<WakePreset, Design>> = {
     harbor: { facing: 'left', cruise: false, turn: 'none', habit: 'water', escorts: {} }, // the tug
     beach: { ...boot, facing: null, cruise: false, turn: 'none', escorts: {} }, // the saucer is the same from every side: it hovers and drifts
     mountains: { depth: 'far', facing: 'left', cruise: true, turn: 'pose', escorts: {} }, // the airship
-    countryside: { ...walk, facing: 'left', cruise: false, turn: 'pose', habit: 'ground', escorts: {} }, // the strider
+    countryside: { ...boot, facing: 'left', cruise: true, turn: 'pose', altitude: 'low', escorts: {} }, // the crop drone works low over the fields
     forest: { ...boot, facing: null, cruise: false, turn: 'none', escorts: {} }, // the probe looks straight at you
     desert: { facing: 'left', cruise: true, turn: 'pose', altitude: 'low', escorts: {} }, // the speeder
     tundra: { ...walk, facing: 'left', cruise: false, turn: 'pose', habit: 'ground', escorts: {} }, // the snowcat

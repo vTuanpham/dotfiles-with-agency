@@ -97,7 +97,7 @@ const CODEX: FamilyCells = {
     lights: [EYE(P.teal), { at: 'below', light: { shape: 'halo', color: P.yellow, alpha: 0.4, reach: 1, from: 0.05 } }],
     talking: SIGNAL('nose', 0, 0, { speed: [6, 10] }),
   },
-  countryside: { streams: [WORKS([P.yellow, P.white], { gravity: 1.2, envelope: 'fade' })], lights: [EYE(P.teal), { at: 'left', light: { shape: 'halo', color: P.yellow, alpha: 0.4, reach: 1, from: 0.05 } }], talking: SIGNAL('nose') }, // the strider: chaff kicked up by its feet, and its headlamp
+  countryside: { streams: [WORKS([P.sky, P.white], { gravity: 1.2, envelope: 'fade' })], lights: [EYE(P.teal), { at: 'left', light: { shape: 'halo', color: P.yellow, alpha: 0.4, reach: 1, from: 0.05 } }], talking: SIGNAL('nose') }, // the strider: chaff kicked up by its feet, and its headlamp
   forest: { // the probe: sparks off its working arms
     streams: [WORKS([P.white, P.teal], { count: 5, life: 0.8, speed: [0.3, 1], gravity: 2, envelope: 'fade' })], lights: [EYE(P.teal)],
     talking: SIGNAL('nose', 0, 0, { angle: [Math.PI - 0.2, Math.PI + 0.2] }),
