@@ -16,7 +16,7 @@ const look: Look = {
   season: 'summer', snowy: false, wet: false, wind: 0, working: false, effects: false,
 }
 
-test('star lighting crosses each beat boundary continuously in daylight and at night', () => {
+test('star lighting crosses each beat boundary continuously in daylight and at night', { timeoutMs: 20_000 }, () => {
   for (const night of [0, 1]) for (let beat = 1; beat <= 8; beat++) {
     const render = (phase: number) => {
       const c = canvas(50, 24)

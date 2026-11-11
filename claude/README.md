@@ -199,9 +199,11 @@ subagent leaves when it goes idle. Each craft does both in its own way, and each
 
 <img src="../docs/images/wake-passages.gif" alt="Eight landscapes and four worker families at class 4, each arriving, working and leaving in its own way." width="100%">
 
-*Class-4 crews in every place: arriving (2.4 s, then a 0.9 s touchdown), working, then leaving (3.2 s).*
+*Class-4 crews in every place: arriving (2.4 s, then a 1.1 s touchdown), working, then leaving (3.2 s).*
 
-Touching down, each family throws off a shockwave of its own (`hooks/touchdowns.ts`): a machine's targeting reticle spins out
+Touching down and setting out, every crew throws a shockwave sized by its body (`hooks/touchdowns.ts`): an impact flash, a
+ring with a white leading edge that runs out a couple of body-widths, and dust running along the ground. On top, a machine's
+targeting reticle spins out
 as it locks on, a creature's last wingbeat curls air out in two spiral arms and drops a feather, a constellation goes nova
 and leaves a ring of stars that wink out, and a lantern blooms a wavering ring of heat that flings embers. Setting out, the
 machine's drive spools up in streaks, the creature kicks off a gust, the light falls inward and goes off as a cross, and
@@ -285,13 +287,13 @@ described in a table, stateless, so any frame draws alone and a trail is exactly
 - **Lanes, not slots.** The whole width of the sky is shared out among the flyers by size, so one worker roams the sky end to
   end and four a quarter each.
 - **Hand-made moments.** Arrivals, exits and message reactions are handcrafted pixels, not particles: the sender pulses as
-  a packet, note, star or ember launches and the receiver as it lands, and Mochi or another character catches it with a gadget that pops out of their head.
+  its projectile launches and the receiver as it lands, each family catching in its own way, and Mochi or another character catches it with a gadget that pops out of their head.
 
 A worker's arrival and exit run from the moment Wake sees it start or stop (Bridge's own times are already seconds old), and
 Wake looks at Bridge every five seconds while a worker runs and straight after an `agent-bridge start`, `resume`, `steer`,
 `watch` or `result`.
-A filling circle beside the harness mark (◔ ◑ ◕ ◉) shows the class, and effort is a
-five-bar signal icon (an image where the terminal shows images, ▁▃▄·· as text) for Bridge
+A filling circle beside the harness mark (◔ ◑ ◕ ◉) shows the class, and effort is a row of
+dots on the model's own scale (`●●●○`, one per level it offers, lit up to the current one) for Bridge
 jobs and Claude subagents alike. Each row opens with the harness logo and, while the worker
 runs, the harness's own spinner (Codex orbits, agy twinkles, OpenCode's lantern flickers); the
 working headline's spinner follows the command: a shell spins, tests fill a gauge, edits grow a caret,
@@ -300,10 +302,10 @@ landscape's own.
 The root has one place in every worker row: a `◉` node on the first row, a
 spine down to the last worker tied to it, `─┤`/`─┘` branches, and `↑`/`↓` for the last message
 to or from the root (`·` when the worker simply works for it); a packet runs the spine as a
-message arrives and a tie fades over 15 minutes. The graph's column hugs the longest row (its
-words, metrics and peer lanes) with a small gap, and steps a few cells further out only while a
-message is crossing, so the packets have room; the row's leader stays empty except for a few beads
-while a message arrives. Every metric opens a card under the pointer: effort says which levels the
+message arrives and a tie fades over 15 minutes. The graph's column hugs the longest row's words
+and metrics with a fixed gap that peer lanes stand in first, so it does not move as messages come and go,
+whether worker to worker, worker to root or root to worker; the row's leader stays empty except for a
+few beads while a message arrives. Every metric opens a card under the pointer: effort says which levels the
 model offers, Bridge time reflects its last activity, native Claude time is elapsed since first observed,
 and Bridge memory shows scope use/cap. `?` on a worker means its current state is unknown;
 when a source is unavailable, hover for its last observed state until a later scan succeeds.
@@ -344,8 +346,8 @@ and ┄/┆ show a declared peer or dependency wait. Motion means a message just
 first sees new messages on a link, one packet per message (up to five, a beat apart) crosses the
 lane once from sender to recipient, then the lane rests. History Wake never saw arrive does not
 move, nor does a wait. A worker's state mark lights when it acts, then settles. In the scene the
-family's packet, notes, starfall or ember travels between the workers' current body points.
-Flights pass above atmospheric effects; each family has its own landing reaction.
+sender's projectile travels between the workers' current body points (see [Messages](#messages)).
+Flights pass above atmospheric effects; the receiver catches it in its own family's way.
 Message links fade gradually and are gone after 15 minutes. The gutter
 shrinks with the terminal; where a group cannot fit, the existing ↗/↙ peer marks remain.
 Root messages use the root graph at the right edge (above). Arcs connect workers

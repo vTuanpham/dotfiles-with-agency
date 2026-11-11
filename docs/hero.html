@@ -1,20 +1,26 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Dotfiles with agency</title>
-<!-- readme_gifs.py supplies the scene band height and overlays the rendered time-lapse. -->
+<!-- readme_gifs.py supplies the screen's height and draws the scene, the status line, the place tabs and the caption. -->
 <style>
-  :root { --scene-band: 480px; --bg: #1b1b26; --ink: #eceaf4; --mute: #a3a1b5; --line: #34344a; }
+  :root { --screen: 180px; --status: 64px; --bg: #1b1b26; --ink: #eceaf4; --mute: #a3a1b5; --line: #34344a; }
   * { box-sizing: border-box; margin: 0; }
-  html, body { width: 1200px; height: calc(250px + var(--scene-band) + 260px); background: var(--bg); color: var(--ink);
-    font-family: "Inter", "Segoe UI", "DejaVu Sans", system-ui, sans-serif; overflow: hidden; position: relative; }
-  .head { position: absolute; left: 60px; top: 54px; }
+  html, body { width: 1200px; height: calc(236px + 38px + var(--screen) + var(--status) + 2px + 64px + 196px); background: var(--bg);
+    color: var(--ink); font-family: "Inter", "Segoe UI", "DejaVu Sans", system-ui, sans-serif; overflow: hidden; position: relative; }
+  .head { position: absolute; left: 60px; top: 44px; }
   .eyebrow { font-size: 13px; letter-spacing: .22em; color: var(--mute); text-transform: uppercase; }
   h1 { font-size: 64px; letter-spacing: -.02em; font-weight: 700; margin: 10px 0 8px; }
   h1 span { color: #a99bd6; }
   .tag { font-size: 21px; color: var(--mute); max-width: 860px; line-height: 1.4; }
-  .band { position: absolute; left: 0; top: 250px; width: 1200px; height: var(--scene-band); background: #000; }
-  .cards { position: absolute; left: 0; top: calc(250px + var(--scene-band)); width: 1200px; padding: 24px 60px 0; display: grid;
-    grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .window { position: absolute; left: 60px; top: 236px; width: 1080px; border: 1px solid #3a3a52; border-radius: 14px; overflow: hidden;
+    background: #282c34; box-shadow: 0 24px 60px rgba(0, 0, 0, .5); }
+  .bar { height: 38px; display: flex; align-items: center; padding: 0 16px; background: #1e1e2e; border-bottom: 1px solid #2c2c40; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; }
+  .title { margin-left: 14px; font-size: 13px; color: var(--mute); letter-spacing: .02em; }
+  .screen { height: var(--screen); background: #000; }
+  .status { height: var(--status); }
+  .cards { position: absolute; left: 0; top: calc(236px + 38px + var(--screen) + var(--status) + 2px + 64px); width: 1200px; padding: 0 60px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
   .card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 15px; background: #222232; }
   .card b { display: block; font-size: 18px; margin-bottom: 5px; }
   .card i { font-style: normal; font-size: 14px; line-height: 1.4; color: var(--mute); }
@@ -26,7 +32,14 @@
   <h1>dotfiles <span>with agency.</span></h1>
   <p class="tag">Watch the work. Pick the right model. Keep the conversation going.<br>One shared setup for your terminal and your phone.</p>
 </div>
-<div class="band"></div>
+<div class="window">
+  <div class="bar">
+    <span class="dot" style="background:#f38ba8"></span><span class="dot" style="background:#f9e2af"></span><span class="dot" style="background:#a6e3a1"></span>
+    <span class="title">claude &middot; ~/projects/webapp</span>
+  </div>
+  <div class="screen"></div>
+  <div class="status"></div>
+</div>
 <div class="cards">
   <div class="card wake"><b>Wake</b><i>Workers, messages and weather in a living pixel scene</i></div>
   <div class="card inbox"><b>Inbox</b><i>Your existing sessions and native controls on your phone</i></div>

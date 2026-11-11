@@ -621,7 +621,17 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       const rowFree = (sy: number) => across.every(sx => free(sx, sy))
       // Dipping is free only in open air: a row that sinks the body further into the rooftops or the trees than its home row
       // does is not room to bob into, or a bat over the city wades through the skyline.
-      const buried = (sx: number, sy: number) => { let n = 0; for (const [dx, dy] of pixels) n += soft[(zone.y + dy + sy) * c.W + zone.x + dx + sx] ?? 0; return n }
+      // What stands up out of the ground counts (roofs, towers, trees, a caravan); the ground and the water themselves do not,
+      // so a craft that skims the fields or the sea stays down there and only hops what is in its way.
+      const terrain = look.crewOcclusion, surface = look.crewGround ?? c.H
+      const buried = (sx: number, sy: number) => {
+        let n = 0
+        for (const [dx, dy] of pixels) {
+          const y = zone.y + dy + sy, i = y * c.W + zone.x + dx + sx
+          n += (soft[i] ?? 0) + (y < surface ? terrain?.[i] ?? 0 : 0)
+        }
+        return n
+      }
       const sinks = (sy: number) => across.some(sx => buried(sx, sy) > buried(sx, 0))
       let up = 0, down = 0
       while (up < maxY && rowFree(-(up + 1))) up++
@@ -641,11 +651,34 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       }
       const { x: travel, v } = at(job.route ?? job.phase ?? look.frame)
       const share = roamShare(pace)
-      const offset = -Math.round(share * (v > 0 ? v * up : v * down)) - hop
+      // Over whatever stands taller than its home row (a tower, a crane, a stand of trees) it climbs rather than flying through
+      // it: the least lift, within the sky above it, that clears the most of its body, eased in a row for every two cells so
+      // it rises as it approaches and settles after. A distant body is meant to pass behind the skyline and keeps its row.
+      const climbRoom = design.depth === 'far' ? 0 : up + hopRoom
+      const needs = new Map<number, number>()
+      const need = (sx: number) => {
+        if (!climbRoom || sx < -leftReach || sx > rightReach) return 0
+        let lift = needs.get(sx)
+        if (lift === undefined) {
+          let best = buried(sx, 0)
+          lift = 0
+          for (let l = 1; l <= climbRoom && best > 0; l++) { const n = buried(sx, -l); if (n < best) { best = n; lift = l } }
+          needs.set(sx, lift)
+        }
+        return lift
+      }
+      const climb = (x: number) => {
+        let lift = 0
+        for (let d = -2 * climbRoom; d <= 2 * climbRoom; d++) lift = Math.max(lift, need(Math.round(x) + d) - Math.abs(d) / 2)
+        return lift
+      }
+      const bob = -Math.round(share * (v > 0 ? v * up : v * down)) - hop
+      const rise = (x: number) => Math.min(bob, -Math.ceil(climb(x)))
       let drift = Math.round(share * travel)
       // Crew may overlap (a soft boundary), but every worker keeps an anchor of its own, so a message wire finds only one of them.
       // (only this pass's anchors count: the array is shared across the passes of one scene)
-      for (let tries = 0; tries < 8 && anchors.indexOf((candidate.y + offset) * c.W + candidate.x + drift, look.crewAnchorsFrom ?? 0) >= 0; tries++) drift += tries % 2 ? -tries : tries + 1
+      for (let tries = 0; tries < 8 && anchors.indexOf((candidate.y + rise(drift)) * c.W + candidate.x + drift, look.crewAnchorsFrom ?? 0) >= 0; tries++) drift += tries % 2 ? -tries : tries + 1
+      const offset = rise(drift)
       const settled = placeRest(c, look, job, candidate.x + drift, candidate.y + offset, right, company)
       if (settled) return settled
       const reserved = { x: zone.x + formation.left - core, y: zone.y + formation.top - up - hopRoom, w: formation.right - formation.left + 2 * core, h: formation.bottom - formation.top + up + down + hopRoom }
@@ -657,7 +690,7 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       const path = (ago: number): Vec => { // the same gait at the time `ago` seconds back: a trail follows this
         const g = at(now - ago * 10 * clockRate(pace))
         // Keep the path continuous for heading and effects; rasterising it here makes slow craft turn at every pixel step.
-        return [candidate.x + share * g.x, candidate.y - share * (g.v > 0 ? g.v * up : g.v * down) - hop]
+        return [candidate.x + share * g.x, Math.min(candidate.y - share * (g.v > 0 ? g.v * up : g.v * down) - hop, candidate.y - climb(share * g.x))]
       }
       const member = { ...job, lane: { x: candidate.x, roam: rx * share } }
       if (look.crewDeferred) fly(c, { ...look, crewLocateOnly: true }, candidate.x + drift, candidate.y + offset, { ...member, talk: undefined }, kind, false, path, company)

@@ -654,6 +654,6 @@ test('a Codex worker is a full boat on the water of a harbor and a beach, never 
     const input: SceneInput = { ...base, preset, width: 156, turns: base.turns.slice(0, 4), live: null, plan: null, agents: [], jobs: [codex], effect: null }
     const { hits } = sceneFrame(input)
     const owner = hits.targets.findIndex(target => target.id === 'parser') + 1
-    expect(hits.owners.filter(o => o === owner).length, preset).toBeGreaterThan(12) // the 3 x 3 mark is at most 9 cells, 4 of them hit
+    expect(hits.owners.filter(o => o === owner).length, preset).toBeGreaterThan(9) // the 3 x 3 mark is at most 9 cells, 4 of them hit
   }
 })

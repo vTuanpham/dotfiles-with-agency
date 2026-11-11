@@ -124,24 +124,65 @@ def landscapes():
 
 # ── hero: the page chrome from google-chrome, the strips drawn over its black band ───────────────
 
+# One large terminal window with Wake above the real status line. It visits four places, each for the stretch of its loop where
+# the crew talk (worker to worker, worker to Mochi, Mochi back) and the place's event plays; tabs in the title bar and a caption
+# say which. The page around it (title, window chrome, the six tools) is Chrome's rendering of docs/hero.html.
+HERO_W, HERO_SCALE = 120, 9  # scene cells across and pixels per cell: 1080 px, the window's inner width
+HERO_STOPS = (  # (showcase scene, loop frame it starts at, tab, caption); messages fly from frame 138, events start at 216
+    (0, 130, "City", "A Codex dragon's bolt turns into a Claude bat's sonar on its way; the bat reports to Mochi"),
+    (2, 130, "Beach", "A flamingo and a kite trade messages, and Mochi answers"),
+    (5, 196, "Forest", "Rain sets in, a command fails and a storm rolls over the crew"),
+    (3, 200, "Mountains", "Tests pass: fireworks, while a constellation and a lantern report to Mochi"),
+)
+HERO_LEG, HERO_FADE = 120, 8  # frames per stop, frames of each cross-fade
+
+
 def hero():
     base = WORK / "hero-base.png"
     source = WORK / "hero.html"
-    source.write_text((ROOT / "docs/hero.html").read_text().replace("--scene-band: 480px", f"--scene-band: {4 * SCENE_H * 6}px"))
+    screen_h = SCENE_H * HERO_SCALE
+    source.write_text((ROOT / "docs/hero.html").read_text().replace("--screen: 180px", f"--screen: {screen_h}px"))
+    page_h = 236 + 38 + screen_h + 64 + 2 + 64 + 196
     run(
         "google-chrome", "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-        "--force-device-scale-factor=1", f"--window-size=1200,{250 + 4 * SCENE_H * 6 + 260}", f"--screenshot={base}",
-        f"file://{source}",
+        "--force-device-scale-factor=1", f"--window-size=1200,{page_h}", f"--screenshot={base}", f"file://{source}",
     )
     page = Image.open(base).convert("RGB")
-    data, size = cells(WORK / "showcase200.bin", 200)
+    # the screen is the page's one pure-black block: find it rather than trust the layout's arithmetic
+    black = [(x, y) for y in range(200, page.height) for x in (600,) if page.getpixel((x, y)) == (0, 0, 0)]
+    top = black[0][1]
+    left = next(x for x in range(page.width) if page.getpixel((x, top)) == (0, 0, 0))
+    lines = statusline.ansi_lines(1_790_000_000.0, 0)
+    status = next(s for s in (statusline.render(lines, size) for size in range(16, 9, -1)) if s.width <= 1080 - 28)  # the largest that fits
+    status_at = (left + 14, top + screen_h + (64 - status.height) // 2)
+    data, size = cells(WORK / f"showcase{HERO_W}.bin", HERO_W)
+    tab_font, cap_font = label_font(True, 13), label_font(False, 16)
+
+    def shot(stop, k):
+        return scene(data, size, HERO_STOPS[stop][0] * TIMELAPSE_FRAMES + HERO_STOPS[stop][1] + k, HERO_SCALE)
+
     def frame_at(i):
-        i = (i + 80) % TIMELAPSE_FRAMES
+        stop, k = divmod(i, HERO_LEG)
+        image = shot(stop, k)
+        if k < HERO_FADE:  # cross-fade from where the last stop ended
+            image = Image.blend(shot((stop - 1) % len(HERO_STOPS), HERO_LEG - 1), image, (k + 1) / (HERO_FADE + 1))
         frame = page.copy()
-        for k, s in enumerate((0, 2, 5, 7)):  # city, beach, rain, snow
-            frame.paste(loop_scene(scene(data, size, s * TIMELAPSE_FRAMES + i, 6), i), (0, 250 + k * SCENE_H * 6))
+        frame.paste(image, (left, top))
+        frame.paste(status, status_at)
+        d = ImageDraw.Draw(frame)
+        x = left + 1080 - 12  # the tabs, right-aligned in the title bar, the current place lit
+        for n in reversed(range(len(HERO_STOPS))):
+            label = HERO_STOPS[n][2]
+            w = int(tab_font.getlength(label)) + 20
+            x -= w
+            if n == stop:
+                d.rounded_rectangle([x, top - 30, x + w, top - 9], 8, fill=(69, 71, 90))
+            d.text((x + w / 2, top - 19), label, font=tab_font, fill=(205, 214, 244) if n == stop else (127, 132, 156), anchor="mm")
+            x -= 6
+        d.text((left + 2, top + screen_h + 64 + 22), HERO_STOPS[stop][3], font=cap_font, fill=(166, 173, 200))
         return frame
-    save_gif(frame_at, IMAGES / "hero.gif", count=TIMELAPSE_FRAMES)
+
+    save_gif(frame_at, IMAGES / "hero.gif", count=HERO_LEG * len(HERO_STOPS))
 
 
 # ── dock: the scene with call-outs, the crew and quota rows, a prompt and the real status line ────
@@ -534,8 +575,8 @@ if __name__ == "__main__":
         run("bun", "dev/readme-tour.ts", str(WORK / "tour"), cwd=WAKE)
     if any(name in NEW for name in want):
         run("bun", "dev/readme-crew.ts", str(WORK / "readme-crew"), str(FRAMES), cwd=WAKE)
-    if "landscapes" in want or "hero" in want:
-        for w in (180, 200):
+    for name, w in (("landscapes", 180), ("hero", HERO_W)):
+        if name in want:
             run("bun", "dev/showcase.ts", str(WORK / f"showcase{w}.bin"), str(TIMELAPSE_FRAMES), str(w), cwd=WAKE)
     if "dock" in want:
         run("bun", "dev/dock.ts", str(WORK / "dock.bin"), str(FRAMES), cwd=WAKE)
