@@ -195,7 +195,7 @@ test('crew timing distinguishes turn age, recent events, stalled jobs and unackn
   expect(crewTiming({ ...job, isStale: true, lastEventAt: now - 15 * 60_000 }, now)).toBe('stalled 15m')
   expect(crewTiming({ ...job, lastEventAt: now - 12 * 60_000, startedAt: now - 14 * 60_000 }, now)).toBe('12m · turn 14m') // a long command
   expect(crewTiming({ ...job, running: false, awaitingRoot: true }, now)).toBe('done')
-  expect(crewTiming({ ...job, awaitingRoot: true, waitingForRoot: true }, now)).toBe('done')
+  expect(crewTiming({ ...job, awaitingRoot: true, waitingForRoot: true }, now)).toBe('8s · turn 16m') // parked, not gone: it still rests in the scene
   expect(crewTiming({ ...job, startedAt: undefined, lastEventAt: undefined }, now)).toBe('starting')
 })
 

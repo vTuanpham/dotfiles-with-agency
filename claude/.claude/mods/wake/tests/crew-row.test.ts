@@ -121,6 +121,7 @@ test('state glyphs distinguish waits, pause, retry, answer, stall and completion
   expect(states.map(state => STATE_GLYPHS[state])).toEqual(['●', '⌁', '=', '↻', '?'])
   expect(stateOf({ ...base, isStale: true })).toBe('stalled')
   expect(stateOf({ ...base, running: false, awaitingRoot: true })).toBe('done')
+  expect(stateOf({ ...base, awaitingRoot: true, waitingForRoot: true, state: 'waiting_for_root' })).toBe('idle') // parked runner: the scene rests it
   expect(STATE_GLYPHS.stalled).toBe('!')
   expect(STATE_GLYPHS.done).toBe('✓')
 })

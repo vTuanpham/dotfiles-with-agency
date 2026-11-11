@@ -75,7 +75,7 @@ export function fitSlots(natural: number[], columns: number): number[] {
 
 /** Separate the turn clock from event freshness, including chips saved before these fields existed. */
 export function crewTiming(job: WakeChip, now: number, columns = Infinity): string {
-  if (!job.running || job.waitingForRoot) return 'done'
+  if (!job.running) return 'done'
   if (!job.lastEventAt) return 'starting'
   const quiet = now - job.lastEventAt
   if (job.isStale) return columns < 24 ? 'stalled' : `stalled ${span(quiet)}`

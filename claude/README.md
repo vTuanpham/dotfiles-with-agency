@@ -198,8 +198,8 @@ take a bow: a bolt strikes it, it flashes white, shudders and falls dissolving, 
 ### Arrivals and exits
 
 A worker is a visitor with a life of its own. It **arrives** when its job starts, or when a reply wakes it, and it **leaves the
-moment it is done**: a Bridge job parked waiting for the root leaves then, not only when it is finally retired; a native
-subagent leaves when it goes idle. Each craft does both in its own way, and each landscape changes how:
+moment it is done**: a Bridge job leaves when its runner ends (one parked waiting for the root stays and rests, and its row
+shows ○ idle, not ✓ done, until it does); a native subagent leaves when it goes idle. Each craft does both in its own way, and each landscape changes how:
 
 <img src="../docs/images/wake-passages.gif" alt="Eight landscapes and four worker families at class 4, each arriving, working and leaving in its own way." width="100%">
 

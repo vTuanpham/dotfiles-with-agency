@@ -36,7 +36,8 @@ export function stateOf(job: WakeChip): string {
   if (job.observationUnavailable) return 'unavailable'
   if (job.isStale) return 'stalled'
   if (job.state === 'blocked_on_question') return job.state
-  if (job.awaitingRoot && (!job.running || job.waitingForRoot)) return 'done'
+  if (job.awaitingRoot && !job.running) return 'done' // done = gone from the scene
+  if (job.running && (job.waitingForRoot || job.state === 'waiting_for_root')) return 'idle' // its report is in, the runner is parked: the scene rests it
   return job.state ?? (job.running ? 'running' : 'idle')
 }
 const bar = (fraction: number) => {
