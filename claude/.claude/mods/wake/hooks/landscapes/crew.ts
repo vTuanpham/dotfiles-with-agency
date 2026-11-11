@@ -14,6 +14,7 @@ import type { Vec } from './particles'
 import { clockRate, gait, roamShare } from './gait'
 import { type Job, jobAccent, type Look, P } from './kit'
 import type { WakePreset } from '../../types'
+import { PERCH_WASH, canvasSurface, downwash } from '../downwash'
 
 // The crew's look: one family per harness, four classes that grow in size and detail.
 //   codex     mechanical  what each place builds (craft.ts): in the city a clockwork dragon, whelp -> Astra
@@ -34,6 +35,9 @@ const drawWithHit = <T>(c: Canvas, job: Job, draw: () => T): T => job.hitOwner ?
 const schedule = (look: Look, job: Job, draw: () => void) => { if (look.crewDeferred) look.crewDeferred.push({ job, draw }); else draw() }
 /** How far a flyer patrols each way from its home, when the sky there is clear: about half a sky slot. */
 const PATROL = 9
+/** A flyer's home in a layout and the room around it; `needs` fills in lazily, the lift to clear what stands at each step. */
+type Home = { candidate: { x: number; y: number }; leftReach: number; rightReach: number; up: number; down: number; hopRoom: number; needs: Map<number, number> }
+const HOMES = new Map<string, Home | null>()
 
 const LANE: Record<Kind, readonly string[]> = {
   codex: ['.a.', 'aWa', '.a.'],
@@ -390,7 +394,7 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
 function placeSurface(c: Canvas, look: Look, x: number, job: Job, right: number) {
   const design = designFor(job.kind ?? 'codex', look.place), surface = look.crewSurface
   if (!surface) return undefined
-  const resting = job.isStale || (job.pace !== undefined && job.pace <= 0.15)
+  const resting = job.settle !== undefined ? job.settle >= 0.5 : job.isStale || (job.pace !== undefined && job.pace <= 0.15)
   const habit = design.habit ?? 'air'
   if (habit === 'air') return undefined
   if (habit === 'water' && !surface.water) return undefined
@@ -504,11 +508,19 @@ function placeRest(c: Canvas, look: Look, job: Job, x: number, y: number, right:
   for (const perch of perches) {
     const target = { x: perch.x - contactX, y: perch.y - contactY, w, h }
     if (!clear(target)) continue
+    // Down onto the perch and back up off it along an arc: it rises a little first, then drops in and flares to land (taking
+    // off, it springs up and climbs back to its flight row), never a straight slide.
     const ease = amount * amount * (3 - 2 * amount)
-    const cx = Math.round(x + (target.x + (w >> 1) - x) * ease), cy = Math.round(y + (target.y + (h >> 1) - y) * ease)
+    const cx = Math.round(x + (target.x + (w >> 1) - x) * ease), straight = y + (target.y + (h >> 1) - y) * ease
+    const cy = Math.round(straight - Math.min(straight - (h >> 1), Math.sin(amount * Math.PI) * 3))
     const zone = { x: cx - (w >> 1), y: cy - (h >> 1), w, h }
     if (!clear(zone)) continue
     used.push(target)
+    const wash = amount < 1 ? PERCH_WASH[kind][look.place ?? 'city'] : undefined
+    if (wash) { // the air it beats down as it lands or lifts, hardest at the perch, under the body and before it is drawn
+      const thrust = (0.4 + 0.6 * amount) * Math.min(1, (1 - amount) * 6)
+      schedule(look, job, () => downwash(canvasSurface(c, look.crewSurfaceAt), wash, look.place ?? 'city', { x0: zone.x, x1: zone.x + w - 1, y0: zone.y, y1: zone.y + bottom }, thrust, look.frame * 100, job.seed))
+    }
     ;(look.crewZones ??= []).push(zone)
     ;(look.crewSpriteZones ??= []).push(zone)
     ;(look.crewAnchors ??= []).push(cy * c.W + cx)
@@ -533,9 +545,14 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
   const zones = look.crewZones ??= []
   const anchors = look.crewAnchors ??= []
   const sprites = look.crewSpriteZones ??= []
-  const occupied = new Uint8Array(c.W * c.H)
-  for (const z of zones) for (let py = Math.max(0, z.y); py < Math.min(c.H, z.y + z.h); py++) for (let px = Math.max(0, z.x); px < Math.min(c.W, z.x + z.w); px++) occupied[py * c.W + px] = 1
-  const blocked = (px: number, py: number) => px >= 0 && px < c.W && py >= 0 && py < c.H && occupied[py * c.W + px] === 1
+  let occupied: Uint8Array | undefined // only the compact fallback asks
+  const blocked = (px: number, py: number) => {
+    if (!occupied) {
+      occupied = new Uint8Array(c.W * c.H)
+      for (const z of zones) for (let py = Math.max(0, z.y); py < Math.min(c.H, z.y + z.h); py++) for (let px = Math.max(0, z.x); px < Math.min(c.W, z.x + z.w); px++) occupied[py * c.W + px] = 1
+    }
+    return px >= 0 && px < c.W && py >= 0 && py < c.H && occupied[py * c.W + px] === 1
+  }
   {
     const frames = airFrames(look, job.kind ?? 'codex', job.tier ?? 1)
     const art = frames[0]!
@@ -575,70 +592,91 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
     for (const z of hard) for (let py = Math.max(0, z.y - 1); py < Math.min(c.H, z.y + z.h + 1); py++) for (let px = Math.max(0, z.x - 1); px < Math.min(c.W, z.x + z.w + 1); px++) padded[py * c.W + px] = 1
     for (const z of sprites) if (!hard.includes(z)) for (let py = Math.max(0, z.y); py < Math.min(c.H, z.y + z.h); py++) for (let px = Math.max(0, z.x); px < Math.min(c.W, z.x + z.w); px++) crowd[py * c.W + px] = 1
     for (const z of zones) for (let py = Math.max(0, z.y); py < Math.min(c.H, z.y + z.h); py++) for (let px = Math.max(0, z.x); px < Math.min(c.W, z.x + z.w); px++) soft[py * c.W + px] = 1
-    const candidates: { x: number; y: number; distance: number }[] = []
-    for (let cy = (h >> 1) - formation.top; cy <= (look.crewGround ?? c.H) - formation.bottom + (h >> 1); cy++) {
-      for (let cx = Math.ceil(w / 2) - formation.left; cx <= right - Math.ceil(w / 2) - (formation.right - w); cx++) {
-        candidates.push({ x: cx, y: cy, distance: Math.abs(cx - x) + 2 * Math.abs(cy - y) })
-      }
-    }
-    candidates.sort((a, b) => a.distance - b.distance || a.y - b.y || a.x - b.x)
-    // Home: clear sky near where it wants to be if any is free (candidates run nearest first, so the first with no scenery under
-    // it is the answer); else the spot nearby with the least scenery under it, hiding as little as it can.
-    let best: { k: (typeof candidates)[number]; hidden: number } | undefined
-    for (const k of candidates) {
-      if (Math.abs(k.x - x) > 16 || Math.abs(k.y - y) > 4) continue
-      const zx = k.x - (w >> 1), zy = k.y - (h >> 1)
-      if (!pixels.every(([dx, dy]) => !padded[(zy + dy) * c.W + zx + dx])) continue
-      if (zy + h > skyFloor && pixels.some(([dx, dy]) => crowd[(zy + dy) * c.W + zx + dx])) continue
-      let hidden = design.altitude === 'high' ? Math.max(0, k.y - Math.max(h >> 1, y)) * pixels.length * 2 : 0
+    const terrain = look.crewOcclusion, surface = look.crewGround ?? c.H
+    const homeRoam = job.lane?.roam ?? look.crewRoam ?? PATROL
+    // What stands up out of the ground counts (roofs, towers, trees, a caravan); the ground and the water themselves do not,
+    // so a craft that skims the fields or the sea stays down there and only hops what is in its way.
+    const buriedIn = (zone: { x: number; y: number }) => (sx: number, sy: number) => {
+      let n = 0
       for (const [dx, dy] of pixels) {
-        const i = (zy + dy) * c.W + zx + dx
-        hidden += soft[i]! + 3 * crowd[i]! + (design.depth === 'far' ? 3 * (look.crewOcclusion?.[i] ?? 0) : 0)
+        const y = zone.y + dy + sy, i = y * c.W + zone.x + dx + sx
+        n += (soft[i] ?? 0) + (y < surface ? terrain?.[i] ?? 0 : 0)
       }
-      if (!best || hidden < best.hidden) best = { k, hidden }
-      if (hidden === 0) break
+      return n
     }
-    for (const candidate of best ? [best.k, ...candidates] : candidates) {
-      const zone = { x: candidate.x - (art[0]!.length >> 1), y: candidate.y - (art.length >> 1), w, h }
-      if (pixels.some(([dx, dy]) => padded[(zone.y + dy) * c.W + zone.x + dx])) continue
-      if (zone.y + h > skyFloor && pixels.some(([dx, dy]) => crowd[(zone.y + dy) * c.W + zone.x + dx])) continue
-      // Neighboring airspace is shared during short excursions; only the viewport, ground and Mochi stop a flight.
-      const ground = look.crewGround ?? c.H
-      const free = (sx: number, sy: number) => pixels.every(([dx, dy]) => {
-        const px = zone.x + dx + sx, py = zone.y + dy + sy
-        return px >= 0 && px < c.W && py >= 0 && py < ground && !padded[py * c.W + px]
-      })
-      const homeRoam = job.lane?.roam ?? look.crewRoam ?? PATROL
-      const maxX = homeRoam + ((look.crewCount ?? 1) > 1 ? Math.max(10, Math.floor(homeRoam * 1.2)) : 0), maxY = design.depth === 'far' ? 1 : (job.tier ?? 1) >= 3 ? 3 : 4
-      let leftReach = 0, rightReach = 0
-      while (leftReach < maxX && free(-(leftReach + 1), 0)) leftReach++
-      while (rightReach < maxX && free(rightReach + 1, 0)) rightReach++
-      if ((look.crewCount ?? 1) <= 1) leftReach = rightReach = Math.min(leftReach, rightReach)
-      const rx = Math.max(leftReach, rightReach)
-      // Rows above and below are tried apart (a rooftop below must not take away the open sky above), each as a full-width
-      // band: a row counts only if the sprite fits there at both ends and in the middle of its horizontal range.
-      const across = [-leftReach, -(leftReach >> 1), 0, rightReach >> 1, rightReach]
-      const rowFree = (sy: number) => across.every(sx => free(sx, sy))
-      // Dipping is free only in open air: a row that sinks the body further into the rooftops or the trees than its home row
-      // does is not room to bob into, or a bat over the city wades through the skyline.
-      // What stands up out of the ground counts (roofs, towers, trees, a caravan); the ground and the water themselves do not,
-      // so a craft that skims the fields or the sea stays down there and only hops what is in its way.
-      const terrain = look.crewOcclusion, surface = look.crewGround ?? c.H
-      const buried = (sx: number, sy: number) => {
-        let n = 0
-        for (const [dx, dy] of pixels) {
-          const y = zone.y + dy + sy, i = y * c.W + zone.x + dx + sx
-          n += (soft[i] ?? 0) + (y < surface ? terrain?.[i] ?? 0 : 0)
+    // The home and the room around it depend only on the layout (scenery, the crew placed before it, its own shape), never on
+    // the frame, so the search runs once per layout and every later frame only moves the worker along its gait.
+    let print = 2166136261
+    for (let i = 0; i < c.W * c.H; i++) print = Math.imul(print ^ (soft[i]! | padded[i]! << 1 | crowd[i]! << 2 | (terrain?.[i] ?? 0) << 3), 16777619)
+    for (const [dx, dy] of pixels) print = Math.imul(print ^ (dx * 97 + dy), 16777619)
+    const key = [print, x, y, w, h, right, c.W, surface, look.place, job.kind, job.tier, job.lane?.x, job.lane?.roam, look.crewCount, look.crewRoam].join()
+    let found = HOMES.get(key)
+    if (found === undefined) {
+      found = findHome()
+      if (HOMES.size >= 256) HOMES.clear()
+      HOMES.set(key, found)
+    }
+    function findHome(): Home | null {
+      const candidates: { x: number; y: number; distance: number }[] = []
+      for (let cy = (h >> 1) - formation.top; cy <= (look.crewGround ?? c.H) - formation.bottom + (h >> 1); cy++) {
+        for (let cx = Math.ceil(w / 2) - formation.left; cx <= right - Math.ceil(w / 2) - (formation.right - w); cx++) {
+          candidates.push({ x: cx, y: cy, distance: Math.abs(cx - x) + 2 * Math.abs(cy - y) })
         }
-        return n
       }
-      const sinks = (sy: number) => across.some(sx => buried(sx, sy) > buried(sx, 0))
-      let up = 0, down = 0
-      while (up < maxY && rowFree(-(up + 1))) up++
-      while (design.altitude !== 'high' && down < maxY && rowFree(down + 1) && !sinks(down + 1)) down++
-      // A hop of up to two rows more when something real happens to this worker (it acted, sent or received a message).
-      let hopRoom = 0
-      while (hopRoom < 2 && rowFree(-(up + hopRoom + 1))) hopRoom++
+      candidates.sort((a, b) => a.distance - b.distance || a.y - b.y || a.x - b.x)
+      // Home: clear sky near where it wants to be if any is free (candidates run nearest first, so the first with no scenery
+      // under it is the answer); else the spot nearby with the least scenery under it, hiding as little as it can.
+      let best: { k: (typeof candidates)[number]; hidden: number } | undefined
+      for (const k of candidates) {
+        if (Math.abs(k.x - x) > 16 || Math.abs(k.y - y) > 4) continue
+        const zx = k.x - (w >> 1), zy = k.y - (h >> 1)
+        if (!pixels.every(([dx, dy]) => !padded[(zy + dy) * c.W + zx + dx])) continue
+        if (zy + h > skyFloor && pixels.some(([dx, dy]) => crowd[(zy + dy) * c.W + zx + dx])) continue
+        let hidden = design.altitude === 'high' ? Math.max(0, k.y - Math.max(h >> 1, y)) * pixels.length * 2 : 0
+        for (const [dx, dy] of pixels) {
+          const i = (zy + dy) * c.W + zx + dx
+          hidden += soft[i]! + 3 * crowd[i]! + (design.depth === 'far' ? 3 * (look.crewOcclusion?.[i] ?? 0) : 0)
+        }
+        if (!best || hidden < best.hidden) best = { k, hidden }
+        if (hidden === 0) break
+      }
+      for (const candidate of best ? [best.k, ...candidates] : candidates) {
+        const zone = { x: candidate.x - (art[0]!.length >> 1), y: candidate.y - (art.length >> 1), w, h }
+        if (pixels.some(([dx, dy]) => padded[(zone.y + dy) * c.W + zone.x + dx])) continue
+        if (zone.y + h > skyFloor && pixels.some(([dx, dy]) => crowd[(zone.y + dy) * c.W + zone.x + dx])) continue
+        // Neighboring airspace is shared during short excursions; only the viewport, ground and Mochi stop a flight.
+        const free = (sx: number, sy: number) => pixels.every(([dx, dy]) => {
+          const px = zone.x + dx + sx, py = zone.y + dy + sy
+          return px >= 0 && px < c.W && py >= 0 && py < surface && !padded[py * c.W + px]
+        })
+        const maxX = homeRoam + ((look.crewCount ?? 1) > 1 ? Math.max(10, Math.floor(homeRoam * 1.2)) : 0), maxY = design.depth === 'far' ? 1 : (job.tier ?? 1) >= 3 ? 3 : 4
+        let leftReach = 0, rightReach = 0
+        while (leftReach < maxX && free(-(leftReach + 1), 0)) leftReach++
+        while (rightReach < maxX && free(rightReach + 1, 0)) rightReach++
+        if ((look.crewCount ?? 1) <= 1) leftReach = rightReach = Math.min(leftReach, rightReach)
+        // Rows above and below are tried apart (a rooftop below must not take away the open sky above), each as a full-width
+        // band: a row counts only if the sprite fits there at both ends and in the middle of its horizontal range.
+        const across = [-leftReach, -(leftReach >> 1), 0, rightReach >> 1, rightReach]
+        const rowFree = (sy: number) => across.every(sx => free(sx, sy))
+        // Dipping is free only in open air: a row that sinks the body further into the rooftops or the trees than its home row
+        // does is not room to bob into, or a bat over the city wades through the skyline.
+        const buried = buriedIn(zone)
+        const sinks = (sy: number) => across.some(sx => buried(sx, sy) > buried(sx, 0))
+        let up = 0, down = 0
+        while (up < maxY && rowFree(-(up + 1))) up++
+        while (design.altitude !== 'high' && down < maxY && rowFree(down + 1) && !sinks(down + 1)) down++
+        // A hop of up to two rows more when something real happens to this worker (it acted, sent or received a message).
+        let hopRoom = 0
+        while (hopRoom < 2 && rowFree(-(up + hopRoom + 1))) hopRoom++
+        return { candidate, leftReach, rightReach, up, down, hopRoom, needs: new Map() }
+      }
+      return null
+    }
+    if (found) {
+      const { candidate, leftReach, rightReach, up, down, hopRoom, needs } = found
+      const zone = { x: candidate.x - (art[0]!.length >> 1), y: candidate.y - (art.length >> 1), w, h }
+      const rx = Math.max(leftReach, rightReach)
+      const buried = buriedIn(zone)
       const hop = Math.round(hopRoom * Math.min(1, job.lift ?? 0))
       // Where in the box it is now: its family's gait, over the room that its activity earns it (a calm worker hovers near home).
       const pace = job.pace ?? 0.6
@@ -655,7 +693,6 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       // it: the least lift, within the sky above it, that clears the most of its body, eased in a row for every two cells so
       // it rises as it approaches and settles after. A distant body is meant to pass behind the skyline and keeps its row.
       const climbRoom = design.depth === 'far' ? 0 : up + hopRoom
-      const needs = new Map<number, number>()
       const need = (sx: number) => {
         if (!climbRoom || sx < -leftReach || sx > rightReach) return 0
         let lift = needs.get(sx)

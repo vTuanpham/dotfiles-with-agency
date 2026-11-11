@@ -208,6 +208,8 @@ let scenePointer: { x: number; y: number } | null = null
 let sceneSelection: SceneSelection | null = null
 let lastSceneTarget: WakeSceneHit | null = null
 let scenePainting = false
+/** The frame the paint loop last drew: a band render on the same frame mounts it instead of painting the scene again. */
+let lastFrame: { frameNo: number; width: number; rows: number; selection: SceneSelection | null; frame: ReturnType<typeof sceneFrame> } | null = null
 let sceneRetryAt = 0
 let sceneRetryDelay = 50
 let sceneLoop: Timer | null = null
@@ -235,6 +237,7 @@ async function paint($: EngineInterface) {
     if (tour && (frameNo - tour.start) % TOUR_FRAMES === 0) await update($, tick, n => n + 1)
     const input = toured(sceneInput(await bandState($), target.width, frameNo, effect ? { kind: effect.kind, age } : null, now))
     const frame = sceneFrame({ ...input, messageTrails }, sceneSelection, target.rows)
+    lastFrame = { frameNo, width: target.width, rows: target.rows, selection: sceneSelection, frame }
     const done = await $.ui.blit({ requestId: target.id, key: 'scene', columns: target.width, rows: target.rows, cells: frame.cells })
     if (band !== target) return
     if (done.deny) {
@@ -1011,7 +1014,8 @@ export const register: Register = on => {
     sceneRetryAt = 0
     sceneRetryDelay = 50
     const input = toured(sceneInput(await bandState($), width, frameNo, effect ? { kind: effect.kind, age: frameNo - effect.start } : null, now))
-    const frame0 = withScene ? sceneFrame({ ...input, messageTrails }, sceneSelection, sceneRows) : null
+    const painted = lastFrame && lastFrame.frameNo === frameNo && lastFrame.width === width && lastFrame.rows === sceneRows && lastFrame.selection === sceneSelection ? lastFrame.frame : null
+    const frame0 = withScene ? painted ?? sceneFrame({ ...input, messageTrails }, sceneSelection, sceneRows) : null
     if (frame0) {
       sceneHitMap = frame0.hits
     } else {

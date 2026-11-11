@@ -10,12 +10,14 @@
 import { type Ctx, type Dot, styleFor } from './exit-styles'
 import { type Canvas, hash, mix } from './pixels'
 import type { CrewBox, SurfaceLight } from './landscapes/kit'
-import { LANDED_MS, LAUNCH_MS, flourish } from './touchdowns'
+import type { WakePreset } from '../types'
+import { type Body, DOWNWASH, canvasSurface, downwash } from './downwash'
+import type { Look as SpriteLook } from './exit-styles'
 
 export const EXIT_MS = 3200
-/** The flight in; the arrival window runs on for the touchdown's shockwave (touchdowns.ts) once the craft is home. */
-const FLY_IN_MS = 2400
-export const ARRIVE_MS = FLY_IN_MS + LANDED_MS
+/** The flight in; the arrival window runs on a little once the craft is home, while the dust its wash raised settles. */
+const FLY_IN_MS = 2400, SETTLE_MS = 600
+export const ARRIVE_MS = FLY_IN_MS + SETTLE_MS
 
 /** `age` is ms into the passage: since the job finished (leaving) or since it started (arriving). */
 export type Passage = { id: string; kind: 'codex' | 'agy' | 'claude' | 'opencode'; place: string; seed: number; age: number; arriving: boolean; /** its last turn was interrupted: it leaves by being struck down, not by its place's farewell */ struck?: boolean }
@@ -36,11 +38,7 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[], b
     const owner = c.hitOwners[y * c.W + x]!
     if (wanted.has(owner)) (dots.get(owner) ?? dots.set(owner, []).get(owner)!).push({ x, y, color: c.px[y * c.W + x]! })
   }
-  const lit = (x: number, y: number, color: number, alpha: number) => {
-    const px = Math.round(x), py = Math.round(y)
-    if (px < 0 || px >= c.W || py < 0 || py >= c.H || alpha <= 0) return
-    c.px[py * c.W + px] = mix(c.px[py * c.W + px]!, color, clamp(alpha))
-  }
+  const surface = canvasSurface(c, surfaceAt), lit = surface.lit
   for (const [owner, job] of wanted) {
     const painted = dots.get(owner)
     if (!painted?.length) continue
@@ -48,7 +46,7 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[], b
     // Shadows and flight trails belong to the scenery; moving them would carry pieces of its background along.
     const rows = new Map<number, [number, number]>() // each row's left and right edge of the sprite
     for (const d of painted) { const edge = rows.get(d.y); rows.set(d.y, edge ? [Math.min(edge[0], d.x), Math.max(edge[1], d.x)] : [d.x, d.x]) }
-    const home = job.arriving && job.age >= FLY_IN_MS // landed: the sprite stays as the scene drew it, under its shockwave
+    const home = job.arriving && job.age >= FLY_IN_MS // home: the sprite stays as the scene drew it while its wash dies away
     if (!home) for (const d of painted) {
       const [left, right] = rows.get(d.y)!
       const from = left - 1 >= 0 ? left - 1 : right + 1 < c.W ? right + 1 : d.x
@@ -90,10 +88,29 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[], b
           }
         },
       }
-      const lead = part === parts[0] // companions ride along in their leader's shockwave
-      if (home) { if (lead) flourish(job.kind, ctx, (job.age - FLY_IN_MS) / LANDED_MS, true); continue }
-      styleFor(job.kind, job.place, job.struck && !job.arriving, job.arriving)(ctx)
-      if (lead && !job.arriving && !job.struck && job.age < LAUNCH_MS) flourish(job.kind, ctx, job.age / LAUNCH_MS, false)
+      const wash = job.struck && !job.arriving ? undefined : DOWNWASH[job.kind][job.place as WakePreset]
+      const scale = part === parts[0] ? 1 : 0.6 // a companion is smaller and pushes less air
+      if (home) { // settled: the wash dies away over the dust's last second
+        if (wash) downwash(surface, wash, job.place as WakePreset, { x0, x1, y0, y1 }, 0.6 * scale * (1 - (job.age - FLY_IN_MS) / SETTLE_MS), job.age, job.seed)
+        continue
+      }
+      const style = styleFor(job.kind, job.place, job.struck && !job.arriving, job.arriving)
+      let drawn: SpriteLook | undefined
+      const draw = ctx.sprite
+      style({ ...ctx, sprite: look => { drawn ??= look; draw(look) } })
+      if (!wash || !drawn) continue
+      // Where the body is, and how hard it is working: it holds itself up (0.55) and works harder the faster it climbs or
+      // brakes, measured from the same style a moment earlier in its passage. It fades as the body dissolves.
+      const at = (look: SpriteLook): Body => ({
+        x0: cx + (look.dx ?? 0) + (x0 - cx) * (look.sx ?? 1), x1: cx + (look.dx ?? 0) + (x1 - cx) * (look.sx ?? 1),
+        y0: cy + (look.dy ?? 0) + (y0 - cy) * (look.sy ?? 1), y1: cy + (look.dy ?? 0) + (y1 - cy) * (look.sy ?? 1),
+      })
+      const step = 0.02
+      let before: SpriteLook | undefined
+      style({ ...ctx, p: Math.min(1, ctx.p + step), lit: () => {}, sprite: look => { before ??= look } })
+      const body = at(drawn), climb = before ? Math.abs(at(before).y1 - body.y1) / (step * (job.arriving ? FLY_IN_MS : EXIT_MS) / 1000) : 0
+      const thrust = (0.55 + 0.45 * clamp(climb / 8)) * scale * (1 - (drawn.dissolve ?? 0))
+      downwash(surface, wash, job.place as WakePreset, body, thrust, job.age, job.seed)
     }
   }
 }

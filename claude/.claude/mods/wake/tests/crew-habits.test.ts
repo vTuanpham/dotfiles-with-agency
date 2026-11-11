@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { placeFly } from '../hooks/landscapes/crew'
+import { gaitOf, REST_AFTER_MS, SETTLE_MS } from '../hooks/band'
 import { DESIGNS } from '../hooks/landscapes/design'
 import { type Job, type Look } from '../hooks/landscapes/kit'
 import { canvas } from '../hooks/pixels'
@@ -171,4 +172,17 @@ test('landing and takeoff interpolate between flight and the perch', () => {
   expect(midway.x).toBeLessThan(resting.x)
   expect(midway.y).toBeGreaterThan(flying.y)
   expect(midway.y).toBeLessThan(resting.y)
+})
+
+test('a worker rests only after a long quiet, and holds its route while it lands or takes off', () => {
+  const busy = (t: number) => gaitOf('rest-test', 0.8, t), quiet = (t: number) => gaitOf('rest-test', 0.1, t)
+  const run = (from: number, to: number, step: (t: number) => ReturnType<typeof gaitOf>) => { let g = step(from); for (let t = from + 50; t <= to; t += 50) g = step(t); return g }
+  busy(0)
+  expect(run(1_000, REST_AFTER_MS + 900, quiet).settle).toBe(0) // a short wait never sends it down
+  const landing = run(REST_AFTER_MS + 950, REST_AFTER_MS + 1_000 + SETTLE_MS / 2, quiet)
+  expect(landing.settle).toBeGreaterThan(0)
+  expect(landing.settle).toBeLessThan(1)
+  expect(quiet(REST_AFTER_MS + 1_050 + SETTLE_MS / 2).route).toBe(landing.route) // landing: it goes nowhere else
+  expect(run(REST_AFTER_MS + 1_100 + SETTLE_MS / 2, REST_AFTER_MS + 1_000 + 2 * SETTLE_MS, quiet).settle).toBe(1)
+  expect(busy(REST_AFTER_MS + 1_050 + 2 * SETTLE_MS).settle).toBeLessThan(1) // any activity lifts it straight off
 })

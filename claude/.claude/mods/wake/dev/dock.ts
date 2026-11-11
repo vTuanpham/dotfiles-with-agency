@@ -4,9 +4,10 @@
 // workers message each other and the root.
 import { MessageTrails, sceneFrame, scenePixels, type SceneInput } from '../hooks/scene.ts'
 import { SCENE_H } from '../hooks/landscapes/kit.ts'
-import { CLASS_GLYPH, crewLayout, harnessSpin, packetWindow, quotaRows, rootSpine, type RootLink } from '../hooks/crew-row.ts'
+import { packetWindow } from '../hooks/crew-row.ts'
 import { LOGOS } from '../hooks/logos.ts'
-import type { WakeChip, WakeQuota } from '../types'
+import type { WakeChip } from '../types'
+import { chip, crewRowsAt, message, type Native, quotaLines as quotaAt } from './inline-rows.ts'
 
 const out = process.argv[2] ?? `${import.meta.dir}/dock.bin`
 const FRAMES = Number(process.argv[3] ?? 144)
@@ -47,10 +48,6 @@ const talking = (i: number): Partial<SceneInput> => {
 
 // ── the crew rows come from the real builders, with demo workers and accounts ────────────────────────────────────────────────────
 const NOW0 = 600_000
-const chip = (id: string, title: string, backend: string, model: string, effort: string, levels: string[], since: number, peers: NonNullable<WakeChip['peers']>): WakeChip =>
-  ({ id, name: id, title, backend, account: '01', model, effort, effortLevels: levels, running: true, isStale: false, since, lastEventAt: since, memoryBytes: 1.4e9, memoryCap: '4G', peers })
-const message = (target: string, outgoing: boolean, now: number, since: number, extra: object = {}) =>
-  ({ target, count: 1, lastAt: now - since, observedAt: now - since, outgoing, fresh: 1, preview: 'x', ...extra })
 const crewAt = (ms: number): WakeChip[] => {
   const now = NOW0 + ms
   return [
@@ -58,47 +55,10 @@ const crewAt = (ms: number): WakeChip[] => {
     chip('review', 'Visual review', 'agy', 'claude-opus-5-5', 'high', ['low', 'medium', 'high'], now - 130_000, [message('parser', false, now, sinceParser(ms)), message('root', true, now, sinceRoot(ms), { messageState: 'observed' })]),
   ]
 }
-const toRoot = (job: WakeChip, now: number): RootLink | undefined => {
-  const peer = (job.peers ?? []).find(p => p.target === 'root' && now >= p.lastAt)
-  if (peer) return { dir: peer.outgoing ? 'out' : 'in', family: job.backend, at: peer.lastAt, count: peer.count, observedAt: peer.observedAt, fresh: peer.fresh, description: [] }
-  return { dir: 'tether', family: job.backend, at: now, count: 1, activeAt: job.lastEventAt, description: [] }
-}
 // the same geometry as the band's rows: the graph's column hugs the longest row
 const rowWidth = TEXT_COLUMNS - 2
-const boxAt = (i: number) => crewLayout(crewAt(msAt(i)), ['Explore'], NOW0 + msAt(i), rowWidth)
-const rowsAt = (i: number) => {
-  const ms = msAt(i), now = NOW0 + ms
-  const jobs = crewAt(ms)
-  const { rows } = boxAt(i)
-  const links: (RootLink | undefined)[] = [
-    { dir: 'tether', family: 'claude', at: now, count: 1, description: [] }, // the native subagent
-    ...jobs.map(job => toRoot(job, now)),
-  ]
-  const spine = rootSpine(links, now)
-  return [
-    { kind: 'native', backend: 'claude', title: 'Explore', mark: CLASS_GLYPH[2], glyph: '', spin: harnessSpin('claude', i), beat: 0, effort: { lit: 2, total: 3 }, after: ' 1m', gutter: [], cell: spine[0]! },
-    ...rows.map((row, k) => ({
-      kind: 'bridge', backend: jobs[k]!.backend, title: row.title, mark: [...row.family][1] ?? '', glyph: row.glyph, spin: harnessSpin(jobs[k]!.backend, i), beat: row.beat,
-      effort: row.effortSlot ? { lit: row.effortSlot.lit, total: row.effortSlot.total, before: row.effortSlot.before, size: row.effortSlot.size, after: row.effortSlot.after } : null,
-      detail: row.detail, gutter: row.gutter, cell: spine[k + 1]!,
-    })),
-  ]
-}
-// Synthetic reported windows exercise labels and remaining-allowance colours; plan names never determine their periods.
-const quota = (cli: WakeQuota['cli'], account: string, plan: string, active: boolean, windows: Record<string, number>): WakeQuota =>
-  ({ cli, account, plan, active, freshness: 'fresh', parts: Object.entries(windows).map(([label, pct]) => ({ label, pct, resets: null })) })
-const accounts = [
-  quota('codex', '01', 'Pro', true, { w: 71 }), quota('codex', '02', 'Pro', false, { w: 34 }),
-  quota('codex', '03', 'Plus', false, { h: 62, w: 88 }), quota('codex', '04', 'Plus', false, { h: 15, w: 41 }),
-  quota('codex', '05', 'Free', false, { m: 57 }), quota('codex', '06', 'Free', false, { m: 8 }),
-  quota('claude', '01', 'Max', true, { h: 88, w: 64 }), quota('claude', '02', 'Pro', false, { h: 45, w: 30 }),
-  quota('agy', 'a1', '', true, { 'G.w': 98, '3p.w': 16 }), quota('agy', 'a2', '', false, { 'G.w': 100, '3p.w': 100 }),
-  quota('opencode', '01', 'Go', true, { h: 72, w: 36 }),
-]
-const quotaLines = quotaRows(accounts, TEXT_COLUMNS - 6).map(line => line.map(chunk => ({
-  text: chunk.text, cli: chunk.quotas[0]!.cli,
-  parts: chunk.quotas[0]!.parts.map(p => ({ label: p.label, pct: p.pct === null ? null : Math.round(p.pct) })),
-})))
+const EXPLORE: Native = { title: 'Explore', tier: 2, lit: 2, total: 3, age: '1m' } // a native subagent
+const layoutAt = (i: number) => crewRowsAt(crewAt(msAt(i)), [EXPLORE], NOW0 + msAt(i), i, rowWidth)
 
 // ── where each thing the legend names is: its hover owner's cells, a box per group of cells within 2 columns of each other ──────
 type Box = { x: number; y: number; w: number; h: number }
@@ -145,13 +105,15 @@ while (start < 600 && !Array.from({ length: FRAMES }, (_, i) => start + i * STEP
 
 const pixels = new Uint32Array(FRAMES * W * H)
 const anchors: Record<string, Box[]>[] = []
-const rows: ReturnType<typeof rowsAt>[] = []
+const rows: ReturnType<typeof layoutAt>['rows'][] = [], rowBoxes: number[] = []
 const messageTrails = new MessageTrails(), anchorTrails = new MessageTrails() // the call-out's own copy, so finding the arc never advances the drawn one
 for (let i = 0; i < FRAMES; i++) {
   const at = { ...state, frame: start + i * STEP }
   const talk = { ...at, ...talking(i) }
   pixels.set(scenePixels({ ...talk, messageTrails }), i * W * H)
-  rows.push(rowsAt(i))
+  const layout = layoutAt(i)
+  rows.push(layout.rows)
+  rowBoxes.push(layout.box)
   const hits = sceneFrame(at).hits
   anchors.push({
     ...Object.fromEntries(Object.entries(IDS).map(([name, id]) => [name, boxes(hits, id, name === 'agy' ? 6 : 2)])),
@@ -161,6 +123,6 @@ for (let i = 0; i < FRAMES; i++) {
 }
 await Bun.write(out, pixels)
 await Bun.write(out.replace(/\.bin$/, '.json'), JSON.stringify({
-  w: W, h: H, frames: FRAMES, anchors, rows, rowBoxes: Array.from({ length: FRAMES }, (_, i) => boxAt(i).box), textColumns: TEXT_COLUMNS, quota: quotaLines, logos: LOGOS,
+  w: W, h: H, frames: FRAMES, anchors, rows, rowBoxes, textColumns: TEXT_COLUMNS, quota: quotaAt(TEXT_COLUMNS - 6), logos: LOGOS,
 }))
 console.log(out, FRAMES, 'frames', W, 'x', H)

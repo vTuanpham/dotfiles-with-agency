@@ -1,4 +1,4 @@
-<h1 align="center"><img src="docs/images/hero.gif" alt="Dotfiles with agency. A terminal window shows Wake above the status line, visiting the city, the beach, a stormy forest and the mountains as crews message each other and Mochi, above six tools: Wake, Inbox, Bridge, Model Guide, Resources and Baton." width="100%"></h1>
+<h1 align="center"><img src="docs/images/hero.gif" alt="Dotfiles with agency. A terminal window shows Wake in full, the scene, the turn line, the crew rows with their message lanes and root graph, the quota rows, the prompt and the status line, visiting the city, the beach, a stormy forest and the mountains as crews message each other and Mochi, above six tools: Wake, Inbox, Bridge, Model Guide, Resources and Baton." width="100%"></h1>
 
 <p align="center">
 <a href="#wake">Watch the work</a> · <a href="#agent-tools">Use the tools</a> · <a href="#why-use-it">What’s included</a> · <a href="#setup">Install</a> · <a href="#packages">Packages</a>

@@ -138,14 +138,24 @@ const arrivingFor = (job: WakeChip, now: number) => (isWorking(job) ? sinceIn(jo
 const gaitClock = new PhaseClock()
 /** The clock of where a worker is on its route: the same as its gait clock, except that it stands still while the worker hovers to talk to the root. */
 const routeClock = new PhaseClock()
-const settling = new Map<string, { at: number; amount: number }>()
-const gaitOf = (id: string, pace: number, now: number, rate = 1, stale = false) => {
-  const rest = stale || pace <= 0.15, previous = settling.get(id)
-  const step = previous ? Math.min(1, Math.max(0, now - previous.at) / 1200) : 1
+/**
+ * Resting: a worker settles on a perch only once it has been quiet (waiting, paused, stale) for REST_AFTER_MS on end, so a
+ * short wait for a tool or a reply never sends it down; any activity lifts it straight off again. Landing and taking off take
+ * SETTLE_MS, and while one plays the worker does nothing else: its route holds until it is down or back up in the air.
+ * One seen quiet for the first time (a stale job at startup) is already resting.
+ */
+export const REST_AFTER_MS = 20_000, SETTLE_MS = 1_600
+const settling = new Map<string, { at: number; amount: number; quiet?: number }>()
+export const gaitOf = (id: string, pace: number, now: number, rate = 1, stale = false) => {
+  const previous = settling.get(id)
+  const quiet = stale || pace <= 0.15 ? previous ? previous.quiet ?? now : now - REST_AFTER_MS : undefined
+  const rest = quiet !== undefined && now - quiet >= REST_AFTER_MS
+  const step = previous ? Math.min(1, Math.max(0, now - previous.at) / SETTLE_MS) : 1
   const amount = previous ? Math.max(0, Math.min(1, previous.amount + (rest ? step : -step))) : Number(rest)
-  settling.set(id, { at: now, amount })
+  settling.set(id, { at: now, amount, quiet })
   if (settling.size > 256) for (const key of [...settling.keys()].slice(0, 64)) settling.delete(key)
-  return { pace, settle: amount, phase: gaitClock.advance(id, pace, now), route: routeClock.advance(id, pace, now, rate) }
+  const moving = amount > 0 && amount < 1
+  return { pace, settle: amount, phase: gaitClock.advance(id, pace, now), route: routeClock.advance(id, pace, now, moving ? 0 : rate) }
 }
 
 /**

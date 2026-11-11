@@ -22,7 +22,7 @@ const base: SceneInput = {
 }
 const calm = { live: null, agents: [], mood: 'idle' as const }
 /** [from, to, ms into the loop]: the conversation every scene with a crew plays between its arrivals and its exits. */
-const TALKS = [['a', 'b', 6_000], ['b', 'mochi', 10_500], ['mochi', 'a', 15_000]] as const
+export const TALKS = [['a', 'b', 6_000], ['b', 'mochi', 10_500], ['mochi', 'a', 15_000]] as const
 const fx = (kind: NonNullable<SceneInput['effect']>['kind']) => ({ kind, age: 0 })
 
 export function passageAt(ms: number, duration: number, order = 0) {

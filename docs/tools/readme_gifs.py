@@ -127,7 +127,7 @@ def landscapes():
 # One large terminal window with Wake above the real status line. It visits four places, each for the stretch of its loop where
 # the crew talk (worker to worker, worker to Mochi, Mochi back) and the place's event plays; tabs in the title bar and a caption
 # say which. The page around it (title, window chrome, the six tools) is Chrome's rendering of docs/hero.html.
-HERO_W, HERO_SCALE = 120, 9  # scene cells across and pixels per cell: 1080 px, the window's inner width
+HERO_W, HERO_PX = 120, 15  # terminal columns, and the font size whose 9 x 20 px cells make them 1080 px, the window's inner width
 HERO_STOPS = (  # (showcase scene, loop frame it starts at, tab, caption); messages fly from frame 138, events start at 216
     (0, 130, "City", "A Codex dragon's bolt turns into a Claude bat's sonar on its way; the bat reports to Mochi"),
     (2, 130, "Beach", "A flamingo and a kite trade messages, and Mochi answers"),
@@ -135,14 +135,53 @@ HERO_STOPS = (  # (showcase scene, loop frame it starts at, tab, caption); messa
     (3, 200, "Mountains", "Tests pass: fireworks, while a constellation and a lantern report to Mochi"),
 )
 HERO_LEG, HERO_FADE = 120, 8  # frames per stop, frames of each cross-fade
+HERO_TURNS = (  # each stop's turn line (glyph, colour, what is happening; then the right side) and what is typed at the prompt
+    (("◐ ", TEAL, "Editing · src/parser.ts"), "turn 7 · 1:02", ("☾ 18° Demo city clear", YELLOW), "❯ Ship the parser fix"),
+    (("◓ ", TEAL, "Reading · docs/release.md"), "turn 8 · 0:41", ("☼ 27° Demo coast sunny", YELLOW), "❯ Draft the release notes"),
+    (("✗ ", RED, "pytest · exit 1"), "turn 9 · 2:13", ("☂ 15° Demo woods rain", BLUE), "❯ Why did the parser test fail?"),
+    (("✓ ", GREEN, "last turn 1m · tests green"), "idle 1m", ("☾ 6° Demo peaks clear", YELLOW), "❯ "),
+)
+HERO_INLINE_ROWS = 1 + 2 + 3 + 3  # the turn line, two workers, the quota rows, the prompt (a border, the text, a border)
+
+
+def hero_inline(face, images, meta, stop, k, blink):
+    """Wake's inline rows under the scene, as the band draws them: the turn line, the crew with its lanes and root graph, the
+    quota rows and the prompt."""
+    width = HERO_W * face.cw
+    out = Image.new("RGB", (width, HERO_INLINE_ROWS * face.ch), BASE)
+    d = ImageDraw.Draw(out)
+    (glyph, color, words), clock, weather, typed = HERO_TURNS[stop]
+    put_segments(out, d, face, images, 6, 0, [(glyph, color), (words, TEXT)])
+    right = [(clock, SUBTLE), (" │ ", SURFACE2), weather, (" │ ", SURFACE2), ("9 turns ", SUBTLE), ("+82", GREEN), ("-19", RED)]
+    put_segments(out, d, face, images, width - 6 - sum(len(t) for t, _ in right) * face.cw, 0, right)
+    at = meta["stops"][stop][k]
+    for r, row in enumerate(at["rows"]):
+        crew_row(out, d, face, images, (1 + r) * face.ch, row, at["box"], meta["textColumns"])
+    y = (1 + len(at["rows"])) * face.ch
+    for r, line in enumerate(quota_segments(chunks) for chunks in meta["quota"]):
+        put_segments(out, d, face, images, 6, y + r * face.ch, line)
+    prompt_y = y + len(meta["quota"]) * face.ch
+    d.rounded_rectangle([face.cw // 2, prompt_y + face.ch // 2, width - 1 - face.cw // 2, prompt_y + 5 * face.ch // 2], 8, outline=SURFACE2, width=1)
+    for n, char in enumerate(typed):
+        face.put(d, 2 * face.cw + n * face.cw, prompt_y + face.ch, char, PEACH if n == 0 else TEXT)
+    if blink:
+        x = 2 * face.cw + len(typed) * face.cw
+        d.rectangle([x, prompt_y + face.ch, x + face.cw - 1, prompt_y + 2 * face.ch - 2], fill=TEXT)
+    return out
 
 
 def hero():
     base = WORK / "hero-base.png"
     source = WORK / "hero.html"
-    screen_h = SCENE_H * HERO_SCALE
+    face = statusline.Typeface(HERO_PX)
+    assert HERO_W * face.cw == 1080, "the hero's columns must fill the window's inner width"
+    meta = json.loads((WORK / "hero.json").read_text())
+    assert len(meta["quota"]) + 3 + 3 == HERO_INLINE_ROWS, "the hero's quota rows changed: update HERO_INLINE_ROWS"
+    images = logos(meta, face)
+    scene_h = SCENE_H * face.ch // 2  # a scene pixel is half a terminal row, as the band draws it with half blocks
+    screen_h = scene_h + HERO_INLINE_ROWS * face.ch
     source.write_text((ROOT / "docs/hero.html").read_text().replace("--screen: 180px", f"--screen: {screen_h}px"))
-    page_h = 236 + 38 + screen_h + 64 + 2 + 64 + 196
+    page_h = 236 + 38 + screen_h + 64 + 2 + 64 + 240  # as hero.html's height: the two rows of cards and a margin below them
     run(
         "google-chrome", "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
         "--force-device-scale-factor=1", f"--window-size=1200,{page_h}", f"--screenshot={base}", f"file://{source}",
@@ -158,12 +197,15 @@ def hero():
     data, size = cells(WORK / f"showcase{HERO_W}.bin", HERO_W)
     tab_font, cap_font = label_font(True, 13), label_font(False, 16)
 
-    def shot(stop, k):
-        return scene(data, size, HERO_STOPS[stop][0] * TIMELAPSE_FRAMES + HERO_STOPS[stop][1] + k, HERO_SCALE)
+    def shot(stop, k, blink=False):
+        image = Image.new("RGB", (1080, screen_h))
+        image.paste(scene(data, size, HERO_STOPS[stop][0] * TIMELAPSE_FRAMES + HERO_STOPS[stop][1] + k, face.cw, SCENE_H, face.ch // 2), (0, 0))
+        image.paste(hero_inline(face, images, meta, stop, k, blink), (0, scene_h))
+        return image
 
     def frame_at(i):
         stop, k = divmod(i, HERO_LEG)
-        image = shot(stop, k)
+        image = shot(stop, k, (i * DELAY_MS) % 1200 < 750)  # the prompt's cursor blinks
         if k < HERO_FADE:  # cross-fade from where the last stop ended
             image = Image.blend(shot((stop - 1) % len(HERO_STOPS), HERO_LEG - 1), image, (k + 1) / (HERO_FADE + 1))
         frame = page.copy()
@@ -578,6 +620,9 @@ if __name__ == "__main__":
     for name, w in (("landscapes", 180), ("hero", HERO_W)):
         if name in want:
             run("bun", "dev/showcase.ts", str(WORK / f"showcase{w}.bin"), str(TIMELAPSE_FRAMES), str(w), cwd=WAKE)
+    if "hero" in want:
+        stops = ",".join(f"{scene_index}:{start}" for scene_index, start, *_ in HERO_STOPS)
+        run("bun", "dev/hero-rows.ts", str(WORK / "hero.json"), str(HERO_W), stops, str(HERO_LEG), cwd=WAKE)
     if "dock" in want:
         run("bun", "dev/dock.ts", str(WORK / "dock.bin"), str(FRAMES), cwd=WAKE)
     if "crew" in want:

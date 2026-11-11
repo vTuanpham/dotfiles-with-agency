@@ -151,7 +151,10 @@ unrecognized models use class 2. Companions belong to particular designs at clas
 Each design declares how it faces, moves and turns (`hooks/landscapes/design.ts`): the dragon coils, headed designs bank or
 show a hand-drawn mid-turn pose, and face-on designs do not turn. The tug and paper boat ride harbor water; the crab,
 snowcat and fox use the ground, the flamingo flies the shoreline, and the sun skiff and crop drone cruise low. The dragon, bat, owl, puffin and lantern string
-settle on perches when stale or waiting. Other workers fly. Mochi and her laptop are hard boundaries.
+settle on perches once they have been stale or waiting for 20 s on end (`REST_AFTER_MS` in `hooks/band.ts`), so a short wait
+for a tool or a reply never sends them down; any activity lifts them off again. Landing and taking off take 1.6 s along an
+arc, with the wash of their wings or booster, and while one plays the worker goes nowhere else. Other workers fly. Mochi and
+her laptop are hard boundaries.
 Flying crews can visit neighboring airspace and cross paths. A visit returns to its
 home route within roughly 4–10 seconds of movement; message turns can pause that route.
 
@@ -199,15 +202,16 @@ subagent leaves when it goes idle. Each craft does both in its own way, and each
 
 <img src="../docs/images/wake-passages.gif" alt="Eight landscapes and four worker families at class 4, each arriving, working and leaving in its own way." width="100%">
 
-*Class-4 crews in every place: arriving (2.4 s, then a 1.1 s touchdown), working, then leaving (3.2 s).*
+*Class-4 crews in every place: arriving (2.4 s, then 0.6 s while the dust settles), working, then leaving (3.2 s).*
 
-Touching down and setting out, every crew throws a shockwave sized by its body (`hooks/touchdowns.ts`): an impact flash, a
-ring with a white leading edge that runs out a couple of body-widths, and dust running along the ground. On top, a machine's
-targeting reticle spins out
-as it locks on, a creature's last wingbeat curls air out in two spiral arms and drops a feather, a constellation goes nova
-and leaves a ring of stars that wink out, and a lantern blooms a wavering ring of heat that flings embers. Setting out, the
-machine's drive spools up in streaks, the creature kicks off a gust, the light falls inward and goes off as a cross, and
-sparks fountain off the flame.
+What comes down out of the air and climbs back into it pushes air onto what lies below (`hooks/downwash.ts`): the bats, the
+flamingo, the eagle and the butterflies on their wings, the saucer, the crop drone and the probe on their jets. The wash is
+driven by the flight itself, every frame: it builds as the body nears the ground, peaks as it settles, and on the way out
+blasts hardest at lift-off and fades as it climbs. Each downstroke sends a widening front of air down from under the wings;
+a jet holds a shimmering column and pools its light on the ground. Below, the scenery is really pressed (treetops, roofs,
+sand and water dip and part under the body), a pressure ripple runs out along the surface, and the place's own material,
+dust, sand, spray, snow or petals, is blown out both ways. Walkers, boats, level flyers, constellations and lanterns raise
+none.
 
 The dragon charges and warps; probes and saucers lift through a beam. Boats travel over water, ground creatures walk out,
 birds follow their scene's flight path, and constellations assemble from streaking stars. Paper folds and opens; floating

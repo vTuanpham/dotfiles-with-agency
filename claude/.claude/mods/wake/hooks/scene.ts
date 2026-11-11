@@ -240,6 +240,14 @@ function drawSky(c: Canvas, look: Look, input: SceneInput, celestialOwner = 0) {
 // ── shared ambient events ──────────────────────────────────────────────────
 // (no paper lantern among them: lantern garlands are OpenCode's crew, and a crew sprite always stands for a real job)
 
+/** The rows of open sky over the whole scene: above its tallest roof, tree or ridge (what the crew treats as solid). */
+const openSky = (c: Canvas, look: Look) => {
+  const solid = look.crewOcclusion
+  if (!solid) return Math.round(H * 0.55)
+  for (let y = 0; y < c.H; y++) for (let x = 0; x < c.W; x++) if (solid[y * c.W + x]) return y
+  return c.H
+}
+
 const SHARED_EVENTS: SceneEvent[] = [
   {
     name: 'plane',
@@ -249,7 +257,7 @@ const SHARED_EVENTS: SceneEvent[] = [
       const dir = seed % 2 ? 1 : -1
       const t = age / 160
       const x = Math.round(dir > 0 ? t * (c.W + 10) - 5 : (1 - t) * (c.W + 10) - 5)
-      const y = 1 + (seed % Math.round(H * 0.55)) // any altitude
+      const y = 1 + (seed % Math.max(1, Math.min(Math.round(H * 0.55), openSky(c, look) - 2))) // any altitude clear of the skyline
       if (look.night > 0.4) {
         c.set(x, y, age % 8 < 4 ? P.red : P.surface2)
         c.set(x + 1, y, P.white)
@@ -265,12 +273,13 @@ const SHARED_EVENTS: SceneEvent[] = [
     frames: 50,
     weight: 2,
     when: look => look.night > 0.7,
-    draw(c, _look, age, seed) {
+    draw(c, look, age, seed) {
+      const sky = Math.max(1, Math.min(Math.round(H * 0.45), openSky(c, look) - 5)) // it burns out (4 rows lower) before the skyline
       for (let s = 0; s < 3; s++) {
         const a = age - s * 14
         if (a < 0 || a > 12) continue
         const x0 = (hash(seed + s) % Math.max(1, c.W - 20)) + a * 2
-        const y0 = (hash(seed * 3 + s) % Math.round(H * 0.45)) + Math.floor(a / 3)
+        const y0 = (hash(seed * 3 + s) % sky) + Math.floor(a / 3)
         for (let k = 0; k < 5; k++) c.glow(x0 - k * 2, y0 - Math.floor(k / 2), P.white, 1 - k / 5)
       }
     },
