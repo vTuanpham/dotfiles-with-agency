@@ -147,25 +147,29 @@ HERO_INLINE_ROWS = 1 + 2 + 3 + 3  # the turn line, two workers, the quota rows, 
 def hero_inline(face, images, meta, stop, k, blink):
     """Wake's inline rows under the scene, as the band draws them: the turn line, the crew with its lanes and root graph, the
     quota rows and the prompt."""
+    # Every glyph sits on the scene's own cell grid: column n of the text is column n of the scene, as in the terminal.
     width = HERO_W * face.cw
     out = Image.new("RGB", (width, HERO_INLINE_ROWS * face.ch), BASE)
     d = ImageDraw.Draw(out)
     (glyph, color, words), clock, weather, typed = HERO_TURNS[stop]
-    put_segments(out, d, face, images, 6, 0, [(glyph, color), (words, TEXT)])
+    put_segments(out, d, face, images, 0, 0, [(glyph, color), (words, TEXT)])
     right = [(clock, SUBTLE), (" │ ", SURFACE2), weather, (" │ ", SURFACE2), ("9 turns ", SUBTLE), ("+82", GREEN), ("-19", RED)]
-    put_segments(out, d, face, images, width - 6 - sum(len(t) for t, _ in right) * face.cw, 0, right)
+    put_segments(out, d, face, images, width - sum(len(t) for t, _ in right) * face.cw, 0, right)
     at = meta["stops"][stop][k]
     for r, row in enumerate(at["rows"]):
-        crew_row(out, d, face, images, (1 + r) * face.ch, row, at["box"], meta["textColumns"])
+        crew_row(out, d, face, images, (1 + r) * face.ch, row, at["box"], meta["textColumns"], x0=0)
     y = (1 + len(at["rows"])) * face.ch
     for r, line in enumerate(quota_segments(chunks) for chunks in meta["quota"]):
-        put_segments(out, d, face, images, 6, y + r * face.ch, line)
+        put_segments(out, d, face, images, 0, y + r * face.ch, line)
+    # the prompt as Claude Code draws it: a rule above and below the input line, the cursor after what is typed
     prompt_y = y + len(meta["quota"]) * face.ch
-    d.rounded_rectangle([face.cw // 2, prompt_y + face.ch // 2, width - 1 - face.cw // 2, prompt_y + 5 * face.ch // 2], 8, outline=SURFACE2, width=1)
+    for row in (0, 2):
+        for n in range(HERO_W):
+            face.put(d, n * face.cw, prompt_y + row * face.ch, "─", SUBTLE)
     for n, char in enumerate(typed):
-        face.put(d, 2 * face.cw + n * face.cw, prompt_y + face.ch, char, PEACH if n == 0 else TEXT)
+        face.put(d, n * face.cw, prompt_y + face.ch, char, PEACH if n == 0 else TEXT)
     if blink:
-        x = 2 * face.cw + len(typed) * face.cw
+        x = len(typed) * face.cw
         d.rectangle([x, prompt_y + face.ch, x + face.cw - 1, prompt_y + 2 * face.ch - 2], fill=TEXT)
     return out
 
@@ -325,12 +329,13 @@ def quota_segments(chunks):
     return out
 
 
-def crew_row(frame, draw, face, images, y, row, box, text_columns):
+def crew_row(frame, draw, face, images, y, row, box, text_columns, x0=6):
     """One crew row laid out as the band lays it out: logo, the harness's own spinner, title, model mark, state, effort dots,
-    peer lanes, then the leader and the root graph's cell at the right edge. Returns the x of the parts the notes point at."""
+    peer lanes, then the leader and the root graph's cell at the right edge. `x0` is where column 0 of the band is drawn.
+    Returns the x of the parts the notes point at."""
     cw, ink = face.cw, FAMILY[row["backend"]]
-    at = {"logo": 6 + cw}
-    x = put_segments(frame, draw, face, images, 6, y, [(logo(row["backend"]), ink), (" " + row["spin"] + " ", ink)])
+    at = {"logo": x0 + cw}
+    x = put_segments(frame, draw, face, images, x0, y, [(logo(row["backend"]), ink), (" " + row["spin"] + " ", ink)])
     if row["kind"] == "native":
         x = put_segments(frame, draw, face, images, x, y, [(row["title"], TEXT), (" " + row["mark"], ink), (" ", SUBTLE)])
         at["dots"] = x + cw * row["effort"]["total"] / 2
@@ -356,7 +361,7 @@ def crew_row(frame, draw, face, images, y, row, box, text_columns):
             x = put_segments(frame, draw, face, images, x, y, [(lane["text"], lit)], bold=lane["flow"] > 0.65)
     cell = row["cell"]
     family = FAMILY.get(cell["family"], YELLOW) if cell["family"] else YELLOW
-    start = 6 + (box - 9) * cw
+    start = x0 + (box - 9) * cw
     if cell["branch"] == "─" and cell.get("arriving") is not None:  # beads march only while this row's message arrives
         period, step = 9, (cell["arriving"] // 120) % 9
         beads = ((" " * (period - 2) + "∙•") * (text_columns // period + 2))[(step if cell["dir"] == "in" else period - 1 - step):]
