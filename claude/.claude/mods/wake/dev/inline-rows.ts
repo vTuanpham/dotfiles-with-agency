@@ -1,6 +1,6 @@
 // The inline rows under the scene for the README renders (dock.ts, hero-rows.ts): demo workers and accounts through the real
 // row builders, as JSON that docs/tools/readme_gifs.py draws (`crew_row`, `quota_segments`).
-import { CLASS_GLYPH, crewLayout, harnessSpin, quotaRows, rootSpine, type RootLink } from '../hooks/crew-row.ts'
+import { CLASS_GLYPH, crewLayout, harnessSpin, quotaRows, RootColumn, rootSpine, type RootLink } from '../hooks/crew-row.ts'
 import type { WakeChip, WakeQuota } from '../types'
 
 type Peers = NonNullable<WakeChip['peers']>
@@ -18,9 +18,11 @@ const toRoot = (job: WakeChip, now: number): RootLink | undefined => {
 /** A native subagent's row: its own effort dots and age, no lanes. */
 export type Native = { title: string; tier: 1 | 2 | 3 | 4; lit: number; total: number; age: string }
 
-/** The crew rows, as the band lays them out at `rowWidth`, for frame `i` (the spinners' beat) at `now`. */
-export function crewRowsAt(jobs: WakeChip[], natives: Native[], now: number, i: number, rowWidth: number) {
-  const { rows, box } = crewLayout(jobs, natives.map(n => n.title), now, rowWidth)
+/** The crew rows, as the band lays them out at `rowWidth`, for frame `i` (the spinners' beat) at `now`; `column` eases the
+ * root's graph from frame to frame as the band does (one per sequence of frames). */
+export function crewRowsAt(jobs: WakeChip[], natives: Native[], now: number, i: number, rowWidth: number, column = new RootColumn()) {
+  const layout = crewLayout(jobs, natives.map(n => n.title), now, rowWidth)
+  const rows = layout.rows, box = column.next(layout.box, layout.snug, now)
   const links: (RootLink | undefined)[] = [
     ...natives.map(() => ({ dir: 'tether' as const, family: 'claude', at: now, count: 1, description: [] })),
     ...jobs.map(job => toRoot(job, now)),

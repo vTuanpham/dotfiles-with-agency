@@ -4,7 +4,7 @@
 // workers message each other and the root.
 import { MessageTrails, sceneFrame, scenePixels, type SceneInput } from '../hooks/scene.ts'
 import { SCENE_H } from '../hooks/landscapes/kit.ts'
-import { packetWindow } from '../hooks/crew-row.ts'
+import { packetWindow, RootColumn } from '../hooks/crew-row.ts'
 import { LOGOS } from '../hooks/logos.ts'
 import type { WakeChip } from '../types'
 import { chip, crewRowsAt, message, type Native, quotaLines as quotaAt } from './inline-rows.ts'
@@ -58,7 +58,8 @@ const crewAt = (ms: number): WakeChip[] => {
 // the same geometry as the band's rows: the graph's column hugs the longest row
 const rowWidth = TEXT_COLUMNS - 2
 const EXPLORE: Native = { title: 'Explore', tier: 2, lit: 2, total: 3, age: '1m' } // a native subagent
-const layoutAt = (i: number) => crewRowsAt(crewAt(msAt(i)), [EXPLORE], NOW0 + msAt(i), i, rowWidth)
+const column = new RootColumn() // the root's graph eased frame to frame, as the band does
+const layoutAt = (i: number) => crewRowsAt(crewAt(msAt(i)), [EXPLORE], NOW0 + msAt(i), i, rowWidth, column)
 
 // ── where each thing the legend names is: its hover owner's cells, a box per group of cells within 2 columns of each other ──────
 type Box = { x: number; y: number; w: number; h: number }

@@ -135,11 +135,12 @@ HERO_STOPS = (  # (showcase scene, loop frame it starts at, tab, caption); messa
     (3, 200, "Mountains", "Tests pass: fireworks, while a constellation and a lantern report to Mochi"),
 )
 HERO_LEG, HERO_FADE = 120, 8  # frames per stop, frames of each cross-fade
-HERO_TURNS = (  # each stop's turn line (glyph, colour, what is happening; then the right side) and what is typed at the prompt
-    (("◐ ", TEAL, "Editing · src/parser.ts"), "turn 7 · 1:02", ("☾ 18° Demo city clear", YELLOW), "❯ Ship the parser fix"),
-    (("◓ ", TEAL, "Reading · docs/release.md"), "turn 8 · 0:41", ("☼ 27° Demo coast sunny", YELLOW), "❯ Draft the release notes"),
-    (("✗ ", RED, "pytest · exit 1"), "turn 9 · 2:13", ("☂ 15° Demo woods rain", BLUE), "❯ Why did the parser test fail?"),
-    (("✓ ", GREEN, "last turn 1m · tests green"), "idle 1m", ("☾ 6° Demo peaks clear", YELLOW), "❯ "),
+HERO_TURNS = (  # each stop's turn line, as the band words it: (glyph, ink, what is happening, bold), the clock note, the
+    # weather (icon, °, place, sky, rain chance and hour or None), the session's turns and lines; then what is typed at the prompt
+    (("◐", "teal", "Editing", True), "turn 7 · 1:02", ("☾", 18, "Demo City", "clear", None), (7, 82, 19), "❯ Ship the parser fix"),
+    (("◓", "teal", "Reading", True), "turn 8 · 0:41", ("☼", 27, "Demo Coast", "sunny", None), (8, 140, 22), "❯ Draft the release notes"),
+    (("✗", "red", "pytest · exit 1", False), "idle 12s", ("☂", 15, "Demo Woods", "rain", (80, "16:00")), (9, 151, 37), "❯ Why did the parser test fail?"),
+    (("✓", "green", "last turn 1m · tests green", False), "idle 1m", ("☾", 6, "Demo Peaks", "clear", None), (10, 188, 41), "❯ "),
 )
 HERO_INLINE_ROWS = 1 + 2 + 3 + 3  # the turn line, two workers, the quota rows, the prompt (a border, the text, a border)
 
@@ -147,20 +148,30 @@ HERO_INLINE_ROWS = 1 + 2 + 3 + 3  # the turn line, two workers, the quota rows, 
 def hero_inline(face, images, meta, stop, k, blink):
     """Wake's inline rows under the scene, as the band draws them: the turn line, the crew with its lanes and root graph, the
     quota rows and the prompt."""
-    # Every glyph sits on the scene's own cell grid: column n of the text is column n of the scene, as in the terminal.
-    width = HERO_W * face.cw
+    # Every glyph sits on the scene's own cell grid, as in the terminal. Under the scene the band's words sit on the scene's
+    # floor colour with one column of padding each side, their inks pushed for contrast against it (register.tsx); the
+    # prompt below is Claude Code's, on the terminal's own background.
+    width, cw = HERO_W * face.cw, face.cw
+    at = meta["stops"][stop][k]
+    pal = palette(at["ink"], at["floor"])
     out = Image.new("RGB", (width, HERO_INLINE_ROWS * face.ch), BASE)
     d = ImageDraw.Draw(out)
-    (glyph, color, words), clock, weather, typed = HERO_TURNS[stop]
-    put_segments(out, d, face, images, 0, 0, [(glyph, color), (words, TEXT)])
-    right = [(clock, SUBTLE), (" │ ", SURFACE2), weather, (" │ ", SURFACE2), ("9 turns ", SUBTLE), ("+82", GREEN), ("-19", RED)]
-    put_segments(out, d, face, images, width - sum(len(t) for t, _ in right) * face.cw, 0, right)
-    at = meta["stops"][stop][k]
+    band_rows = 1 + len(at["rows"]) + len(meta["quota"])
+    d.rectangle([0, 0, width - 1, band_rows * face.ch - 1], fill=pal["floor"])
+    (glyph, ink, words, bold), clock, (icon, temp, place, sky, rain), (turns, added, removed), typed = HERO_TURNS[stop]
+    put_segments(out, d, face, images, cw, 0, [(glyph + " ", pal[ink])])
+    put_segments(out, d, face, images, 3 * cw, 0, [(words, pal["text"])], bold=bold)
+    right = [(" " + clock, pal["subtle"]), (" │ ", pal["surface"]), (icon + " ", pal["yellow"]), (f"{temp}° ", pal["text"]),
+             (place, pal["subtext"]), (" " + sky, pal["subtle"])]
+    if rain:
+        right.append((f" · ☂ {rain[0]}% {rain[1]}", pal["sky"]))
+    right += [(" │ ", pal["surface"]), (f"{turns} turns ", pal["subtle"]), (f"+{added}", pal["green"]), (" ", pal["text"]), (f"−{removed}", pal["red"])]
+    put_segments(out, d, face, images, width - cw - sum(len(t) for t, _ in right) * cw, 0, right)
     for r, row in enumerate(at["rows"]):
-        crew_row(out, d, face, images, (1 + r) * face.ch, row, at["box"], meta["textColumns"], x0=0)
+        crew_row(out, d, face, images, (1 + r) * face.ch, row, at["box"], meta["textColumns"], x0=cw, pal=pal)
     y = (1 + len(at["rows"])) * face.ch
-    for r, line in enumerate(quota_segments(chunks) for chunks in meta["quota"]):
-        put_segments(out, d, face, images, 0, y + r * face.ch, line)
+    for r, line in enumerate(quota_segments(chunks, pal) for chunks in meta["quota"]):
+        put_segments(out, d, face, images, cw, y + r * face.ch, line)
     # the prompt as Claude Code draws it: a rule above and below the input line, the cursor after what is typed
     prompt_y = y + len(meta["quota"]) * face.ch
     for row in (0, 2):
@@ -242,10 +253,7 @@ LEGEND = {  # name: (title, what it is, colour); the call-outs sit in the order 
     "message": ("Message", "a rocket that lands as agy stars", GREEN),
     "mochi": ("Mochi", "the session's mood", PINK),
 }
-FAMILY = {"codex": TEAL, "agy": BLUE, "claude": PINK, "opencode": GREEN}  # a harness's colour, as Wake's rows use it
-GROUP = BASE  # what a faint tint is blended over
-LANES = [TEAL, MAUVE, YELLOW, BLUE, PINK, GREEN]  # the colours of the peer lanes, in Wake's order
-STATE = TEAL  # a running worker's state mark
+GROUP = BASE  # what a faint tint is blended over, without the band's floor
 
 
 class Logo(str):
@@ -300,79 +308,96 @@ def put_segments(frame, draw, face, images, x, y, segments, bold=False):
     return x
 
 
-def quota_segments(chunks):
+def palette(ink=None, floor=None):
+    """The inks the band draws its words in. Wake sets them on the scene's floor colour, each pushed for contrast against it
+    (`readable` in util.ts): pass that map and floor, as hero-rows.ts reports them. Without them, the plain theme on BASE."""
+    if ink is None:
+        return {"text": TEXT, "subtle": SUBTLE, "surface": SURFACE2, "teal": TEAL, "mauve": MAUVE, "yellow": YELLOW,
+                "blue": BLUE, "pink": PINK, "green": GREEN, "red": RED, "peach": PEACH, "floor": GROUP}
+    rgb = lambda h: tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
+    return {**{key: rgb(value) for key, value in ink.items()}, "floor": rgb(floor)}
+
+
+def family_ink(pal, cli):  # a harness's colour, as Wake's rows use it
+    return pal[{"codex": "teal", "agy": "blue", "claude": "pink", "opencode": "green"}.get(cli, "yellow")]
+
+
+def quota_segments(chunks, pal=None):
     """Quota runs per harness: one faint tint behind each run, hard edges at the │ between harnesses,
     remaining allowance green with plenty left, yellow getting low, red nearly gone."""
+    pal = pal or palette()
     out, last = [], None
     for chunk in chunks:
-        ink = FAMILY[chunk["cli"]]
+        ink = family_ink(pal, chunk["cli"])
         text = chunk["text"][1:]  # the mark is replaced by the harness logo
         head, *tokens = text.split(" ")
-        tint = blend(ink, GROUP, 0.13)
+        tint = blend(ink, pal["floor"], 0.13)
         if chunk["cli"] != last:
             if last:
-                out.append((" │ ", SURFACE2, None))
+                out.append((" │ ", pal["surface"], None))
             out.append((logo(chunk["cli"]), ink, tint))
         else:
-            out.append((" · ", SUBTLE, tint))
-        out.append((head, TEXT if head.endswith("*") else SUBTLE, tint))
+            out.append((" · ", pal["subtle"], tint))
+        out.append((head, pal["text"] if head.endswith("*") else pal["subtle"], tint))
         for token in tokens:
             part = next((p for p in chunk["parts"] if p["pct"] is not None
                          and token.startswith(f'{p["label"]}{p["pct"]}%')), None)
             if part:
                 pct, label = part["pct"], part["label"]
-                out.append((" " + label, SUBTLE, tint))
-                out.append((token[len(label):], GREEN if pct >= 50 else YELLOW if pct >= 20 else RED, tint))
+                out.append((" " + label, pal["subtle"], tint))
+                out.append((token[len(label):], pal["green"] if pct >= 50 else pal["yellow"] if pct >= 20 else pal["red"], tint))
             else:
-                out.append((" " + token, SUBTLE, tint))
+                out.append((" " + token, pal["subtle"], tint))
         last = chunk["cli"]
     return out
 
 
-def crew_row(frame, draw, face, images, y, row, box, text_columns, x0=6):
+def crew_row(frame, draw, face, images, y, row, box, text_columns, x0=6, pal=None):
     """One crew row laid out as the band lays it out: logo, the harness's own spinner, title, model mark, state, effort dots,
-    peer lanes, then the leader and the root graph's cell at the right edge. `x0` is where column 0 of the band is drawn.
-    Returns the x of the parts the notes point at."""
-    cw, ink = face.cw, FAMILY[row["backend"]]
+    peer lanes, then the leader and the root graph's cell at the right edge. `x0` is where column 0 of the band is drawn,
+    `pal` the band's inks. Returns the x of the parts the notes point at."""
+    pal = pal or palette()
+    cw, ink, text, subtle, surface = face.cw, family_ink(pal, row["backend"]), pal["text"], pal["subtle"], pal["surface"]
     at = {"logo": x0 + cw}
     x = put_segments(frame, draw, face, images, x0, y, [(logo(row["backend"]), ink), (" " + row["spin"] + " ", ink)])
     if row["kind"] == "native":
-        x = put_segments(frame, draw, face, images, x, y, [(row["title"], TEXT), (" " + row["mark"], ink), (" ", SUBTLE)])
+        x = put_segments(frame, draw, face, images, x, y, [(row["title"], text), (" " + row["mark"], ink), (" ", subtle)])
         at["dots"] = x + cw * row["effort"]["total"] / 2
         put_segments(frame, draw, face, images, x, y, [
-            ("●" * row["effort"]["lit"], ink), ("○" * (row["effort"]["total"] - row["effort"]["lit"]), SURFACE2), (row["after"], SUBTLE),
+            ("●" * row["effort"]["lit"], ink), ("○" * (row["effort"]["total"] - row["effort"]["lit"]), surface), (row["after"], subtle),
         ])
         x += cw * (row["effort"]["total"] + len(row["after"]))
     else:
-        state = glint(STATE, TEXT, row["beat"] * 0.7)
-        x = put_segments(frame, draw, face, images, x, y, [(row["title"], TEXT), (" ", TEXT), (row["mark"], ink), (" " + row["glyph"], state)])
+        state = glint(pal["teal"], text, row["beat"] * 0.7)  # a running worker's state mark
+        x = put_segments(frame, draw, face, images, x, y, [(row["title"], text), (" ", text), (row["mark"], ink), (" " + row["glyph"], state)])
         eff = row["effort"]
-        x = put_segments(frame, draw, face, images, x, y, [((eff["before"] if eff else "") + " ", SUBTLE)])
+        x = put_segments(frame, draw, face, images, x, y, [((eff["before"] if eff else "") + " ", subtle)])
         if eff:
             at["dots"] = x + cw * eff["total"] / 2
             x = put_segments(frame, draw, face, images, x, y, [
-                ("●" * eff["lit"], ink), ("○" * (eff["total"] - eff["lit"]), SURFACE2), (" " * max(0, eff["size"] - eff["total"]) + eff["after"], SUBTLE),
+                ("●" * eff["lit"], ink), ("○" * (eff["total"] - eff["lit"]), surface), (" " * max(0, eff["size"] - eff["total"]) + eff["after"], subtle),
             ])
         else:
-            x = put_segments(frame, draw, face, images, x, y, [(row["detail"], SUBTLE)])
+            x = put_segments(frame, draw, face, images, x, y, [(row["detail"], subtle)])
         at["lane"] = x + 1.5 * cw
+        lanes = [pal[key] for key in ("teal", "mauve", "yellow", "blue", "pink", "green")]  # the peer lanes, in Wake's order
         for lane in row["gutter"]:
-            lit = glint(dim_peer(LANES[lane["color"] % 6], SUBTLE, lane["strength"]), TEXT, lane["flow"])
+            lit = glint(dim_peer(lanes[lane["color"] % 6], subtle, lane["strength"]), text, lane["flow"])
             x = put_segments(frame, draw, face, images, x, y, [(lane["text"], lit)], bold=lane["flow"] > 0.65)
     cell = row["cell"]
-    family = FAMILY.get(cell["family"], YELLOW) if cell["family"] else YELLOW
+    family = family_ink(pal, cell["family"]) if cell["family"] else pal["yellow"]
     start = x0 + (box - 9) * cw
     if cell["branch"] == "─" and cell.get("arriving") is not None:  # beads march only while this row's message arrives
         period, step = 9, (cell["arriving"] // 120) % 9
         beads = ((" " * (period - 2) + "∙•") * (text_columns // period + 2))[(step if cell["dir"] == "in" else period - 1 - step):]
         beads = beads[: max(0, (start - x) // cw)]
-        put_segments(frame, draw, face, images, x, y, [(beads, glint(dim_peer(family, SUBTLE, cell["strength"] * 0.7), TEXT, 0.15 + cell["flow"] * 0.5))])
-    branch = glint(dim_peer(family, SUBTLE, cell["strength"]), TEXT, cell["flow"])
-    spine = glint(dim_peer(YELLOW, SUBTLE, cell["strength"]), TEXT, cell["flow"])
+        put_segments(frame, draw, face, images, x, y, [(beads, glint(dim_peer(family, subtle, cell["strength"] * 0.7), text, 0.15 + cell["flow"] * 0.5))])
+    branch = glint(dim_peer(family, subtle, cell["strength"]), text, cell["flow"])
+    spine = glint(dim_peer(pal["yellow"], subtle, cell["strength"]), text, cell["flow"])
     node = cell["spine"] in "◉◎"
-    put_segments(frame, draw, face, images, start, y, [(" ", SUBTLE), (cell["branch"], branch)])
+    put_segments(frame, draw, face, images, start, y, [(" ", subtle), (cell["branch"], branch)])
     put_segments(frame, draw, face, images, start + 2 * cw, y, [("◎" if node and cell["flow"] > 0.55 else cell["spine"], spine)], bold=cell["flow"] > 0.65)
-    put_segments(frame, draw, face, images, start + 3 * cw, y, [(cell["arrow"], branch), (" root" if node else "", SUBTLE)])
+    put_segments(frame, draw, face, images, start + 3 * cw, y, [(cell["arrow"], branch), (" root" if node else "", subtle)])
     at["root"] = start + 2.5 * cw
     return at
 

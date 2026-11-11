@@ -15,7 +15,7 @@ import { summaryOf } from './summary'
 import { EXIT_MS } from './exits'
 import { CREW_CYCLE, crewTour } from './crew-tour'
 import { COLOR, readable, clock, commandHead, hash, isAnswerText, isTestCommand, lines, patchCounts, shortPath, span } from './util'
-import { CLASS_GLYPH, STATE_GLYPHS, stateOf, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, crewLayout, crewJobs, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
+import { CLASS_GLYPH, STATE_GLYPHS, stateOf, activityFlash, cells, harnessSpin, packetWindow, type RootCell, type RootLink, rootSpine, RootColumn, crewLayout, crewJobs, crewPage, crewRows, quotaMark, quotaRows, quotaText, truncate } from './crew-row'
 import { type EffortLevels, effortDots, levelsFor, scanEfforts } from './sources/efforts'
 import { messagePreview, messageStatus, PeerMessageTracker } from './peer-messages'
 import { LOGOS, modelLogo } from './logos'
@@ -208,6 +208,7 @@ let scenePointer: { x: number; y: number } | null = null
 let sceneSelection: SceneSelection | null = null
 let lastSceneTarget: WakeSceneHit | null = null
 let scenePainting = false
+const rootColumn = new RootColumn() // where the root's graph stands, eased between draws
 let hostLag = 0 // ms from starting a paint to the host taking it as its next frame, smoothed
 /** The frame the paint loop last drew: a band render on the same frame mounts it instead of painting the scene again. */
 let lastFrame: { frameNo: number; width: number; rows: number; selection: SceneSelection | null; frame: ReturnType<typeof sceneFrame> } | null = null
@@ -1111,11 +1112,13 @@ export const register: Register = on => {
     const rows: RenderElement[] = []
     // Keep Claude's native subagent row intact; bridge jobs each get their own line.
     // The worker rows end where the root's graph stands: one shared column that hugs the longest row (its words, metrics and
-    // peer lanes), so every worker reaches it by a short branch instead of a long empty run. Its gap leaves room for a
-    // message's beads and never changes with the traffic, so the graph stands still. A narrow band keeps it at the right edge.
+    // peer lanes), so every worker reaches it by a short branch instead of a long empty run. At rest it stands snug against
+    // the rows; while a message to or from the root is on its way it eases out to give its beads room, then eases back in
+    // (RootColumn). A narrow band keeps it at the right edge.
     const resourceRows = await read($, nativeResources)
-    const { box: rowBox, rows: bridgeRows } = crewLayout(running, crewAgents.map(agent =>
+    const layout = crewLayout(running, crewAgents.map(agent =>
       (agent.name ?? agent.description) + (resourceDetail(resourceRows, agent.id)?.text ?? '')), now, rowWidth)
+    const bridgeRows = layout.rows, rowBox = rootColumn.next(layout.box, layout.snug, now)
     // a logo always keeps one cell of air before the text beside it
     const logo = (backend: string, alt = ({ codex: 'Codex', agy: 'Antigravity', claude: 'Claude', opencode: 'OpenCode' } as Record<string, string>)[backend] ?? backend) => Image && LOGOS[backend]
       ? <Box flexDirection="row" flexShrink={0}><Image source={{ png: LOGOS[backend] }} columns={2} rows={1} alt={alt} /><Text> </Text></Box>

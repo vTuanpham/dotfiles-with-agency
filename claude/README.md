@@ -314,10 +314,10 @@ landscape's own.
 The root has one place in every worker row: a `◉` node on the first row, a
 spine down to the last worker tied to it, `─┤`/`─┘` branches, and `↑`/`↓` for the last message
 to or from the root (`·` when the worker simply works for it); a packet runs the spine as a
-message arrives and a tie fades over 15 minutes. The graph's column hugs the longest row's words
-and metrics with a fixed gap that peer lanes stand in first, so it does not move as messages come and go,
-whether worker to worker, worker to root or root to worker; the row's leader stays empty except for a
-few beads while a message arrives. Every metric opens a card under the pointer: effort says which levels the
+message arrives and a tie fades over 15 minutes. The graph's column stands snug against the longest row's words,
+metrics and peer lanes at rest; while a message to or from the root is on its way it eases out a cell at a time to give
+the message's beads room to march along the row's leader, then eases back in (`RootColumn` in `hooks/crew-row.ts`). It
+never stands nearer than the rows need, so a lane that appears takes its room at once. Every metric opens a card under the pointer: effort says which levels the
 model offers, Bridge time reflects its last activity, native Claude time is elapsed since first observed,
 and Bridge memory shows scope use/cap. `?` on a worker means its current state is unknown;
 when a source is unavailable, hover for its last observed state until a later scan succeeds.
@@ -352,8 +352,11 @@ Bridge jobs and tidy eligibility come from
 Quota observations come independently from
 [`agent-accounts snapshot`](../agent-accounts/README.md).
 Wake maps the shared state and stall reason; heavy waits, root pauses and retry
-backoff stay normal known states. Colored gutter lanes join connected peers;
-← points to the recipient, ─, ━ and ═ represent 1, 2–4 and 5+ messages,
+backoff stay normal known states. Peer messages are routed as few, short wires (`peerNets` in `hooks/crew-row.ts`): the
+messages one worker sends to several, or several send to one, share one wire with a `┤` tee at each middle endpoint; wires
+that never share a row share a column; and the layout is chosen by trying the orders of up to six wires and keeping the one
+with the fewest arrows that cannot reach their row, crossings and columns. Each arrowhead runs in to its row's text, right
+after its last metric. ← points to the recipient, ─, ━ and ═ represent 1, 2–4 and 5+ messages,
 and ┄/┆ show a declared peer or dependency wait. Motion means a message just arrived: when Wake
 first sees new messages on a link, one packet per message (up to five, a beat apart) crosses the
 lane once from sender to recipient, then the lane rests. History Wake never saw arrive does not

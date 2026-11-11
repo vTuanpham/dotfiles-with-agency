@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { PACKET_RUN_MS, cells, crewLayout, crewJobs, crewPage, crewRows, messageFade, quotaLines, quotaRows, quotaText, STATE_GLYPHS, stateOf } from '../hooks/crew-row'
+import { PACKET_RUN_MS, RootColumn, cells, crewLayout, crewJobs, crewPage, crewRows, messageFade, quotaLines, quotaRows, quotaText, STATE_GLYPHS, stateOf } from '../hooks/crew-row'
 import type { WakeChip } from '../types'
 
 const base: WakeChip = { name: 'worker', title: 'Inspect 長い👩‍💻 worker title', backend: 'codex', account: '01', model: 'gpt-6.1-terra', effort: 'high', running: true, isStale: false, since: 0, lastEventAt: 10_000, memoryBytes: 512 * 1024 ** 2, memoryCap: '1G' }
@@ -90,11 +90,21 @@ test('messages to and from the root take no room in the rows, so the layout neve
     expect(row.gutter).toEqual([]) // the root's graph at the right edge shows them
     expect([row.title, row.detail]).toEqual([without.title, without.detail])
   }
-  const layout = (at: number) => crewLayout([job], [], at, 160).box
-  expect(layout(now)).toBe(layout(now + 900_001)) // the graph's column stands still, message or none
+  // at rest the graph stands snug against the rows, message or none; it spaces out only while a message is on its way
+  expect(crewLayout([job], [], now, 160).snug).toBe(crewLayout([job], [], now + 900_001, 160).snug)
+  expect(crewLayout([job], [], now + 900_001, 160).box).toBe(crewLayout([job], [], now + 900_001, 160).snug)
 })
 
-test('a peer lane stands in the gap before the root graph, so a pair starting to talk does not move it', () => {
+test('the root column eases out for a message in flight and back in after, never nearer than the rows need', () => {
+  const column = new RootColumn()
+  expect(column.next(40, 30, 0)).toBe(40)
+  expect(column.next(48, 30, 60)).toBe(41) // a cell every 60 ms
+  expect(column.next(48, 30, 240)).toBe(44)
+  expect(column.next(30, 30, 300)).toBe(43)
+  expect(column.next(30, 46, 360)).toBe(46) // a lane appearing takes its room at once
+})
+
+test('a peer lane takes its room past the rows, and the arrow runs in to the row it reaches', () => {
   const now = 100_000, talk = { count: 1, lastAt: now, observedAt: now, fresh: 1, preview: 'x' }
   const pair = (peers: boolean): WakeChip[] => [
     { ...base, id: 'a', name: 'a', title: 'Parser fix', peers: peers ? [{ ...talk, target: 'b', outgoing: true }] : [] },
@@ -102,7 +112,8 @@ test('a peer lane stands in the gap before the root graph, so a pair starting to
   ]
   const talking = crewLayout(pair(true), ['Explore'], now, 160)
   expect(talking.rows[0]!.gutter.map(lane => lane.text.trim())).toEqual(['─┐'])
-  expect(talking.box).toBe(crewLayout(pair(false), ['Explore'], now, 160).box)
+  expect(talking.rows[1]!.gutter.map(lane => lane.text.trim())).toEqual(['←┘'])
+  expect(talking.snug).toBeGreaterThanOrEqual(crewLayout(pair(false), ['Explore'], now, 160).snug)
 })
 
 test('state glyphs distinguish waits, pause, retry, answer, stall and completion', () => {
@@ -203,21 +214,20 @@ test('peer lanes fit every width, preserve groups, direction, weight and freshne
     }
     expect(rows.every(row => row.gutter.length === rows[0]!.gutter.length)).toBe(true)
   }
-  const rows = crewRows(jobs, now, 140)
+  const rows = crewRows(jobs, now, 140), wire = (row: number) => rows[row]!.gutter.map(s => s.text).join('')
   expect(rows[0]!.detail.length).toBeLessThan(80)
-  expect(rows[0]!.gutter.map(s => s.text).join('')).toContain('─┐')
-  expect(rows[0]!.gutter.map(s => s.text).join('')).toContain('━┐')
-  expect(rows[1]!.gutter.map(s => s.text).join('')).toContain('←┘')
-  expect(rows[3]!.gutter.map(s => s.text).join('')).toContain('═┐')
-  expect(rows[3]!.gutter.at(-1)!.dim).toBe(true)
-  expect(rows[0]!.gutter[0]!.color).toBe(rows[0]!.gutter[1]!.color)
-  expect(rows[0]!.gutter[0]!.color).not.toBe(rows[0]!.gutter[2]!.color)
+  // worker 0's two messages are one wire (a fan-out, heavier for its four messages) with a tee at worker 1 and a corner at 2;
+  // worker 3's to 4 never shares a row with it, so the two share one column
+  expect([wire(0), wire(1), wire(2), wire(3), wire(4)]).toEqual(['━┐ ', '←┤ ', '←┘ ', '═┐ ', '←┘ '])
+  expect(rows[3]!.gutter[0]!.dim).toBe(true)
+  expect(rows[0]!.gutter[0]!.color).toBe(rows[2]!.gutter[0]!.color)
+  expect(rows[0]!.gutter[0]!.color).not.toBe(rows[3]!.gutter[0]!.color)
   const narrow = crewRows(jobs, now, 40)
   expect(narrow[0]!.gutter).toHaveLength(0)
   expect(narrow[0]!.columns).toContain('peers')
   expect(narrow[0]!.detail).toContain('↗1')
   jobs[3]!.peers![0]!.lastAt = now - 900_001
-  expect(crewRows(jobs, now, 140)[3]!.gutter).toHaveLength(2)
+  expect(crewRows(jobs, now, 140)[3]!.gutter).toHaveLength(1)
 })
 
 test('a declared wait alone does not invent a communication graph', () => {

@@ -110,6 +110,65 @@ const pad = (s: string, width: number) => s + ' '.repeat(Math.max(0, width - cel
 
 type Link = { source: number; target: number; count: number; at: number; wait: boolean; preview?: string | null; kind?: string; observedAt?: number; fresh?: number }
 
+/** A wire in the lanes: the messages one worker sent to several (fan-out) or several sent to one (fan-in), drawn as one
+ * vertical with a branch at each endpoint, in its `track` (0 nearest the rows), spanning rows `top`..`bottom`. */
+type Net = { links: Link[]; track: number; color: number; top: number; bottom: number }
+
+/**
+ * Routes the peer messages as few, short, uncrossed wires (a small channel router):
+ *   1. messages sharing a sender, or sharing a receiver, merge into one wire, a trunk with a branch per endpoint;
+ *   2. wires are packed into tracks by the left-edge rule, shortest first: each takes the nearest track it does not overlap
+ *      (two wires that never share a row share a column), so the shortest sit nearest the text and wires nest, and an arrow
+ *      running in to its row only crosses a wire it genuinely interleaves with.
+ * Tracks the width cannot hold leave their messages to the text marks.
+ */
+function peerNets(jobs: WakeChip[], now: number, width: number): Net[] {
+  const lanes = peerLanes(jobs, now, width)
+  const nets: Link[][] = []
+  for (const { link } of lanes) { // a wire is a pure fan-out or a pure fan-in: never one that could read as a message nobody sent
+    const net = nets.find(n => n.every(other => other.source === link.source) || n.every(other => other.target === link.target))
+    if (net && !net.some(other => other.source === link.target || other.target === link.source)) net.push(link)
+    else nets.push([link])
+  }
+  const spans = nets.map((links, color) => {
+    const rows = links.flatMap(l => [l.source, l.target])
+    return { links, color, top: Math.min(...rows), bottom: Math.max(...rows), track: -1 }
+  }).sort((a, b) => (a.bottom - a.top) - (b.bottom - b.top) || a.top - b.top)
+  const capacity = lanes.length // never more tracks than the lanes the width allowed
+  /** Left-edge packing in `order`: each wire takes the nearest track it does not overlap. */
+  const pack = (order: typeof spans): Net[] => {
+    const placed: Net[] = []
+    for (const net of order) {
+      let track = 0
+      while (placed.some(other => other.track === track && !(net.bottom < other.top || other.bottom < net.top))) track++
+      if (track < capacity) placed.push({ ...net, track })
+    }
+    return placed
+  }
+  /** What a packing costs to read: a wire left out, an arrow that cannot reach its row (blocked by another wire's end
+   * there), a crossing, and each track's width. Ends that meet the same way (two arrivals) join and cost nothing. */
+  const cost = (placed: Net[]) => {
+    let total = (spans.length - placed.length) * 100 + (placed.length ? Math.max(...placed.map(n => n.track)) + 1 : 0) * 3
+    for (const net of placed) for (const link of net.links) for (const [row, arrives] of [[link.source, false], [link.target, true]] as const) {
+      for (const near of placed) {
+        if (near.track >= net.track || row < near.top || row > near.bottom) continue
+        const end = near.links.find(l => l.source === row || l.target === row)
+        total += !end ? 2 : (end.target === row) === arrives ? 0 : 10
+      }
+    }
+    return total
+  }
+  if (spans.length <= 1 || spans.length > 6) return pack(spans)
+  // few enough wires to try every order (6! = 720 packings at most): keep the one that reads best, ties to shortest-first
+  let best = pack(spans), bestCost = cost(best)
+  const permute = (rest: typeof spans, order: typeof spans) => {
+    if (!rest.length) { const placed = pack(order), c = cost(placed); if (c < bestCost) { best = placed; bestCost = c }; return }
+    rest.forEach((net, i) => permute([...rest.slice(0, i), ...rest.slice(i + 1)], [...order, net]))
+  }
+  permute(spans, [])
+  return best
+}
+
 /** Separate lanes keep simultaneous edges legible; connected lanes share a colour. */
 function peerLanes(jobs: WakeChip[], now: number, width: number): { link: Link; color: number }[] {
   const indices = new Map(jobs.flatMap((job, i) => job.id ? [[job.id, i] as const] : []))
@@ -142,34 +201,58 @@ function peerLanes(jobs: WakeChip[], now: number, width: number): { link: Link; 
     group.sort((a, b) => a.source - b.source || a.target - b.target || Number(a.wait) - Number(b.wait))
     if (lanes.length + group.length <= capacity) lanes.push(...group.map(link => ({ link, color })))
   }
-  return lanes
+  // the shortest lanes nearest the rows: lanes nest, and an arrow running in to its row seldom has to cross another
+  const span = ({ link }: { link: Link }) => Math.abs(link.source - link.target)
+  return lanes.map((lane, order) => ({ lane, order })).sort((a, b) => span(a.lane) - span(b.lane) || a.order - b.order).map(({ lane }) => lane)
 }
 
-/** Cells between the longest crew row and the root's graph: room for a message's beads to march. It never changes with the
- * traffic, so the graph stands still while messages come and go. */
-export const ROOT_GAP = 8
+/** Cells between the longest crew row and the root's graph while a message to or from the root is on its way: room for its
+ * beads to march. At rest the graph stands snug against the rows, ROOT_SNUG cells out (see RootColumn). */
+export const ROOT_GAP = 8, ROOT_SNUG = 2
 
 /**
  * How wide the worker rows are, which is where the root's graph stands: one shared column hugging the longest row (words,
- * metrics and peer lanes). A band under 80 cells keeps it at the right edge.
+ * metrics and peer lanes), `gap` cells past its words. A band under 80 cells keeps it at the right edge.
  * `rows` are the Bridge rows laid out at the full width; `agentNames` the native subagents'.
  */
-export function crewBox(rows: CrewRow[], agentNames: string[], rowWidth: number): number {
+export function crewBox(rows: CrewRow[], agentNames: string[], rowWidth: number, gap = ROOT_GAP): number {
   const words = Math.max(0, ...rows.map(row => 9 + cells(row.title) + cells(row.detail) + 8), ...agentNames.map(name => 5 + cells(name) + 24))
   const lanes = Math.max(0, ...rows.map(row => 9 + cells(row.title) + cells(row.detail) + row.gutter.reduce((sum, segment) => sum + cells(segment.text), 0) + 8))
-  // Peer lanes stand in the gap first and push the graph out only past it (keeping a few cells for the beads), so a pair that
-  // starts or stops talking does not move the root's column.
-  return rowWidth >= 80 ? Math.min(rowWidth, Math.max(words + ROOT_GAP, lanes + 3)) : rowWidth
+  // Peer lanes stand in the gap first and push the graph out only past it (keeping a few cells for the beads).
+  return rowWidth >= 80 ? Math.min(rowWidth, Math.max(words + gap, lanes + 3)) : rowWidth
+}
+
+/** Whether a message to or from the root is on its way just now (its packets running), so its beads want room to march. */
+export const rootInFlight = (jobs: WakeChip[], now: number): boolean => jobs.some(job => (job.peers ?? []).some(peer =>
+  peer.target === 'root' && peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1) + TURN_LEAD_MS))
+
+/**
+ * The crew rows and the box they stand in: `box` while a root message is on its way (room for its beads), `snug` at rest, the
+ * graph close to the rows' last metric. The rows are laid out once at the band's full width and the box hugs what they need;
+ * they are never laid out again at the hugged width, because a narrow width switches the peer lanes off (under 60 cells) and
+ * a pair of workers messaging each other would lose its lane for a text mark. A paged subset passes its own jobs.
+ */
+export function crewLayout(jobs: WakeChip[], agentNames: string[], now: number, rowWidth: number): { box: number; snug: number; rows: CrewRow[] } {
+  const rows = crewRows(jobs, now, rowWidth - 7) // less the spinner (3) and the root graph's cell (4)
+  const snug = crewBox(rows, agentNames, rowWidth, ROOT_SNUG)
+  return { box: rootInFlight(jobs, now) ? crewBox(rows, agentNames, rowWidth) : snug, snug, rows }
 }
 
 /**
- * The crew rows and the box they stand in. The rows are laid out once at the band's full width and the box hugs what they
- * need; they are never laid out again at the hugged width, because a narrow width switches the peer lanes off (under 60
- * cells) and a pair of workers messaging each other would lose its lane for a text mark. A paged subset passes its own jobs.
+ * Where the root's graph stands from one draw to the next: it eases a cell at a time between the snug column at rest and the
+ * roomy one a message wants, so it spaces out as a message sets off and draws back in after, and never jumps. It never
+ * stands nearer than what the rows need (`snug`), so a lane that appears takes its room at once.
  */
-export function crewLayout(jobs: WakeChip[], agentNames: string[], now: number, rowWidth: number): { box: number; rows: CrewRow[] } {
-  const rows = crewRows(jobs, now, rowWidth - 7) // less the spinner (3) and the root graph's cell (4)
-  return { box: crewBox(rows, agentNames, rowWidth), rows }
+export class RootColumn {
+  private at?: number
+  private seen = 0
+  next(target: number, snug: number, now: number): number {
+    const steps = Math.max(1, Math.round((now - this.seen) / 60)) // a cell every 60 ms
+    this.at = this.at === undefined ? target : this.at < target ? Math.min(target, this.at + steps) : Math.max(target, this.at - steps)
+    this.seen = now
+    this.at = Math.max(this.at, snug)
+    return this.at
+  }
 }
 
 /** Keep both known endpoints of a recent exchange, even after one worker finishes. */
@@ -199,9 +282,10 @@ export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[
   width = Math.max(0, Math.floor(width))
   // Messages to and from the root take no room here: the root's graph at the row's right edge shows them (rootSpine), so a
   // worker reporting in never narrows the rows and springs them back fifteen minutes later.
-  const lanes = peerLanes(jobs, now, width)
-  const gutterWidth = lanes.length * 3
-  const shown = new Set(lanes.filter(lane => !lane.link.wait).map(({ link }) => `${link.source}:${link.target}`))
+  const nets = peerNets(jobs, now, width)
+  const tracks = nets.length ? Math.max(...nets.map(net => net.track)) + 1 : 0
+  const gutterWidth = tracks * 3
+  const shown = new Set(nets.flatMap(net => net.links).filter(link => !link.wait).map(link => `${link.source}:${link.target}`))
   const hasHiddenPeers = jobs.some((job, index) => (job.peers ?? []).some(p => {
     if (p.target === 'root') return false // Root has its own directed gutter, not a worker-name column.
     const other = jobs.findIndex(j => j.id === p.target)
@@ -269,23 +353,55 @@ export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[
       label: `${job.effort} · ${dots.lit} of ${dots.total} levels this model offers (${job.effortLevels!.join(', ')})`,
       before: selected.slice(0, slot).map(cellText).join(''), after: selected.slice(slot + 1).map(cellText).join(''),
     }
-    const peerGutter = lanes.map(({ link, color }) => {
-      const top = Math.min(link.source, link.target), bottom = Math.max(link.source, link.target)
-      let text = '   '
-      if (index >= top && index <= bottom) {
-        const branch = index === link.source ? (link.wait ? '┄' : link.count >= 5 ? '═' : link.count >= 2 ? '━' : '─') : index === link.target ? '←' : ' '
-        const packet = index > top && index < bottom && !link.wait && packetFlow(link, index, now) > 0.65 // the packet's head, mid-lane
-        const vertical = index === top ? '┐' : index === bottom ? '┘' : packet ? '●' : link.wait ? '┆' : link.count >= 5 ? '║' : link.count >= 2 ? '┃' : '│'
-        text = branch + vertical + ' '
-      }
-      const age = Math.max(0, now - link.at)
+    // Each track's wire at this row: a branch where a message leaves (─, heavier with more messages) or arrives (←), the
+    // trunk with its corners (┐ ┘), a tee where a branch leaves it mid-way (┤), and a packet's head (●) running down it.
+    const strengthOf = (link: Link) => {
       const pulseAge = link.observedAt === undefined || now < link.observedAt ? Infinity : now - link.observedAt
-      const strength = link.wait ? 1 : pulseAge < 2_000 ? 0.65 + 0.35 * (Math.floor(pulseAge / 400) % 2) : messageFade(age)
-      const description = [
-        `${jobs[link.source]!.name} → ${jobs[link.target]!.name}`,
-        link.wait ? 'Waiting for peer' : messagePreview(link.preview, { kind: link.kind, count: link.count, ago: age }),
-      ]
-      return { text, color, dim: !link.wait && age > 300_000, strength, flow: text.trim() ? packetFlow(link, index, now) : 0, description }
+      return link.wait ? 1 : pulseAge < 2_000 ? 0.65 + 0.35 * (Math.floor(pulseAge / 400) % 2) : messageFade(Math.max(0, now - link.at))
+    }
+    const describe = (link: Link) => [
+      `${jobs[link.source]!.name} → ${jobs[link.target]!.name}`,
+      link.wait ? 'Waiting for peer' : messagePreview(link.preview, { kind: link.kind, count: link.count, ago: Math.max(0, now - link.at) }),
+    ]
+    const ends = new Map<number, 'source' | 'target'>() // this row's end of each track's wire, if it has one
+    const peerGutter = Array.from({ length: tracks }, (_, track) => {
+      const net = nets.find(n => n.track === track && index >= n.top && index <= n.bottom)
+      if (!net) return { text: '   ', color: 0, dim: false, strength: 0, flow: 0, description: [] as string[] }
+      const here = net.links.filter(l => l.source === index || l.target === index)
+      const covering = net.links.filter(l => index >= Math.min(l.source, l.target) && index <= Math.max(l.source, l.target))
+      const sends = here.some(l => l.source === index), count = Math.max(...net.links.map(l => l.count))
+      const wait = net.links.every(l => l.wait)
+      const flow = Math.max(0, ...covering.map(l => packetFlow(l, index, now)))
+      const branch = sends ? (wait ? '┄' : here.reduce((n, l) => n + l.count, 0) >= 5 ? '═' : here.reduce((n, l) => n + l.count, 0) >= 2 ? '━' : '─') : here.length ? '←' : ' '
+      const vertical = index === net.top ? '┐' : index === net.bottom ? '┘' : here.length ? '┤'
+        : flow > 0.65 && !wait ? '●' : wait ? '┆' : count >= 5 ? '║' : count >= 2 ? '┃' : '│'
+      if (here.length) ends.set(track, sends ? 'source' : 'target')
+      const latest = [...(here.length ? here : covering)].sort((a, b) => b.at - a.at)
+      return {
+        text: branch + vertical + ' ', color: net.color, dim: latest.every(l => !l.wait && now - l.at > 300_000),
+        strength: Math.max(...latest.map(strengthOf)), flow, description: latest.flatMap(describe),
+      }
+    })
+    // An end of a wire further out runs in to the row's own text: across the free cells of the tracks nearer the row (through
+    // any wire passing here), so the arrowhead lands right after the row's last metric rather than hanging in its own column.
+    ends.forEach((end, lane) => {
+      const target = end === 'target'
+      if (lane === 0) return
+      const own = peerGutter[lane]!, line = own.text[0] === '←' ? '─' : own.text[0]!
+      let head = target
+      let reached = false
+      for (let near = 0; near < lane; near++) {
+        const cell = peerGutter[near]!.text
+        if (!cell.trim()) peerGutter[near] = { ...own, text: (head ? '←' : line) + line + line }
+        else if (cell[0] === ' ' && cell[2] === ' ') peerGutter[near] = { ...peerGutter[near]!, text: (head ? '←' : line) + cell[1] + line } // through a passing lane
+        else if ((cell[0] === '←') === target && cell[2] === ' ') { // another lane ending here the same way: the two join
+          peerGutter[near] = { ...peerGutter[near]!, text: cell[0] + (cell[1] === '┐' ? '┬' : cell[1] === '┘' ? '┴' : '┼') + line }
+          head = false
+        } else continue // another lane's own end the other way: this run stops short of it
+        head = false
+        reached = true
+      }
+      if (reached) peerGutter[lane] = { ...own, text: line + own.text.slice(1) }
     })
     return {
       title: pad(truncate(job.title || job.name, titleWidth), titleWidth),

@@ -2,8 +2,11 @@
 // each stop (a showcase scene and the loop frame it starts at) over `frames` frames: the stop's two workers as the band shows
 // them, talking exactly when the showcase's scene has them talk (TALKS), and the quota rows. Drawn by docs/tools/readme_gifs.py.
 import { LOGOS } from '../hooks/logos.ts'
+import { sceneFrame } from '../hooks/scene.ts'
+import { readable } from '../hooks/util.ts'
 import type { WakeChip } from '../types'
 import { chip, crewRowsAt, message, quotaLines } from './inline-rows.ts'
+import { RootColumn } from '../hooks/crew-row.ts'
 import { TALKS, showcaseInput } from './showcase-input.ts'
 
 const [out, columns, stops, frames] = [process.argv[2]!, Number(process.argv[3]), process.argv[4]!.split(',').map(s => s.split(':').map(Number) as [number, number]), Number(process.argv[5])]
@@ -26,8 +29,18 @@ const crewAt = (scene: number, i: number): WakeChip[] => {
   })
 }
 
+// The band's words sit on the scene's floor colour, every ink pushed for contrast against it (register.tsx): the same here.
+const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`
+const frameAt = (scene: number, i: number, column: RootColumn) => {
+  const floor = hex(sceneFrame(showcaseInput(scene, i, columns)).floor)
+  return { ...crewRowsAt(crewAt(scene, i), [], NOW0 + i * MS_PER_TICK, i, columns - 2, column), floor, ink: readable(floor) }
+}
+
 await Bun.write(out, JSON.stringify({
-  stops: stops.map(([scene, start]) => Array.from({ length: frames }, (_, k) => crewRowsAt(crewAt(scene, start + k), [], NOW0 + (start + k) * MS_PER_TICK, start + k, columns - 2))),
-  quota: quotaLines(columns - 6), logos: LOGOS, textColumns: columns,
+  stops: stops.map(([scene, start]) => {
+    const column = new RootColumn() // the root's graph eased through the stop, as the band does
+    return Array.from({ length: frames }, (_, k) => frameAt(scene, start + k, column))
+  }),
+  quota: quotaLines(columns - 2), logos: LOGOS, textColumns: columns, // the band's rows: one cell of padding each side
 }))
 console.log(out, stops.length, 'stops x', frames, 'frames')
