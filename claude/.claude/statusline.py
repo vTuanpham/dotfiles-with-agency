@@ -9,7 +9,7 @@ import time
 d = json.load(sys.stdin)
 
 # Catppuccin Mocha truecolor palette
-MAUVE, BLUE, TEAL, SKY = (203, 166, 247), (137, 180, 250), (148, 226, 213), (137, 220, 235)
+MAUVE, BLUE, TEAL = (203, 166, 247), (137, 180, 250), (148, 226, 213)
 GREEN, YELLOW, PEACH, RED = (166, 227, 161), (249, 226, 175), (250, 179, 135), (243, 139, 168)
 PINK, LAVENDER, FLAMINGO = (245, 194, 231), (180, 190, 254), (242, 205, 205)
 SUBTLE, TEXT, CRUST = (108, 112, 134), (205, 214, 244), (17, 17, 27)
@@ -24,7 +24,7 @@ NOW = time.time()
 PL_LEFT, PL_ARROW, PL_RIGHT = chr(0xE0B6), chr(0xE0B0), chr(0xE0B4)
 ICON_MODEL, ICON_FOLDER, ICON_BRANCH, ICON_PR = chr(0xF09D1), chr(0xF07C), chr(0xE0A0), chr(0xF407)
 ICON_WORKTREE, ICON_AGENT, ICON_THINK, ICON_BOLT = chr(0xF0645), chr(0xF06A9), chr(0xF0EB), chr(0xF0E7)
-ICON_CLOCK, ICON_RESET, ICON_CHECK, ICON_CROSS = chr(0xF017), chr(0xF021), chr(0xF00C), chr(0xF00D)
+ICON_RESET, ICON_CHECK, ICON_CROSS = chr(0xF021), chr(0xF00C), chr(0xF00D)
 ICON_SUN, ICON_MOON = chr(0xF05A8), chr(0xF0594)
 CARD = SURFACE0  # body colour shared by both lines
 
@@ -135,11 +135,11 @@ badges.append((family, on(family, CRUST, f" {ICON_MODEL} ") + shimmer(model, CRU
 
 effort = g("effort", "level")
 meter = ""
-if effort:
+if effort:  # Wake's effort dots: one per level the model offers, lit up to this one; the bare word only if the level is unknown
     lvl = EFFORT_LEVELS.index(effort) + 1 if effort in EFFORT_LEVELS else 0
-    meter = on(CARD, TEXT, " ") + "".join(
-        on(CARD, ramp(i / 4) if i < lvl else SURFACE2, h) for i, h in enumerate("▁▂▄▆█")
-    ) + on(CARD, ramp((lvl - 1) / 4) if lvl else TEXT, f" {effort} ", bold=True)
+    meter = on(CARD, TEXT, " ") + ("".join(
+        on(CARD, ramp(i / 4) if i < lvl else SURFACE2, "●" if i < lvl else "○") for i in range(len(EFFORT_LEVELS))
+    ) if lvl else on(CARD, TEXT, effort, bold=True)) + on(CARD, TEXT, " ")
 if g("thinking", "enabled"):
     meter += on(CARD, PINK, f"{ICON_THINK} ")
 if g("fast_mode"):
@@ -223,10 +223,10 @@ if used is None and (left := g("context_window", "remaining_percentage")) is not
     used = 100 - left
 if used is not None:
     size = g("context_window", "context_window_size") or 0
-    seg = on(CARD, SUBTLE, " ctx ") + bar(used, 18) + on(CARD, ramp(used / 100), f" {used:.0f}%", bold=True)
+    seg = on(CARD, SUBTLE, " ctx ") + bar(used, 10) + on(CARD, ramp(used / 100), f" {used:.0f}%", bold=True)
     if size:
-        seg += on(CARD, SUBTLE, f" {human_tokens(size * used / 100)}/{human_tokens(size)}")
-    hist = context_history(used)
+        seg += on(CARD, SUBTLE, f"/{human_tokens(size)}")
+    hist = context_history(used)[-12:]  # the last twelve minutes
     lo, hi = min(hist, default=0), max(hist, default=0)
     if hi - lo >= 1:  # scaled to its own range; hidden while usage is flat
         seg += on(CARD, TEXT, " ") + "".join(
@@ -236,30 +236,23 @@ if used is not None:
 
 if (cache := prompt_cache()) is not None:  # how long this session's prompt cache stays warm; a turn refreshes it
     left, ttl = cache
-    if left > 0:
-        used_up = 100 * (1 - left / ttl)
-        gauges.append(on(CARD, SUBTLE, "cache ") + bar(used_up, 6) + on(CARD, ramp(used_up / 100), f" {span(left)}", bold=True))
-    else:
-        gauges.append(on(CARD, SUBTLE, "cache ") + on(CARD, RED, "cold", bold=True))
+    # the time left, coloured as it runs down, instead of a bar
+    gauges.append(on(CARD, SUBTLE, "cache ") + (on(CARD, ramp(1 - left / ttl), span(left), bold=True) if left > 0 else on(CARD, RED, "cold", bold=True)))
 
 for key, label in (("five_hour", "5h"), ("seven_day", "7d"), ("spend_limit", "$")):
     pct = g("rate_limits", key, "used_percentage")
     if pct is None:
         continue
-    seg = on(CARD, SUBTLE, f"{label} ") + bar(pct, 6) + on(CARD, ramp(pct / 100), f" {pct:.0f}%", bold=True)
+    seg = on(CARD, SUBTLE, f"{label} ") + bar(pct, 4) + on(CARD, ramp(pct / 100), f" {pct:.0f}%", bold=True)
     if resets := g("rate_limits", key, "resets_at"):
-        seg += on(CARD, SUBTLE, f" {ICON_RESET} {span(resets - NOW)}")
+        seg += on(CARD, SUBTLE, f" {ICON_RESET}{span(resets - NOW)}")
     gauges.append(seg)
 
 cost = g("cost", "total_cost_usd")
-dur = g("cost", "total_duration_ms")
 added, removed = g("cost", "total_lines_added"), g("cost", "total_lines_removed")
 tail = []
 if cost:
-    rate = f" ({cost / (dur / 3.6e6):.2f}/h)" if dur and dur > 600_000 else ""
-    tail.append(on(CARD, GREEN, f"${cost:.2f}") + on(CARD, SUBTLE, rate))
-if dur:
-    tail.append(on(CARD, SKY, f"{ICON_CLOCK} {span(dur / 1000)}"))
+    tail.append(on(CARD, GREEN, f"${cost:.2f}"))
 if added or removed:
     tail.append(on(CARD, GREEN, f"+{added or 0}") + on(CARD, RED, f" −{removed or 0}"))
 if tail:

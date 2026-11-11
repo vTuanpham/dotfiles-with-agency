@@ -265,7 +265,9 @@ export function react(c: Canvas, owners: { id: string }[], reactions: Reaction[]
       continue
     }
     // Bodies react together; trails and air under the same owner stay untouched.
-    for (const part of [box, ...fixed[reaction.id]?.companions ?? []]) for (let y = Math.max(scanned.y0, part.y0); y <= Math.min(scanned.y1, part.y1); y++) for (let x = Math.max(scanned.x0, part.x0); x <= Math.min(scanned.x1, part.x1); x++) {
+    // A constellation owns its whole patch of sky for hover, so only its stars answer, never the air between them.
+    if (kind === 'agy') for (const star of stars[reaction.id] ?? []) paint(star.x, star.y, v * SPRITE_GLOW, P.white)
+    else for (const part of [box, ...fixed[reaction.id]?.companions ?? []]) for (let y = Math.max(scanned.y0, part.y0); y <= Math.min(scanned.y1, part.y1); y++) for (let x = Math.max(scanned.x0, part.x0); x <= Math.min(scanned.x1, part.x1); x++) {
       if (c.hitOwners[y * c.W + x] === owner) c.px[y * c.W + x] = mix(c.px[y * c.W + x]!, mix(accent, P.white, 0.7), v * SPRITE_GLOW)
     }
     if (!reaction.style || root) EFFECTS[kind](paint, box, v, reaction.t, reaction.role)

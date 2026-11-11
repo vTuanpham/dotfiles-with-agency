@@ -12,8 +12,9 @@ Claude Code configuration under `~/.claude`. Each part has its own kind:
 | [Root stop safety net](.claude/hooks/README.md) | Script is a live link; entries merge into settings | `install.sh --apply links`, then `install.sh --apply hooks` |
 | [Wake mod](#wake-mod-live) | Live link; reloads as its files change | `install.sh --apply links` |
 
-The status line's second row shows context use, then **how long this session's prompt cache stays warm** (`cache ▰▰▱ 47m`,
-`cache cold` once it has lapsed), then the rate limits and cost. A turn refreshes the cache, so the countdown restarts at each
+The status line's first row shows effort as Wake's dots (`●●●○○`, one per level, lit up to the current one). Its second row
+shows context use, then **how long this session's prompt cache stays warm** (`cache 47m`, coloured as it runs down;
+`cache cold` once it has lapsed), then the rate limits, cost and lines changed. A turn refreshes the cache, so the countdown restarts at each
 response. `statusline.py` uses Claude Code's native `prompt_cache` observation for
 warmth, lifetime and expiry. It leaves the segment out until caching is observed.
 See the [native statusline fields](https://code.claude.com/docs/en/statusline#prompt-cache-fields).
@@ -165,7 +166,15 @@ sender gathers speed again. Bridge workers and native Claude subagents share thi
 *Class-4 crews: brake, aim, release, catch and resume.*
 
 Each projectile travels independently after release. Its faint trace records only the cells it has crossed and fades in place
-as the crew moves on. Notes and embers leave their own curved path; a harbor tug launches its dart upward before it turns.
+as the crew moves on. Notes and embers leave their own curved path; a harbor tug's rocket climbs off the deck, throws a ring of
+vapour as it pitches over, and trails swelling smoke. Each design throws its own thing (`hooks/landscapes/projectiles.ts`): the
+dragon a bolt, the puffin a fish, the kite its ribbon.
+
+Between workers, the receiver catches in its own family's way, whoever sent it. A message to another family turns into the
+receiver's own projectile at the top of its arc, with a ring of both colours, and leaves the receiver's colour behind it.
+Messages between workers of the same family fly with a second strand braided round them.
+
+<img src="../docs/images/wake-conversations.gif" alt="Four pairs of workers and Mochi messaging in a loop, each family throwing and catching in its own way." width="100%">
 
 <a id="characters-arrivals-and-exits"></a>
 
@@ -190,7 +199,13 @@ subagent leaves when it goes idle. Each craft does both in its own way, and each
 
 <img src="../docs/images/wake-passages.gif" alt="Eight landscapes and four worker families at class 4, each arriving, working and leaving in its own way." width="100%">
 
-*Class-4 crews in every place: arriving (2.4 s), working, then leaving (3.2 s).*
+*Class-4 crews in every place: arriving (2.4 s, then a 0.9 s touchdown), working, then leaving (3.2 s).*
+
+Touching down, each family throws off a shockwave of its own (`hooks/touchdowns.ts`): a machine's targeting reticle spins out
+as it locks on, a creature's last wingbeat curls air out in two spiral arms and drops a feather, a constellation goes nova
+and leaves a ring of stars that wink out, and a lantern blooms a wavering ring of heat that flings embers. Setting out, the
+machine's drive spools up in streaks, the creature kicks off a gust, the light falls inward and goes off as a cross, and
+sparks fountain off the flame.
 
 The dragon charges and warps; probes and saucers lift through a beam. Boats travel over water, ground creatures walk out,
 birds follow their scene's flight path, and constellations assemble from streaking stars. Paper folds and opens; floating

@@ -75,7 +75,8 @@ test('a real message edge connects visible workers and exposes its preview', () 
   for (let cell = 0; cell < noMessage.hits.owners.length; cell++) {
     const owner = noMessage.hits.owners[cell]!
     if (!owner || noMessage.hits.targets[owner - 1]!.id.startsWith('peer:') || noMessage.hits.targets[owner - 1]!.id === 'sky') continue
-    if (frame.hits.owners[cell] === edge) continue // the message arc is drawn over whatever it crosses, the sun included
+    // The message arc is drawn over the sky, the sun included (which keeps its hover where they cross), never over the ground.
+    if (frame.hits.owners[cell] === edge || noMessage.hits.targets[owner - 1]!.id === 'sun') continue
     const x = cell % input.width, y = Math.floor(cell / input.width) * 2
     expect(graphPixels[y * input.width + x]).toBe(plainPixels[y * input.width + x])
     expect(graphPixels[(y + 1) * input.width + x]).toBe(plainPixels[(y + 1) * input.width + x])

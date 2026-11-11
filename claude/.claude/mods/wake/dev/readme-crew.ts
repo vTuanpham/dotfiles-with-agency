@@ -1,7 +1,8 @@
-// bun dev/readme-crew.ts [out prefix] [frames]: the three crew sheets for the README, as raw little-endian uint32 0xRRGGBB, cell-major,
+// bun dev/readme-crew.ts [out prefix] [frames]: the crew sheets for the README, as raw little-endian uint32 0xRRGGBB, cell-major,
 // `width` x SCENE_H per frame: `<prefix>-cast.bin` (8 places x 4 families, class 4, 72 wide), `<prefix>-sequence.bin` (a worker
-// with a message for the root, in four families, 110 wide) and `<prefix>-strike.bin` (an interrupted worker struck down, in four
-// families and places, 64 wide). docs/tools/readme_gifs.py turns them into GIFs.
+// with a message for the root, in four families, 110 wide), `<prefix>-conversations.bin` (two workers and Mochi messaging one
+// another, four pairings, 120 wide) and `<prefix>-strike.bin` (an interrupted worker struck down, in four families and places,
+// 64 wide). docs/tools/readme_gifs.py turns them into GIFs.
 import { MessageTrails, scenePixels, type SceneInput } from '../hooks/scene.ts'
 import { SCENE_H } from '../hooks/landscapes/kit.ts'
 import { EXIT_MS } from '../hooks/exits.ts'
@@ -62,6 +63,38 @@ const families = ['codex', 'claude', 'agy', 'opencode'] as const
     }
   }
   await Bun.write(`${prefix}-sequence.bin`, data)
+}
+
+// the conversations: two workers and Mochi pass messages round, A to B, B to Mochi, Mochi to A, on a loop. Each family throws its
+// own projectile and catches in its own way; to another family a message turns into the receiver's own at the top of its arc,
+// and between kin a second strand braids round it. One loop is played first, so the recorded one starts with its residue.
+const CONVERSATIONS = [
+  ['codex', 'claude', 'city', 22], ['opencode', 'codex', 'harbor', 20.5], ['agy', 'opencode', 'desert', 21], ['claude', 'claude', 'mountains', 21.5],
+] as const
+{
+  const W = 120, LOOP = FRAMES * MS_PER_FRAME, window = packetWindow(1) + TURN_LEAD_MS
+  const talks = [['a', 'b', 0], ['b', 'mochi', LOOP / 3], ['mochi', 'a', 2 * LOOP / 3]] as const
+  const data = new Uint32Array(CONVERSATIONS.length * FRAMES * W * SCENE_H)
+  let at = 0
+  for (const [first, second, place, hour] of CONVERSATIONS) {
+    const phase = new PhaseClock(), route = new PhaseClock(), messageTrails = new MessageTrails()
+    for (let ms = -LOOP; ms < LOOP; ms += MS_PER_FRAME) {
+      const now = 2_000_000 + ms, loop = ms + LOOP
+      const edges = talks.map(([source, target, offset]) => {
+        const since = (loop - offset + 2 * LOOP) % LOOP, cycle = Math.floor((loop - offset) / LOOP)
+        return { source, target, stamp: String(cycle), strength: 0.9, preview: 'x', count: 1, fresh: 1, lead: source === 'mochi' ? 0 : TURN_LEAD_MS, ...(since <= window + TURN_LEAD_MS ? { arriving: since } : {}) }
+      })
+      // a sender brakes, turns to its listener, sends and turns back; anyone else keeps to its course
+      const rateOf = (id: string) => Math.min(1, ...edges.filter(edge => edge.source === id && edge.arriving !== undefined).map(edge => routeRate(edge.arriving!, window, TURN_LEAD_MS)))
+      const jobs = ([['a', first, 11], ['b', second, 29]] as const).map(([id, kind, seed]) => ({
+        isStale: false, seed, kind, tier: 4 as const, pace: 0.85, hit: { id, title: id, details: [] },
+        phase: phase.advance(id, 0.85, now), route: route.advance(id, 0.85, now, rateOf(id)),
+      }))
+      const frame = scenePixels({ ...base(W, place, hour), frame: 37 + Math.floor(loop / MS_PER_FRAME), jobs, peerEdges: edges, messageTrails })
+      if (ms >= 0) { data.set(frame, at); at += W * SCENE_H }
+    }
+  }
+  await Bun.write(`${prefix}-conversations.bin`, data)
 }
 
 // the strike: a worker whose turn is interrupted is struck down, in its own family's way

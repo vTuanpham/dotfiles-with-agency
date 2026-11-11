@@ -11,7 +11,7 @@ import * as agySprite from './agy'
 import * as lanternSprite from './lantern'
 import { crewFx, groundStep } from './fx'
 import type { Vec } from './particles'
-import { clockRate, excursion, gait, roamShare } from './gait'
+import { clockRate, gait, roamShare } from './gait'
 import { type Job, jobAccent, type Look, P } from './kit'
 import type { WakePreset } from '../../types'
 
@@ -233,7 +233,8 @@ export function shape(rows: readonly string[], mirror: 1 | -1, roll?: number, tu
   if (turn === 'bank' || turn === 'pose') {
     // A rigid body wheels through edge-on: foreshorten the length, flatten the wings and tilt, then open the other way.
     const cx = (w - 1) / 2, cy = (h - 1) / 2, wheel = Math.sin(Math.PI * roll)
-    const sx = 1 - 0.78 * wheel * wheel, sy = 1 - 0.45 * Math.sin(2 * Math.PI * roll) ** 2
+    // A body with a drawn front view only draws in a little on the way to it: squashed to a sliver, it would pop to full span.
+    const sx = 1 - (turn === 'pose' && turnPose ? 0.3 : 0.78) * wheel * wheel, sy = 1 - 0.45 * Math.sin(2 * Math.PI * roll) ** 2
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const ch = rows[y]![x]!
       if (ch === '.') continue
@@ -370,7 +371,8 @@ export function fly(c: Canvas, look: Look, cx: number, cy: number, job: Job, kin
       }
       const small = airFrames(look, kind, e.tier), [px, py] = ownPath(0)
       const next = small[(Math.floor((job.phase ?? look.frame) / (tempo * (0.83 + i * .11))) + job.seed + 3 * i) % small.length]!
-      const o = drawn ? orient(ownPath, drawn, 0, job.talk ? { ...job.talk, sourceX: px } : undefined, job.lane?.roam) : undefined
+      // A companion heads where the flock heads, a beat behind its leader: its own weave round its station is not a change of course.
+      const o = drawn ? orient(ago => path(ago + e.lag), drawn, 0, job.talk ? { ...job.talk, sourceX: px } : undefined, job.lane?.roam) : undefined
       const piece = o ? shape(next, o.mirror, o.roll, design.turn, SPRITES[kind].turnPose?.[look.place ?? 'city']?.[e.tier]) : next
       const floor = (look.crewGround ?? c.H) - piece.length
       if (floor < 0) continue
@@ -617,9 +619,13 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       // band: a row counts only if the sprite fits there at both ends and in the middle of its horizontal range.
       const across = [-leftReach, -(leftReach >> 1), 0, rightReach >> 1, rightReach]
       const rowFree = (sy: number) => across.every(sx => free(sx, sy))
+      // Dipping is free only in open air: a row that sinks the body further into the rooftops or the trees than its home row
+      // does is not room to bob into, or a bat over the city wades through the skyline.
+      const buried = (sx: number, sy: number) => { let n = 0; for (const [dx, dy] of pixels) n += soft[(zone.y + dy + sy) * c.W + zone.x + dx + sx] ?? 0; return n }
+      const sinks = (sy: number) => across.some(sx => buried(sx, sy) > buried(sx, 0))
       let up = 0, down = 0
       while (up < maxY && rowFree(-(up + 1))) up++
-      while (design.altitude !== 'high' && down < maxY && rowFree(down + 1)) down++
+      while (design.altitude !== 'high' && down < maxY && rowFree(down + 1) && !sinks(down + 1)) down++
       // A hop of up to two rows more when something real happens to this worker (it acted, sent or received a message).
       let hopRoom = 0
       while (hopRoom < 2 && rowFree(-(up + hopRoom + 1))) hopRoom++
@@ -630,7 +636,8 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       const visit = candidate.x < right / 2 ? rightReach - core : core - leftReach
       const at = (time: number) => {
         const g = gait(gaitKind(job, look), job.tier ?? 1, job.seed, time, core)
-        return { x: core * g.u + visit * excursion(time, job.seed), v: g.v }
+        // On the side with a neighbour, each run carries on into the shared air: further out, never out and back mid-run.
+        return { x: core * g.u + visit * Math.max(0, Math.sign(visit) * g.u) ** 2, v: g.v }
       }
       const { x: travel, v } = at(job.route ?? job.phase ?? look.frame)
       const share = roamShare(pace)

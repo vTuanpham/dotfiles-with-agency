@@ -38,6 +38,7 @@ TEXT, SUBTLE, SURFACE2 = (205, 214, 244), (108, 112, 134), (88, 91, 112)
 PEACH, BLUE, MAUVE, TEAL, YELLOW, PINK = (
     (250, 179, 135), (137, 180, 250), (203, 166, 247), (148, 226, 213), (249, 226, 175), (245, 194, 231),
 )
+GREEN, RED = (166, 227, 161), (243, 139, 168)
 SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans{}.ttf"
 
 
@@ -151,9 +152,9 @@ LEGEND = {  # name: (title, what it is, colour); the call-outs sit in the order 
     "claude": ("Claude subagent", "a crab along the quay", PEACH),
     "agy": ("AGY worker", "a drifting constellation", MAUVE),
     "live": ("This turn", "a building going up", TEAL),
+    "message": ("Message", "a rocket that lands as agy stars", GREEN),
     "mochi": ("Mochi", "the session's mood", PINK),
 }
-GREEN, RED = (166, 227, 161), (243, 139, 168)
 FAMILY = {"codex": TEAL, "agy": BLUE, "claude": PINK, "opencode": GREEN}  # a harness's colour, as Wake's rows use it
 GROUP = BASE  # what a faint tint is blended over
 LANES = [TEAL, MAUVE, YELLOW, BLUE, PINK, GREEN]  # the colours of the peer lanes, in Wake's order
@@ -480,6 +481,13 @@ def sequence():
     tiles("readme-crew-sequence.bin", 110, 4, 2, FAMILIES, "wake-sequence.gif")
 
 
+def conversations():
+    """Two workers and Mochi message one another on a loop: each family throws and catches in its own way."""
+    tiles("readme-crew-conversations.bin", 120, 4, 2,
+          ("Codex → Claude · city", "OpenCode → Codex · harbor", "agy → OpenCode · desert", "Claude → Claude · mountains"),
+          "wake-conversations.gif", ("translated", "translated", "translated", "kin chorus"))
+
+
 def strike():
     """A worker whose turn is interrupted is struck down, shedding its family's debris."""
     tiles("readme-crew-strike.bin", 64, 4, 2, FAMILIES, "wake-strike.gif",
@@ -517,11 +525,11 @@ def tour():
     save_gif(edited, IMAGES / "wake-tour.gif", delay=meta["delay"])
 
 
-NEW = {"cast": cast, "sequence": sequence, "strike": strike}
+NEW = {"cast": cast, "sequence": sequence, "conversations": conversations, "strike": strike}
 
 if __name__ == "__main__":
     WORK.mkdir(parents=True, exist_ok=True)
-    want = sys.argv[1:] or ["tour", "dock", "landscapes", "hero", "crew", "cast", "sequence", "strike"]
+    want = sys.argv[1:] or ["tour", "dock", "landscapes", "hero", "crew", "cast", "sequence", "conversations", "strike"]
     if "tour" in want:
         run("bun", "dev/readme-tour.ts", str(WORK / "tour"), cwd=WAKE)
     if any(name in NEW for name in want):

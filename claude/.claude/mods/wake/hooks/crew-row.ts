@@ -1,7 +1,7 @@
 import type { WakeChip, WakeQuota } from '../types'
 import { modelTier } from './sources/accounts'
 import { span } from './util'
-import { messagePreview, messageStatus } from './peer-messages'
+import { messagePreview } from './peer-messages'
 
 const clean = (s: string) => s.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ').replace(/\s+/g, ' ').trim()
 const segments = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
@@ -67,13 +67,12 @@ export const harnessSpin = (backend: string, frame: number) => { const set = [..
 
 export type CrewColumn = 'effort' | 'elapsed' | 'reason' | 'memory' | 'peers'
 const RECENT_PEER_MS = 900_000 // a conversation older than the stall window is history, not a link
-const ROOT_GUTTER_WIDTH = cells('↗r ')
 /** How present a message still is, 1 just after it to ~0 when its 15 minutes are up: a slow ease-out, so it melts away rather than vanishing. */
 export const messageFade = (age: number) => 0.04 + 0.7 * (1 - Math.min(1, age / RECENT_PEER_MS)) ** 1.6
 /** One column of a row's detail: its text, and the card a pointer opens over it (every metric explains itself). */
 export type CrewPart = { column: CrewColumn; text: string; hover?: { title: string; lines: string[] } }
 
-export type CrewRow = { title: string; family: string; state: string; glyph: string; /** 0..1, how far a working job's mark has brightened this beat */ beat: number; detail: string; /** the same detail, column by column */ parts: CrewPart[]; effortSlot?: { lit: number; total: number; size: number; label: string; before: string; after: string }; rootAt?: number; columns: CrewColumn[]; gutter: { text: string; color: number; dim: boolean; strength: number; flow: number; description: string[] }[] }
+export type CrewRow = { title: string; family: string; state: string; glyph: string; /** 0..1, how far a working job's mark has brightened this beat */ beat: number; detail: string; /** the same detail, column by column */ parts: CrewPart[]; effortSlot?: { lit: number; total: number; size: number; label: string; before: string; after: string }; columns: CrewColumn[]; gutter: { text: string; color: number; dim: boolean; strength: number; flow: number; description: string[] }[] }
 /** One packet's trip from sender to recipient; each further new message follows a beat behind. */
 export const PACKET_RUN_MS = 1_400
 export const PACKET_STAGGER_MS = 350
@@ -112,7 +111,7 @@ const pad = (s: string, width: number) => s + ' '.repeat(Math.max(0, width - cel
 type Link = { source: number; target: number; count: number; at: number; wait: boolean; preview?: string | null; kind?: string; observedAt?: number; fresh?: number }
 
 /** Separate lanes keep simultaneous edges legible; connected lanes share a colour. */
-function peerLanes(jobs: WakeChip[], now: number, width: number, reservedGutter = 0): { link: Link; color: number }[] {
+function peerLanes(jobs: WakeChip[], now: number, width: number): { link: Link; color: number }[] {
   const indices = new Map(jobs.flatMap((job, i) => job.id ? [[job.id, i] as const] : []))
   const links: Link[] = []
   jobs.forEach((job, source) => {
@@ -137,7 +136,7 @@ function peerLanes(jobs: WakeChip[], now: number, width: number, reservedGutter 
     if (width - reserved - size - 1 < minimumTitle) break
     reserved += size + 1
   }
-  const capacity = width < 60 ? 0 : Math.max(0, Math.floor((width - reserved - minimumTitle - reservedGutter) / 3))
+  const capacity = width < 60 ? 0 : Math.max(0, Math.floor((width - reserved - minimumTitle) / 3))
   const lanes: { link: Link; color: number }[] = []
   for (const [color, group] of groups.entries()) {
     group.sort((a, b) => a.source - b.source || a.target - b.target || Number(a.wait) - Number(b.wait))
@@ -146,19 +145,21 @@ function peerLanes(jobs: WakeChip[], now: number, width: number, reservedGutter 
   return lanes
 }
 
-export const ROOT_GAP = 3 // cells between the longest crew row and the root's graph at rest
-export const ROOT_GAP_CROSSING = 11 // and while a message is crossing: room for beads to march and a lane's packet to run
+/** Cells between the longest crew row and the root's graph: room for a message's beads to march. It never changes with the
+ * traffic, so the graph stands still while messages come and go. */
+export const ROOT_GAP = 8
 
 /**
  * How wide the worker rows are, which is where the root's graph stands: one shared column hugging the longest row (words,
- * metrics and peer lanes), a little further out while a message is crossing. A band under 80 cells keeps it at the right edge.
+ * metrics and peer lanes). A band under 80 cells keeps it at the right edge.
  * `rows` are the Bridge rows laid out at the full width; `agentNames` the native subagents'.
  */
-export function crewBox(rows: CrewRow[], agentNames: string[], rowWidth: number, crossing: boolean): number {
-  const natural = Math.max(0,
-    ...rows.map(row => 9 + cells(row.title) + cells(row.detail) + row.gutter.slice(0, row.rootAt ?? row.gutter.length).reduce((sum, segment) => sum + cells(segment.text), 0) + 8),
-    ...agentNames.map(name => 5 + cells(name) + 24))
-  return rowWidth >= 80 ? Math.min(rowWidth, natural + (crossing ? ROOT_GAP_CROSSING : ROOT_GAP)) : rowWidth
+export function crewBox(rows: CrewRow[], agentNames: string[], rowWidth: number): number {
+  const words = Math.max(0, ...rows.map(row => 9 + cells(row.title) + cells(row.detail) + 8), ...agentNames.map(name => 5 + cells(name) + 24))
+  const lanes = Math.max(0, ...rows.map(row => 9 + cells(row.title) + cells(row.detail) + row.gutter.reduce((sum, segment) => sum + cells(segment.text), 0) + 8))
+  // Peer lanes stand in the gap first and push the graph out only past it (keeping a few cells for the beads), so a pair that
+  // starts or stops talking does not move the root's column.
+  return rowWidth >= 80 ? Math.min(rowWidth, Math.max(words + ROOT_GAP, lanes + 3)) : rowWidth
 }
 
 /**
@@ -166,9 +167,9 @@ export function crewBox(rows: CrewRow[], agentNames: string[], rowWidth: number,
  * need; they are never laid out again at the hugged width, because a narrow width switches the peer lanes off (under 60
  * cells) and a pair of workers messaging each other would lose its lane for a text mark. A paged subset passes its own jobs.
  */
-export function crewLayout(jobs: WakeChip[], agentNames: string[], now: number, rowWidth: number, crossing: boolean): { box: number; rows: CrewRow[] } {
+export function crewLayout(jobs: WakeChip[], agentNames: string[], now: number, rowWidth: number): { box: number; rows: CrewRow[] } {
   const rows = crewRows(jobs, now, rowWidth - 7) // less the spinner (3) and the root graph's cell (4)
-  return { box: crewBox(rows, agentNames, rowWidth, crossing), rows }
+  return { box: crewBox(rows, agentNames, rowWidth), rows }
 }
 
 /** Keep both known endpoints of a recent exchange, even after one worker finishes. */
@@ -196,16 +197,10 @@ export function crewPage(total: number, room: number, requested: number): { page
 /** Choose one column set for the whole crew; names absorb width changes first. */
 export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[] {
   width = Math.max(0, Math.floor(width))
-  const availableRootDirections = [true, false].filter(outgoing => jobs.some(job =>
-    (job.peers ?? []).some(peer => peer.target === 'root' && peer.outgoing === outgoing
-      && now >= peer.lastAt && now - peer.lastAt <= RECENT_PEER_MS)))
-  // Keep the directed root endpoint only when the fixed worker mark plus at
-  // least one title cell can fit beside its three-cell gutter lane.
-  const rootDirections = width >= 7 + availableRootDirections.length * ROOT_GUTTER_WIDTH
-    ? availableRootDirections
-    : []
-  const lanes = peerLanes(jobs, now, width, rootDirections.length * ROOT_GUTTER_WIDTH)
-  const gutterWidth = lanes.length * 3 + rootDirections.length * ROOT_GUTTER_WIDTH
+  // Messages to and from the root take no room here: the root's graph at the row's right edge shows them (rootSpine), so a
+  // worker reporting in never narrows the rows and springs them back fifteen minutes later.
+  const lanes = peerLanes(jobs, now, width)
+  const gutterWidth = lanes.length * 3
   const shown = new Set(lanes.filter(lane => !lane.link.wait).map(({ link }) => `${link.source}:${link.target}`))
   const hasHiddenPeers = jobs.some((job, index) => (job.peers ?? []).some(p => {
     if (p.target === 'root') return false // Root has its own directed gutter, not a worker-name column.
@@ -292,40 +287,10 @@ export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[
       ]
       return { text, color, dim: !link.wait && age > 300_000, strength, flow: text.trim() ? packetFlow(link, index, now) : 0, description }
     })
-    const rootGutter = rootDirections.map(outgoing => {
-      const message = [...(job.peers ?? [])]
-        .filter(peer => peer.target === 'root' && peer.outgoing === outgoing
-          && now >= peer.lastAt && now - peer.lastAt <= RECENT_PEER_MS)
-        .sort((a, b) => b.lastAt - a.lastAt)[0]
-      if (!message)
-        return { text: '   ', color: 3, dim: true, strength: 0.25, flow: 0, description: [] }
-      const age = Math.max(0, now - message.lastAt)
-      const pulseAge = message.observedAt === undefined || now < message.observedAt
-        ? Infinity
-        : now - message.observedAt
-      const strength = pulseAge < 2_000
-        ? 0.65 + 0.35 * (Math.floor(pulseAge / 400) % 2)
-        : messageFade(age)
-      return {
-        text: pad(outgoing ? '↗r ' : '↙r ', ROOT_GUTTER_WIDTH),
-        color: 3,
-        dim: age > 300_000,
-        strength,
-        // lights once as a message arrives in this view, fading over its packets' trip; then still
-        flow: pulseAge <= packetWindow(message.fresh ?? 1) ? 1 - pulseAge / packetWindow(message.fresh ?? 1) : 0,
-        description: [
-          outgoing ? 'Worker → root' : 'Root → worker',
-          messageStatus(message.messageState),
-          messagePreview(message.preview),
-        ],
-      }
-    })
-    const gutter = [...peerGutter, ...rootGutter]
-    const rootAt = peerGutter.length // from here on the gutter is the root slot, drawn at the row's right edge
     return {
       title: pad(truncate(job.title || job.name, titleWidth), titleWidth),
       family: `${MARK[job.backend] ?? '◇'}${CLASS_GLYPH[modelTier(job.backend, job.model) - 1] ?? CLASS_GLYPH[1]}`,
-      state, glyph: STATE_GLYPHS[state] ?? '?', beat: state === 'running' ? activityFlash(job.activitySeenAt, now) : 0, detail, parts, effortSlot, columns: selected.map(([name]) => name), gutter, rootAt,
+      state, glyph: STATE_GLYPHS[state] ?? '?', beat: state === 'running' ? activityFlash(job.activitySeenAt, now) : 0, detail, parts, effortSlot, columns: selected.map(([name]) => name), gutter: peerGutter,
     }
   })
 }

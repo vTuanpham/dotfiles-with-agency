@@ -70,6 +70,12 @@ Claude Code prompt. Workers move with their activity; messages cross the scene; 
 
 <img src="docs/images/wake-characters.gif" alt="Mochi, Tabby, Tuxedo and Bun catch incoming messages with their own gadgets." width="100%">
 
+Workers message one another and Mochi in a loop. Each family throws its own projectile and catches messages in its own
+way. A message to another family turns into the receiver's own projectile at the top of its arc, and messages between
+workers of the same family fly as two braided strands.
+
+<img src="docs/images/wake-conversations.gif" alt="Four pairs of workers and Mochi messaging in a loop: a dragon's bolt that becomes a bat's sonar, a paper lantern's coal that becomes a tug's rocket, a meteor that becomes a carpet's gold dust, and two eagles calling in a braided chorus." width="100%">
+
 ### Arrive, work, leave
 
 <img src="docs/images/wake-passages.gif" alt="Class-4 crews and their companions arrive and depart in all eight landscapes, using each design's own passage effects." width="100%">
@@ -86,7 +92,7 @@ Time and weather are accelerated; the crews use Wake's animation clock.
 
 ### Read the scene
 
-<img src="docs/images/wake-dock.gif" alt="Annotated harbor: a Codex tug, Claude crab, AGY constellation, plan lamps and Mochi, above the worker, message and quota rows." width="100%">
+<img src="docs/images/wake-dock.gif" alt="Annotated harbor: a Codex tug, Claude crab, AGY constellation, a message in flight, plan lamps and Mochi, above the worker, message and quota rows." width="100%">
 
 [Crew and quota legend](claude/README.md#crew-and-quota-rows) · [Weather and session state](claude/README.md#landscapes-and-session-state)
 

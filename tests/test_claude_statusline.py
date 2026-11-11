@@ -46,7 +46,9 @@ class StatuslineTests(unittest.TestCase):
 
     def test_zero_quota_and_effective_effort_are_visible(self):
         output = render({"effort": {"level": "xhigh"}, "rate_limits": {"five_hour": {"used_percentage": 0}}})
-        self.assertIn("xhigh", output)
+        self.assertIn("●●●●○", output)  # Wake's effort dots: four of the five levels lit, no word
+        self.assertNotIn("xhigh", output)
+        self.assertIn("turbo", render({"effort": {"level": "turbo"}}))  # a level off the scale keeps its word
         self.assertRegex(output, r"5h .* 0%")
 
     def test_subagent_tokens_before_model_resolution(self):

@@ -45,7 +45,7 @@ test('a completed peer remains an inline graph endpoint until its recorded excha
   ]
   const visible = crewJobs(jobs, now)
   expect(visible.map(job => job.id)).toEqual(['owner/live', 'owner/done'])
-  const rows = crewLayout(visible, [], now, 190, false).rows
+  const rows = crewLayout(visible, [], now, 190).rows
   expect(rows[0]!.gutter[0]!.text).toContain('═┐')
   expect(rows[1]!.gutter[0]!.text).toContain('←┘')
   expect(rows.every(row => !row.columns.includes('peers'))).toBe(true)
@@ -72,12 +72,11 @@ test('a packet crosses the lane once per arriving message, sender to recipient, 
   for (const flow of flows(400, jobs(5))) expect(flow).toBeLessThanOrEqual(1)
 })
 
-test('root markers appear only for recorded messages and distinguish Bridge observation from delivery', () => {
+test('messages to and from the root take no room in the rows, so the layout never jumps as they come and go', () => {
   const now = 100_000
   const plain = crewRows([{ ...base, id: 'owner/job' }], now, 120)[0]!
   expect(plain.gutter).toEqual([])
   expect(plain.columns).not.toContain('peers')
-
   const job = {
     ...base,
     id: 'owner/job',
@@ -86,27 +85,24 @@ test('root markers appear only for recorded messages and distinguish Bridge obse
       { target: 'root', count: 1, lastAt: now, observedAt: now, outgoing: false, messageId: 'in', messageState: 'sent' as const, preview: 'Review this result' },
     ],
   }
-  const rows = crewRows([job], now, 120)
-  expect(rows[0]!.gutter.map(mark => mark.text)).toEqual(['↗r ', '↙r '])
-  expect(rows[0]!.columns).not.toContain('peers')
-  expect(rows[0]!.gutter[0]!.description).toEqual([
-    'Worker → root', 'Worker report published', 'Preview withheld by Bridge',
-  ])
-  expect(rows[0]!.gutter[1]!.description).toEqual([
-    'Root → worker', 'Message sent by Bridge', 'Review this result',
-  ])
-  expect(rows[0]!.gutter[0]!.strength).toBe(0.65)
-  expect(crewRows([job], now + 400, 120)[0]!.gutter[0]!.strength).toBeGreaterThan(0.65)
-  expect(crewRows([job], now + 300_001, 120)[0]!.gutter.every(mark => mark.dim)).toBe(true)
-  expect(crewRows([job], now + 300_001, 120)[0]!.gutter[0]!.strength)
-    .toBeGreaterThan(crewRows([job], now + 800_000, 120)[0]!.gutter[0]!.strength)
-  for (let width = 7; width <= 160; width++) {
-    const row = crewRows([job], now, width)[0]!
-    const line = row.title + (row.family ? ` ${row.family} ${row.glyph}` : '') + row.detail + row.gutter.map(mark => mark.text).join('')
-    expect(cells(line) + Number(Boolean(row.family))).toBeLessThanOrEqual(width)
-    expect(row.gutter).toHaveLength(width >= 15 ? 2 : 0)
+  for (const width of [7, 40, 120, 160]) for (const at of [now, now + 400, now + 300_001, now + 900_001]) {
+    const row = crewRows([job], at, width)[0]!, without = crewRows([{ ...job, peers: [] }], at, width)[0]!
+    expect(row.gutter).toEqual([]) // the root's graph at the right edge shows them
+    expect([row.title, row.detail]).toEqual([without.title, without.detail])
   }
-  expect(crewRows([job], now + 900_001, 120)[0]!.gutter).toEqual([])
+  const layout = (at: number) => crewLayout([job], [], at, 160).box
+  expect(layout(now)).toBe(layout(now + 900_001)) // the graph's column stands still, message or none
+})
+
+test('a peer lane stands in the gap before the root graph, so a pair starting to talk does not move it', () => {
+  const now = 100_000, talk = { count: 1, lastAt: now, observedAt: now, fresh: 1, preview: 'x' }
+  const pair = (peers: boolean): WakeChip[] => [
+    { ...base, id: 'a', name: 'a', title: 'Parser fix', peers: peers ? [{ ...talk, target: 'b', outgoing: true }] : [] },
+    { ...base, id: 'b', name: 'b', title: 'Visual review', peers: peers ? [{ ...talk, target: 'a', outgoing: false }] : [] },
+  ]
+  const talking = crewLayout(pair(true), ['Explore'], now, 160)
+  expect(talking.rows[0]!.gutter.map(lane => lane.text.trim())).toEqual(['─┐'])
+  expect(talking.box).toBe(crewLayout(pair(false), ['Explore'], now, 160).box)
 })
 
 test('state glyphs distinguish waits, pause, retry, answer, stall and completion', () => {
@@ -306,8 +302,8 @@ test('two short rows keep their peer lane: the box hugs the rows, the rows are n
     { ...base, id: 'a', name: 'Parser', title: 'Parser fix', peers: [{ target: 'b', count: 1, lastAt: 10_000, observedAt: 10_000, outgoing: true, preview: 'x' }] },
     { ...base, id: 'b', name: 'Review', title: 'Visual review', peers: [{ target: 'a', count: 1, lastAt: 10_000, outgoing: false, preview: 'x' }] },
   ]
-  const { box, rows } = crewLayout(jobs, ['Explore'], 10_500, 148, false)
+  const { box, rows } = crewLayout(jobs, ['Explore'], 10_500, 148)
   expect(box).toBeLessThan(67) // hugged: narrower than the 60 cells a layout needs to draw lanes
-  expect(rows[0]!.gutter.slice(0, rows[0]!.rootAt)[0]!.text.trim()).not.toBe('')
+  expect(rows[0]!.gutter[0]!.text.trim()).not.toBe('')
   expect(rows.every(row => !row.columns.includes('peers'))).toBe(true) // no ↗name text standing in for the lane
 })

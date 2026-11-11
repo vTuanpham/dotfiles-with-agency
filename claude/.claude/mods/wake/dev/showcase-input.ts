@@ -1,6 +1,7 @@
 // Shared by the README renderer and its continuity checks.
 import { EFFECT_FRAMES, type SceneInput } from '../hooks/scene'
 import { ARRIVE_MS, EXIT_MS } from '../hooks/exits'
+import { TURN_LEAD_MS, packetWindow } from '../hooks/crew-row'
 
 export const SHOWCASE_FRAMES = 480
 const STEP = 1
@@ -20,6 +21,8 @@ const base: SceneInput = {
   jobs: [], agents: [], plan: { done: 2, total: 5 }, effect: null,
 }
 const calm = { live: null, agents: [], mood: 'idle' as const }
+/** [from, to, ms into the loop]: the conversation every scene with a crew plays between its arrivals and its exits. */
+const TALKS = [['a', 'b', 6_000], ['b', 'mochi', 10_500], ['mochi', 'a', 15_000]] as const
 const fx = (kind: NonNullable<SceneInput['effect']>['kind']) => ({ kind, age: 0 })
 
 export function passageAt(ms: number, duration: number, order = 0) {
@@ -53,6 +56,12 @@ export function showcaseInput(index: number, i: number, width = 180, frames = SH
   const jobs = ms < 450 || ms >= duration - 450 ? [] : pairs[index]!.map((kind, j) => {
     return { ...crew(j ? 'b' : 'a', j ? 8 : 3, kind, 4), ...passageAt(ms, duration, j) }
   })
-  return { ...base, ...state, jobs, width, effect, hour,
+  // Between the arrivals and the exits the pair talk: a to b, b to Mochi, Mochi back to a, each trail fading after it lands.
+  const window = packetWindow(1) + TURN_LEAD_MS
+  const peerEdges = jobs.length ? TALKS.flatMap(([source, target, at]) => ms < at ? [] : [{
+    source, target, stamp: `showcase-${at}`, preview: 'x', count: 1, fresh: 1, lead: source === 'mochi' ? 0 : TURN_LEAD_MS,
+    strength: Math.max(0.05, 0.9 - Math.max(0, ms - at - window) / 9000), ...(ms - at <= window + TURN_LEAD_MS ? { arriving: ms - at } : {}),
+  }]) : []
+  return { ...base, ...state, jobs, peerEdges, width, effect, hour,
     weather: { ...weather, cloud: Math.min(1, weather.cloud + .5 * swell), rain: Math.round(weather.rain * (.35 + .65 * swell)) as typeof weather.rain, snow: Math.round(weather.snow * (.35 + .65 * swell)) as typeof weather.snow }, frame: 37 + i * STEP }
 }

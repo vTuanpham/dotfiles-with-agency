@@ -12,9 +12,9 @@ const hour = Number(process.argv[5] ?? 14)
 const families = ['codex', 'claude', 'agy', 'opencode'] as const
 const W = 64
 const moments: [string, { arriving?: number; leaving?: number }][] = [
-  ...[0, 300, 700, 1100, 1500, 1900, 2250].map(ms => [`arriving ${ms} of ${ARRIVE_MS} ms`, { arriving: Math.max(1, ms) }] as [string, { arriving?: number }]),
+  ...[0, 700, 1500, 2250, 2450, 2650, 2900, 3150].map(ms => [`arriving ${ms} of ${ARRIVE_MS} ms`, { arriving: Math.max(1, ms) }] as [string, { arriving?: number }]),
   ['working', {}],
-  ...[0, 400, 900, 1400, 1900, 2400, 2900].map(ms => [`leaving ${ms} of ${EXIT_MS} ms`, { leaving: Math.max(1, ms) }] as [string, { leaving?: number }]),
+  ...[100, 300, 550, 1400, 2400, 2900].map(ms => [`leaving ${ms} of ${EXIT_MS} ms`, { leaving: Math.max(1, ms) }] as [string, { leaving?: number }]),
 ]
 const base: SceneInput = {
   width: W, frame: 37, hour, sun: { rise: 6, set: 18 }, moonPhase: 0.3, season: 'summer', snowy: false,

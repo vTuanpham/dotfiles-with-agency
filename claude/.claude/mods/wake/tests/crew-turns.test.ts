@@ -17,8 +17,12 @@ test('a pose turn holds its hand-drawn midpoint and resumes mirrored flight', ()
   const flight = ['aa...', '.ag..', '..aaa'], pose = ['..s..', '.aaa.', '..a..']
   for (const mirror of [1, -1] as const) {
     expect(shape(flight, mirror, 0.5, 'pose', pose)).toEqual(pose)
-    expect(shape(flight, mirror, 0.2, 'pose', pose)).toEqual(shape(flight, mirror, 0.2, 'bank'))
-    expect(shape(flight, mirror, 0.8, 'pose', pose)).toEqual(shape(flight, mirror, 0.8, 'bank'))
+    // On the way in and out it draws in only a little, so the front view never pops out of a sliver.
+    for (const roll of [0.2, 0.34, 0.66, 0.8]) {
+      const span = (rows: string[]) => { const xs = rows.flatMap(row => [...row].flatMap((ch, x) => ch === '.' ? [] : [x])); return Math.max(...xs) - Math.min(...xs) + 1 }
+      expect(span(shape(flight, mirror, roll, 'pose', pose))).toBeGreaterThanOrEqual(4)
+      expect(span(shape(flight, mirror, roll, 'bank'))).toBeLessThanOrEqual(span(shape(flight, mirror, roll, 'pose', pose)))
+    }
     expect(shape(flight, mirror, 1, 'pose', pose)).toEqual(mirror === 1 ? flight : flight.map(row => [...row].reverse().join('')))
   }
 })

@@ -2,6 +2,7 @@ import type { WakeMood, WakePreset, WakePulseKind, WakeSceneHit } from '../types
 import { lanes, placeFly, roamOf, stations } from './landscapes/crew'
 import { CREW, NIGHT_GAIN, surfaceLights, windLayer } from './landscapes/fx'
 import { designFor } from './landscapes/design'
+import { PROJECTILES, drawProjectile } from './landscapes/projectiles'
 import { type DayPhase, type Job, jobAccent, type Landscape, type Look, P, SCENE_H, type SceneEvent, type Season } from './landscapes/kit'
 import { LANDSCAPES } from './landscapes'
 import { type Canvas, canvas, hash, mix, sprite } from './pixels'
@@ -883,31 +884,28 @@ function drawScene(input: SceneInput, crewAnchors: number[], hitMap: SceneHitMap
 }
 
 /** Each shot leaves a fading record of the cells it crossed, above atmospheric effects. */
-/** How each place's machine dresses the head of its packet, as [colour, strength]: lights to either side, a wake behind, a
- *  cross of light, or a tinted core. One row per place, so a new look is data, not another branch. The harbor's is a rocket. */
-const PACKET_HEAD: Partial<Record<SceneInput['preset'], { side?: [number, number]; wake?: [number, number]; cross?: [number, number]; core?: [number, number]; rocket?: true }>> = {
-  harbor: { rocket: true }, // the tug launches straight up, then pitches over, trailing smoke
-  city: { side: [P.teal, .55], wake: [P.teal, .8] }, // a neon dart
-  desert: { side: [P.peach, .55], wake: [P.peach, .8] }, // a sunlit dart
-  beach: { cross: [P.teal, .65] }, // the saucer's pulse
-  forest: { side: [P.sky, .75] }, // the probe's scan line
-  mountains: { core: [P.yellow, .85] }, // a signal lamp
-  tundra: { core: [P.red, .85] }, // the beacon's flare
-  countryside: { side: [P.sky, .6], wake: [P.white, .5] }, // a droplet off the spray boom
-}
-
 function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, reactions: Reaction[], night: number, registerHit: (target: WakeSceneHit | undefined) => number, bodies: { x0: number; x1: number; y0: number; y1: number }[], foregroundOwner: number) {
   const titleOf = (id: string) => id === 'mochi' ? 'root' : [...input.jobs, ...input.agents].find(job => job.hit?.id === id)?.hit?.title ?? id
   const trails = input.messageTrails ?? new MessageTrails()
+  /** Messages fly behind the foreground: whatever stands in front keeps its pixels and its hover. */
+  const open = (x: number, y: number) => !foregroundOwner || c.hitOwners?.[y * c.W + x] !== foregroundOwner
+  const tint = (x: number, y: number, ink: number, a: number) => { if (open(x, y)) c.glow(x, y, ink, a) }
   for (const edge of input.peerEdges ?? []) {
     const from = ends.get(edge.source), to = ends.get(edge.target)
     if (!from || !to || edge.source === edge.target) continue
     const pair = [...`${edge.source}>${edge.target}`].reduce((sum, ch) => (sum * 31 + ch.charCodeAt(0)) >>> 0, 7)
     const lane = pair & 1
     const workerId = edge.source === 'mochi' ? edge.target : edge.source
-    const family = edge.family ?? input.jobs.find(job => job.hit?.id === workerId)?.kind ?? (input.agents.some(agent => agent.hit?.id === workerId) ? 'claude' : 'codex')
+    const kindOf = (id: string) => input.jobs.find(job => job.hit?.id === id)?.kind ?? (input.agents.some(agent => agent.hit?.id === id) ? 'claude' : 'codex')
+    const family = edge.family ?? kindOf(workerId)
     const style = CREW[family].message
-    const missile = family === 'codex' && !!PACKET_HEAD[input.preset]?.rocket && edge.source !== 'mochi'
+    // A worker throws its own design's projectile; the root, who is none of them, sends the family's plain light.
+    const shot = edge.source === 'mochi' ? undefined : PROJECTILES[family][input.preset]
+    // Between workers: kin speak in chorus (a second strand braids round the first), and to another family a message is
+    // translated, turning at the top of its arc into the receiver's own projectile and leaving the receiver's colour behind.
+    const peer = edge.source !== 'mochi' && edge.target !== 'mochi' ? kindOf(edge.target) : undefined
+    const kin = peer === family
+    const answer = peer && !kin ? PROJECTILES[peer][input.preset] : undefined
     let owner: number | undefined
     if (edge.arriving !== undefined && edge.arriving < (edge.lead ?? 0)) {
       const t = Math.max(0, edge.arriving / (edge.lead ?? 1))
@@ -915,12 +913,12 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
     }
     for (let packet = 0; packet < trails.count(edge); packet++) {
       const path = trails.path(edge, () => {
-        const launch = missile ? { x: from.x, y: Math.max(1, from.y - 8) } : from
+        const launch = shot?.rise ? { x: from.x, y: Math.max(1, from.y - shot.rise) } : from
         const route = arcCells(launch, to, c.W, H, lane)
-        if (missile) route.unshift(...Array.from({ length: from.y - launch.y }, (_, i) => (from.y - i) * c.W + from.x))
+        if (shot?.rise) route.unshift(...Array.from({ length: from.y - launch.y }, (_, i) => (from.y - i) * c.W + from.x))
         // The wave belongs to the flight's geometry, so its residue occupies exactly the same cells.
         return route.map((cell, i) => {
-          const wave = style === 'song' || style === 'ember' ? Math.round(Math.sin(i * (style === 'song' ? .5 : .7)) * Math.sin(Math.PI * i / Math.max(1, route.length - 1))) : 0
+          const wave = !shot && (style === 'song' || style === 'ember') ? Math.round(Math.sin(i * (style === 'song' ? .5 : .7)) * Math.sin(Math.PI * i / Math.max(1, route.length - 1))) : 0
           return Math.max(0, Math.min(H - 1, Math.floor(cell / c.W) + wave)) * c.W + cell % c.W
         })
       }, packet)
@@ -938,7 +936,17 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
         ],
       })
       // After delivery, embers fade along the recorded flight path while the crew moves on.
-      const accent = style === 'ember' ? P.peach : missile ? P.overlay2 : jobAccent({ kind: family } as Job, P.teal) // a rocket leaves smoke, not light
+      const accent = shot?.residue ?? (style === 'ember' ? P.peach : jobAccent({ kind: family } as Job, P.teal)) // a rocket leaves smoke, not light
+      const half = length >> 1, translated = peer && !kin ? answer?.residue ?? jobAccent({ kind: peer } as Job, P.teal) : undefined
+      const tick = Math.floor((edge.arriving ?? 0) / 80)
+      /** The chorus: two strands crossing behind the head, one in the family's light and one white. */
+      const braid = (k: number) => {
+        for (let n = 1; n <= Math.min(7, k); n++) {
+          const cell = path[k - n]!, prev = path[k - n - 1] ?? cell, bx = cell % c.W, by = Math.floor(cell / c.W)
+          const sx = Math.sign(bx - prev % c.W), sy = Math.sign(by - Math.floor(prev / c.W)), s = Math.round(Math.sin((k - n) * 0.7) * 1.6)
+          for (const [side, ink] of [[s, accent], [-s, P.white]] as const) tint(bx - sy * side, by + (sx || 1) * side, ink, 0.8 - n * 0.09)
+        }
+      }
       const tail = Math.max(2.5, Math.min(6, length * 0.125)) // cells over which the light fades to a third (a short, quick fade)
       const ember = 0.14 * Math.min(1, Math.max(0, edge.strength - 0.04) / 0.65)
       const light = new Float32Array(length) // how bright each cell of the trail is just now, 0..1
@@ -957,11 +965,13 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
         const age = t - landsAt
         if (age >= 0) {
           const end = path[length - 1]!
-          reactions.push({ id: edge.target, role: 'land', v: style === 'starfall' && age < 500 ? 1 : Math.exp(-age / 420), t: age, style, point: { x: end % c.W, y: Math.floor(end / c.W) } })
+          // Each family catches in its own way, whoever threw it: a worker's message to another family lands in the receiver's style.
+          const caught = peer ? CREW[peer].message : style
+          reactions.push({ id: edge.target, role: 'land', v: caught === 'starfall' && age < 500 ? 1 : Math.exp(-age / 420), t: age, style: caught, point: { x: end % c.W, y: Math.floor(end / c.W) } })
         }
         for (let at = 0; at < length; at++) if (at <= head && t <= PACKET_RUN_MS) {
           const distance = Math.floor(head) - at
-          const glow = style === 'packet' ? distance === 0 ? 1 : distance <= 4 ? 0.78 - distance * 0.1 : 0 : style === 'song' ? distance === 0 || distance === 4 || distance === 8 ? 1 : 0 : style === 'ember' ? distance === 0 ? 1 : distance <= 4 ? 0.75 - distance * 0.14 : 0 : distance === 0 ? 1 : distance <= 6 ? 0.85 - distance * 0.12 : 0
+          const glow = shot ? distance === 0 ? 1 : distance <= (shot.tail ?? 0) ? .75 - distance * .6 / shot.tail! : 0 : style === 'packet' ? distance === 0 ? 1 : distance <= 4 ? 0.78 - distance * 0.1 : 0 : style === 'song' ? distance === 0 || distance === 4 || distance === 8 ? 1 : 0 : style === 'ember' ? distance === 0 ? 1 : distance <= 4 ? 0.75 - distance * 0.14 : 0 : distance === 0 ? 1 : distance <= 6 ? 0.85 - distance * 0.12 : 0
           light[at] = Math.max(light[at]!, glow)
         }
         if (head > length - 1) landing = Math.max(landing, Math.exp(-(head - (length - 1)) / tail))
@@ -973,10 +983,20 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
         if (foregroundOwner && c.hitOwners?.[i] === foregroundOwner) return
         if (!glow && (k > visited || bodies.some(b => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1))) return
         const base = c.get(x, y)
-        const ink = glow === 1 ? style === 'ember' ? P.yellow : P.white : style === 'ember' ? Math.floor((edge.arriving ?? 0) / 150) % 2 ? P.red : P.peach : style === 'starfall' ? P.lavender : accent
+        const ink = glow === 1 ? style === 'ember' ? P.yellow : P.white : translated !== undefined && k >= half ? translated : style === 'ember' ? Math.floor((edge.arriving ?? 0) / 150) % 2 ? P.red : P.peach : style === 'starfall' ? P.lavender : accent
         const color = mix(base, ink, Math.min(1, Math.max(k % 3 === 0 ? ember : 0, glow * (1 + NIGHT_GAIN * night))))
         if (color !== base) c.set(x, y, color)
-        if (glow === 1 && style === 'ember') {
+        if (glow === 1 && translated !== undefined && k >= half) {
+          if (k - half < 3) for (let a = 0; a < 8; a++) { // the turn into the other tongue: a ring of both colours
+            const centre = path[half]!, r = k - half + 1
+            tint(Math.round(centre % c.W + Math.cos(a * Math.PI / 4) * r * 1.4), Math.round(Math.floor(centre / c.W) + Math.sin(a * Math.PI / 4) * r * 0.8), a % 2 ? accent : translated, 0.85 - (k - half) * 0.2)
+          }
+          if (answer) drawProjectile(c, answer, path, k, tick, from, open)
+          else { c.set(x, y, P.white); for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) tint(x + ox, y + oy, translated, 0.6) }
+        } else if (glow === 1 && shot) {
+          drawProjectile(c, shot, path, k, tick, from, open)
+        }
+        else if (glow === 1 && style === 'ember') {
           // A live coal: a white-hot heart in its flame, and sparks that drop away behind it and go out.
           const tick = Math.floor((edge.arriving ?? 0) / 90)
           c.set(x, y, mix(P.yellow, P.white, .6))
@@ -986,34 +1006,9 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
             c.glow(cell % c.W, Math.floor(cell / c.W) + drop, drop === 1 ? P.yellow : drop === 2 ? P.peach : P.red, .8 - drop * .18)
           }
         }
-        if (glow === 1 && style === 'packet') {
-          const previous = path[Math.max(0, k - 1)]!, dx = Math.sign(x - previous % c.W), dy = Math.sign(y - Math.floor(previous / c.W))
-          if (missile) {
-            // A rocket: red nose, white body, a flickering flame and a column of smoke that billows along the cells it has flown.
-            const back = (n: number) => { const cell = path[Math.max(0, k - n)]!; return [cell % c.W, Math.floor(cell / c.W)] as const }
-            const tick = Math.floor((edge.arriving ?? 0) / 80)
-            for (let n = Math.min(k, 13); n >= 5; n--) {
-              const [sx, sy] = back(n), puff = (n + tick) % 3 - 1
-              c.glow(sx, sy, P.overlay2, .6 - n * .035)
-              c.glow(sx + (dy ? puff : 0), sy + (dy ? 0 : puff), P.overlay1, .34 - n * .02)
-            }
-            if (k < 7) for (const ox of [-3, -2, -1, 1, 2, 3]) c.glow(from.x + ox, from.y + (Math.abs(ox) > 1 ? 0 : -1), Math.abs(ox) > 1 ? P.overlay2 : P.yellow, (1 - k / 7) * (Math.abs(ox) > 2 ? .4 : .8)) // the launch: a flash on deck, smoke rolling out to both sides
-            const [fx, fy] = back(3), [gx, gy] = back(4), [bx, by] = back(2), [wx, wy] = back(1)
-            if (k >= 4) c.glow(gx, gy, tick % 2 ? P.peach : P.red, .8)
-            if (k >= 3) c.glow(fx, fy, P.yellow, 1)
-            if (k >= 2) c.set(bx, by, P.snow)
-            if (k >= 1) c.set(wx, wy, P.white)
-            c.set(x, y, P.red)
-          } else {
-            const head = PACKET_HEAD[input.preset]
-            if (head?.side) for (const sign of [-1, 1]) c.glow(x - dy * sign, y + dx * sign, ...head.side)
-            if (head?.wake) c.glow(x - dx, y - dy, ...head.wake)
-            if (head?.cross) for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(x + ox, y + oy, ...head.cross)
-            if (head?.core) c.glow(x, y, ...head.core)
-          }
-        }
+        if (glow === 1 && kin) braid(k)
         // a soft halo round the bright part, so the comet has body rather than being a one-pixel dash
-        if (glow > 0.2) for (const [dx, dy] of (style === 'song' ? [[1, -1], [1, -2], [0, 1]] as const : style === 'packet' ? [] : [[0, -1], [0, 1]] as const)) {
+        if (glow > 0.2 && !shot) for (const [dx, dy] of (style === 'song' ? [[1, -1], [1, -2], [0, 1]] as const : style === 'packet' ? [] : [[0, -1], [0, 1]] as const)) {
           const hx = x + dx
           const hy = y + dy
           if (hx >= 0 && hx < c.W && hy >= 0 && hy < H) c.set(hx, hy, mix(c.get(hx, hy), style === 'song' && dy === 1 ? P.pink : ink, Math.min(1, glow * (style === 'song' ? 1 : 0.25 + NIGHT_GAIN * night))))

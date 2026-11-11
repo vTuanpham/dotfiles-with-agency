@@ -22,6 +22,17 @@ const leg = (seed: number, t: number, length: number) => {
   return waypoint(seed, k) * (1 - f) + waypoint(seed, k + 1) * f
 }
 
+/**
+ * A patrol: each leg crosses the middle of the room to a point on the far side and eases to a stop there, so a body with a
+ * front reverses only at the end of a long run, never mid-flight. Random waypoints reversed on two legs in three, and a
+ * figure of eight every few seconds: a creature that spends half its life turning looks lost.
+ */
+const sweep = (seed: number, t: number, length: number) => {
+  const end = (k: number) => (k & 1 ? 1 : -1) * (0.45 + 0.55 * (hash(seed * 131 + k * 977) % 1000) / 1000)
+  const k = Math.floor(t / length), f = ease(t / length - k)
+  return end(k) * (1 - f) + end(k + 1) * f
+}
+
 export function gait(kind: Kind, tier: number, seed: number, time: number, reach = 18): { u: number; v: number } {
   const s = seed * 5
   // the wider the room, the longer each sweep takes: crossing the whole sky is a leisurely passage, not a dash
@@ -29,11 +40,11 @@ export function gait(kind: Kind, tier: number, seed: number, time: number, reach
   switch (kind) {
     case 'codex': {
       const slow = tier >= 4 ? 1.8 : tier === 3 ? 1.15 : 1 // the biggest craft changes course least often
-      return { u: leg(seed, t, 42 * slow), v: leg(seed + 3, t, 55 * slow) }
+      return { u: sweep(seed, t + s * 7, 95 * slow), v: leg(seed + 3, t, 55 * slow) }
     }
     case 'claude': {
       const quick = [0, 1.5, 1.2, 1, 0.85][tier] ?? 1
-      return { u: Math.sin(t * 0.06 * quick + s), v: 0.55 * Math.sin(t * 0.12 * quick + s * 2) }
+      return { u: sweep(seed, t + s * 7, 105 / quick), v: 0.45 * Math.sin(t * 0.05 * quick + s * 2) + 0.15 * Math.sin(t * 0.13 + s) }
     }
     case 'agy':
       return { u: Math.sin(t * 0.045 + s) * Math.cos(t * 0.011 + s), v: 0.8 * Math.cos(t * 0.045 + s) * (0.7 + 0.3 * Math.sin(t * 0.017)) }
@@ -47,12 +58,6 @@ export const clockRate = (pace: number) => 0.8 + 1.0 * Math.max(0, Math.min(1, p
 
 /** The part of its room a worker uses: a calm one stays near home, a busy one ranges. */
 export const roamShare = (pace: number) => 0.6 + 0.4 * Math.max(0, Math.min(1, pace))
-
-/** A smooth visit to neighboring airspace, returning home within 4–10 seconds of active route time. */
-export function excursion(time: number, seed: number): number {
-  const age = ((time + hash(seed * 17) % 240) % 240 + 240) % 240
-  return age < 80 ? Math.sin(Math.PI * age / 80) ** 2 : 0
-}
 
 /** Seconds of its own events over which a worker winds down from busy to calm. */
 const BUSY_MS = 120_000

@@ -63,13 +63,9 @@ const toRoot = (job: WakeChip, now: number): RootLink | undefined => {
   if (peer) return { dir: peer.outgoing ? 'out' : 'in', family: job.backend, at: peer.lastAt, count: peer.count, observedAt: peer.observedAt, fresh: peer.fresh, description: [] }
   return { dir: 'tether', family: job.backend, at: now, count: 1, activeAt: job.lastEventAt, description: [] }
 }
-// the same geometry as the band's rows: the graph's column hugs the longest row, and stands a little further out while a message crosses
+// the same geometry as the band's rows: the graph's column hugs the longest row
 const rowWidth = TEXT_COLUMNS - 2
-const boxAt = (i: number) => {
-  const now = NOW0 + msAt(i), jobs = crewAt(msAt(i))
-  const crossing = jobs.some(job => (job.peers ?? []).some(peer => peer.observedAt !== undefined && now >= peer.observedAt && now - peer.observedAt <= packetWindow(peer.fresh ?? 1)))
-  return crewLayout(jobs, ['Explore'], now, rowWidth, crossing)
-}
+const boxAt = (i: number) => crewLayout(crewAt(msAt(i)), ['Explore'], NOW0 + msAt(i), rowWidth)
 const rowsAt = (i: number) => {
   const ms = msAt(i), now = NOW0 + ms
   const jobs = crewAt(ms)
@@ -84,7 +80,7 @@ const rowsAt = (i: number) => {
     ...rows.map((row, k) => ({
       kind: 'bridge', backend: jobs[k]!.backend, title: row.title, mark: [...row.family][1] ?? '', glyph: row.glyph, spin: harnessSpin(jobs[k]!.backend, i), beat: row.beat,
       effort: row.effortSlot ? { lit: row.effortSlot.lit, total: row.effortSlot.total, before: row.effortSlot.before, size: row.effortSlot.size, after: row.effortSlot.after } : null,
-      detail: row.detail, gutter: row.gutter.slice(0, row.rootAt ?? row.gutter.length), cell: spine[k + 1]!,
+      detail: row.detail, gutter: row.gutter, cell: spine[k + 1]!,
     })),
   ]
 }
@@ -150,7 +146,7 @@ while (start < 600 && !Array.from({ length: FRAMES }, (_, i) => start + i * STEP
 const pixels = new Uint32Array(FRAMES * W * H)
 const anchors: Record<string, Box[]>[] = []
 const rows: ReturnType<typeof rowsAt>[] = []
-const messageTrails = new MessageTrails()
+const messageTrails = new MessageTrails(), anchorTrails = new MessageTrails() // the call-out's own copy, so finding the arc never advances the drawn one
 for (let i = 0; i < FRAMES; i++) {
   const at = { ...state, frame: start + i * STEP }
   const talk = { ...at, ...talking(i) }
@@ -160,6 +156,7 @@ for (let i = 0; i < FRAMES; i++) {
   anchors.push({
     ...Object.fromEntries(Object.entries(IDS).map(([name, id]) => [name, boxes(hits, id, name === 'agy' ? 6 : 2)])),
     lamps: changed(scenePixels(at), scenePixels({ ...at, plan: null })), // lit lamps are the steps done; without a plan they only light at night
+    message: boxes(sceneFrame({ ...talk, messageTrails: anchorTrails }).hits, 'peer:parser:review', 3), // the parser's message to review, in flight or as its fading trail
   })
 }
 await Bun.write(out, pixels)

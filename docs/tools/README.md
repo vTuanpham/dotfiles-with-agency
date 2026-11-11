@@ -8,7 +8,7 @@ README capture never needs a screenshot of a live session and never shows person
 
 | Script | Makes | Source of the pixels |
 | --- | --- | --- |
-| `readme_gifs.py` | `hero.gif`, `wake-tour.gif`, `wake-landscapes.gif`, `wake-dock.gif`, `wake-characters.gif`, `wake-passages.gif`, `wake-cast.gif`, `wake-sequence.gif`, `wake-strike.gif` | Wake's real renderer through `dev/showcase.ts`, `dev/readme-tour.ts`, `dev/dock.ts`, `dev/crew-life.ts` and `dev/readme-crew.ts`; the native row builders and logo images; `statusline.py`; `../hero.html` |
+| `readme_gifs.py` | `hero.gif`, `wake-tour.gif`, `wake-landscapes.gif`, `wake-dock.gif`, `wake-characters.gif`, `wake-passages.gif`, `wake-cast.gif`, `wake-sequence.gif`, `wake-conversations.gif`, `wake-strike.gif` | Wake's real renderer through `dev/showcase.ts`, `dev/readme-tour.ts`, `dev/dock.ts`, `dev/crew-life.ts` and `dev/readme-crew.ts`; the native row builders and logo images; `statusline.py`; `../hero.html` |
 | `baton_gif.py` | `baton.gif` | The real Baton page server, screenshotted by Chrome; `baton-toast.png` is a real capture of its toast |
 | `flow_gifs.py` | one GIF per diagram in `flows/*.svg` | The SVG itself, rendered by Chrome with a packet on every arrow |
 | `model_effort.py` | `flows/model-effort.svg` | Exact model/setting rows in Model Guide's public benchmark snapshot, with its retrieval timestamp; no account data |

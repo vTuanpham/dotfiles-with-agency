@@ -10,9 +10,12 @@
 import { type Ctx, type Dot, styleFor } from './exit-styles'
 import { type Canvas, hash, mix } from './pixels'
 import type { CrewBox, SurfaceLight } from './landscapes/kit'
+import { LANDED_MS, LAUNCH_MS, flourish } from './touchdowns'
 
 export const EXIT_MS = 3200
-export const ARRIVE_MS = 2400
+/** The flight in; the arrival window runs on for the touchdown's shockwave (touchdowns.ts) once the craft is home. */
+const FLY_IN_MS = 2400
+export const ARRIVE_MS = FLY_IN_MS + LANDED_MS
 
 /** `age` is ms into the passage: since the job finished (leaving) or since it started (arriving). */
 export type Passage = { id: string; kind: 'codex' | 'agy' | 'claude' | 'opencode'; place: string; seed: number; age: number; arriving: boolean; /** its last turn was interrupted: it leaves by being struck down, not by its place's farewell */ struck?: boolean }
@@ -45,7 +48,8 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[], b
     // Shadows and flight trails belong to the scenery; moving them would carry pieces of its background along.
     const rows = new Map<number, [number, number]>() // each row's left and right edge of the sprite
     for (const d of painted) { const edge = rows.get(d.y); rows.set(d.y, edge ? [Math.min(edge[0], d.x), Math.max(edge[1], d.x)] : [d.x, d.x]) }
-    for (const d of painted) {
+    const home = job.arriving && job.age >= FLY_IN_MS // landed: the sprite stays as the scene drew it, under its shockwave
+    if (!home) for (const d of painted) {
       const [left, right] = rows.get(d.y)!
       const from = left - 1 >= 0 ? left - 1 : right + 1 < c.W ? right + 1 : d.x
       const index = d.y * c.W + d.x
@@ -60,7 +64,7 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[], b
       const xs = sprite.map(d => d.x), ys = sprite.map(d => d.y)
       const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys)
       const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2
-      const p = job.arriving ? 1 - job.age / ARRIVE_MS : job.age / EXIT_MS // an arrival is the exit played backwards
+      const p = job.arriving ? Math.max(0, 1 - job.age / FLY_IN_MS) : job.age / EXIT_MS // an arrival is the exit played backwards
       const ctx: Ctx = {
         c, p, seed: job.seed, arriving: job.arriving, cx, cy, x0, x1, y0, y1, lit, surfaceAt,
         heading,
@@ -86,7 +90,10 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[], b
           }
         },
       }
+      const lead = part === parts[0] // companions ride along in their leader's shockwave
+      if (home) { if (lead) flourish(job.kind, ctx, (job.age - FLY_IN_MS) / LANDED_MS, true); continue }
       styleFor(job.kind, job.place, job.struck && !job.arriving, job.arriving)(ctx)
+      if (lead && !job.arriving && !job.struck && job.age < LAUNCH_MS) flourish(job.kind, ctx, job.age / LAUNCH_MS, false)
     }
   }
 }
