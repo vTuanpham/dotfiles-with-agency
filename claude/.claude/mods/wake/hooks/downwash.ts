@@ -5,8 +5,8 @@
 //   wings  every downstroke sends a front of air down from under the wings; the scenery below dips and parts on each beat
 //   jets   a steady blast from under the hull: a shimmering column, its light pooled on the ground, the scenery held pressed
 // The scenery under the body is really moved (treetops, grass, water and roofs are pushed down and out from under it), the
-// place's own material (dust, spray, sand, snow, petals, leaves) is blown out along the ground both ways in puffs, and a bright
-// pressure ripple runs across the surface. Walkers, boats, constellations and lanterns raise none: only the designs listed.
+// place's own material (dust, spray, sand, snow, petals, leaves) is blown out along the ground both ways in puffs. The shock
+// of the moment it touches down or sets out is shock.ts. Walkers, boats, constellations and lanterns raise none.
 import type { WakePreset } from '../types'
 import { CARRIED } from './landscapes/fx'
 import { P } from './landscapes/kit'
@@ -110,19 +110,7 @@ export function downwash(k: Surface, wash: Wash, place: WakePreset, body: Body, 
     k.lit(cx + dx, g - 1, P.teal, strength * 0.3 * fall * fall)
   }
 
-  // 3. a pressure ripple running out across the surface, both ways, brightest on the beat
-  const radius = span * 0.5 + 5 + 12 * strength
-  for (let dx = -Math.ceil(radius); dx <= radius; dx++) {
-    const x = Math.round(cx + dx), g = k.surfaceAt?.(x, under)
-    if (g === undefined || Math.abs(g - ground) > 3) continue
-    const ring = Math.abs(dx) - (wash.by === 'wings' ? beat * radius : (s * 18) % 6 + span * 0.3)
-    const crest = wash.by === 'wings' ? clamp(1 - Math.abs(ring) / 1.6) : 0.4 + 0.6 * clamp(1 - Math.abs(ring % 6) / 1.5)
-    const fade = strength * (1 - Math.abs(dx) / (radius + 1))
-    k.lit(x, g, WATER.has(place) ? P.white : sky, fade * 0.85 * crest)
-    if (WATER.has(place)) k.lit(x, g + 1, P.sky, fade * 0.5 * crest)
-  }
-
-  // 4. the place's own stuff, kicked up in puffs, blown out along the ground and settling back
+  // 3. the place's own stuff, kicked up in puffs, blown out along the ground and settling back
   const colors = CARRIED[place].colors, life = 0.8
   for (let i = 0; i < 12 + Math.round(span * 0.8); i++) {
     const r = (n: number) => (hash(i * 7919 + seed * 31 + n) % 1000) / 1000

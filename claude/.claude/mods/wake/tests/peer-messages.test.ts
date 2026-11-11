@@ -1,10 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 import { messagePreview, messageStatus, PeerMessageTracker, PREVIEW_MAX } from '../hooks/peer-messages'
 
-test('omitted source previews stay distinct from missing message metadata', () => {
-  expect(messagePreview(null)).toBe('Preview withheld by Bridge')
-  expect(messagePreview(undefined)).toBe('Message preview unavailable')
-  expect(messagePreview('Review complete')).toBe('Review complete')
+test('a message without a preview says what is known about it, never that something is missing', () => {
+  expect(messagePreview(null)).toBe('Message')
+  expect(messagePreview(null, { kind: 'status_report', count: 3, ago: 12_000 })).toBe('Status report · 3 in this thread · 12s ago')
+  expect(messagePreview(undefined, { ago: 125_000 })).toBe('Message · 2m ago')
+  expect(messagePreview('Review complete', { count: 3 })).toBe('Review complete')
 })
 
 test('a long message is cut to one short line, so a hover card can never fill the screen', () => {

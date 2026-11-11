@@ -554,7 +554,7 @@ test('metric and quota hover cards stay inside their full row at small and large
       expect(card.props?.bottom).toBe(1)
     }
     if (columns >= 60) {
-      expect(flat(tree, true)).toContain('Preview withheld by Bridge')
+      expect(flat(tree, true)).not.toContain('withheld')
     }
     if (columns >= 100) expect(flat(tree, true)).toContain('1.4 GiB of the 3G cap')
     await bar.unmount()

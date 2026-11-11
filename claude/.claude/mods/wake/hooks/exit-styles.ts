@@ -68,6 +68,15 @@ const hyperdrive: Style = k => {
   for (let x = Math.max(0, Math.min(cx, cx + dx)); x < Math.min(c.W, Math.max(cx, cx + dx)); x++) k.lit(x, y, P.white, 0.55 * (1 - q) * clamp(1 - Math.abs(cx + dx - x) / 44))
 }
 
+/**
+ * Where a style's moment of transition is when it is not the body leaving its post: `p` through the passage (as it plays
+ * leaving; an arrival is the same moment played backwards) and how far above its post it happens. The dragon's is its jump to
+ * light speed, where the white flash bursts, high over the street: the shock goes off there, a beat ahead of the flash.
+ */
+export const TRANSITION = new Map<Style, (k: Ctx) => { p: number; dy: number }>([
+  [hyperdrive, k => ({ p: k.arriving ? 0.57 : 0.53, dy: -Math.max(0, Math.min(7, k.y0 - 1)) })],
+])
+
 /** A boat under sail for the horizon, its wake behind the hull, dissolving into the haze. `chop` is how much the water throws it about. */
 const sailing = (chop: number, wake: number): Style => k => {
   const { p, cx, y1 } = k

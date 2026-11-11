@@ -7,16 +7,38 @@
 // it. An arrival is the same style played backwards, so each craft has one thing to design: the city's clockwork critters that
 // hyperdrive away in a streak of light warp in and settle, the boat that sails off to the horizon sails in from it, the sparks
 // that burst gather into a star.
-import { type Ctx, type Dot, styleFor } from './exit-styles'
+import { type Ctx, type Dot, TRANSITION, styleFor } from './exit-styles'
 import { type Canvas, hash, mix } from './pixels'
 import type { CrewBox, SurfaceLight } from './landscapes/kit'
 import type { WakePreset } from '../types'
 import { type Body, DOWNWASH, canvasSurface, downwash } from './downwash'
 import type { Look as SpriteLook } from './exit-styles'
+import { SHOCK_MS, shock } from './shock'
+import { designFor } from './landscapes/design'
+
+/**
+ * The moment a passage leaves home (0..1 through it): the first point where the body has moved, grown or begun to go (a
+ * constellation, which goes out star by star through its filter, from its first step). An
+ * arrival plays its style backwards, so the same moment is when it touches down. Styles are pure, so this is kept per passage.
+ */
+const leavesAt = new Map<string, number>()
+function contactAt(key: string, style: (k: Ctx) => void, ctx: Ctx): number {
+  let p = leavesAt.get(key)
+  if (p !== undefined) return p
+  p = 1
+  for (let q = 0; q <= 1; q += 0.02) {
+    let look: SpriteLook | undefined
+    style({ ...ctx, p: q, lit: () => {}, sprite: l => { look ??= l } })
+    if (look && ((look.filter && q > 0) || Math.abs(look.dx ?? 0) >= 1 || Math.abs(look.dy ?? 0) >= 1 || Math.abs((look.sx ?? 1) - 1) > 0.15 || Math.abs((look.sy ?? 1) - 1) > 0.15 || (look.dissolve ?? 0) > 0.2)) { p = Math.max(0, q - 0.02); break }
+  }
+  if (leavesAt.size > 256) leavesAt.clear()
+  leavesAt.set(key, p)
+  return p
+}
 
 export const EXIT_MS = 3200
 /** The flight in; the arrival window runs on a little once the craft is home, while the dust its wash raised settles. */
-const FLY_IN_MS = 2400, SETTLE_MS = 600
+const FLY_IN_MS = 2400, SETTLE_MS = SHOCK_MS + 40
 export const ARRIVE_MS = FLY_IN_MS + SETTLE_MS
 
 /** `age` is ms into the passage: since the job finished (leaving) or since it started (arriving). */
@@ -88,13 +110,21 @@ export function passages(c: Canvas, owners: { id: string }[], list: Passage[], b
           }
         },
       }
-      const wash = job.struck && !job.arriving ? undefined : DOWNWASH[job.kind][job.place as WakePreset]
+      const place = job.place as WakePreset, struck = job.struck && !job.arriving
+      const wash = struck ? undefined : DOWNWASH[job.kind][place]
       const scale = part === parts[0] ? 1 : 0.6 // a companion is smaller and pushes less air
-      if (home) { // settled: the wash dies away over the dust's last second
-        if (wash) downwash(surface, wash, job.place as WakePreset, { x0, x1, y0, y1 }, 0.6 * scale * (1 - (job.age - FLY_IN_MS) / SETTLE_MS), job.age, job.seed)
+      const style = styleFor(job.kind, job.place, struck, job.arriving)
+      if (!struck) { // the shock, from the moment it touched down or set out, where it stood at home
+        const warp = TRANSITION.get(style)?.(ctx), dy = warp?.dy ?? 0
+        const leaves = warp?.p ?? contactAt(`${job.id}:${job.kind}:${place}:${job.arriving}:${x0},${x1},${y0},${y1}:${heading ?? 0}`, style, ctx)
+        const since = job.arriving ? job.age - (1 - leaves) * FLY_IN_MS : job.age - leaves * EXIT_MS
+        const habit = designFor(job.kind, place).habit ?? 'air'
+        if (part === parts[0]) shock(surface, job.kind, place, habit, { x0, x1, y0: y0 + dy, y1: y1 + dy }, since, job.arriving, job.seed)
+      }
+      if (home) { // settled: the wash dies away while the dust settles
+        if (wash) downwash(surface, wash, place, { x0, x1, y0, y1 }, 0.6 * scale * (1 - (job.age - FLY_IN_MS) / SETTLE_MS), job.age, job.seed)
         continue
       }
-      const style = styleFor(job.kind, job.place, job.struck && !job.arriving, job.arriving)
       let drawn: SpriteLook | undefined
       const draw = ctx.sprite
       style({ ...ctx, sprite: look => { drawn ??= look; draw(look) } })

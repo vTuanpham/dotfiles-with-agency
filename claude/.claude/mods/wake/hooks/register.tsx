@@ -208,6 +208,7 @@ let scenePointer: { x: number; y: number } | null = null
 let sceneSelection: SceneSelection | null = null
 let lastSceneTarget: WakeSceneHit | null = null
 let scenePainting = false
+let hostLag = 0 // ms from starting a paint to the host taking it as its next frame, smoothed
 /** The frame the paint loop last drew: a band render on the same frame mounts it instead of painting the scene again. */
 let lastFrame: { frameNo: number; width: number; rows: number; selection: SceneSelection | null; frame: ReturnType<typeof sceneFrame> } | null = null
 let sceneRetryAt = 0
@@ -227,6 +228,9 @@ async function paint($: EngineInterface) {
   const target = band
   if (!target) { sceneHitMap = null; return }
   if (scenePainting) return
+  // A terminal that cannot keep up (a busy, wide scene in a slow one) gets only the motion clock's whole steps: the same
+  // motion at ten paints a second, half the cells to write. It goes back to twenty once its blits come back quickly again.
+  if (hostLag > SCENE_MS && frameNo % 1 !== 0) return
   const now = await $.clock.now()
   if (now < sceneRetryAt || band !== target || scenePainting) return
   scenePainting = true
@@ -239,6 +243,7 @@ async function paint($: EngineInterface) {
     const frame = sceneFrame({ ...input, messageTrails }, sceneSelection, target.rows)
     lastFrame = { frameNo, width: target.width, rows: target.rows, selection: sceneSelection, frame }
     const done = await $.ui.blit({ requestId: target.id, key: 'scene', columns: target.width, rows: target.rows, cells: frame.cells })
+    hostLag = hostLag * 0.8 + Math.max(0, (await $.clock.now()) - now) * 0.2 // how long a paint takes to reach the screen, smoothed
     if (band !== target) return
     if (done.deny) {
       sceneHitMap = null
@@ -1138,7 +1143,7 @@ export const register: Register = on => {
           description: [
             message.outgoing ? `${titleOf(job)} → root` : `Root → ${titleOf(job)}`,
             messageStatus(message.messageState),
-            messagePreview(message.preview),
+            messagePreview(message.preview, { kind: message.kind, count: message.count, ago: now - message.lastAt }),
           ],
         }
       }
@@ -1215,7 +1220,7 @@ export const register: Register = on => {
       const peerDetails = [...(job.peers ?? [])].filter(peer => now - peer.lastAt <= 900_000).sort((a, b) => b.lastAt - a.lastAt).slice(0, 3).flatMap(peer => [
         `${peer.outgoing ? 'To' : 'From'}: ${peer.target}`,
         messageStatus(peer.messageState),
-        messagePreview(peer.preview),
+        messagePreview(peer.preview, { kind: peer.kind, count: peer.count, ago: now - peer.lastAt }),
       ])
       const familyColor = job.backend === 'agy' ? ink.blue : job.backend === 'claude' ? ink.pink : job.backend === 'opencode' ? ink.green : ink.teal
       const stateColor = row.state === 'unavailable' ? ink.subtle : row.state === 'stalled' ? ink.red : row.state === 'blocked_on_question' ? ink.peach
@@ -1414,7 +1419,7 @@ export const register: Register = on => {
           `Model: ${job.model || 'unknown'}`, `Effort: ${job.effort || 'unknown'}`,
           job.lastEventAt === undefined ? 'Last event unknown' : `Last event ${span(now - job.lastEventAt)} ago`,
           job.memoryBytes == null ? 'Memory unavailable' : `Memory: ${(job.memoryBytes / 1024 ** 2).toFixed(0)} MiB${job.memoryCap ? ` / ${job.memoryCap}` : ''}`,
-          ...(job.reason ? [job.reason] : []), ...(job.peers ?? []).flatMap(peer => [`${peer.outgoing ? 'To' : 'From'} ${peer.target}: ${messagePreview(peer.preview)}`])]
+          ...(job.reason ? [job.reason] : []), ...(job.peers ?? []).flatMap(peer => [`${peer.outgoing ? 'To' : 'From'} ${peer.target}: ${messagePreview(peer.preview, { kind: peer.kind, count: peer.count, ago: now - peer.lastAt })}`])]
         return <Box width={quotaWidth} position="relative" hover={popups.show(`${job.backend} worker`, details)}>
           <Text color={ink.text} wrap="truncate-end">{`${({ codex: '◈', agy: '✦', claude: '◆', opencode: '○' } as Record<string, string>)[job.backend] ?? '◇'} ${STATE_GLYPHS[state] ?? '?'} ${job.title ?? job.name}`}</Text>{popups.cards}
         </Box>

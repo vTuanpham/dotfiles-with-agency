@@ -283,7 +283,7 @@ export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[
       const strength = link.wait ? 1 : pulseAge < 2_000 ? 0.65 + 0.35 * (Math.floor(pulseAge / 400) % 2) : messageFade(age)
       const description = [
         `${jobs[link.source]!.name} → ${jobs[link.target]!.name}`,
-        link.wait ? 'Waiting for peer' : messagePreview(link.preview),
+        link.wait ? 'Waiting for peer' : messagePreview(link.preview, { kind: link.kind, count: link.count, ago: age }),
       ]
       return { text, color, dim: !link.wait && age > 300_000, strength, flow: text.trim() ? packetFlow(link, index, now) : 0, description }
     })

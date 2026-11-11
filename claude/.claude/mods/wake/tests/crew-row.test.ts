@@ -29,9 +29,9 @@ test('peer trace pulses briefly, then fades and reports only actual previews', (
   expect(crewRows(jobs, 9_999, 120)[0]!.gutter).toHaveLength(0)
   expect(crewRows(jobs, 910_001, 120)[0]!.gutter).toHaveLength(0)
   jobs[0]!.peers![0]!.preview = null
-  expect(trace(10_000).description).toContain('Preview withheld by Bridge')
+  expect(trace(10_000).description.join(' ')).not.toContain('withheld') // what is known about it instead: "Message · 1s ago"
   jobs[0]!.peers![0]!.preview = undefined
-  expect(trace(10_000).description).toContain('Message preview unavailable')
+  expect(trace(10_000).description).toContain('Message · 1s ago')
 })
 
 test('a completed peer remains an inline graph endpoint until its recorded exchange expires', () => {

@@ -1,6 +1,30 @@
 import { expect, test } from 'claude-code/testing'
 import { MessageTrails, scenePixels, type SceneInput } from '../hooks/scene'
 import { TURN_LEAD_MS, PACKET_STAGGER_MS } from '../hooks/crew-row'
+import { showcaseInput } from '../dev/showcase-input'
+import { SCENE_H } from '../hooks/landscapes/kit'
+
+test('a shot homes in on its receiver as it moves, and its trail keeps the bend after impact', { timeoutMs: 30_000 }, () => {
+  for (const scene of [0, 2, 3]) {
+    const trails = new MessageTrails()
+    let flown = 0, kept: [number, number] | undefined
+    for (let i = 100; i < 200; i++) {
+      const input = { ...showcaseInput(scene, i, 120), messageTrails: trails }
+      const points = new Map<string, { x: number; y: number }>()
+      scenePixels(input, [], { columns: 120, rows: SCENE_H, owners: [], targets: [] }, points)
+      const edge = input.peerEdges?.find(e => e.source === 'a' && e.target === 'b'), b = points.get('b')
+      const path = edge && trails.path(edge, () => [])
+      if (!edge || edge.arriving === undefined || !b || !path?.length) continue
+      const aim = trails.aim(edge, 0), end = path.at(-1)!, t = edge.arriving - (edge.lead ?? 0)
+      if (t <= 1_400) { // in the air: the end of its flight is where the receiver is now
+        expect([end % 120 + aim[0], Math.floor(end / 120) + aim[1]]).toEqual([b.x, b.y])
+        flown++
+        kept = aim
+      } else expect(aim).toEqual(kept!) // landed: the bend no longer follows the receiver
+    }
+    expect(flown).toBeGreaterThan(10)
+  }
+})
 
 test('each shot freezes its own route at launch and records only visited cells', () => {
   const trails = new MessageTrails(), edge = { source: 'a', target: 'b', strength: 1, stamp: 'one', lead: TURN_LEAD_MS, fresh: 3 }

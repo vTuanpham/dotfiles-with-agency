@@ -1,5 +1,5 @@
 import { type Canvas, hash, mix, sprite } from '../pixels'
-import { type Building, byPhase, type DayPhase, type Landscape, type Look, P, SCENE_H, type Season, editsOf, foliage, heightFor, lightWindows, wave, jobAccent } from './kit'
+import { type Building, byPhase, type DayPhase, type Landscape, type Look, P, SCENE_H, type Season, editsOf, foliage, heightFor, lightWindows, relit, wave, jobAccent } from './kit'
 import { airJobs } from './crew'
 
 // Countryside: two rolling hills of crop stripes and hedgerows with a far windmill; each
@@ -21,7 +21,7 @@ const WARM: Record<DayPhase, number> = { dawn: 0.2, morning: 0.04, noon: 0, afte
 const FLOCK: Record<DayPhase, [number, number, number]> = { dawn: [2, 1, 0], morning: [3, 2, 3], noon: [5, 2, 3], afternoon: [4, 2, 2], dusk: [4, 2, 0], night: [4, 0, 0] }
 
 /** A colour warmed by dawn and dusk light and sunk toward night blue (and a little by rain). */
-const dim = (look: Look, color: number) => mix(mix(color, 0xf0a850, byPhase(look, WARM)), 0x10162a, look.night * 0.62 + (look.wet ? 0.1 : 0))
+const dim = relit((look, color) => mix(mix(color, 0xf0a850, byPhase(look, WARM)), 0x10162a, look.night * 0.62 + (look.wet ? 0.1 : 0)))
 const pal = (look: Look, colors: Record<string, number>) => Object.fromEntries(Object.entries(colors).map(([k, v]) => [k, dim(look, v)]))
 const styleOf = (index: number) => [0, 0, 0, 1, 1, 1, 2, 2, 3, 4][hash(index * 7 + 3) % 10]! // mills and greenhouses are rarer
 const roofRows = (w: number) => Math.min(3, Math.ceil(w / 2))

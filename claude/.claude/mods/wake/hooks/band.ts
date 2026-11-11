@@ -144,7 +144,7 @@ const routeClock = new PhaseClock()
  * SETTLE_MS, and while one plays the worker does nothing else: its route holds until it is down or back up in the air.
  * One seen quiet for the first time (a stale job at startup) is already resting.
  */
-export const REST_AFTER_MS = 20_000, SETTLE_MS = 1_600
+export const REST_AFTER_MS = 12_000, SETTLE_MS = 1_600
 const settling = new Map<string, { at: number; amount: number; quiet?: number }>()
 export const gaitOf = (id: string, pace: number, now: number, rate = 1, stale = false) => {
   const previous = settling.get(id)
@@ -262,7 +262,7 @@ export function sceneInput(state: BandState, width: number, frame: number, effec
       hit: job.id || job.owner ? {
         id: job.id ?? `${job.owner}/${job.name}`, title: job.title ?? job.name,
         details: [
-          ...(peer ? [`${peer.outgoing ? 'To' : 'From'}: ${peer.target}`, messagePreview(peer.preview)] : []),
+          ...(peer ? [`${peer.outgoing ? 'To' : 'From'}: ${peer.target}`, messagePreview(peer.preview, { kind: peer.kind, count: peer.count, ago: now - peer.lastAt })] : []),
           ...(peer ? [messageStatus(peer.messageState)] : []),
           `Harness: ${job.backend ?? 'codex'}`,
           job.model ? `Model ID: ${job.model}` : 'Model not reported',

@@ -1,5 +1,5 @@
 import { type Canvas, hash, mix, sprite } from '../pixels'
-import { type Building, byPhase, KIND_COLOR, type Landscape, type Look, P, SCENE_H, editsOf, farTone, foliage, lightWindows, wave, jobAccent } from './kit'
+import { type Building, byPhase, KIND_COLOR, type Landscape, type Look, P, SCENE_H, editsOf, farTone, foliage, lightWindows, relit, wave, jobAccent } from './kit'
 import { airJobs } from './crew'
 
 // Beach: a tropical shore. Turns are huts on the back of the sand (striped cabana, thatched
@@ -19,10 +19,8 @@ const SUITS = [P.red, P.blue, P.yellow, P.pink, P.green, P.mauve, P.peach]
 const MIN_H = [4, 5, 6, 5, 5] // cabana, bungalow, lifeguard tower, cafe, tiki bar
 const BASE_W = [5, 6, 5, 6, 5]
 const styleOf = (index: number) => hash(index * 7 + 3) % 5
-const dim = (color: number, look: Look) => {
-  const tint = mix(mix(color, 0xff8a4a, 0.18 * look.blend.dusk), P.pink, 0.12 * look.blend.dawn)
-  return mix(tint, P.ink, 0.38 * look.night)
-}
+const relitBeach = relit((look, color) => mix(mix(mix(color, 0xff8a4a, 0.18 * look.blend.dusk), P.pink, 0.12 * look.blend.dawn), P.ink, 0.38 * look.night))
+const dim = (color: number, look: Look) => relitBeach(look, color)
 const sunPath = (look: Look) => (look.phase === 'dusk' ? look.W - 14 : look.phase === 'dawn' ? 8 : look.night > 0.6 ? Math.round(look.W * 0.3) : -99)
 const isSea = (px: number) => (px & 255) - (px >> 16) > 40 // turquoise or blue: where a swimmer may be drawn
 

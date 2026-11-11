@@ -4,12 +4,19 @@ type PeerJob = { id: string; owner: string; peers: PeerMessage[] }
 /** The most a preview shows anywhere (a hover card, a row): a message can be a whole report, and a card must never grow to fill the screen. */
 export const PREVIEW_MAX = 120
 
-/** Null is an intentionally omitted source preview; absent means no matching message metadata. A long preview is cut to one short line, with an ellipsis. */
-export const messagePreview = (preview: string | null | undefined): string => {
-  if (preview === null) return 'Preview withheld by Bridge'
+const ago = (ms: number) => ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))}s ago` : ms < 3_600_000 ? `${Math.round(ms / 60_000)}m ago` : `${Math.round(ms / 3_600_000)}h ago`
+
+/**
+ * One short line about a message: its text, cut with an ellipsis when long. Where there is no text (Bridge leaves previews out
+ * on purpose, or nothing matched) it says what is known instead, never that something is missing: what kind of message it is,
+ * how many the thread holds and when the last came, e.g. "Report · 3 in this thread · 12s ago".
+ */
+export const messagePreview = (preview: string | null | undefined, about: { kind?: string; count?: number; ago?: number } = {}): string => {
   const text = (preview ?? '').replace(/\s+/g, ' ').trim()
-  if (!text) return 'Message preview unavailable'
-  return text.length <= PREVIEW_MAX ? text : `${text.slice(0, PREVIEW_MAX - 1).trimEnd()}…`
+  if (text) return text.length <= PREVIEW_MAX ? text : `${text.slice(0, PREVIEW_MAX - 1).trimEnd()}…`
+  const kind = about.kind?.replace(/[_-]+/g, ' ').trim()
+  return [kind ? kind[0]!.toUpperCase() + kind.slice(1) : 'Message', (about.count ?? 1) > 1 ? `${about.count} in this thread` : '', about.ago !== undefined && about.ago >= 0 ? ago(about.ago) : '']
+    .filter(Boolean).join(' · ')
 }
 
 /** Describe the observed stage; Bridge does not issue reader acknowledgements. */

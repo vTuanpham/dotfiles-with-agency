@@ -231,6 +231,21 @@ export function lightWindows(c: Canvas, look: Look, b: Building, slots: [number,
  * A number weighted by the phases' blend, e.g. `byPhase(look, { dusk: 0.3, dawn: 0.2 })`, so a
  * tint fades in and out with the hour instead of switching on one frame. Unnamed phases count 0.
  */
+/**
+ * A landscape's relighting (dawn warmth, night, rain) for its colours: the light is one per frame, so each colour is worked out
+ * once a frame rather than once a pixel. `light` must depend on the look and the colour alone.
+ */
+export function relit(light: (look: Look, color: number) => number): (look: Look, color: number) => number {
+  const frames = new WeakMap<Look, Map<number, number>>()
+  return (look, color) => {
+    let seen = frames.get(look)
+    if (!seen) frames.set(look, seen = new Map())
+    let out = seen.get(color)
+    if (out === undefined) seen.set(color, out = light(look, color))
+    return out
+  }
+}
+
 export function byPhase(look: Look, values: Partial<Record<DayPhase, number>>): number {
   let sum = 0
   for (const phase of Object.keys(values) as DayPhase[]) sum += look.blend[phase] * values[phase]!

@@ -61,9 +61,10 @@ export function canvas(W: number, H: number, collectHits = false): Canvas {
 
 /** `a` moved toward `b` by `t`, colours as 0xRRGGBB. */
 export function mix(a: number, b: number, t: number): number {
-  const k = Math.max(0, Math.min(1, t))
-  const one = (s: number) => Math.round(((a >> s) & 255) + (((b >> s) & 255) - ((a >> s) & 255)) * k) << s
-  return one(16) | one(8) | one(0)
+  // the hottest call in a frame: written out per channel, with no closure to allocate
+  const k = t > 0 ? (t < 1 ? t : 1) : 0
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255
+  return Math.round(ar + (((b >> 16) & 255) - ar) * k) << 16 | Math.round(ag + (((b >> 8) & 255) - ag) * k) << 8 | Math.round(ab + ((b & 255) - ab) * k)
 }
 
 /** A well-mixed hash of an integer, non-negative and below 2^31, so `h >> n` and `h % n` never go negative. */

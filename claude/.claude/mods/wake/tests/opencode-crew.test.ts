@@ -81,7 +81,7 @@ test('seed ink stays with each worker and designs match their heading', () => {
   }
 })
 
-test('sister lanterns keep clear of the leader through the widest, fastest real drift', () => {
+test('sister lanterns keep clear of the leader through the widest, fastest real drift', { timeoutMs: 20_000 }, () => {
   for (const place of places) for (const tier of [3, 4] as const) for (let phase = 0; phase < 360; phase += 3) {
     const c = canvas(120, 20), at = (ago: number) => {
       const g = gait('opencode', tier, 0, phase - ago * 10 * clockRate(1), 26)

@@ -67,6 +67,9 @@ test('a worker\'s pace follows what it really did: busy after an event, calm whe
   expect(paceOf({ isStale: true, lastEventAt: now }, now)).toBeLessThan(0.2)
   expect(paceOf({ isStale: false, waitingForRoot: true, lastEventAt: now }, now)).toBeLessThan(0.2)
   expect(paceOf({ isStale: false, state: 'idle', lastEventAt: now }, now)).toBeLessThan(0.2)
+  // still on the job: queued for heavy work, waiting on a peer or blocked on a question hovers, never perches
+  for (const state of ['waiting_for_heavy', 'blocked_on_question']) expect(paceOf({ isStale: false, state, lastEventAt: now }, now)).toBeGreaterThan(0.15)
+  expect(paceOf({ isStale: false, waitingPeer: true, lastEventAt: now }, now)).toBeGreaterThan(0.15)
   expect(Math.abs(paceOf({ isStale: false }, now) - 0.45)).toBeLessThan(1e-9)
 })
 

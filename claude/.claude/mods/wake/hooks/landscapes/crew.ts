@@ -73,7 +73,11 @@ function paint(job: Job, look: Look) {
   const kind = job.kind ?? 'codex'
   const lit = kind === 'codex' ? 'sfgMr' + (look.place === 'city' ? 'W' : '') : kind === 'opencode' ? 'sfM' : 'M'
   // Stars have no body to stand out with by day: a deep ring round each one sets it off from a bright sky, cloud or snow.
-  return { colors, body, extra: lit + (SPRITES[kind].emissive ?? ''), ...(kind === 'agy' ? { ring: mix(base, P.ink, 0.7) } : {}) }
+  // A creature's bright eye, bill and feet keep their colour at night but are not lamps: they cast no halo, or a puffin's bill
+  // and feet float off its darkened body as loose glowing dots.
+  const extra = lit + (SPRITES[kind].emissive ?? '')
+  const accents = kind === 'claude' && shade ? { ...colors, s: mix(colors.s!, look.top, shade * 0.5) } : colors // they dim with the body, half as much
+  return { colors: accents, body, extra, halo: kind === 'claude' ? lit : extra, ...(kind === 'agy' ? { ring: mix(base, P.ink, 0.7) } : {}) }
 }
 
 function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly string[], pal: ReturnType<typeof paint>, glow: boolean) {
@@ -81,7 +85,7 @@ function draw(c: Canvas, look: Look, x0: number, y0: number, art: readonly strin
   if (look.night > 0) art.forEach((row, y) => {
     for (let x = 0; x < row.length; x++) {
       const ch = row[x]!
-      if (ch !== '.' && emissive(ch, x, y)) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(x0 + x + dx, y0 + y + dy, pal.colors[ch]!, 0.3 * look.night)
+      if (ch !== '.' && emissive(ch, x, y) && (pal.halo.includes(ch) || !pal.extra.includes(ch))) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) c.glow(x0 + x + dx, y0 + y + dy, pal.colors[ch]!, 0.3 * look.night)
     }
   })
   if (pal.ring !== undefined && look.night < 1) art.forEach((row, y) => {
@@ -635,7 +639,7 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
         let hidden = design.altitude === 'high' ? Math.max(0, k.y - Math.max(h >> 1, y)) * pixels.length * 2 : 0
         for (const [dx, dy] of pixels) {
           const i = (zy + dy) * c.W + zx + dx
-          hidden += soft[i]! + 3 * crowd[i]! + (design.depth === 'far' ? 3 * (look.crewOcclusion?.[i] ?? 0) : 0)
+          hidden += soft[i]! + crowd[i]! + (design.depth === 'far' ? 3 * (look.crewOcclusion?.[i] ?? 0) : 0)
         }
         if (!best || hidden < best.hidden) best = { k, hidden }
         if (hidden === 0) break
@@ -649,7 +653,7 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
           const px = zone.x + dx + sx, py = zone.y + dy + sy
           return px >= 0 && px < c.W && py >= 0 && py < surface && !padded[py * c.W + px]
         })
-        const maxX = homeRoam + ((look.crewCount ?? 1) > 1 ? Math.max(10, Math.floor(homeRoam * 1.2)) : 0), maxY = design.depth === 'far' ? 1 : (job.tier ?? 1) >= 3 ? 3 : 4
+        const maxX = homeRoam + ((look.crewCount ?? 1) > 1 ? Math.max(16, homeRoam * 2) : 0), maxY = design.depth === 'far' ? 1 : (job.tier ?? 1) >= 3 ? 3 : 4
         let leftReach = 0, rightReach = 0
         while (leftReach < maxX && free(-(leftReach + 1), 0)) leftReach++
         while (rightReach < maxX && free(rightReach + 1, 0)) rightReach++
@@ -681,11 +685,12 @@ export function placeFly(c: Canvas, look: Look, x: number, y: number, job: Job, 
       // Where in the box it is now: its family's gait, over the room that its activity earns it (a calm worker hovers near home).
       const pace = job.pace ?? 0.6
       const core = Math.min(leftReach, rightReach, homeRoam)
-      const visit = candidate.x < right / 2 ? rightReach - core : core - leftReach
+      const outLeft = leftReach - core, outRight = rightReach - core
       const at = (time: number) => {
         const g = gait(gaitKind(job, look), job.tier ?? 1, job.seed, time, core)
-        // On the side with a neighbour, each run carries on into the shared air: further out, never out and back mid-run.
-        return { x: core * g.u + visit * Math.max(0, Math.sign(visit) * g.u) ** 2, v: g.v }
+        // Each run carries on into the shared air on either side, so neighbours cross paths and pass close: further out, never
+        // out and back mid-run.
+        return { x: core * g.u + (g.u > 0 ? outRight : -outLeft) * g.u * g.u, v: g.v }
       }
       const { x: travel, v } = at(job.route ?? job.phase ?? look.frame)
       const share = roamShare(pace)

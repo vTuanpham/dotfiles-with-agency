@@ -1,5 +1,5 @@
 import { type Canvas, hash, mix, sprite } from '../pixels'
-import { type Building, type Job, byPhase, KIND_COLOR, type Landscape, type Look, P, SCENE_H, editsOf, farTone, foliage, lightWindows, wave, jobAccent } from './kit'
+import { type Building, type Job, byPhase, KIND_COLOR, type Landscape, type Look, P, SCENE_H, editsOf, farTone, foliage, lightWindows, relit, wave, jobAccent } from './kit'
 import { airJobs } from './crew'
 
 // Harbor: a port town on the water. Turns are waterfront buildings on a pier (warehouse,
@@ -20,7 +20,8 @@ const BASE_W = [6, 5, 5, 6, 5]
 const styleOf = (index: number) => hash(index * 7 + 3) % 5
 const lightX = (look: Look) => 10 + (hash(look.seed) % Math.max(1, Math.floor(look.W * 0.3)))
 const warm = (look: Look) => byPhase(look, { dawn: 0.12, dusk: 0.12 })
-const dim = (color: number, look: Look) => mix(mix(color, P.peach, warm(look)), P.ink, 0.35 * look.night)
+const relitHarbor = relit((look, color) => mix(mix(color, P.peach, warm(look)), P.ink, 0.35 * look.night))
+const dim = (color: number, look: Look) => relitHarbor(look, color)
 const sea = (look: Look, y: number) => mix(mix(mix(0x3a86b4, look.horizon, 0.25 + byPhase(look, { dawn: 0.3, dusk: 0.3 })), 0x1f3f6c, (y - WATER) * 0.2), P.ink, 0.5 * look.night)
 const lamp = (look: Look) => (look.night > 0.1 ? P.yellow : P.surface2)
 const SAIL_COLORS = [P.text, P.pink, P.sky, P.green, P.mauve]

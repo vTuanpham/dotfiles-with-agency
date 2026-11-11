@@ -1,5 +1,5 @@
 import { type Canvas, hash, mix, sprite } from '../pixels'
-import { type Building, byPhase, type DayPhase, type Landscape, type Look, P, SCENE_H, editsOf, foliage, heightFor, lightWindows, wave, jobAccent } from './kit'
+import { type Building, byPhase, type DayPhase, type Landscape, type Look, P, SCENE_H, editsOf, foliage, heightFor, lightWindows, relit, wave, jobAccent } from './kit'
 import { airJobs } from './crew'
 
 // Forest: a misty ridge, a pine line and dark pines for depth, shafts of light through the
@@ -17,7 +17,7 @@ const MIN_H = [6, 8, 8, 6]
 const WARM: Record<DayPhase, number> = { dawn: 0.18, morning: 0.05, noon: 0, afternoon: 0.06, dusk: 0.3, night: 0 }
 const FLOOR = { spring: 0x4f9a48, summer: 0x2f6a3a, autumn: 0x8a6a34, winter: 0xdde2f0 }
 
-const dim = (look: Look, color: number) => mix(mix(color, 0xf0a050, byPhase(look, WARM)), 0x0c1424, look.night * 0.65 + (look.wet ? 0.1 : 0))
+const dim = relit((look, color) => mix(mix(color, 0xf0a050, byPhase(look, WARM)), 0x0c1424, look.night * 0.65 + (look.wet ? 0.1 : 0)))
 const pal = (look: Look, colors: Record<string, number>) => Object.fromEntries(Object.entries(colors).map(([k, v]) => [k, dim(look, v)]))
 const styleOf = (index: number) => [0, 0, 0, 1, 1, 1, 2, 2, 3, 3][hash(index * 7 + 3) % 10]!
 const roofRows = (w: number) => Math.min(3, Math.ceil(w / 2))

@@ -151,8 +151,9 @@ unrecognized models use class 2. Companions belong to particular designs at clas
 Each design declares how it faces, moves and turns (`hooks/landscapes/design.ts`): the dragon coils, headed designs bank or
 show a hand-drawn mid-turn pose, and face-on designs do not turn. The tug and paper boat ride harbor water; the crab,
 snowcat and fox use the ground, the flamingo flies the shoreline, and the sun skiff and crop drone cruise low. The dragon, bat, owl, puffin and lantern string
-settle on perches once they have been stale or waiting for 20 s on end (`REST_AFTER_MS` in `hooks/band.ts`), so a short wait
-for a tool or a reply never sends them down; any activity lifts them off again. Landing and taking off take 1.6 s along an
+settle on perches once they have had nothing to do for 12 s on end (`REST_AFTER_MS` in `hooks/band.ts`): stale, paused, or
+done and waiting for the root. A worker queued for heavy work, waiting on a peer or blocked on a question is still on the job
+and hovers calmly instead; any activity lifts a resting one off again. Landing and taking off take 1.6 s along an
 arc, with the wash of their wings or booster, and while one plays the worker goes nowhere else. Other workers fly. Mochi and
 her laptop are hard boundaries.
 Flying crews can visit neighboring airspace and cross paths. A visit returns to its
@@ -202,7 +203,14 @@ subagent leaves when it goes idle. Each craft does both in its own way, and each
 
 <img src="../docs/images/wake-passages.gif" alt="Eight landscapes and four worker families at class 4, each arriving, working and leaving in its own way." width="100%">
 
-*Class-4 crews in every place: arriving (2.4 s, then 0.6 s while the dust settles), working, then leaving (3.2 s).*
+*Class-4 crews in every place: arriving (2.4 s, then 0.8 s while the dust settles), working, then leaving (3.2 s).*
+
+The moment a crew touches down, and the moment it first moves to leave, it throws a shock (`hooks/shock.ts`). That moment is
+read from each passage style itself, so the shock fires when the body really arrives or sets out, whatever the design. The
+shock is anchored where it happened and runs out on its own: a blink of a flash, then a ring with a bright leading edge that
+races out flat across the ground, or round in the open air, with an echo a beat behind. Each family adds a little of its
+own: sparks and dragged dust for machines, a few feathers or petals for creatures, stars that wink out for constellations,
+rising embers for lanterns. Boats send two soft ripples across the water; walkers land in a puff of dust.
 
 What comes down out of the air and climbs back into it pushes air onto what lies below (`hooks/downwash.ts`): the bats, the
 flamingo, the eagle and the butterflies on their wings, the saucer, the crop drone and the probe on their jets. The wash is

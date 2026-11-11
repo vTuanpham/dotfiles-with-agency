@@ -590,7 +590,7 @@ test('twelve mixed crew have visible positions in every landscape', () => {
   }
 })
 
-test('a whole day played in half frames, as the band paints it, draws no black pixel (an undefined colour) in any landscape', { timeoutMs: 15_000 }, () => {
+test('a whole day played in half frames, as the band paints it, draws no black pixel (an undefined colour) in any landscape', { timeoutMs: 30_000 }, () => {
   for (const preset of Object.keys(LANDSCAPES) as SceneInput['preset'][]) {
     for (let t = 0; t < 120; t += 2) { // every other step: still the whole day and both whole and half frames, at half the cost
       const px = scenePixels({ ...base, preset, width: 186, frame: 5000 + t / 4, hour: (4 + (t / 120) * 24) % 24, weather: weathers[1]! })

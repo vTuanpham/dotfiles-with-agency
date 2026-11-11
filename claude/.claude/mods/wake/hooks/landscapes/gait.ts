@@ -68,8 +68,11 @@ const BUSY_MS = 120_000
  * last spoke; one with no known event yet is at a steady middle.
  */
 export function paceOf(job: { state?: string; isStale: boolean; waitingForRoot?: boolean; awaitingRoot?: boolean; waitingPeer?: unknown; lastEventAt?: number; activitySeenAt?: number }, now: number): number {
+  // At or below 0.15 a worker may perch (band.ts REST_AFTER_MS): only one with nothing to do until someone else acts. A worker
+  // queued for heavy work, waiting on a peer or blocked on a question is still on the job: it hovers calmly instead.
   if (job.isStale) return 0.12
-  if (job.waitingForRoot || job.awaitingRoot || job.waitingPeer || /wait|pause|idle/.test(job.state ?? '')) return 0.1
+  if (job.waitingForRoot || job.awaitingRoot || /^(waiting_for_root|paused|idle|done)$/.test(job.state ?? '')) return 0.1
+  if (job.waitingPeer || /wait|blocked/.test(job.state ?? '')) return 0.25
   if (/retry/.test(job.state ?? '')) return 0.35
   const last = Math.max(job.activitySeenAt ?? 0, job.lastEventAt ?? 0)
   if (!last) return 0.45

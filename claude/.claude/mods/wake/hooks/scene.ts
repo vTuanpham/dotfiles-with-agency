@@ -372,16 +372,21 @@ function playingEvent(look: Look, events: SceneEvent[], force?: string): { event
 function drawWeather(c: Canvas, look: Look, w: SceneWeather, ground: number) {
   const slant = w.wind > 30 ? 2 : w.wind > 15 ? 1 : 0
   if (w.rain > 0) {
-    const every = [0, 31, 19, 12][w.rain]!
+    // Each drop is one terminal cell (its two half-block pixels, bright above and faint below) and falls a whole cell at each
+    // step of the scene's motion clock: as fast as ever, but a drop rewrites two cells a step instead of four every paint,
+    // which is most of what a terminal has to redraw in the rain.
+    // Soft: a veil the scene shows through, not a field of bright dots; heavier rain is denser rather than brighter.
+    const every = [0, 19, 12, 8][w.rain]!, step = Math.floor(look.frame)
     for (let x = -10; x < c.W; x++) {
-      for (let y = 0; y < ground + 1; y++) {
-        const fall = (((y - look.frame * 2) % 48) + 48) % 48
+      for (let y = 0; y < ground + 1; y += 2) {
+        const fall = (((y - step * 2) % 48) + 48) % 48
         if (hash(x * 31 + fall * 17) % every !== 0) continue
-        c.glow(x + Math.floor((y * slant) / 3), y, P.blue, 0.45)
-        if (y + 1 <= ground) c.glow(x + Math.floor(((y + 1) * slant) / 3), y + 1, P.blue, 0.25)
+        const dx = x + Math.floor((y * slant) / 3)
+        c.glow(dx, y, P.sky, 0.26)
+        if (y + 1 <= ground) c.glow(dx, y + 1, P.sky, 0.12)
       }
     }
-    if (w.rain >= 2) for (let x = 0; x < c.W; x++) if (hash(x + look.frame * 3) % 19 === 0) c.glow(x, ground, P.sky, 0.5) // splashes
+    if (w.rain >= 2) for (let x = 0; x < c.W; x++) if (hash(x + step * 3) % 23 === 0) c.glow(x, ground, P.sky, 0.3) // splashes
   }
   if (w.snow > 0) {
     const every = [0, 29, 17, 9][w.snow]!
@@ -921,7 +926,7 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
       reactions.push({ id: edge.source, role: 'charge', v: t * t, t: edge.arriving, style, point: from })
     }
     for (let packet = 0; packet < trails.count(edge); packet++) {
-      const path = trails.path(edge, () => {
+      const launched = trails.path(edge, () => {
         const launch = shot?.rise ? { x: from.x, y: Math.max(1, from.y - shot.rise) } : from
         const route = arcCells(launch, to, c.W, H, lane)
         if (shot?.rise) route.unshift(...Array.from({ length: from.y - launch.y }, (_, i) => (from.y - i) * c.W + from.x))
@@ -931,9 +936,20 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
           return Math.max(0, Math.min(H - 1, Math.floor(cell / c.W) + wave)) * c.W + cell % c.W
         })
       }, packet)
-      if (!path) continue
-      const length = path.length
+      if (!launched) continue
+      const length = launched.length
       if (length < 3) continue
+      // The arc was aimed where the receiver stood at launch, but it moves on while the shot is in the air: until it lands the
+      // shot homes in, its path bent towards where the receiver is now, little near the sender and fully at the end. At impact
+      // the bend is kept, so the trail it leaves stays exactly where it flew.
+      const flying = edge.arriving !== undefined && edge.arriving - (edge.lead ?? 0) - packet * PACKET_STAGGER_MS <= PACKET_RUN_MS
+      const end = launched[length - 1]!
+      const [bx, by] = trails.aim(edge, packet, flying ? [to.x - end % c.W, to.y - Math.floor(end / c.W)] : undefined)
+      const path = bx || by ? launched.map((cell, i) => {
+        const f = i / (length - 1), pull = f * f * (3 - 2 * f)
+        const x = Math.max(0, Math.min(c.W - 1, cell % c.W + Math.round(bx * pull))), y = Math.max(0, Math.min(H - 1, Math.floor(cell / c.W) + Math.round(by * pull)))
+        return y * c.W + x
+      }) : launched
       const rootMessage = edge.source === 'mochi' || edge.target === 'mochi'
       const worker = titleOf(edge.source === 'mochi' ? edge.target : edge.source)
       owner ??= registerHit({
@@ -941,7 +957,7 @@ function drawTrails(c: Canvas, input: SceneInput, ends: Map<string, Anchor>, rea
         title: rootMessage ? edge.source === 'mochi' ? `Root → ${worker}` : `${worker} → root` : `${titleOf(edge.source)} → ${titleOf(edge.target)}`,
         details: [
           ...(edge.messageState ? [messageStatus(edge.messageState)] : []),
-          messagePreview(edge.preview),
+          messagePreview(edge.preview, { count: edge.count }),
         ],
       })
       // After delivery, embers fade along the recorded flight path while the crew moves on.
@@ -1042,7 +1058,7 @@ type Anchor = { x: number; y: number }
 /** Each projectile owns its route from launch; visited cells are its fixed residue. */
 export class MessageTrails {
   private scope = ''
-  private paths = new Map<string, Map<number, { path: number[]; visited: number }>>()
+  private paths = new Map<string, Map<number, { path: number[]; visited: number; aim?: [number, number] }>>()
 
   reset() { this.scope = ''; this.paths.clear() }
 
@@ -1067,6 +1083,13 @@ export class MessageTrails {
       packets.set(packet, { path: draw(), visited: -1 })
     }
     return packets?.get(packet)?.path
+  }
+
+  /** How far a shot's end is bent from where it was aimed: `now` while it flies (the receiver's move since launch), kept after. */
+  aim(edge: NonNullable<SceneInput['peerEdges']>[number], packet: number, now?: [number, number]): [number, number] {
+    const flight = this.paths.get(JSON.stringify([edge.source, edge.target, edge.stamp]))?.get(packet)
+    if (flight && now) flight.aim = now
+    return flight?.aim ?? now ?? [0, 0]
   }
 
   visit(edge: NonNullable<SceneInput['peerEdges']>[number], packet: number, head = -1): number {
