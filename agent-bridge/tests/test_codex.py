@@ -11,6 +11,9 @@ from agent_bridge.peers import message_fields
 
 class FakeRpc:
     def __init__(self, cwd, stderr, events=(), turns=()):
+        for event in events:
+            if event.get("method", "").startswith(("thread/", "turn/", "item/", "serverRequest/")):
+                event.setdefault("params", {}).setdefault("threadId", "thread-1")
         self.events = deque(events)
         self.turns = turns
         self.sent = []
@@ -270,6 +273,116 @@ def test_resume_unknown_inflight_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(codex, "runner_finished", lambda state, path: None)
     with pytest.raises(RuntimeError, match="steer delivery is uncertain"):
         codex.run(job, state, path, "", resume=True)
+
+
+@pytest.mark.parametrize("action", ["steer", "interrupt"])
+def test_child_events_cannot_control_parent_or_impersonate_its_messages(monkeypatch, tmp_path, action):
+    job, path, state = job_state(tmp_path)
+    events = [
+        {"method": "turn/started", "params": {"threadId": "child", "turn": {"id": "child-turn"}}},
+        {"method": "thread/tokenUsage/updated", "params": {"threadId": "child", "turnId": "child-turn",
+            "tokenUsage": {"last": {"inputTokens": 999999}}}},
+        {"method": "item/completed", "params": {"threadId": "child", "turnId": "child-turn",
+            "item": {"type": "agentMessage", "text": "TO peer: child chatter"}}},
+        {"method": "item/started", "params": {"threadId": "child", "turnId": "child-turn",
+            "item": {"type": "commandExecution", "command": "child command"}}},
+        {"method": "item/completed", "params": {"threadId": "child",
+            "item": {"type": "contextCompaction"}}},
+        {"method": "turn/completed", "params": {"threadId": "child",
+            "turn": {"id": "child-turn", "status": "completed"}}},
+        {"id": 9, "method": "item/permissions/requestApproval", "params": {"threadId": "child"}},
+        {"method": "item/completed", "params": {
+            "item": {"type": "agentMessage", "text": "manager report"}}},
+        {"method": "turn/completed", "params": {"turn": {"id": "turn-1", "status": "completed"}}},
+    ]
+    rpc = FakeRpc(state["cwd"], job / "stderr", events)
+    if action == "steer":
+        (job / "steer/001.md").write_text("root instruction")
+    else:
+        (job / "interrupt").touch()
+    routed = []
+    state["contextTokens"] = 1234
+    monkeypatch.setattr(codex, "Rpc", lambda *args: rpc)
+    monkeypatch.setattr(codex, "route_to_peers", lambda job, text: routed.append(text))
+    monkeypatch.setattr(codex, "runner_started", lambda *_: None)
+    monkeypatch.setattr(codex, "runner_finished", lambda *_: None)
+    codex.run(job, state, path, "prompt")
+    calls = [args for method, args in rpc.calls if method == f"turn/{action}"]
+    assert len(calls) == 1
+    assert calls[0]["expectedTurnId" if action == "steer" else "turnId"] == "turn-1"
+    assert state["activeTurnId"] is None and state["contextTokens"] == 1234
+    assert routed == ["manager report"]
+    logged = [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()]
+    assert [e["turnId"] for e in logged if e["kind"] == "turn_completed"] == ["turn-1"]
+    assert not any(e["kind"] in ("command_start", "compacted") for e in logged)
+    assert {"id": 9, "result": {"permissions": {}}} in rpc.sent
+
+
+@pytest.mark.parametrize("active", ["turn-2", None])
+def test_rejected_steer_recovers_parent_turn_and_preserves_client_id(monkeypatch, tmp_path, active):
+    job, path, state = job_state(tmp_path)
+    (job / "steer/001.md").write_text("follow up")
+    events = [
+        {"method": "turn/started", "params": {"turn": {"id": "turn-1"}}},
+        # Buffered before the recovery query: must not replace the newer accepted turn.
+        {"method": "turn/started", "params": {"turn": {"id": "turn-1"}}},
+        {"method": "turn/completed", "params": {"turn": {"id": "turn-1", "status": "completed"}}},
+        {"method": "turn/completed", "params": {"turn": {"id": "turn-2", "status": "completed"}}},
+    ]
+    rpc = FakeRpc(state["cwd"], job / "stderr", events)
+    original, submissions = rpc.call, []
+
+    def call(method, params=None):
+        result = original(method, params)
+        if method == "thread/turns/list":
+            return {"data": [{"id": active, "status": "inProgress"}] if active else []}
+        if method in ("turn/steer", "turn/start") and params.get("clientUserMessageId") == "steer-001":
+            submissions.append((method, params))
+            if len(submissions) == 1:
+                raise codex.RpcError(method, {"code": -32600, "message": "turn changed"})
+            assert state["inflight"]["id"] == "steer-001"
+            return {"turnId": "turn-2", "turn": {"id": "turn-2"}}
+        return result
+
+    rpc.call = call
+    monkeypatch.setattr(codex, "Rpc", lambda *args: rpc)
+    monkeypatch.setattr(codex, "runner_started", lambda *_: None)
+    monkeypatch.setattr(codex, "runner_finished", lambda *_: None)
+    codex.run(job, state, path, "prompt")
+    assert [method for method, _ in submissions] == ["turn/steer", "turn/steer" if active else "turn/start"]
+    if active:
+        assert submissions[1][1]["expectedTurnId"] == active
+    assert state["inflight"] is None and state["activeTurnId"] is None
+    assert (job / "steer/sent/001.md").read_text() == "follow up"
+
+
+@pytest.mark.parametrize("failure,uncertain", [
+    (codex.RpcError("turn/steer", {"code": -32600, "message": "invalid input"}), False),
+    (TimeoutError("timed out"), True),
+    (RuntimeError("disconnected"), True),
+])
+def test_only_explicit_rejection_clears_inflight(monkeypatch, tmp_path, failure, uncertain):
+    job, path, state = job_state(tmp_path)
+    (job / "steer/001.md").write_text("keep this instruction")
+    rpc = FakeRpc(state["cwd"], job / "stderr",
+                  [{"method": "turn/started", "params": {"turn": {"id": "turn-1"}}}],
+                  turns=[{"id": "turn-1", "status": "inProgress"}])
+    original = rpc.call
+
+    def call(method, params=None):
+        if method == "turn/steer":
+            raise failure
+        return original(method, params)
+
+    rpc.call = call
+    monkeypatch.setattr(codex, "Rpc", lambda *args: rpc)
+    monkeypatch.setattr(codex, "runner_started", lambda *_: None)
+    monkeypatch.setattr(codex, "runner_finished", lambda *_: None)
+    with pytest.raises(type(failure)):
+        codex.run(job, state, path, "prompt")
+    assert bool(json.loads(path.read_text()).get("inflight")) is uncertain
+    assert (job / "steer/001.md").read_text() == "keep this instruction"
+    assert not (job / "steer/sent/001.md").exists()
 
 
 def test_resolved_server_request_is_removed_from_pending(monkeypatch, tmp_path):

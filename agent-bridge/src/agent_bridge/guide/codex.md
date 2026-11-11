@@ -11,6 +11,11 @@ Read `model-guide read subscriptions` only when the choice depends on a plan or 
 
 ## Specifics
 - Steers land inside the active turn.
+- Native subagent notifications do not replace the manager's turn, context usage
+  or peer messages. A rejected steer refreshes the manager's active turn and retries
+  once; if that turn has ended, the input starts its next turn. Explicit invalid-request
+  rejections leave the instruction pending for resume. Transport failures retain an
+  uncertain-delivery checkpoint until native history confirms receipt.
 - Bridge reports the model and effort resolved by the native thread response. Older
   jobs missing this record use their own read-only native thread index. These are
   configured settings, not proof of which model served every request.

@@ -59,6 +59,16 @@ def test_disconnect_during_rpc_fails_without_spinning_or_retrying(monkeypatch):
         rpc.p.stdout.close()
 
 
+def test_server_rejection_retains_its_error_code():
+    rpc = transport(b'{"id":"live-1","error":{"code":-32600,"message":"turn mismatch"}}\n')
+    try:
+        with pytest.raises(codex.RpcError) as caught:
+            rpc.call("turn/steer")
+        assert caught.value.code == -32600
+    finally:
+        rpc.p.stdout.close()
+
+
 def test_unrelated_notifications_cannot_extend_the_rpc_deadline(monkeypatch):
     rpc = transport(b'{"method":"item/started","params":{}}\n')
     times = iter([0, 0, 0, 0, 0, 301])

@@ -82,6 +82,14 @@ def sync_auth(job):
     )
 
 
+class RpcError(RuntimeError):
+    """A server rejection, distinct from an uncertain transport failure."""
+
+    def __init__(self, method, error):
+        self.code = error.get("code")
+        super().__init__(f"{method}: {error}")
+
+
 class Rpc:
     def __init__(self, cwd, stderr, state=None):
         self.err = Path(stderr).open("a", encoding="utf-8")
@@ -140,7 +148,7 @@ class Rpc:
                 raise RuntimeError(f"Codex app-server disconnected: {method}")
             if m.get("id") == rid and "method" not in m:
                 if "error" in m:
-                    raise RuntimeError(f"{method}: {m['error']}")
+                    raise RpcError(method, m["error"])
                 return m.get("result") or {}
             self.events.append(m)
 
@@ -214,14 +222,48 @@ def run(job, state, path, prompt, resume=False, compact=False):
 
     def send(text, cid=None):
         nonlocal turn
+        checkpoint = state.get("inflight")
+
+        def submit(method, args):
+            try:
+                return rpc.call(method, args)
+            except RpcError as exc:
+                # Invalid requests were not accepted; transport failures remain uncertain.
+                if exc.code == -32600 and cid and (state.get("inflight") or {}).get("id") == cid:
+                    state["inflight"] = None
+                    persist()
+                raise
+
         base = {
             "threadId": thread,
             "input": [{"type": "text", "text": text}],
             "clientUserMessageId": cid or f"prompt-{uuid.uuid4().hex}",
         }
         if turn:
-            turn = rpc.call("turn/steer", {**base, "expectedTurnId": turn}).get("turnId", turn)
-        else:
+            for attempt in range(2):
+                try:
+                    turn = submit("turn/steer", {**base, "expectedTurnId": turn}).get("turnId", turn)
+                    persist()
+                    return
+                except RpcError as exc:
+                    if exc.code != -32600:
+                        raise
+                    if attempt:
+                        raise
+                    latest = rpc.call("thread/turns/list", {
+                        "threadId": thread, "limit": 1, "sortDirection": "desc", "itemsView": "full",
+                    }).get("data", [])
+                    active = next((t["id"] for t in latest if t.get("status") == "inProgress"), None)
+                    if active == turn:
+                        raise
+                    turn = active
+                    persist()
+                    if checkpoint and checkpoint.get("id") == cid:
+                        state["inflight"] = checkpoint
+                        persist()
+                    if not turn:
+                        break
+        if not turn:
             policy = {"type": "readOnly", "networkAccess": False}
             if state["sandbox"] == "workspace-write":
                 policy = {
@@ -233,7 +275,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
             for k in ("model", "effort"):
                 if state.get(k):
                     args[k] = state[k]
-            turn = rpc.call("turn/start", args).get("turn", {}).get("id")
+            turn = submit("turn/start", args).get("turn", {}).get("id")
             if state.get("model") or state.get("effort"):
                 record_settings(state, {})
                 try:
@@ -301,6 +343,11 @@ def run(job, state, path, prompt, resume=False, compact=False):
             if m:
                 method, p = m.get("method"), m.get("params") or {}
                 item = p.get("item") or {}
+                # App-server also emits native subagent events on this connection.
+                # Only the managed thread owns this job's lifecycle and peer messages.
+                if ("id" not in m and method not in ("account/rateLimits/updated", "serverRequest/resolved")
+                        and p.get("threadId") != thread):
+                    method = None
                 if method == "thread/tokenUsage/updated":
                     usage[p.get("turnId")] = p.get("tokenUsage", {})
                     context = ((p.get("tokenUsage") or {}).get("last") or {}).get("inputTokens")
@@ -315,10 +362,12 @@ def run(job, state, path, prompt, resume=False, compact=False):
                                             "reasoningEffort": settings.get("effort")})
                     persist()
                 elif method == "turn/started":
-                    turn = (p.get("turn") or {}).get("id")
-                    if turn:
+                    started_turn = (p.get("turn") or {}).get("id")
+                    # RPC recovery can read a newer turn before buffered notifications drain.
+                    if started_turn and (turn is None or turn == started_turn):
+                        turn = started_turn
                         state["lastTurnId"] = turn
-                    persist()
+                        persist()
                 elif method == "item/started" and item.get("type") == "commandExecution":
                     log(job, "command_start", turnId=p.get("turnId"), itemId=item.get("id"),
                         command=item.get("command"))
