@@ -43,7 +43,8 @@ class WakeReadmeMatchesTheCode(unittest.TestCase):
         kinds = re.search(r"SceneEffect = \{ kind: ([^;]+); age", (wake / "hooks/scene.ts").read_text()).group(1)
         words = {"fireworks": "fireworks", "storm": "storm", "shoot": "shooting star", "lanterns": "lanterns", "rainbow": "rainbow"}
         for kind in re.findall(r"'(\w+)'", kinds):
-            self.assertTrue(words[kind] in wake_readme, f"effect {kind} is not in the README's effects table")
+            # The table capitalises the first word of a cell, so compare case-insensitively.
+            self.assertTrue(words[kind].lower() in wake_readme.lower(), f"effect {kind} is not in the README's effects table")
 
     def test_every_creature_is_named(self):
         text = (wake / "hooks/landscapes/creatures.ts").read_text()
