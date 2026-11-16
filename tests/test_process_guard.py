@@ -62,6 +62,7 @@ class ProcessGuardTests(unittest.TestCase):
             'pgrep --help',
             'pgrep -- --full',
             'pgrep --ignore-ancestors --full worker',
+            'sleep 1',
             'pkill -Af worker',
             'rtk run printf "%s" "pkill -f worker"',
             'rtk run -c \'printf "%s" "pkill -f worker"\'',
@@ -79,6 +80,8 @@ class ProcessGuardTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertEqual(result.stdout, "")
             self.assertIn("owned PID", result.stderr)
+            self.assertIn("harness background task", result.stderr)
+            self.assertIn("completion notice", result.stderr)
 
     def test_unrelated_calls_and_malformed_events_have_no_side_effects(self):
         for event in ({}, {"tool_input": {"command": "git status"}}, {"tool_input": None}):

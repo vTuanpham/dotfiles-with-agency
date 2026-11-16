@@ -61,6 +61,21 @@ def test_brief_preserves_provenance_gaps_and_both_views(monkeypatch):
     assert "\x1b" not in shortlist.brief(result)
 
 
+@pytest.mark.parametrize(
+    "identity,expected",
+    [({"version": "v1", "release": None, "published": None}, "LiveBench · v1"),
+     ({"version": None, "release": None, "published": "current"}, "LiveBench · current"),
+     ({"version": None, "release": None, "published": None, "metadata": []}, "LiveBench")],
+)
+def test_brief_tolerates_missing_source_identity_fields(identity, expected, monkeypatch):
+    monkeypatch.setattr(benchmarks, "snapshot", data)
+    result = benchmarks.search("backend")
+    result["sources"]["LiveBench"].update(identity)
+    output = shortlist.brief(result)
+    assert expected in output
+    assert "None" not in output
+
+
 def test_native_budget_represents_both_sources_and_efficiency(monkeypatch):
     snapshot = data()
     snapshot["sources"]["Vals Terminal-Bench"] = {"status": "ok", "tables": [

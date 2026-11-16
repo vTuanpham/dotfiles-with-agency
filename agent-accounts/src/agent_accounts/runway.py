@@ -11,6 +11,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .models import number
+
 LOOKBACK = 1800  # seconds of history the rate is measured over
 MIN_SPAN = 120  # a shorter span cannot separate a trend from a single step
 MIN_DROP = 2.0  # percentage points; one step of rounding is not a trend
@@ -50,7 +52,13 @@ class Runway:
         samples, notified = data["samples"], data["notified"]
         due = []
         for reading in readings:
-            if reading.resets <= now or not 0 <= reading.remaining <= 100:
+            try:
+                for value in (reading.resets, reading.observed, reading.remaining):
+                    number(value)
+            except ValueError:
+                continue
+            if (reading.resets <= now or not 0 <= reading.remaining <= 100
+                    or not now - LOOKBACK <= reading.observed <= now):
                 continue
             window = f"{reading.key}@{round(reading.resets / BUCKET)}"
             rows = samples.setdefault(window, [])
@@ -87,9 +95,11 @@ class Runway:
             if (isinstance(data, dict) and isinstance(data.get("samples"), dict)
                     and isinstance(data.get("notified"), dict)
                     and all(isinstance(rows, list) and all(
-                        isinstance(row, list) and len(row) == 2 and all(type(v) in (int, float) for v in row)
+                        isinstance(row, list) and len(row) == 2 and all(
+                            number(v) == v for v in row)
                         for row in rows) for rows in data["samples"].values())
-                    and all(type(at) in (int, float) for at in data["notified"].values())):
+                    and all(number(at) == at
+                            for at in data["notified"].values())):
                 return data
         except (OSError, ValueError):
             pass

@@ -49,7 +49,7 @@ the native JSON error envelope with `ACTION_NOT_SUPPORTED`,
 `details.kind: wslg_geometry_guard` and `not_delivered` / `safe`. WSLg movement
 needs a separately validated Linux/compositor-owned path. Switching Windows
 drivers or using physical input does not supply that validation. This boundary
-is stricter than the pinned [upstream geometry verification contract](https://github.com/vercel-labs/agent-desktop/blob/v1.0.2/docs/json-output.md);
+is stricter than the pinned [upstream geometry verification contract](https://github.com/vercel-labs/agent-desktop/blob/v1.3.1/docs/json-output.md);
 it prevents the reproduced [WSLg coordinate-sync failure](https://github.com/microsoft/wslg/issues/1116).
 
 Windows interoperability can fail inside a restricted WSL sandbox before the
@@ -68,7 +68,7 @@ an explicitly authorized step. Secret entry stays with [Agent Baton](../agent-ba
 For inspection, select the smallest supported capture target without bringing it
 forward. The installed Windows interfaces provide:
 
-| Operation | agent-desktop 1.0.2 | Cua 0.38.0 |
+| Operation | agent-desktop 1.3.1 | Cua 0.52.1 |
 | --- | --- | --- |
 | Window capture | `screenshot --window-id ID` | `get_window_state` with exact `pid` and `window_id`; screenshot-only reads support `display_only: true` |
 | Region capture | No screenshot crop flag | `zoom` uses a region of the window snapshot |
@@ -82,7 +82,7 @@ swap; it does not reserve the app's state. For layout checks that do not need th
 live desktop, use an isolated renderer or headless fixture.
 
 These flags and delivery limits come from the installed help and `describe`
-schemas. The upstream [observation reference](https://github.com/vercel-labs/agent-desktop/blob/v1.0.2/skills/agent-desktop/references/commands-observation.md)
+schemas. The upstream [observation reference](https://github.com/vercel-labs/agent-desktop/blob/v1.3.1/skills/agent-desktop/references/commands-observation.md)
 and [Cua action model](https://cua.ai/docs/cua-driver/concepts/how-cua-driver-works)
 explain capture and verification; reread local schemas after upgrades.
 
@@ -91,6 +91,11 @@ Cua remains independently installed and updated through its
 `describe` schemas after an upgrade: 0.35 changed the default window-state tree.
 Keep its daemon permission mode and existing startup choices; do not add an
 unrestricted daemon to recover an unavailable action.
+
+The launcher follows agent-desktop's 2.6 response envelope. Take fresh snapshots
+after upgrading: Windows refs now require proof of a unique target. The native
+MCP server is not exposed through this launcher, since its persistent calls would
+bypass the per-action Baton and WSLg checks; use standalone CLI calls.
 
 Verify with `python3 -B tests/test_agent_desktop.py` and the installer/Baton checks.
 Remove only the live launcher/skill links and the installed binary directory to

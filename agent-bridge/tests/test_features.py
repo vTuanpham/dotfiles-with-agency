@@ -142,6 +142,15 @@ def test_result_joins_messages_from_last_turn_only(tmp_path):
     assert cli.result_text(tmp_path) == "partial final turn"
 
 
+def test_result_does_not_treat_compaction_as_finished_worker_work(tmp_path):
+    event(tmp_path, "message", text="work result")
+    event(tmp_path, "turn_completed")
+    event(tmp_path, "compact_started")
+    event(tmp_path, "compacted")
+    event(tmp_path, "turn_completed", status="completed", purpose="compact")
+    assert cli.result_text(tmp_path) == "work result"
+
+
 def test_help_is_compact_command_map(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["agent-bridge", "--help"])
     with pytest.raises(SystemExit) as done:
@@ -284,7 +293,8 @@ def test_compact_cli_routes_only_supported_backends(monkeypatch, tmp_path, capsy
     assert calls == [{"resume": True, "compact": True}]
 
 
-def resume_with_switch(monkeypatch, tmp_path, *flags, fail=False, context=90_000, logins=(None, None)):
+def resume_with_switch(monkeypatch, tmp_path, *flags, fail=False, context=90_000, logins=(None, None),
+                       confirm_compaction=True):
     job = tmp_path / "owner/job"
     job.mkdir(parents=True)
     state = {"backend": "codex", "model": "old", "effort": "low"}
@@ -300,9 +310,12 @@ def resume_with_switch(monkeypatch, tmp_path, *flags, fail=False, context=90_000
     calls = []
 
     def run(job, state, path, prompt, resume=False, compact=False):
-        calls.append((compact, prompt, state["model"], state.get("effort")))
+        stored = json.loads(Path(path).read_text())
+        calls.append((compact, prompt, state["model"], state.get("effort"), stored.get("pendingSwitch")))
         if compact and fail:
             raise RuntimeError("compaction failed")
+        if compact and confirm_compaction:
+            event(job, "compacted")
 
     monkeypatch.setattr(cli.BACKENDS["codex"], "run", run)
     monkeypatch.setattr(cli, "linger", lambda *a: None)
@@ -312,9 +325,15 @@ def resume_with_switch(monkeypatch, tmp_path, *flags, fail=False, context=90_000
 def test_resume_compact_compacts_on_the_current_model_before_switching(monkeypatch, tmp_path, capsys):
     job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "new", "--effort", "high", "--compact")
     cli.main()
-    assert calls == [(True, "", "old", "low"), (False, "Continue.", "new", "high")]
+    assert calls == [
+        (True, "", "old", "low", {"model": "new", "effort": "high"}),
+        (False, "Continue.", "new", "high", None),
+    ]
     assert json.loads((job / "state.json").read_text())["model"] == "new"
-    assert "switch:" not in capsys.readouterr().out  # a small context needs no words, compacting or not
+    output = capsys.readouterr().out
+    assert ("compacting on the current model, then switch to model=new, effort=high and continue "
+            "the same native session") in output
+    assert "model_switch_ready" in (job / "live.jsonl").read_text()
 
 
 def test_choosing_to_compact_a_large_context_just_runs_in_order(monkeypatch, tmp_path, capsys):
@@ -328,14 +347,49 @@ def test_failed_compaction_leaves_the_model_unchanged(monkeypatch, tmp_path):
     job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "new", "--compact", fail=True)
     with pytest.raises(SystemExit):
         cli.main()
-    assert calls == [(True, "", "old", "low")]
+    assert calls == [(True, "", "old", "low", {"model": "new", "effort": None})]
+    state = json.loads((job / "state.json").read_text())
+    assert state["model"] == "old" and "pendingSwitch" not in state
+
+
+def test_unconfirmed_compaction_does_not_apply_pending_switch(monkeypatch, tmp_path):
+    job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "new", "--compact",
+                                    confirm_compaction=False)
+    cli.main()
+    state = json.loads((job / "state.json").read_text())
+    assert calls == [(True, "", "old", "low", {"model": "new", "effort": None})]
+    assert state["model"] == "old" and "pendingSwitch" not in state
+    assert "model switch and follow-up were not applied" in (job / "live.jsonl").read_text()
+
+
+def test_compact_noop_without_a_switch_still_continues_the_same_session(monkeypatch, tmp_path):
+    job, calls = resume_with_switch(monkeypatch, tmp_path, "--compact", confirm_compaction=False)
+    cli.main()
+    assert calls == [
+        (True, "", "old", "low", None),
+        (False, "Continue.", "old", "low", None),
+    ]
     assert json.loads((job / "state.json").read_text())["model"] == "old"
+
+
+def test_resume_requires_a_choice_after_an_interrupted_compact_switch(monkeypatch, tmp_path):
+    job, calls = resume_with_switch(monkeypatch, tmp_path)
+    state = json.loads((job / "state.json").read_text())
+    state["pendingSwitch"] = {"model": "new", "effort": "high"}
+    (job / "state.json").write_text(json.dumps(state))
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    assert calls == []
+    assert json.loads((job / "state.json").read_text())["pendingSwitch"] == {
+        "model": "new", "effort": "high"}
 
 
 def test_plain_switch_of_a_small_context_says_nothing(monkeypatch, tmp_path, capsys):
     job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "new")
     cli.main()
-    assert calls == [(False, "Continue.", "new", "low")]
+    assert calls == [(False, "Continue.", "new", "low", None)]
     assert "switch:" not in capsys.readouterr().out
     job, calls = resume_with_switch(monkeypatch, tmp_path / "effort", "--effort", "high")
     cli.main()
@@ -360,10 +414,10 @@ def test_plain_switch_of_a_large_context_asks_for_a_choice_first(monkeypatch, tm
 def test_unchanged_model_or_unknown_context_needs_no_choice(monkeypatch, tmp_path):
     job, calls = resume_with_switch(monkeypatch, tmp_path, "--model", "old", context=900_000)
     cli.main()
-    assert calls == [(False, "Continue.", "old", "low")]
+    assert calls == [(False, "Continue.", "old", "low", None)]
     job, calls = resume_with_switch(monkeypatch, tmp_path / "unknown", "--model", "new", context=None)
     cli.main()
-    assert calls == [(False, "Continue.", "new", "low")]
+    assert calls == [(False, "Continue.", "new", "low", None)]
 
 
 def test_retire_archives_report_and_keeps_job(tmp_path, monkeypatch, capsys):

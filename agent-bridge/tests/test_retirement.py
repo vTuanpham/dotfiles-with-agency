@@ -106,6 +106,36 @@ def test_purge_window_and_legacy_jobs(world, monkeypatch, capsys):
     assert not expired.exists()
 
 
+def test_retire_accepts_multiple_jobs_with_one_retention_policy(world, monkeypatch, capsys):
+    first = job_at(world, "owner/first")
+    second = job_at(world, "owner/second")
+
+    command(monkeypatch, "retire", "owner/first", "owner/second", "--keep-days", "7")
+
+    output = capsys.readouterr().out
+    assert "retired owner/first" in output and "retired owner/second" in output
+    for job in (first, second):
+        state = core.load_state(job)
+        assert state["retiredAt"] and state["purgeAfter"]
+    assert len(cli.ARCHIVE.read_text().splitlines()) == 2
+
+
+def test_retire_validates_every_job_path_before_changing_any_job(world, monkeypatch):
+    first = job_at(world, "owner/first")
+    with pytest.raises(SystemExit):
+        command(monkeypatch, "retire", "owner/first", "not-a-job")
+    assert not core.load_state(first).get("retiredAt")
+    assert not cli.ARCHIVE.exists()
+
+
+def test_retire_rejects_duplicate_job_paths_before_changing_them(world, monkeypatch):
+    job = job_at(world)
+    with pytest.raises(SystemExit):
+        command(monkeypatch, "retire", "owner/job", str(job))
+    assert not core.load_state(job).get("retiredAt")
+    assert not cli.ARCHIVE.exists()
+
+
 def test_immediate_purge_keeps_archive_and_old_archives_stay_readable(world, monkeypatch, capsys):
     job = job_at(world)
     command(monkeypatch, "retire", "owner/job", "--purge")

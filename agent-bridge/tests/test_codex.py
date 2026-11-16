@@ -58,6 +58,26 @@ def job_state(tmp_path):
     return job, path, state
 
 
+@pytest.mark.parametrize("sandbox", ["workspace-write", "read-only"])
+def test_worker_output_directory_follows_sandbox(monkeypatch, tmp_path, sandbox):
+    job, path, state = job_state(tmp_path)
+    state["sandbox"] = sandbox
+    rpc = FakeRpc(state["cwd"], job / "stderr", [
+        {"method": "turn/completed", "params": {"turn": {"id": "turn-1", "status": "completed"}}}
+    ])
+    monkeypatch.setattr(codex, "Rpc", lambda *args: rpc)
+    monkeypatch.setattr(codex, "runner_started", lambda *_: None)
+    monkeypatch.setattr(codex, "runner_finished", lambda *_: None)
+    codex.run(job, state, path, "prompt")
+    policy = next(params["sandboxPolicy"] for method, params in rpc.calls if method == "turn/start")
+    if sandbox == "workspace-write":
+        assert (job / "out").is_dir()
+        assert str(job / "out") in policy["writableRoots"]
+    else:
+        assert policy["type"] == "readOnly"
+        assert not (job / "out").exists()
+
+
 def test_active_account_records_only_codex_auth_number(monkeypatch):
     monkeypatch.setattr(
         codex.subprocess,
@@ -424,7 +444,9 @@ def test_compact_waits_until_compaction_turn_completes(monkeypatch, tmp_path, qu
     monkeypatch.setattr(codex, "runner_finished", lambda state, path: None)
     codex.run(job, state, path, "", resume=True, compact=True)
     assert "thread/compact/start" in [method for method, _ in rpc.calls]
-    assert "compacted" in [json.loads(line)["kind"] for line in (job / "live.jsonl").read_text().splitlines()]
+    logged = [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()]
+    assert "compacted" in [e["kind"] for e in logged]
+    assert next(e for e in logged if e["kind"] == "turn_completed")["purpose"] == "compact"
     assert not any(method in ("turn/start", "turn/steer") for method, _ in rpc.calls)
     if queued:
         assert (job / "steer/001.md").read_text() == "follow up"

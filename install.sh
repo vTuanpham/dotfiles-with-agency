@@ -102,7 +102,7 @@ step_desktop_tools() {
     say "  Windows desktop tools require WSL; skipped"
     return 0
   fi
-  local target version=v1.0.2
+  local target version=v1.3.1
   case $(uname -m) in
     x86_64) target=x86_64-pc-windows-msvc ;;
     aarch64) target=aarch64-pc-windows-msvc ;;

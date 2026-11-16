@@ -3,12 +3,16 @@
 Any harness can read `agent-bridge status --json [owner | owner/job ...]`.
 `status.Collector` is the sole producer; types live in `status_model.py`, and
 the packaged JSON Schema 2020-12 contract is `agent_bridge/status.schema.json`.
-`status_render.py` owns human views. Read JSON directly, never parse text views.
+`status_render.py` owns human views. Text status omits peer conversation previews
+by default; use `agent-bridge status --messages` to include them. JSON keeps its
+full peer data. Read JSON directly, never parse text views.
 
 V1 evolves additively: existing fields retain their types, units and meanings.
 `schema_minor: 1` adds completion wake groups; `schema_minor: 2` adds bounded waits
 and in-flight tools; `schema_minor: 3` adds bounded direct-message previews. Older V1 readers ignore those fields and unfamiliar assessment states.
 `schema_minor: 5` adds the latest observed native event after a worker request.
+`schema_minor: 6` adds a pending model/effort switch and projects compact-turn
+completion as `compaction_turn_completed`, separate from completed worker work.
 Readers ignore unknown fields at every level and reject unsupported
 `schema_version` values. Incompatible changes require another version. Unknown
 readings are `null`, not guessed zeroes. `errors` identifies unavailable/rejected
@@ -41,7 +45,7 @@ separate protocol. Polling keeps that protocol out of every harness.
 | Section | Fields and purpose |
 | --- | --- |
 | `generated_at` | UTC observation timestamp. Ages are seconds, memory bytes, CPU seconds or explicitly named microseconds. All timestamps include timezones. |
-| `jobs` | Stable `id = owner/name`, identity/model/effort/account, live runner, state/reason, event time/age, stall assessment, configured caps, observed memory/CPU and OOMs, retry counts, current stage, completion visibility and retirement dates. Retired jobs remain in JSON; human views omit them. |
+| `jobs` | Stable `id = owner/name`, identity/model/effort/account, optional pending model switch, live runner, state/reason, event time/age, stall assessment, configured caps, observed memory/CPU and OOMs, retry counts, current stage, completion visibility and retirement dates. Retired jobs remain in JSON; human views omit them. |
 | `owners` | Active/running/unanswered counts and last root command; sizes with `--storage`. |
 | `wake_events` | Native critical events and unseen completion digests. Successful native completions remain in `events` and unread counters. Reading status never marks a wake displayed. |
 | `events` | Pending default/informational events plus the last 100 events per job. Pending events are never truncated. `wakes` and `informational` encode default and opt-in wake policy. |
@@ -209,6 +213,11 @@ agent-bridge waiting --on command --for 20m --note 'full build'
 agent-bridge waiting --on peer --peer reviewer --for 20m --note 'review reply'
 agent-bridge waiting --clear
 ```
+
+Codex workspace-write turns include the job's `out/` directory for declarations;
+the host reads the drop without granting writes to its state or logs. A native
+read-only Codex sandbox cannot add a writable metadata directory: those workers
+report waits in normal messages.
 
 Kinds are `command`, `peer`, `root`, `external`, `dependency`. The default expected
 duration is 20 minutes, capped at two hours; notes accept at most 80 printable

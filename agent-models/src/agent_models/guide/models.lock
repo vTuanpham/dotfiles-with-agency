@@ -1,7 +1,7 @@
-refreshed 2026-11-08
-guide models.md 3cde87ba3f87d69660b0713df0e1b258c3a1bc34546b2350cb91bc8a833628b1
+refreshed 2026-11-12
+guide models.md 2f3ad2345dee352ec65896203d60d56bd751125e5caf10b138fb5a184398abf7
 guide subscriptions.md aa5e0d2c6234f783bad69428ffe1c74f48b420313b42a3052d27eea400fcbadf
-evidence 70cbd2d339961a1b60762ba8ef41d86fe6a61569d4595a2e8409a27a53585042
+evidence 3e0513885af7bd98baebb78fed3b1276670153b4d094674469b85ea9a087481c
 agy claude-opus-4-6-thinking
 agy claude-sonnet-4-6
 agy gemini-3.8-flash-high
@@ -9,6 +9,7 @@ agy gemini-3.8-flash-low
 agy gemini-3.8-flash-medium
 agy gpt-oss-120b-medium
 claude claude-fable-5
+claude claude-fable-5-1
 claude claude-haiku-4-5-20251001
 claude claude-opus-4-6
 claude claude-opus-4-7
@@ -31,7 +32,6 @@ codex gpt-6.1-sol
 codex gpt-6.1-terra
 opencode opencode-go/beam-free
 opencode opencode-go/claude-haiku-5-5
-opencode opencode-go/crouton-alpha-free
 opencode opencode-go/deepseek-v4-pro
 opencode opencode-go/deepseek-v4.1-flash
 opencode opencode-go/gemini-4-argon
@@ -49,6 +49,7 @@ opencode opencode-go/kimi-k2.7-code
 opencode opencode-go/kimi-k3
 opencode opencode-go/kimi-k3.1-pro
 opencode opencode-go/longcat-2.0
+opencode opencode-go/longcat-2.5-free
 opencode opencode-go/mimo-v2.5
 opencode opencode-go/mimo-v2.5-pro
 opencode opencode-go/mimo-v2.6-flash
@@ -63,12 +64,13 @@ opencode opencode-go/qwen3.8-max
 opencode opencode-go/step-5-preview
 opencode opencode/beam-free
 opencode opencode/big-pickle
-opencode opencode/crouton-alpha-free
 opencode opencode/deepseek-v4.1-flash-free
 opencode opencode/flint-40b-free
 opencode opencode/glm-5.3-flash-free
 opencode opencode/iceman-free
 opencode opencode/inkling-2-small-free
+opencode opencode/longcat-2.5-free
 opencode opencode/mimo-v2.6-flash-free
+opencode opencode/minimax-m3.1-flash-free
 opencode opencode/nemotron-3.5-lightning-free
 opencode opencode/nemotron-3.5-super-vl-free

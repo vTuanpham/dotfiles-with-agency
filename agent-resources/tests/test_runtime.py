@@ -12,6 +12,7 @@ import pytest
 
 from agent_resources import control, heavy
 from agent_resources.identity import agent_id as resource_agent_id
+from agent_resources.resources import Pressure
 
 
 def test_standalone_exec_preserves_environment_argv_stdin_and_exit(tmp_path):
@@ -26,6 +27,28 @@ def test_standalone_exec_preserves_environment_argv_stdin_and_exit(tmp_path):
                             capture_output=True, text=True, timeout=15)
     assert result.returncode == 7
     assert json.loads(result.stdout) == ["synthetic-value", "$literal", "stdin payload"]
+
+
+def test_idle_unfit_head_exits_with_error_and_cleans_request(tmp_path, monkeypatch, capsys):
+    queue = tmp_path / "queue"
+    monkeypatch.delenv("AGENT_RESOURCES_ACTIVE", raising=False)
+    monkeypatch.delenv("AGENT_RESOURCES_HOST_PID_NAMESPACE", raising=False)
+    monkeypatch.setenv("AGENT_RESOURCES_HOME", str(queue))
+    monkeypatch.setenv("AGENT_RESOURCES_MIN_AVAILABLE_MIB", "0")
+    monkeypatch.setenv("AGENT_RESOURCES_MAX_LOAD", "1000000")
+    monkeypatch.setenv("AGENT_RESOURCES_OWNER", "codex:test-root")
+    host = Pressure(10 * 1024**3, 6 * 1024**3, 0, 0, ())
+    monkeypatch.setattr(heavy, "pressure", lambda previous=None: host)
+    ticks = iter((0, 0, 0, 1 * 10**9, 301 * 10**9))
+    monkeypatch.setattr(heavy.time, "monotonic_ns", lambda: next(ticks))
+    monkeypatch.setattr(heavy.time, "sleep", lambda _: None)
+
+    with pytest.raises(SystemExit) as error:
+        heavy.run(["true"], mem="7G")
+
+    assert error.value.code == 1
+    assert "cannot admit after 5 minutes without a running holder" in capsys.readouterr().err
+    assert list(queue.glob("*.request")) == []
 
 
 @pytest.mark.parametrize(

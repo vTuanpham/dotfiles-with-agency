@@ -90,7 +90,7 @@ def fallback_served(resolved, usage):
     return served, tokens[served]
 
 
-def process(event, state, job, usage_baseline=None):
+def process(event, state, job, usage_baseline=None, compact=False):
     typ = event.get("type")
     if typ == "system" and event.get("subtype") == "init":
         state["sessionId"] = event.get("session_id", state.get("sessionId", ""))
@@ -157,6 +157,7 @@ def process(event, state, job, usage_baseline=None):
         log(
             job,
             "turn_completed",
+            level="info" if compact else None,
             status="failed" if failed else "completed",
             error=(event.get("errors") or event.get("result") or event.get("subtype")) if failed else None,
             subtype=event.get("subtype"),
@@ -169,6 +170,7 @@ def process(event, state, job, usage_baseline=None):
             terminal_reason=event.get("terminal_reason"),
             queued_turn_count=event.get("queued_turn_count"),
             permission_denials=event.get("permission_denials"),
+            **({"purpose": "compact"} if compact else {}),
         )
         for denial in event.get("permission_denials", []):
             log(job, "permission_denied", level="urgent", denial=denial)
@@ -308,7 +310,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
                     line, buf = buf.split(b"\n", 1)
                     try:
                         event = json.loads(line)
-                        status = process(event, state, job, usage_baseline)
+                        status = process(event, state, job, usage_baseline, compact=compact)
                         if compact:
                             if event.get("type") == "system" and event.get("subtype") == "compact_boundary":
                                 compacted = True

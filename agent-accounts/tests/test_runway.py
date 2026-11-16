@@ -1,3 +1,5 @@
+import pytest
+
 from agent_accounts.runway import Reading, Runway
 
 CLOCK = 1_800_000_000.0
@@ -55,3 +57,17 @@ def test_valid_json_with_malformed_rows_starts_over_instead_of_failing(tmp_path)
     path.write_text('{"samples": {"w@1": [["x", 1]]}, "notified": {}}')
     assert not Runway(path).observe([reading(0, 10)], CLOCK)
     assert Runway(path).observe([reading(300, 6)], CLOCK + 300)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("observed", CLOCK + 301), ("observed", CLOCK - 1801),
+    ("observed", float("nan")), ("resets", float("inf")),
+    ("remaining", float("nan")), ("resets", True), ("resets", 10**1000),
+])
+def test_invalid_or_stale_reading_cannot_poison_later_valid_trend(tmp_path, field, value):
+    from dataclasses import replace
+
+    runway = Runway(tmp_path / "runway.json")
+    runway.observe([reading(0, 10)], CLOCK)
+    assert not runway.observe([replace(reading(300, 1), **{field: value})], CLOCK + 300)
+    assert runway.observe([reading(300, 6)], CLOCK + 300)

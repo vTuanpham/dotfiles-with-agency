@@ -20,6 +20,7 @@ from .resources import MIB, limits, memory_size, pressure, wait_reason
 PROC = Path("/proc")
 DEFAULT_NEED = 1024 * MIB
 BACKFILL_SECONDS = 300
+IDLE_UNFIT_SECONDS = 300
 CANCELLED_EXIT = 125
 
 
@@ -141,6 +142,10 @@ def waited_ns(row, paused, now_ns):
     if row.get("control") is not None:
         elapsed -= max(0, pause_clock(paused, now_ns) - row["control"]["pause_ns"])
     return max(0, elapsed)
+
+
+def idle_unfit_expired(active, position, need, free, waited):
+    return active == 0 and position == 1 and need > free and waited >= IDLE_UNFIT_SECONDS * 10**9
 
 
 def reservation(path, row):
@@ -388,6 +393,7 @@ def run(command, memory_max=None, mem=None, exclusive=False, agent_id=None):
             write_state(control_path(path), {"group": False, "cancelled": False,
                         "pause_ns": pause_clock(pause_state(folder), time.monotonic_ns())})
         last, reported = None, 0
+        unfit_since_ns = unfit_pause_ns = None
         if host.groups:
             time.sleep(1)  # first CPU sample needs an interval, not a lifetime-average guess
         while True:
@@ -406,14 +412,31 @@ def run(command, memory_max=None, mem=None, exclusive=False, agent_id=None):
                 waiting = [p for p, row in rows if not row["running"]]
                 position = waiting.index(path) + 1
                 active = sum(row["running"] for _, row in rows)
+                now_ns = time.monotonic_ns()
                 reason = wait_reason(host, policy, shared=True)
                 budget = max(0, host.shared_capacity - policy.available)
                 free = max(0, host.shared_headroom - policy.available)
                 selected, reserved, cap, queue_reason = choose(
-                    rows, budget, policy.slots, time.monotonic_ns(), free)
+                    rows, budget, policy.slots, now_ns, free)
                 if paused["reason"] is not None:
                     queue_reason = f"paused by root: {paused['reason']}"
                     selected = None
+                unfit_waited_ns = 0
+                if active == 0 and position == 1 and need > free:
+                    if unfit_since_ns is None:
+                        unfit_since_ns = now_ns
+                        unfit_pause_ns = pause_clock(paused, now_ns)
+                    unfit_waited_ns = (now_ns - unfit_since_ns
+                                       - (pause_clock(paused, now_ns) - unfit_pause_ns))
+                else:
+                    unfit_since_ns = unfit_pause_ns = None
+                if paused["reason"] is None and idle_unfit_expired(
+                        active, position, need, free, unfit_waited_ns):
+                    print(f"heavy: cannot admit after {IDLE_UNFIT_SECONDS // 60} minutes "
+                          f"without a running holder; need={need / MIB:g}MiB "
+                          f"free={free / MIB:g}MiB; retry when live headroom is sufficient",
+                          file=sys.stderr, flush=True)
+                    raise SystemExit(1)
                 if selected == path and not reason:
                     # Isolate only this admitted command and its children, never its worker runner.
                     if os.getpgrp() != os.getpid():

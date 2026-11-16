@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,37 @@ CLAUDE_HOOK = Path(__file__).resolve().parents[1] / "claude/.claude/hooks/rtk.py
 
 
 class FilterTests(unittest.TestCase):
+    def test_summary_passes_pipeline_input_and_exit_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = {**os.environ, "HOME": directory, "XDG_CONFIG_HOME": directory,
+                   "XDG_DATA_HOME": directory}
+            for payload in ("sentinel\n", ""):
+                result = subprocess.run(
+                    ["rtk", "summary", sys.executable, "-c",
+                     'import sys; print("characters=" + str(len(sys.stdin.read()))); sys.exit(7)'],
+                    input=payload, env=env, capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+                self.assertIn(f"characters={len(payload)}", result.stdout)
+
+    def test_invalid_read_windows_report_usage_instead_of_running_a_program(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.txt"
+            source.write_text("one\ntwo\nthree\n")
+            env = {**os.environ, "HOME": directory, "XDG_CONFIG_HOME": directory,
+                   "XDG_DATA_HOME": directory}
+            for flags in (("--head-lines", "2", "--tail-lines", "1"),
+                          ("--head-lines", "invalid")):
+                result = subprocess.run(["rtk", "read", *flags, str(source)], env=env,
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("error:", result.stderr)
+                self.assertNotIn("No such file", result.stderr)
+            result = subprocess.run(["rtk", "read", "--head-lines", "1", str(source)], env=env,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual((result.returncode, result.stdout), (0, "one\n"))
+
     def test_summary_does_not_classify_jq_expressions_or_filenames_as_tests(self):
         rtk = shutil.which("rtk")
         jq = shutil.which("jq")
@@ -62,7 +94,7 @@ class FilterTests(unittest.TestCase):
                 'test("keeps ok markers", () => {});\n'
             )
             result = subprocess.run(
-                [rtk, "summary", node, "--test", "--test-reporter=tap", str(source)],
+                [rtk, "summary", node, "--test", "--test-isolation=none", "--test-reporter=tap", str(source)],
                 cwd=root, env=env, capture_output=True, text=True, timeout=30,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -80,6 +112,40 @@ class FilterTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("AssertionError", result.stdout + result.stderr)
             self.assertIn("FAILED (failures=1)", result.stdout + result.stderr)
+
+    def test_test_filter_keeps_pytest_failure_diagnostics_recoverable(self):
+        rtk = shutil.which("rtk")
+        pytest = shutil.which("pytest")
+        self.assertIsNotNone(rtk, "install RTK before running filter checks")
+        self.assertIsNotNone(pytest, "install pytest before running filter checks")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = {**os.environ, "XDG_CONFIG_HOME": str(root / "config"),
+                   "XDG_DATA_HOME": str(root / "data")}
+            source = root / "test_failure.py"
+            source.write_text('def test_failure_details():\n    assert "expected value" == "actual value"\n')
+            result = subprocess.run(
+                [rtk, "test", pytest, "-q", "--tb=short", str(source)],
+                cwd=root, env=env, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            filtered = result.stdout + result.stderr
+            recall = re.search(r"rtk recall ([0-9a-f]+)", filtered)
+            if recall:
+                recovered = subprocess.run([rtk, "recall", recall[1]], cwd=root, env=env,
+                                           capture_output=True, text=True, timeout=30)
+                self.assertEqual(recovered.returncode, 0, recovered.stdout + recovered.stderr)
+                output = recovered.stdout + recovered.stderr
+            else:
+                fallback = subprocess.run(
+                    [rtk, "summary", pytest, "-q", "--tb=short", str(source)],
+                    cwd=root, env=env, capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(fallback.returncode, 1, fallback.stdout + fallback.stderr)
+                output = fallback.stdout + fallback.stderr
+            self.assertIn("AssertionError", output)
+            self.assertIn("expected value", output)
+            self.assertIn("actual value", output)
 
     def test_codex_adapter_returns_valid_replacement_input(self):
         self.assertIsNotNone(shutil.which("rtk"), "install RTK before running filter checks")

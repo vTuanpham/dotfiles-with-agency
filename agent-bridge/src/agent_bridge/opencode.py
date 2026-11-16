@@ -141,6 +141,7 @@ def command(state, job, prompt, resume=False, server_only=False):
         XDG_DATA_HOME=str(data),
         XDG_STATE_HOME=str(state_dir),
         XDG_CACHE_HOME=str(cache),
+        TMPDIR="/tmp",  # inherited lab/project scratch may be outside the sandbox's writable roots
     )
     args += ["--chdir", state["cwd"], "--"]
     args += cmd
@@ -238,7 +239,7 @@ def steer_live(job, state, url, password, *, resume=True, skip=()):
     return True
 
 
-def read_effective_variant(state, url, password, message):
+def read_settings(state, url, password, message):
     session, identifier = state.get("sessionId"), message.get("messageID")
     if not all(isinstance(value, str) and value and all(
         c.isascii() and (c.isalnum() or c in "_-") for c in value
@@ -252,7 +253,7 @@ def read_effective_variant(state, url, password, message):
     except NativeMessagePending:
         return None
     if (not isinstance(data, dict) or data.get("id") != identifier
-            or data.get("sessionID") != session or data.get("type") != "assistant"):
+            or data.get("sessionID", session) != session or data.get("type") != "assistant"):
         return None
     model = data.get("model")
     if not isinstance(model, dict):
@@ -262,9 +263,9 @@ def read_effective_variant(state, url, password, message):
     if not all(isinstance(value, str) and value and value == value.strip() and value.isprintable()
                for value in (provider, identifier)):
         return None
-    state["resolvedModel"] = provider + "/" + identifier
-    return (variant if isinstance(variant, str) and variant and variant == variant.strip()
-            and variant.isprintable() else None)
+    return {"resolvedModel": provider + "/" + identifier,
+            "effectiveEffort": (variant if isinstance(variant, str) and variant and variant == variant.strip()
+                                and variant.isprintable() else None)}
 
 
 def record_live_steer(job, filename, text):
@@ -574,14 +575,14 @@ def run(job, state, path, prompt, resume=False, compact=False):
                             if (server_url
                                     and (not state.get("effectiveEffort") or not state.get("resolvedModel"))
                                     and isinstance(message_id, str) and message_id not in variant_messages):
-                                variant_messages.add(message_id)
                                 try:
-                                    variant = read_effective_variant(state, server_url, password, part)
-                                    if variant:
-                                        state["effectiveEffort"] = variant
+                                    settings = read_settings(state, server_url, password, part)
+                                    if settings is not None:
+                                        variant_messages.add(message_id)
+                                        state.update(settings)
                                         log(job, "effort_observed", turnId=state.get("activeTurnId"),
-                                            effort=variant, source="opencode_message")
-                                    save(path, state)
+                                            effort=state.get("effectiveEffort"), source="opencode_message")
+                                        save(path, state)
                                 except (OSError, ValueError, KeyError, TypeError, RuntimeError):
                                     pass
                     if server_url and state.get("sessionId") and time.monotonic() >= retry_at:

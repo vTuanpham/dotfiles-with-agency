@@ -9,6 +9,7 @@ for a refresh. Readings go to one Runway history per job.
 import subprocess
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from agent_accounts import providers
@@ -106,7 +107,7 @@ def advice(job, state, hit):
     head = (
         f"{state.get('backend')} {hit.label} window: {hit.remaining:.0f}% left, about "
         f"{max(1, round(hit.seconds_to_empty / 60))} min at the recent rate of use (the whole account's). "
-        f"Worker model {state.get('model') or 'default'}"
+        f"Worker model {state.get('resolvedModel') or state.get('model') or 'default'}"
         + (f", context about {round(context / 1000)}k tokens" if large else "")
         + (f" ({hit.note})" if hit.note else "")
         + f". When its turn ends (or after `agent-bridge interrupt {name}`): "
@@ -139,6 +140,9 @@ def feed(job, state, readings, now=None):
     now = time.time() if now is None else now
     if not readings:
         return
+    identity = state.get("loginKey") or state.get("agyAuthId")
+    if identity:
+        readings = [replace(reading, key=f"{identity}:{reading.key}") for reading in readings]
     try:
         due = Runway(Path(job) / "quota-runway.json").observe(readings, now)
         for hit in due:
@@ -157,8 +161,9 @@ def sample_agy(job, state, monitor):
     if not account or not identity:
         return
     observation = providers.agy_observation(account, identity)
-    feed(job, state, agy(observation, state.get("model")))
-    if observation is not None and not any(agy_match(w, state.get("model")) for w in observation.windows):
+    model = state.get("resolvedModel") or state.get("model")
+    feed(job, state, agy(observation, model))
+    if observation is not None and not any(agy_match(w, model) for w in observation.windows):
         return  # no window of this observation covers the worker's model, so refreshing it cannot help
     refresh = monitor.get("refresh")
     if refresh is None or refresh.poll() is not None:  # agent-accounts holds the lock and cooldowns

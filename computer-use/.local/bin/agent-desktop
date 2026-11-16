@@ -85,7 +85,7 @@ def geometry_guard(executable, argv):
         payload = json.loads(inventory.stdout)
         if (
             inventory.returncode
-            or payload.get("version") != "2.5"
+            or payload.get("version") != "2.6"
             or payload.get("ok") is not True
             or payload.get("command") != "list-windows"
         ):
@@ -116,7 +116,7 @@ def geometry_guard(executable, argv):
 
 def refuse(command, message):
     print(json.dumps({
-        "version": "2.5", "ok": False, "command": command,
+        "version": "2.6", "ok": False, "command": command,
         "error": {
             "code": "ACTION_NOT_SUPPORTED", "message": message,
             "details": {"kind": "wslg_geometry_guard"},
@@ -132,6 +132,18 @@ def refuse(command, message):
 
 
 def main():
+    routing = parser()
+    routing.add_argument("command", nargs="?")
+    routing.add_argument("arguments", nargs=argparse.REMAINDER)
+    try:
+        request, unknown = routing.parse_known_args(sys.argv[1:])
+        if (not unknown and request.command == "mcp" and not request.help
+                and not {"-h", "--help"}.intersection(request.arguments)):
+            print("agent-desktop: use standalone CLI calls so each action passes the Baton and target guards.",
+                  file=sys.stderr)
+            return 2
+    except argparse.ArgumentError:
+        pass
     executable = (
         Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
         / "agent-desktop/windows/agent-desktop.exe"

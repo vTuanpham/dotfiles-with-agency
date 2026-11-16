@@ -51,15 +51,24 @@ Local checks do not prove a live extension connection. Finish with browser
 discovery through the harness's native Chrome tools; no separate browser client
 or alternative control route is needed.
 
-After an app update, MCP and Linux native-host startup automatically recover
-retired runtime paths. Recovery changes only the three executable paths, and
-only when every changed old path is gone and the app's current setup validates.
-Concurrent startups serialize the repair; protocol output stays clean. Browser
-access settings stay intact, with an owner-only recovery backup under the local
-state directory. `doctor` and `paths` remain read-only. `chatgpt-browser repair-runtime`
-also runs the same repair manually. A still-installed old runtime, missing
-replacement or invalid setup requires review through the app's Computer Use
-settings; recovery never guesses between installations.
+Discovery alone does not prove page control either. If discovery works but
+navigation or page reads fail, use the bundled skill's Chrome troubleshooting
+guide. Compare the loaded plugin version with the plugin shipped in the installed
+app: updating the app can leave the active plugin behind. Refresh it through
+the app's Computer Use setup; do not replace files in the generated plugin cache.
+
+An existing browser JavaScript session can retain the old client after a plugin
+update. Release its diagnostic tabs, reset that JavaScript session, and bootstrap
+with the current plugin's `scripts/browser-client.mjs`. Verify navigation and a
+page read again; reconnecting the browser handle alone may retain the mismatch.
+
+Each MCP startup reads executable and browser-service paths from the Windows
+app's current `node_repl` configuration. Client and service plugin metadata must
+name the same release. No native-host sidecar configuration is required or
+rewritten. Linux native-messaging startup separately validates its registered
+host and extension origin; it does not depend on MCP or skill configuration.
+Missing files or mismatched plugin releases require the app's Computer Use setup.
+`doctor` and `paths` are read-only.
 
 **The desktop app's WSL browser integration is the product gap.** The inspected
 Windows app reports browser availability as `reason=wsl-disabled` when running
@@ -128,9 +137,10 @@ compatibility path, not official WSL desktop integration or a policy override.
    skill is not evidence that the installed runtime is missing. If MCP startup
    failed, fix and restart `node_repl` before looking for its `js` tool.
 
-The adapter checks the app and host runtime paths agree and refuses extra runtime
-flags from app configuration. Changes beyond retired executable paths can require
-repeating browser setup.
+The adapter checks the app's configured executables exist, checks client/service
+release agreement, and refuses extra runtime flags from app configuration. When
+the app omits skills from its plugin cache, `paths` selects its unchanged bundled
+marketplace skill only when its plugin release matches the installed client.
 Only the explicit launcher option disables the kernel sandbox; it does not
 change approval policies or bring over the computer-control service.
 Check the selected browser instance when both Windows and Linux Chrome are open.

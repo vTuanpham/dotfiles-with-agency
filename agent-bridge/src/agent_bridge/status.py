@@ -44,6 +44,7 @@ from .status_model import (
     Owner,
     PeerEdge,
     Peers,
+    PendingSwitch,
     Retention,
     Snapshot,
 )
@@ -501,6 +502,8 @@ class Collector:
                         native_observation=({"kind": native["kind"], "at": native["at"]} if native else None),
                         context_tokens=(state["contextTokens"] if type(state.get("contextTokens")) is int
                                         and state["contextTokens"] >= 0 else None),
+                        pending_switch=(PendingSwitch(**state["pendingSwitch"])
+                                        if state.get("pendingSwitch") is not None else None),
                     )
                 )
             except (OSError, ValueError, TypeError, KeyError, RuntimeError, subprocess.SubprocessError):

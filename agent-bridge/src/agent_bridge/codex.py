@@ -206,6 +206,8 @@ def record_settings(state, response):
 
 
 def run(job, state, path, prompt, resume=False, compact=False):
+    if state["sandbox"] == "workspace-write":
+        (Path(job) / "out").mkdir(exist_ok=True)
     rpc = Rpc(state["cwd"], Path(job) / "codex.stderr.log", state)
     thread = state.get("threadId", "")
     turn = state.get("activeTurnId")
@@ -268,7 +270,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
             if state["sandbox"] == "workspace-write":
                 policy = {
                     "type": "workspaceWrite",
-                    "writableRoots": state["writableRoots"],
+                    "writableRoots": list(dict.fromkeys([*state["writableRoots"], str(Path(job) / "out")])),
                     "networkAccess": True,
                 }
             args = {**base, "sandboxPolicy": policy}
@@ -360,6 +362,8 @@ def run(job, state, path, prompt, resume=False, compact=False):
                     settings = p.get("threadSettings") or {}
                     record_settings(state, {"model": settings.get("model"),
                                             "reasoningEffort": settings.get("effort")})
+                    log(job, "effort_observed", turnId=turn, effort=state.get("effectiveEffort"),
+                        source="codex_settings")
                     persist()
                 elif method == "turn/started":
                     started_turn = (p.get("turn") or {}).get("id")
@@ -402,10 +406,12 @@ def run(job, state, path, prompt, resume=False, compact=False):
                     log(
                         job,
                         "turn_completed",
+                        level="info" if compact else None,
                         turnId=t.get("id"),
                         status=t.get("status"),
                         error=t.get("error"),
                         usage=usage.get(t.get("id")),
+                        **({"purpose": "compact"} if compact else {}),
                     )
                     awaiting = False
                     read_quota(rpc, job, state)

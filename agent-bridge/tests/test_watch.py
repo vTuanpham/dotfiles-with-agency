@@ -21,6 +21,28 @@ def test_timeout_gives_up_while_a_runner_is_alive(monkeypatch, tmp_path, capsys)
     assert "30s passed without a wake event" in capsys.readouterr().out
 
 
+def test_compaction_completion_is_reported_without_waking_as_finished_work(monkeypatch, tmp_path, capsys):
+    root, job = setup_job(tmp_path)
+    (job / "live.jsonl").write_text("".join(json.dumps(row) + "\n" for row in (
+        {"kind": "compact_started"},
+        {"kind": "compacted"},
+        {"kind": "turn_completed", "status": "completed", "purpose": "compact"},
+    )))
+    monkeypatch.setattr(watcher, "JOBS", root)
+    monkeypatch.setattr(status, "running", lambda state: True)
+    ticks = iter([0, 2, 3])
+    monkeypatch.setattr(watcher.time, "monotonic", lambda: next(ticks, 3))
+    monkeypatch.setattr(watcher.time, "sleep", lambda _: None)
+
+    assert watcher.watch(["owner"], until_event=True, timeout=1) is False
+
+    output = capsys.readouterr().out
+    assert "worker: compaction completed" in output
+    assert "compaction turn completed" not in output
+    assert "watch: wake events" not in output
+    assert "passed without a wake event" in output
+
+
 def setup_job(tmp_path):
     root = tmp_path / "jobs"
     job = root / "owner" / "worker"

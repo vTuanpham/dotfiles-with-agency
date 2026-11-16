@@ -6,11 +6,24 @@ from contextlib import contextmanager
 
 from .core import URGENT_KINDS, save
 
-INFORMATIONAL_ONLY_KINDS = {"long_command", "overdue_wait"}
+INFORMATIONAL_ONLY_KINDS = {"long_command", "overdue_wait", "compacted", "compact_noop",
+                            "model_switch_pending", "model_switch_ready"}
+
+
+def compact_completion(event):
+    status = event.get("status")
+    return (
+        event.get("kind") == "turn_completed"
+        and event.get("purpose") == "compact"
+        and not event.get("error")
+        and (status is None or type(status) is str and status.lower() in {"completed", "success"})
+    )
 
 
 def urgent(event, include_info=False):
     kind = event.get("kind")
+    if compact_completion(event):
+        return False
     if kind in ({"heavy_wait", "retry_wait", "retryable_error", "attempt_failed", "peer_sent"}
                 | INFORMATIONAL_ONLY_KINDS):
         return False

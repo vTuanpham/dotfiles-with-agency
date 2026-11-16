@@ -63,8 +63,9 @@ def write(job, value):
         core.atomic_save(job / DROP, {
             "at": core.stamp(), "waiting": None if value is None else asdict(value),
         })
-        return
+        return False
     (job / DROP).unlink(missing_ok=True)  # an owner-side write supersedes any older drop
+    return True
 
 
 def declared(job, state):

@@ -39,6 +39,12 @@ class InFlight:
 
 
 @dataclass(frozen=True)
+class PendingSwitch:
+    model: str | None
+    effort: str | None
+
+
+@dataclass(frozen=True)
 class Event:
     id: str
     job: str
@@ -187,6 +193,7 @@ class Job:
     in_flight: InFlight | None = None
     native_observation: dict | None = None
     context_tokens: int | None = None  # the last request's prompt, when the harness reported it
+    pending_switch: PendingSwitch | None = None
 
 
 @dataclass(frozen=True)
@@ -282,7 +289,7 @@ class Snapshot:
     direct_messages: tuple[DirectMessage, ...]
     dependencies: tuple[Dependency, ...]
     errors: tuple[str, ...]
-    schema_minor: int = 5
+    schema_minor: int = 6
     unavailable_jobs: tuple[str, ...] = ()
     groups: tuple[WakeGroup, ...] = ()
     group_events: tuple[GroupNotice, ...] = ()

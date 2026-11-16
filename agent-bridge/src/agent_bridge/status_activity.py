@@ -101,7 +101,9 @@ def in_flight(rows, now):
     """Match native tool identities, with FIFO pairing only for legacy id-less events."""
     active = {}
     for raw, event in rows:
-        if event.kind in {"turn_started", "turn_completed", "turn_failed", "error"}:
+        if event.kind in {
+            "turn_started", "turn_completed", "compaction_turn_completed", "turn_failed", "error"
+        }:
             active.clear()
         elif event.kind == "command_start" and event.at:
             key = raw.get("tool_use_id") or raw.get("itemId") or raw.get("stepId") or event.id

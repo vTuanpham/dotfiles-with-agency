@@ -54,7 +54,8 @@ MESSAGING_RULE = (
     "report only a dead holder or an unpaused wait over 30 minutes. "
     "Before a long silent build, benchmark, peer or external wait, use agent-bridge waiting "
     "--on command|peer|root|external|dependency --for 20m --note 'short reason'; "
-    "add --peer NAME for a sibling. Your next tool call or message clears it."
+    "add --peer NAME for a sibling. Your next tool call or message clears it. "
+    "A read-only Codex worker cannot write this declaration; report the wait in a normal message instead."
 )
 REDELIVERED = "(redelivered after a runner restart; skip it if you already handled it)"
 

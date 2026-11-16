@@ -98,7 +98,8 @@ def reject(rpc, event, job):
                    if denied and isinstance(denied.get("optionId"), str) else {"outcome": "cancelled"})
         rpc.send({"id": event["id"], "result": {"outcome": outcome}})
         log(job, "permission_denied", level="urgent",
-            message="AGY requested an action outside its allow rules")
+            message=("AGY requested approval; Bridge declined the action. "
+                     "Inspect its native permission settings."))
     elif method in {"session/request_elicitation", "elicitation/create"}:
         rpc.send({"id": event["id"], "result": {"action": "decline"}})
         log(job, "question", level="urgent", message="AGY requested input; resume with an answer")
@@ -196,7 +197,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
     except Exception:
         rpc.close()
         raise
-    reason, turns_done = "normal", 0
+    reason, turns_done, permission_denied = "normal", 0, False
     session = None
     pending, texts, echo, awaiting_echo = {}, [], "", deque()
     queue_dir = job / "steer"
@@ -283,6 +284,8 @@ def run(job, state, path, prompt, resume=False, compact=False):
                 if request_session is not None and request_session != session:
                     raise ValueError("AGY ACP request belongs to another session")
                 reject(rpc, event, job)
+                if event.get("method") == "session/request_permission":
+                    permission_denied = True
             elif event.get("method") == "session/update":
                 params = event.get("params") or {}
                 if params.get("sessionId") != session:
@@ -294,6 +297,8 @@ def run(job, state, path, prompt, resume=False, compact=False):
                 text = content.get("text") if isinstance(content, dict) else None
                 if kind == "config_option_update":
                     record_settings(state, update)
+                    log(job, "effort_observed", turnId=state.get("activeTurnId"),
+                        effort=state.get("effectiveEffort"), source="agy_config")
                     save(path, state)
                 elif kind == "user_message_chunk" and isinstance(text, str):
                     flush_message(job, texts)
@@ -335,10 +340,12 @@ def run(job, state, path, prompt, resume=False, compact=False):
                     raise RuntimeError("AGY did not confirm steer delivery; inspect the native session")
                 if not pending:
                     cancelling = False
-                    status = "completed" if stop == "end_turn" else "failed" if stop == "refusal" else stop
+                    status = ("denied" if permission_denied else "completed") if stop == "end_turn" else (
+                        "failed" if stop == "refusal" else stop)
                     log(job, "turn_completed", status=status, usage=result.get("usage"),
                         error="AGY refused the request" if stop == "refusal" else None)
                     turns_done += 1
+                    permission_denied = False
                     state["activeTurnId"] = None
                     save(path, state)
     except Exception as error:

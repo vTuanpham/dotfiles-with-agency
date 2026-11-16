@@ -5,16 +5,12 @@
 """Adapt the installed Windows ChatGPT browser runtime to WSL stdio."""
 
 import argparse
-from datetime import datetime, timezone
-import fcntl
-import hashlib
 import json
 import os
 from pathlib import Path, PureWindowsPath
 import shutil
 import subprocess
 import sys
-import tempfile
 import tomllib
 
 
@@ -30,10 +26,6 @@ RUNTIME_ENV = (
     "BROWSER_USE_CODEX_APP_BUILD_FLAVOR",
     "BROWSER_USE_CODEX_APP_VERSION",
 )
-
-
-class RuntimeMismatch(ValueError):
-    pass
 
 
 def text(value, label):
@@ -53,7 +45,7 @@ def wsl_path(value):
     ).strip())
 
 
-def native_host_path(manifest):
+def native_host_path(manifest, *, origin=None):
     """Validate the app-owned registration before following its file references."""
     if not isinstance(manifest, dict) or manifest.get("name") != HOST or manifest.get("type") != "stdio":
         raise ValueError("Unexpected native host manifest")
@@ -66,33 +58,57 @@ def native_host_path(manifest):
         for origin in origins
     ):
         raise ValueError("Invalid native host allowed_origins")
-    return wsl_path(text(manifest.get("path"), "native host path"))
+    if origin is not None and origin not in origins:
+        raise ValueError("Extension origin is not allowed by the installed native host")
+    host = wsl_path(text(manifest.get("path"), "native host path"))
+    if not host.is_file():
+        raise ValueError(f"Required native host is missing: {host}")
+    return host
 
 
-def load_setup(home, manifest, *, host_config=None):
+def plugin_version(root, name):
+    metadata = json.loads((root / ".codex-plugin/plugin.json").read_text())
+    if not isinstance(metadata, dict) or metadata.get("name") != name:
+        raise ValueError(f"Expected the app's {name} plugin metadata")
+    return text(metadata.get("version"), "plugin version")
+
+
+def load_setup(home, manifest):
     """Read app-owned state; never copy credentials or computer-control services."""
     host = native_host_path(manifest)
-    if host_config is None:
-        host_config = json.loads((host.parent / "extension-host-config.json").read_text())
-    if not isinstance(host_config, dict):
-        raise ValueError("Invalid native host configuration")
-    if type(host_config.get("schemaVersion")) is not int or host_config["schemaVersion"] != 1:
-        raise ValueError("Unsupported native host configuration schema")
-    client = PureWindowsPath(text(host_config.get("browserClientPath"), "browserClientPath"))
+    windows_host = PureWindowsPath(manifest["path"])
+    if (windows_host.name != "extension-host.exe" or windows_host.parent.name not in {"x64", "arm64"}
+            or windows_host.parent.parent.name != "windows"
+            or windows_host.parent.parent.parent.name != "extension-host"):
+        raise ValueError("Unexpected app-owned native host layout; repeat browser setup in the app")
+    plugin = wsl_path(str(windows_host.parents[3]))
+    version = plugin_version(plugin, "chrome")
+    client = windows_host.parents[3] / "scripts/browser-client.mjs"
     client_path = wsl_path(str(client))
-    service = client.with_name("browser-service.mjs")
-    skill = client_path.parent.parent / "skills/control-chrome/SKILL.md"
+    skill = plugin / "skills/control-chrome/SKILL.md"
+    if not skill.is_file():
+        # The app can omit skills from the cache while retaining its bundled marketplace source.
+        source = home / ".codex/.tmp/bundled-marketplaces/openai-bundled/plugins/chrome"
+        if plugin_version(source, "chrome") != version:
+            raise ValueError("Installed Chrome skill and client versions differ; repeat browser setup in the app")
+        skill = source / "skills/control-chrome/SKILL.md"
     config = tomllib.loads((home / ".codex/config.toml").read_text())["mcp_servers"]["node_repl"]
+    if not isinstance(config, dict) or not isinstance(config.get("env"), dict):
+        raise ValueError("Invalid app node_repl configuration")
     if config.get("args") != []:
         raise ValueError("Unexpected node_repl arguments; review the app runtime before forwarding")
     env = {key: text(config["env"].get(key), key) for key in RUNTIME_ENV}
     command = wsl_path(text(config.get("command"), "node_repl command"))
-    for key, field in (("NODE_REPL_NODE_PATH", "nodePath"), ("CODEX_CLI_PATH", "codexCliPath")):
-        if wsl_path(env[key]) != wsl_path(text(host_config.get(field), field)):
-            raise RuntimeMismatch(f"App and native host runtimes differ ({field}); run chatgpt-browser repair-runtime for retired paths, or repeat browser setup in the app")
-    if command != wsl_path(text(host_config.get("nodeReplPath"), "nodeReplPath")):
-        raise RuntimeMismatch("App and native host runtimes differ (nodeReplPath); run chatgpt-browser repair-runtime for retired paths, or repeat browser setup in the app")
-    for path in (host, command, client_path, wsl_path(str(service)), skill,
+    services = json.loads(text(config["env"].get("NODE_REPL_TRUSTED_SERVICES"), "trusted services"))
+    if not isinstance(services, dict):
+        raise ValueError("Invalid app browser services")
+    service = PureWindowsPath(text(services.get("browser"), "browser service"))
+    service_path = wsl_path(str(service))
+    if service.name != "browser-service.mjs" or service.parent.name != "scripts":
+        raise ValueError("Unexpected app browser service path")
+    if plugin_version(service_path.parent.parent, "browser") != version:
+        raise ValueError("Installed Chrome client and browser service versions differ; repeat browser setup in the app")
+    for path in (command, client_path, service_path, skill,
                  wsl_path(env["NODE_REPL_NODE_PATH"]), wsl_path(env["CODEX_CLI_PATH"])):
         if not path.is_file():
             raise ValueError(f"Required browser runtime file is missing: {path}")
@@ -116,23 +132,16 @@ def read_registration():
         # A Windows discovery process must not drain the caller's framed stdio.
         stdin=subprocess.DEVNULL, encoding="utf-8", timeout=20,
     ))
+    if not isinstance(result, dict):
+        raise ValueError("Invalid Windows native host registration")
     home = wsl_path(text(result.get("home"), "Windows home"))
     manifest = json.loads(wsl_path(text(result.get("manifest"), "native host registration")).read_text())
     return home, manifest
 
 
-def discover(*, recover=False, origin=None):
+def discover():
     home, manifest = read_registration()
-    if origin is not None and origin not in manifest["allowed_origins"]:
-        raise ValueError("Extension origin is not allowed by the installed native host")
-    try:
-        setup = load_setup(home, manifest)
-    except RuntimeMismatch:
-        if not recover:
-            raise
-        repair_runtime(home, manifest, automatic=True)
-        setup = load_setup(home, manifest)
-    return home, manifest, setup
+    return home, manifest, load_setup(home, manifest)
 
 
 def register_linux(root, manifest):
@@ -147,77 +156,6 @@ def register_linux(root, manifest):
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("x") as output:
         output.write(json.dumps(wanted, indent=2) + "\n")
-
-
-def repair_runtime(home, manifest, *, automatic=False):
-    """Refresh retired executable paths, preserving registration and access settings."""
-    state = Path(os.environ.get("XDG_STATE_HOME", ""))
-    if not state.is_absolute():
-        state = Path.home() / ".local/state"
-    lock_dir = state / "chatgpt-browser"
-    lock_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    with os.fdopen(os.open(lock_dir / "runtime.lock", os.O_RDWR | os.O_CREAT, 0o600), "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        return repair_runtime_locked(home, manifest, state, automatic=automatic)
-
-
-def repair_runtime_locked(home, manifest, state, *, automatic):
-    host = native_host_path(manifest)
-    destination = host.parent / "extension-host-config.json"
-    original = destination.read_bytes()
-    current = json.loads(original)
-    config_path = home / ".codex/config.toml"
-    config_bytes = config_path.read_bytes()
-    configured = tomllib.loads(config_bytes.decode())["mcp_servers"]["node_repl"]
-    wanted = dict(current)
-    values = {
-        "nodePath": configured["env"]["NODE_REPL_NODE_PATH"],
-        "codexCliPath": configured["env"]["CODEX_CLI_PATH"],
-        "nodeReplPath": configured["command"],
-    }
-    changed = []
-    for field, value in values.items():
-        path = wsl_path(text(value, field))
-        if path == wsl_path(text(current.get(field), field)):
-            continue
-        wanted[field] = str(PureWindowsPath(value)) if PureWindowsPath(value).is_absolute() else subprocess.check_output(
-            ["wslpath", "-w", str(path)], stdin=subprocess.DEVNULL, encoding="utf-8",
-        ).strip()
-        changed.append(field)
-    load_setup(home, manifest, host_config=wanted)
-    if not changed:
-        if not automatic:
-            print("Browser runtime paths already match; no changes made")
-        return
-    if any(wsl_path(current[field]).exists() for field in changed):
-        raise ValueError("Registered runtime paths still exist; select the intended setup in the app")
-    backup = state / "backups/chrome" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-    backup.mkdir(mode=0o700, parents=True)
-    for name, payload in (
-        ("extension-host-config.json", original),
-        ("origin.json", json.dumps({
-            "original_path": str(destination), "sha256": hashlib.sha256(original).hexdigest(),
-            "restore": "Restore extension-host-config.json to original_path after confirming the registered runtime is installed.",
-        }, indent=2).encode()),
-    ):
-        with os.fdopen(os.open(backup / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as output:
-            output.write(payload)
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as output:
-            temporary = Path(output.name)
-            output.write((json.dumps(wanted, indent=2) + "\n").encode())
-            output.flush()
-            os.fsync(output.fileno())
-        if destination.read_bytes() != original or config_path.read_bytes() != config_bytes:
-            raise ValueError("Browser setup changed during repair; retry diagnostics")
-        os.replace(temporary, destination)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-    load_setup(home, manifest)
-    print(f"Updated retired runtime paths: {', '.join(changed)}; backup: {backup}",
-          file=sys.stderr if automatic else sys.stdout)
 
 
 def doctor(user_data_dir=None):
@@ -281,11 +219,12 @@ def doctor(user_data_dir=None):
 
 def main():
     if len(sys.argv) == 2 and sys.argv[1].startswith("chrome-extension://"):
-        home, manifest, (host, _, _, _) = discover(recover=True, origin=sys.argv[1])
+        _, manifest = read_registration()
+        host = native_host_path(manifest, origin=sys.argv[1])
         os.chdir(host.parent)
         os.execv(str(host), [str(host), sys.argv[1]])
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("mcp", "paths", "register-linux", "doctor", "repair-runtime"))
+    parser.add_argument("mode", choices=("mcp", "paths", "register-linux", "doctor"))
     parser.add_argument("user_data_dir", nargs="?", type=Path)
     parser.add_argument("--disable-sandbox", action="store_true",
                         help="Explicit exception for the Windows browser kernel only; keeps MCP approval review")
@@ -296,11 +235,7 @@ def main():
         return doctor(args.user_data_dir)
     if (args.mode == "register-linux") != (args.user_data_dir is not None):
         parser.error("register-linux requires a Chrome user-data directory; other modes take none")
-    if args.mode == "repair-runtime":
-        home, manifest = read_registration()
-        repair_runtime(home, manifest)
-        return
-    home, manifest, (_, command, env, paths) = discover(recover=args.mode == "mcp")
+    home, manifest, (_, command, env, paths) = discover()
     if args.mode == "paths":
         print(json.dumps(paths))
     elif args.mode == "register-linux":

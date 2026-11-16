@@ -186,3 +186,29 @@ def test_running_out_of_quota_names_what_is_left_only_for_a_large_context(tmp_pa
     assert urgent(row) and "250k tokens" in row["message"]
     for part in ("it cannot compact", "resume owner/worker --no-compact", "wait for the window to reset"):
         assert part in row["message"]
+
+
+def test_quota_trend_does_not_mix_logins_when_worker_changes_account(tmp_path):
+    job = tmp_path / "owner" / "worker"
+    job.mkdir(parents=True)
+    quota_pressure.feed(job, {**STATE, "loginKey": "a"},
+                        quota_pressure.claude(claude_event(0.90), CLOCK), CLOCK)
+    quota_pressure.feed(job, {**STATE, "loginKey": "b"},
+                        quota_pressure.claude(claude_event(0.96), CLOCK + 300), CLOCK + 300)
+    assert not any(row.get("kind") == "quota_pressure" for _, row in event_lines(job))
+    quota_pressure.feed(job, {**STATE, "loginKey": "b"},
+                        quota_pressure.claude(claude_event(0.99), CLOCK + 600), CLOCK + 600)
+    assert sum(row.get("kind") == "quota_pressure" for _, row in event_lines(job)) == 1
+
+
+def test_agy_sampling_uses_the_native_resolved_model_when_no_model_was_requested(tmp_path, monkeypatch):
+    job = tmp_path / "owner" / "worker"
+    job.mkdir(parents=True)
+    monkeypatch.setattr(quota_pressure.providers, "agy_observation", lambda *_: named_groups())
+    readings = []
+    monkeypatch.setattr(quota_pressure, "feed", lambda job, state, values: readings.extend(values))
+    monkeypatch.setattr(quota_pressure.subprocess, "Popen",
+                        lambda *a, **k: SimpleNamespace(poll=lambda: None))
+    quota_pressure.sample_agy(job, {"account": "a1", "agyAuthId": "login",
+                                   "resolvedModel": "gemini-3.8-flash"}, {})
+    assert [r.key for r in readings] == ["agy:gemini-weekly"]

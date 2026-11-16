@@ -858,6 +858,12 @@
         "context_tokens": {
           "anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]
         },
+        "pending_switch": {
+          "anyOf": [
+            {"$ref": "#/$defs/PendingSwitch"},
+            {"type": "null"}
+          ]
+        },
         "native_observation": {
           "anyOf": [
             {
@@ -1756,6 +1762,15 @@
         "started_at",
         "age_seconds"
       ]
+    },
+    "PendingSwitch": {
+      "type": "object",
+      "properties": {
+        "model": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "effort": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+      },
+      "required": ["model", "effort"],
+      "additionalProperties": false
     }
   }
 }

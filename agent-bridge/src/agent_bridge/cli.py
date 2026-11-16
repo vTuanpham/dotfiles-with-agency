@@ -81,6 +81,16 @@ def root_identity():
     return owner_binding.identity()
 
 
+def switch_text(switch):
+    return ", ".join(f"{key}={switch[key]}" for key in ("model", "effort") if switch.get(key))
+
+
+def clear_pending_switch(job, state_path):
+    state = load_state(job)
+    if state.pop("pendingSwitch", None) is not None:
+        save(state_path, state)
+
+
 def session_bindings():
     """Export identity metadata only, never prompts, credentials or account settings."""
     result = []
@@ -168,7 +178,8 @@ def linger(job, state, state_path, backend):
 
 def result_text(job, all_messages=False):
     evs = events(job)
-    ends = [i for i, e in enumerate(evs) if e.get("kind") == "turn_completed"]
+    ends = [i for i, e in enumerate(evs)
+            if e.get("kind") == "turn_completed" and e.get("purpose") != "compact"]
     if ends and any(e.get("kind") == "message" for e in evs[ends[-1] + 1 :]):
         start, end = ends[-1] + 1, len(evs)
     else:
@@ -214,17 +225,40 @@ def run_with_linger(
         while True:
             live_path = job / "live.jsonl"
             before = live_path.stat().st_size if live_path.exists() else 0
-            if not retries.run(
-                job, state, state_path, backend, prompt, resume, extra, root_prompt=root_prompt
-            ):
+            try:
+                completed = retries.run(
+                    job, state, state_path, backend, prompt, resume, extra, root_prompt=root_prompt
+                )
+            except Exception:
+                if then is not None and extra.get("compact"):
+                    clear_pending_switch(job, state_path)
+                raise
+            if not completed:
+                if then is not None and extra.get("compact"):
+                    clear_pending_switch(job, state_path)
                 return
             if then is not None and extra.get("compact"):
                 switch, prompt, root_prompt = then
+                if not any(e.get("kind") == "compacted" for e in events(job, before)):
+                    clear_pending_switch(job, state_path)
+                    if switch:
+                        log(job, "error", level="urgent",
+                            message=("compaction was not confirmed; model switch and follow-up "
+                                     "were not applied"))
+                        return
+                    extra, then = {}, None
+                    continue
                 state = load_state(job)
                 state.update(switch)
-                state.pop("effectiveEffort", None)
-                state.pop("resolvedModel", None)
+                if "effort" in switch:
+                    state.pop("effectiveEffort", None)
+                if "model" in switch:
+                    state.pop("resolvedModel", None)
+                state.pop("pendingSwitch", None)
                 save(state_path, state)
+                if switch:
+                    log(job, "model_switch_ready", level="info",
+                        message=f"compaction complete; next turn uses {switch_text(switch)}")
                 extra, then = {}, None
                 continue
             if any(e.get("kind") in {"root_steer", "root_prompt"} for e in events(job, before)):
@@ -318,7 +352,10 @@ def main():
     )
     snapshot = sub.add_parser("status", help="versioned harness-neutral status snapshot")
     snapshot.add_argument("owner", nargs="*", help="optional owner or owner/job filters")
-    snapshot.add_argument("--json", action="store_true", help="emit the version 1 JSON contract")
+    view = snapshot.add_mutually_exclusive_group()
+    view.add_argument("--json", action="store_true", help="emit the version 1 JSON contract")
+    view.add_argument("--messages", action="store_true",
+                      help="include recent peer conversation previews in text output")
     snapshot.add_argument("--storage", action="store_true", help="scan sizes and expired retirement safety")
     snapshot.add_argument("--no-quotas", action="store_true",
                           help="skip account caches for a bounded status probe")
@@ -469,7 +506,7 @@ def main():
     ack = sub.add_parser("ack", help="acknowledge urgent events displayed by watch")
     ack.add_argument("owner", nargs="+", help="owner or <owner>/<name>")
     retire = sub.add_parser("retire", help="archive and hide a stopped job; restorable until purged")
-    retire.add_argument("job", help="job as <owner>/<name>")
+    retire.add_argument("job", nargs="+", help="one or more jobs as <owner>/<name>")
     retire.add_argument("--keep-days", type=int, default=14,
                         help="days before purge eligibility (default: 14)")
     retire.add_argument("--purge", action="store_true", help="delete job data immediately; irreversible")
@@ -567,8 +604,8 @@ def main():
                 if peer and (peer == identity or not (resolve_job(peer) / "state.json").is_file()):
                     raise ValueError("peer must be another existing sibling job")
                 value = DeclaredWait(a.on, a.note, stamp(), a.duration, peer)
-                waiting.write(job, value)
-                log(job, "waiting_declared")
+                if waiting.write(job, value):
+                    log(job, "waiting_declared")
                 print(f"waiting: {a.on} for {a.duration}s")
             return
         if a.command == "group":
@@ -619,12 +656,21 @@ def main():
                 for job in snapshot.jobs:
                     if not job.retired_at:
                         print(status_render.job_status(job))
-                for line in status_render.peer_conversations(snapshot):
-                    print(line)
+                if a.messages:
+                    for line in status_render.peer_conversations(snapshot):
+                        print(line)
                 print(f"unacknowledged completions: {snapshot.unacknowledged_completions}; "
                       f"oldest age={snapshot.oldest_unacknowledged_completion_age_seconds}s")
                 for notice in snapshot.group_events:
                     print(status_render.group_notice(notice))
+            return
+        if a.command == "retire":
+            jobs = [resolve_job(name) for name in a.job]
+            if len(set(jobs)) != len(jobs):
+                raise RuntimeError("retire job list contains duplicates")
+            for job in jobs:
+                with owner_binding.access(job.parent, root_identity()):
+                    print(retirement.retire(job, ARCHIVE, result_text, a.keep_days, a.purge))
             return
         if a.command == "sessions":
             print(json.dumps(session_bindings()))
@@ -699,7 +745,8 @@ def main():
             with nullcontext() if worker else owner_binding.access(job.parent, root_identity()):
                 # Snapshot completions before reading; a concurrently arriving turn stays pending.
                 completion = max((end for end, event in event_lines(job)
-                                  if event.get("kind") == "turn_completed"), default=0)
+                                  if event.get("kind") == "turn_completed"
+                                  and event.get("purpose") != "compact"), default=0)
                 print(result_text(job, a.all) if (job / "state.json").exists() else
                       retirement.archived_result(ARCHIVE, f"{job.parent.name}/{job.name}"))
                 sys.stdout.flush()
@@ -710,10 +757,6 @@ def main():
         if a.command in ROOT_COMMANDS or a.command == "compact":
             with owner_binding.guard(job.parent, root_identity()):
                 pass
-        if a.command == "retire":
-            with owner_binding.access(job.parent, root_identity()):
-                print(retirement.retire(job, ARCHIVE, result_text, a.keep_days, a.purge))
-            return
         if a.command in ("restore", "purge"):
             with owner_binding.access(job.parent, root_identity()):
                 print(getattr(retirement, a.command)(job))
@@ -776,17 +819,27 @@ def main():
                 raise RuntimeError("job has an active turn; stop it before compacting")
             module = BACKENDS[state["backend"]]
             switch = {key: getattr(a, key) for key in ("model", "effort") if getattr(a, key, None)}
+            pending_switch = state.get("pendingSwitch")
+            if pending_switch and not switch:
+                raise RuntimeError("a prior compact switch was interrupted; run resume with the requested "
+                                   "--model/--effort and choose --compact or --no-compact")
+            state.pop("pendingSwitch", None)
             key = login.current(state["backend"]) if a.command == "resume" else None
             changed = key is not None and state.get("loginKey") not in (None, key)
             compact, acknowledged = getattr(a, "compact", False), getattr(a, "no_compact", False)
             require_choice(state, switch, compact, acknowledged, changed, a.job)
             if key is not None:
                 state["loginKey"] = key
-            if not getattr(a, "compact", False):  # with --compact the switch waits for the compaction
+            if getattr(a, "compact", False):  # with --compact the switch waits for the compaction
+                if switch:
+                    state["pendingSwitch"] = {"model": switch.get("model"), "effort": switch.get("effort")}
+            else:
                 state.update(switch)
                 if switch:
-                    state.pop("effectiveEffort", None)
-                    state.pop("resolvedModel", None)
+                    if "effort" in switch:
+                        state.pop("effectiveEffort", None)
+                    if "model" in switch:
+                        state.pop("resolvedModel", None)
         else:
             if state_path.exists():
                 raise RuntimeError("job exists; use resume")
@@ -853,6 +906,9 @@ def main():
             a.command == "start" or (a.command == "resume" and bool(a.prompt_file))
         )
         save(state_path, state)
+        if state.get("pendingSwitch"):
+            log(job, "model_switch_pending", level="info",
+                message=f"compacting before switching to {switch_text(state['pendingSwitch'])}")
         if a.command in {"start", "resume"}:
             configured = groups.settings(job.parent, [])["members"].get(job.name)
             group = getattr(a, "group", None) or (configured["group"] if configured else None)
@@ -865,8 +921,17 @@ def main():
             prompt, record_root_prompt = "", False
         if a.command == "resume":
             count = len(list((job / "steer").glob("[0-9]*.md")))
-            print(f"resume: delivering {count} queued steer(s)" if count else
-                  "resume: continuing the same native session", flush=True)
+            if getattr(a, "compact", False):
+                target = switch_text(switch)
+                action = f"switch to {target} and " if target else ""
+                follow_up = (f"deliver {count} queued steer(s)" if count
+                             else "continue the same native session")
+                message = f"resume: compacting on the current model, then {action}{follow_up}"
+            elif count:
+                message = f"resume: delivering {count} queued steer(s)"
+            else:
+                message = "resume: continuing the same native session"
+            print(message, flush=True)
         watching = getattr(a, "watch", None)
         launch_message = (f"delivered by resuming the idle job; watch: agent-bridge watch {a.job}"
                           if a.command == "steer" else str(job))

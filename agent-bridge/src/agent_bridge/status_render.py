@@ -47,11 +47,13 @@ def owners(snapshot):
     for owner in snapshot.owners:
         jobs = [j for j in snapshot.jobs if j.owner == owner.id and not j.retired_at]
         caps = ",".join(f"{j.name}[{job_marks(j)}]" for j in jobs)
+        switches = ",".join(f"{j.name}[{switch_label(j.pending_switch)}]" for j in jobs if j.pending_switch)
         size = human(owner.size_bytes) if owner.size_bytes is not None else "unknown"
         yield (
             f"{owner.id}: jobs={owner.jobs} running={owner.running} "
             f"unanswered_urgent={owner.unanswered_urgent} size={size} "
             f"last_root_command={owner.last_root_command or 'unknown'} caps={caps}"
+            + (f" pending_switches={switches}" if switches else "")
         )
 
 
@@ -117,6 +119,10 @@ def job_marks(job):
 
 def job_status(job):
     text, mark = status_line(job), context_mark(job)
+    if job.pending_switch:
+        target = switch_label(job.pending_switch)
+        text += (f"; compacting before switch to {target}" if job.running
+                 else f"; switch pending after runner stopped: {target}")
     return f"{text} {mark}" if mark else text
 
 
@@ -148,6 +154,13 @@ def status_line(job):
     return text + f" memory={job.memory_cap} cpu={job.cpu_cap}"
 
 
+def switch_label(switch):
+    return ", ".join(filter(None, (
+        f"model={switch.model}" if switch.model else "",
+        f"effort={switch.effort}" if switch.effort else "",
+    )))
+
+
 def notice(job):
     a, name = job.stall, label(job)
     if a.state == "slow":
@@ -157,6 +170,14 @@ def notice(job):
 
 
 def event(job, value):
+    if value.kind == "compacted":
+        return f"{label(job)}: compaction completed"
+    if value.kind == "compact_noop":
+        return f"{label(job)}: compaction was a no-op" + (f" | {value.text[:200]}" if value.text else "")
+    if value.kind == "compaction_turn_completed":
+        return f"{label(job)}: compaction turn completed"
+    if value.kind in {"model_switch_pending", "model_switch_ready"}:
+        return f"{label(job)}: {value.text}"
     return (
         f"{label(job)}: {value.kind}"
         + (f" {value.status}" if value.status else "")

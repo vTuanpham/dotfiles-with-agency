@@ -114,6 +114,20 @@ def test_sandboxed_worker_declares_through_out_and_the_owner_side_reads_it(world
     assert not (job / waiting.DROP).exists()
 
 
+def test_sandboxed_wait_command_does_not_write_host_log(world, monkeypatch, capsys):
+    job = world / "owner/a"
+    (job / "out").mkdir()
+    monkeypatch.setenv(core.WORKER_FLAG, "1")
+    monkeypatch.setenv("AGENT_BRIDGE_JOB", "owner/a")
+    monkeypatch.setattr(sys, "argv", ["agent-bridge", "waiting", "--on", "command", "--for", "20m"])
+    monkeypatch.setattr(core, "state_lock",
+                        lambda _: (_ for _ in ()).throw(OSError(errno.EROFS, "read only")))
+    monkeypatch.setattr(cli, "log", lambda *_: pytest.fail("sandbox cannot write host log"))
+    cli.main()
+    assert "waiting: command" in capsys.readouterr().out
+    assert waiting.declared(job, {})["kind"] == "command"
+
+
 @pytest.mark.parametrize("junk", ["not json", '{"at": "x", "waiting": null}', '{"waiting": {}}', "x" * 5000])
 def test_hostile_drop_is_ignored(world, junk):
     job = world / "owner/a"

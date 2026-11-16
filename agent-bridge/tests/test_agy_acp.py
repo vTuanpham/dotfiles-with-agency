@@ -71,7 +71,10 @@ def test_acp_process_keeps_sandbox_and_explicit_writable_roots(tmp_path, monkeyp
 
 
 @pytest.mark.parametrize("update_settings", [False, True])
-def test_active_prompt_is_steered_and_receipt_confirms_delivery(tmp_path, monkeypatch, update_settings):
+@pytest.mark.parametrize("denied", [False, True])
+def test_active_prompt_is_steered_and_receipt_confirms_delivery(
+    tmp_path, monkeypatch, update_settings, denied
+):
     job = tmp_path / "job"
     (job / "steer").mkdir(parents=True)
     state = {"backend": "agy", "cwd": str(tmp_path), "model": None, "effort": None}
@@ -107,6 +110,13 @@ def test_active_prompt_is_steered_and_receipt_confirms_delivery(tmp_path, monkey
                             {"id": "model", "currentValue": model},
                             {"id": "thought_level", "currentValue": "medium"}]}}})
             if len(calls) == 1:
+                self.output.append({"method": "session/update", "params": {"sessionId": "session",
+                    "update": {"sessionUpdate": "tool_call", "toolCallId": "tool-1",
+                               "title": "Waiting for task-106 to complete."}}})
+                if denied:
+                    self.output.append({"id": "permission-1", "method": "session/request_permission",
+                        "params": {"sessionId": "session", "options": [
+                            {"kind": "reject_once", "optionId": "deny"}]}})
                 (job / "steer/001.md").write_text("change course\n")
                 (job / "steer/002.md").write_text("another adjustment\n")
             else:
@@ -132,6 +142,14 @@ def test_active_prompt_is_steered_and_receipt_confirms_delivery(tmp_path, monkey
     assert events.count("steer_sent") == 2 and events.count("turn_completed") == 1
     assert state["effectiveEffort"] == ("medium" if update_settings else "high")
     assert state["resolvedModel"] == ("changed-model" if update_settings else "native-default")
+    observed = [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()
+                if json.loads(line)["kind"] == "effort_observed"]
+    assert [event["effort"] for event in observed] == (["medium"] * 3 if update_settings else [])
+    rows = [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()]
+    assert [row["status"] for row in rows if row["kind"] == "turn_completed"] == [
+        "denied" if denied else "completed"]
+    assert all("Waiting for" not in row.get("text", "") for row in rows if row["kind"] == "message")
+    assert any(row.get("tool") == "Waiting for task-106 to complete." for row in rows)
 
 
 def test_explicit_queue_waits_for_active_turn(tmp_path, monkeypatch):

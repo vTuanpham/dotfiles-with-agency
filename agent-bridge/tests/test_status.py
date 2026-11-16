@@ -110,6 +110,40 @@ def test_status_distinguishes_runner_from_native_observation(world):
     VALIDATE.validate(json.loads(json.dumps(accepted.to_dict())))
 
 
+@pytest.mark.parametrize("backend", ["codex", "claude", "agy", "opencode"])
+def test_status_displays_pending_compaction_switch_for_jobs_and_owners(world, backend):
+    job_at(world, runnerPid=12, backend=backend, model="old", effort="low",
+           pendingSwitch={"model": "new", "effort": "high"})
+    snapshot = status.Collector().collect()
+    job = snapshot.jobs[0]
+    assert (job.pending_switch.model, job.pending_switch.effort) == ("new", "high")
+    assert "compacting before switch to model=new, effort=high" in status_render.job_status(job)
+    assert "pending_switches=a[model=new, effort=high]" in next(status_render.owners(snapshot))
+    VALIDATE.validate(json.loads(json.dumps(snapshot.to_dict())))
+
+
+def test_compaction_completion_is_informational_not_a_worker_completion(world):
+    job = job_at(world, runnerPid=12)
+    event(job, "compact_started")
+    event(job, "compacted")
+    event(job, "turn_completed", status="completed", purpose="compact")
+
+    snapshot = status.Collector().collect()
+    compact_event = next(e for e in snapshot.events if e.kind == "compaction_turn_completed")
+    assert not compact_event.informational and not compact_event.wakes
+    assert snapshot.wake_events == () and snapshot.unacknowledged_completions == 0
+    assert status_render.event(snapshot.jobs[0], compact_event) == (
+        "a (Check status): compaction turn completed"
+    )
+    assert any(e.kind == "compacted" and e.informational for e in snapshot.events)
+
+    event(job, "turn_started")
+    event(job, "turn_completed", status="completed")
+    completed = status.Collector().collect()
+    assert completed.unacknowledged_completions == 1
+    assert completed.wake_events
+
+
 def test_schema_validates_produced_cli_snapshots_and_additive_fields(world, monkeypatch, capsys):
     job = job_at(world)
     event(job, "turn_completed", status="completed")
@@ -213,6 +247,28 @@ def test_peer_round_trip_graph_previews_counts_and_never_wakes(world, monkeypatc
     assert "a → b: check the decoder" in text and "b → a: reviewed" in text
     assert "watch: wake events" not in text
     VALIDATE.validate(json.loads(json.dumps(snapshot.to_dict())))
+
+
+def test_text_status_keeps_peer_previews_opt_in_and_json_complete(world, monkeypatch, capsys):
+    a = job_at(world)
+    job_at(world, "owner/b")
+    text = "TO b: inspect the worker result"
+    core.log(a, "message", text=text)
+    core.route_to_peers(a, text)
+
+    monkeypatch.setattr(sys, "argv", ["agent-bridge", "status", "--no-quotas"])
+    cli.main()
+    default = capsys.readouterr().out
+    assert "status:" in default and "inspect the worker result" not in default
+
+    monkeypatch.setattr(sys, "argv", ["agent-bridge", "status", "--messages", "--no-quotas"])
+    cli.main()
+    assert "a → b: inspect the worker result" in capsys.readouterr().out
+
+    monkeypatch.setattr(sys, "argv", ["agent-bridge", "status", "--json", "--no-quotas"])
+    cli.main()
+    value = json.loads(capsys.readouterr().out)
+    assert value["peers"]["recent_messages"][0]["preview"] == "inspect the worker result"
 
 
 def test_peer_preview_secret_policy(world, monkeypatch):

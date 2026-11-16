@@ -75,11 +75,11 @@ def brief(data):
             lines.append(f"Unmeasured native IDs: {native['unmeasured_count']} · "
                          + ", ".join(native["unmeasured_ids"]))
     for name, source in data["sources"].items():
-        version = source.get("release", source.get("published",
-                             ", ".join(dict.fromkeys(source.get("metadata", [])))))
+        version = (source.get("release") or source.get("published")
+                   or ", ".join(dict.fromkeys(source.get("metadata", []))))
         if source.get("version"):
-            version = source["version"] + " · " + version
-        lines += ["", f"{name} · {version}"]
+            version = f"{source['version']} · {version}" if version else source["version"]
+        lines += ["", " · ".join(part for part in (name, version) if part)]
         if source["status"] != "ok":
             lines.append("Unavailable: " + source["error"])
             continue

@@ -1,0 +1,27 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1923,5 +1923,5 @@
+     // RTK meta-commands should never fall back to raw execution.
+     // e.g. `rtk gain --badtypo` should show Clap's error, not try to run `gain` from $PATH.
+-    if core::constants::RTK_META_COMMANDS.contains(&args[0].as_str()) {
++    if args[0] == "read" || core::constants::RTK_META_COMMANDS.contains(&args[0].as_str()) {
+         parse_error.exit();
+     }
+--- a/src/cmds/system/summary.rs
++++ b/src/cmds/system/summary.rs
+@@ -3,5 +3,5 @@
+ use crate::core::guard::never_worse;
+-use crate::core::stream::exec_capture_unguarded;
++use crate::core::stream::exec_capture_stdin;
+ use crate::core::tracking;
+ use crate::core::truncate::CAP_WARNINGS;
+ use crate::core::utils::truncate;
+@@ -52,7 +52,7 @@
+     let result = match crate::core::shell::command_from_args(command, shell)
+         .context("Failed to prepare summary command")?
+     {
+-        crate::core::shell::Launch::Ready(mut cmd) => match exec_capture_unguarded(&mut cmd) {
++        crate::core::shell::Launch::Ready(mut cmd) => match exec_capture_stdin(&mut cmd) {
+             Ok(result) => result,
+             Err(error) => {
+                 let error = error.context("Failed to execute command");

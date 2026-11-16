@@ -38,7 +38,7 @@ class DesktopTests(unittest.TestCase):
             "GUARD_EXIT": "0",
             "NATIVE_CALLS": str(self.home / "native.jsonl"),
             "WINDOW_INVENTORY": json.dumps({
-                "version": "2.5", "ok": True, "command": "list-windows",
+                "version": "2.6", "ok": True, "command": "list-windows",
                 "data": [
                     {"id": "w-1", "app_name": "msrdc.exe"},
                     {"id": "w-2", "app_name": "notepad.exe"},
@@ -112,7 +112,7 @@ sys.exit(17)
 
     def test_app_filter_is_delegated_to_native_inventory(self):
         self.env["WINDOW_INVENTORY"] = json.dumps({
-            "version": "2.5", "ok": True, "command": "list-windows",
+            "version": "2.6", "ok": True, "command": "list-windows",
             "data": [{"id": "w-1", "app_name": "C:\\Windows\\MSRDC.EXE"}],
         })
         result = self.launch("resize-window", "--app=MSRDC.EXE", "--width", "800", "--height", "600")
@@ -121,7 +121,7 @@ sys.exit(17)
 
     def test_native_app_selector_with_global_options_preserves_transport(self):
         self.env["WINDOW_INVENTORY"] = json.dumps({
-            "version": "2.5", "ok": True, "command": "list-windows",
+            "version": "2.6", "ok": True, "command": "list-windows",
             "data": [{"id": "w-2", "app_name": "notepad.exe"}],
         })
         args = ["--session=root", "--agent-id", "worker", "--headed", "resize-window",
@@ -145,9 +145,9 @@ sys.exit(17)
     def test_unverified_geometry_targets_fail_closed(self):
         payloads = [
             "not JSON", "[]", '{}',
-            '{"version":"2.5","ok":true,"command":"list-windows","data":null}',
-            '{"version":"2.5","ok":true,"command":"list-windows","data":[{"id":"w-2"}]}',
-            '{"version":"2.5","ok":true,"command":"list-windows","data":{"windows":[]}}',
+            '{"version":"2.6","ok":true,"command":"list-windows","data":null}',
+            '{"version":"2.6","ok":true,"command":"list-windows","data":[{"id":"w-2"}]}',
+            '{"version":"2.6","ok":true,"command":"list-windows","data":{"windows":[]}}',
             '{"version":"future","ok":true,"command":"list-windows","data":[]}',
         ]
         for raw in payloads:
@@ -179,7 +179,7 @@ sys.exit(17)
         batch = json.dumps([{"command": "set-value", "args": {"text": "move-window"}}])
         for args in (["batch", batch], ["--session", "move-window", "status"],
                      ["set-value", "@ref:e1", "resize-window"], ["batch", '[{"command": []}]'],
-                     ["move-window", "--help"], ["batch", "--help"]):
+                     ["move-window", "--help"], ["batch", "--help"], ["mcp", "--help"]):
             with self.subTest(args=args):
                 result = self.launch(*args)
                 self.assertEqual(result.returncode, 17, result.stderr)
@@ -218,6 +218,13 @@ sys.exit(17)
         self.assertEqual(result.returncode, 1)
         self.assertIn("--apply desktop-tools", result.stderr)
 
+    def test_persistent_mcp_cannot_bypass_per_action_guards(self):
+        for args in (("mcp",), ("--session", "test", "mcp")):
+            result = self.launch(*args)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("standalone CLI", result.stderr)
+            self.assertEqual(self.calls(), [])
+
     def test_installer_verifies_downloads_and_preserves_existing_binaries(self):
         self.exe.unlink()
         # Select WSL even on Linux CI; leave all other installer tools real.
@@ -244,7 +251,7 @@ import os, pathlib, shutil, sys
 url = sys.argv[2]
 dest = pathlib.Path(sys.argv[sys.argv.index('-o') + 1])
 if url.endswith('checksums.txt'):
-    dest.write_text(os.environ['FIXTURE_SHA'] + '  agent-desktop-v1.0.2-x86_64-pc-windows-msvc.tar.gz\r\n')
+    dest.write_text(os.environ['FIXTURE_SHA'] + '  agent-desktop-v1.3.1-x86_64-pc-windows-msvc.tar.gz\r\n')
 else:
     shutil.copyfile(os.environ['FIXTURE_ARCHIVE'], dest)
 """,

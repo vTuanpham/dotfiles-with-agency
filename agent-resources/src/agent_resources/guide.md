@@ -18,7 +18,10 @@ the harness's completion notice. A blocking tool call holds back coordinator ste
 until it returns.
 Waiting for a slot is normal, never a blocker or progress message to send. Report
 only a holder shown dead while still blocked or a wait exceeding 30 minutes,
-excluding time paused by root. A root pause is normal; wait for resume.
+excluding time paused by root. A root pause is normal; wait for resume. If a request
+stays at the queue head for five unpaused minutes, no heavy command is running, and
+its need still exceeds live free headroom, it exits with a clear error so a background
+job can report the blocker instead of waiting indefinitely.
 Bridge workers report such blockers to their own root with an ordinary `URGENT:`
 job message. Native `agent-bridge message send` is root-to-root only; the root
 coordinates with another request's root when needed. Workers never relay sibling
@@ -30,6 +33,12 @@ agent-resources run --mem 2500M --exclusive -- ./benchmark
 agent-resources list
 agent-resources list --json --owner claude:SESSION_ID
 ```
+
+Claude Code can ask permission for a wrapped command even in auto mode. A chat
+reply does not answer its permission prompt. For recurring project commands, the
+user can select “Yes, and don't ask again” at that prompt; Claude stores the
+resulting rule in project-local settings. Keep approvals specific to the commands
+the user intends to permit. See [Claude Code settings](https://code.claude.com/docs/en/settings).
 
 ## Root queue controls
 
@@ -150,7 +159,9 @@ floor, and **its new need alone** fits live shared headroom after that floor.
 Running memory is already reflected in `MemAvailable`/`memory.current` and is not
 subtracted again from live free memory. Status shows `heavy_reserved` and the
 capacity-based `heavy_budget`; wait messages also show live `free`. A need larger
-than shared capacity minus the floor is rejected rather than waiting forever.
+than shared capacity minus the floor is rejected immediately. A head request that
+remains larger than live free headroom for five unpaused minutes with no running
+holder exits with an error; temporary pressure may recover during that grace period.
 
 Omitting `--mem` reserves **1 GiB**. It matches the heavy-work threshold and
 avoids charging every unannotated test suite for an entire worker scope. It is a

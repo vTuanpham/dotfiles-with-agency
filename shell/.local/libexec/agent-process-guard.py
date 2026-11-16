@@ -12,7 +12,8 @@ REASON = (
     "Full-command pgrep/pkill matching can select this command's own shell or waiter. "
     "Use the native job/session stop or wait handle; otherwise verify an owned PID "
     "and signal/wait for that PID, or use an exact process-name query such as pgrep -x. "
-    "Do not retry by moving the same pattern into another shell wrapper."
+    "Do not retry by moving the same pattern into another shell wrapper. For waits, "
+    "run the check as a harness background task and wait for its completion notice."
 )
 
 

@@ -91,6 +91,19 @@ def test_stuck_head_explains_memory_fairness_and_requests_behind_it(queue, capsy
 
 
 @pytest.mark.parametrize(
+    "active,position,need,free,waited,expected",
+    [(0, 1, 6 * GIB, 5 * GIB, 300 * 10**9, True),
+     (1, 1, 6 * GIB, 5 * GIB, 300 * 10**9, False),
+     (0, 2, 6 * GIB, 5 * GIB, 300 * 10**9, False),
+     (0, 1, 5 * GIB, 5 * GIB, 300 * 10**9, False),
+     (0, 1, 6 * GIB, 5 * GIB, 299 * 10**9, False)],
+)
+def test_idle_unfit_head_fails_only_after_grace_without_holder(
+        active, position, need, free, waited, expected):
+    assert heavy.idle_unfit_expired(active, position, need, free, waited) is expected
+
+
+@pytest.mark.parametrize(
     "rows,expected",
     [
         ([request("holder", running=True, exclusive=True), request("next")], "exclusive holder is running"),

@@ -46,7 +46,7 @@ def test_compact_waits_for_native_outcome(monkeypatch, tmp_path, outcome):
 
 
 def test_native_settings_require_matching_message_and_session_without_replacing_request(monkeypatch):
-    data = {"id": "msg_assistant", "sessionID": "ses_worker", "type": "assistant", "model": {
+    data = {"id": "msg_assistant", "type": "assistant", "model": {
         "providerID": "opencode", "id": "deepseek-v4.1-flash-free", "variant": "default"}}
     calls = []
     def request(*args):
@@ -54,23 +54,24 @@ def test_native_settings_require_matching_message_and_session_without_replacing_
         return data
     monkeypatch.setattr(opencode, "native_request", request)
     st = {"sessionId": "ses_worker", "model": "opencode/deepseek-v4.1-flash-free"}
-    assert opencode.read_effective_variant(
+    assert opencode.read_settings(
         st, "http://127.0.0.1:1234", "secret", {"messageID": "msg_assistant"}
-    ) == "default"
+    ) == {"resolvedModel": st["model"], "effectiveEffort": "default"}
     assert calls[0][2:] == ("GET", "/api/session/ses_worker/message/msg_assistant")
-    assert st["resolvedModel"] == st["model"]
     inherited = {"sessionId": "ses_worker"}
-    assert opencode.read_effective_variant(
-        inherited, "url", "secret", {"messageID": "msg_assistant"}) == "default"
-    assert inherited["resolvedModel"] == st["model"]
+    assert opencode.read_settings(
+        inherited, "url", "secret", {"messageID": "msg_assistant"}) == {
+            "resolvedModel": st["model"], "effectiveEffort": "default"}
     assert "model" not in inherited
     different = {**st, "model": "other/model"}
-    assert opencode.read_effective_variant(
-        different, "url", "secret", {"messageID": "msg_assistant"}) == "default"
-    assert different["model"] == "other/model" and different["resolvedModel"] == st["model"]
-    assert opencode.read_effective_variant(
+    assert opencode.read_settings(
+        different, "url", "secret", {"messageID": "msg_assistant"}) == {
+            "resolvedModel": st["model"], "effectiveEffort": "default"}
+    assert different["model"] == "other/model"
+    data["sessionID"] = "ses_worker"
+    assert opencode.read_settings(
         {**st, "sessionId": "ses_other"}, "url", "secret", {"messageID": "msg_assistant"}) is None
-    assert opencode.read_effective_variant(st, "url", "secret", {"messageID": "../bad"}) is None
+    assert opencode.read_settings(st, "url", "secret", {"messageID": "../bad"}) is None
 
 
 def test_live_steer_uses_native_prompt_and_confirms_exact_receipt(tmp_path, monkeypatch):
@@ -208,6 +209,7 @@ def test_command_confines_both_modes_and_sets_permissions(monkeypatch, tmp_path)
     monkeypatch.setattr(opencode.Path, "home", lambda: home)
     for key in ("OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "OPENCODE_SERVER_PASSWORD", "OPENCODE_PASSWORD"):
         monkeypatch.setenv(key, "inherited")
+    monkeypatch.setenv("TMPDIR", "/outside/writable-roots")
     cmd, env = opencode.command(st, job, "prompt", resume=True)
     assert cmd[0] == "bwrap" and "--ro-bind" in cmd and "--dev" in cmd and "--proc" in cmd
     assert "--bind" in cmd and str(tmp_path) in cmd
@@ -223,6 +225,7 @@ def test_command_confines_both_modes_and_sets_permissions(monkeypatch, tmp_path)
     assert env["XDG_DATA_HOME"] == str(private / "data")
     assert env["XDG_STATE_HOME"] == str(private / "state")
     assert env["XDG_CACHE_HOME"] == str(private / "cache")
+    assert env["TMPDIR"] == "/tmp"
     assert (private / "data/opencode/auth.json").read_text() == '{"key":"secret"}'
     assert (private / "data/opencode/auth.json").stat().st_mode & 0o777 == 0o600
     assert (private / "cache/opencode/models.json").read_text() == "{}"
@@ -477,12 +480,28 @@ def test_running_turn_uses_native_variant_once(monkeypatch, tmp_path):
     end = b'{"type":"step_finish","sessionID":"ses_worker","part":{"reason":"stop"}}\n'
     fake_turns(monkeypatch, [announcement + event + event, end, b""], [0])
     calls = []
-    monkeypatch.setattr(opencode, "read_effective_variant", lambda *args: calls.append(args) or "default")
+    monkeypatch.setattr(opencode, "read_settings", lambda *args: calls.append(args) or {
+        "resolvedModel": "opencode/native-model", "effectiveEffort": "default"})
     monkeypatch.setattr(opencode, "steer_live", lambda *args, **kwargs: None)
     st = {**state(tmp_path), "effectiveEffort": "stale"}
     opencode.run(tmp_path, st, tmp_path / "state.json", "initial prompt")
     assert st["effectiveEffort"] == "default"
     assert len(calls) == 1
+
+
+def test_native_settings_retry_when_assistant_history_arrives_after_stream(monkeypatch, tmp_path):
+    announcement = b'{"bridge_server":"http://127.0.0.1:1234"}\n'
+    event = b'{"type":"step_start","sessionID":"ses_worker","part":{"messageID":"msg_assistant"}}\n'
+    end = b'{"type":"step_finish","sessionID":"ses_worker","part":{"reason":"stop"}}\n'
+    fake_turns(monkeypatch, [announcement + event, event + event, end, b""], [0])
+    results = iter([None, {"resolvedModel": "opencode/native-model", "effectiveEffort": "high"}])
+    monkeypatch.setattr(opencode, "read_settings", lambda *args: next(results))
+    monkeypatch.setattr(opencode, "steer_live", lambda *args, **kwargs: None)
+    st = state(tmp_path)
+    opencode.run(tmp_path, st, tmp_path / "state.json", "initial prompt")
+    assert (st["resolvedModel"], st["effectiveEffort"]) == ("opencode/native-model", "high")
+    events = [json.loads(line) for line in (tmp_path / "live.jsonl").read_text().splitlines()]
+    assert [event["effort"] for event in events if event["kind"] == "effort_observed"] == ["high"]
 
 
 def test_denied_call_is_reported_and_worker_continues(monkeypatch, tmp_path):

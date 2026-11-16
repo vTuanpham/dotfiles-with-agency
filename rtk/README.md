@@ -33,6 +33,13 @@ other commands. Reserve bypass for byte-exact protocols or demonstrated filter
 breakage. Full file/instruction reads use `rtk read --level none`; bound ordinary
 reads and recover elided details before resorting to raw output.
 
+### Read windows
+
+Use either `--head-lines` or `--tail-lines` per `rtk read` call. RTK 1.1.0 and
+1.2.0 reject both together with a misleading missing-file error; the local patch
+below restores the argument-usage error. For both ends,
+read once and slice the returned lines in the tool orchestrator.
+
 ### Pipelines, chains and substitutions
 
 RTK's display output is for the agent, not input to another program. Keep native
@@ -70,7 +77,7 @@ quoting from `awk 'NR>=80'`, leaving a `>=80` redirect and a stray `=80` file.
 Prefer a read tool for line ranges; recover omitted output with `rtk recall` or
 a focused read. Shell quoting alone is not a reason to bypass filtering.
 
-### Local summary fix (RTK 1.1.0)
+### Local fixes (RTK 1.1.0)
 
 [summary-results.patch](patches/summary-results.patch) applies to the official
 [v1.1.0 source](https://github.com/rtk-ai/rtk/tree/v1.1.0). It identifies test
@@ -78,22 +85,23 @@ results from runner records, preserves their reported counts, and retains failed
 test output. A jq `test(...)` expression, a `test_*.py` filename, or a passing
 test title containing "failed" no longer creates a test result or failure.
 The same fix removes build-summary guesses based on command arguments or filenames.
-The patch carries RTK's [Apache-2.0 license](patches/LICENSE).
+The patches carry RTK's [Apache-2.0 license](patches/LICENSE).
+
+[command-boundaries.patch](patches/command-boundaries.patch) passes stdin to a
+command wrapped by `summary` and keeps invalid `read` arguments in RTK's parser
+instead of trying to launch an external `read` program. Exit status is preserved.
 
 Apply it with `patch -p1 < /path/to/dotfiles-with-agency/rtk/patches/summary-results.patch`
-in a clean RTK v1.1.0 checkout. Build its normal release with Rust 1.91 or later:
+in a clean RTK v1.1.0 checkout, then apply `command-boundaries.patch` the same way.
+Build its normal release with Rust 1.91 or later:
 `cargo build --locked --release --bin rtk -j 2`, through host resource admission.
 Validate with the built binary first on PATH using this repository's filter
 checks below, then replace the user-local binary. Snapshot installation does not
 manage that binary; rerun these checks after an RTK upgrade.
 
-### Remaining `rtk summary` limit (RTK 1.1.0)
-
-`summary` is a heuristic display filter. Its stdin behavior remains upstream:
-
-- **It does not pass stdin to the command it wraps.** `printf x | rtk summary python3 -c 'import sys; print(len(sys.stdin.read()))'`
-  prints 0, with exit status 0 (reproduced). Wrapping the whole pipeline (`rtk summary bash -o pipefail -c '… | …'`) prints 1.
-  So the final-consumer rule above applies to the hook's rewrite of supported stages, not to a hand-written `summary` tail.
+When `rtk test` reports only failed test names and counts, use its `rtk recall HASH`
+hint to retrieve the full output. If it gives no usable hint, rerun once
+with `rtk summary <command>`; its failed-test path preserves the original output.
 
 ## Learning and filter patterns
 

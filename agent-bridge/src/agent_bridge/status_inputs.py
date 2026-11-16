@@ -8,7 +8,7 @@ from datetime import datetime
 from agent_accounts import providers
 from agent_resources import resources
 
-from .acknowledgements import INFORMATIONAL_ONLY_KINDS, event_lines, urgent
+from .acknowledgements import INFORMATIONAL_ONLY_KINDS, compact_completion, event_lines, urgent
 from .core import command_env, load_state, tree_size
 from .status_model import MESSAGE_PREVIEW_LIMIT, Event, TidyItem
 
@@ -60,6 +60,7 @@ class EventLog:
             "stepId",
             "tool",
             "noticeId",
+            "purpose",
         }
         for end, raw in event_lines(job, self.offset):
             self.offset = end
@@ -75,6 +76,8 @@ class EventLog:
                 for key in ("tool_use_id", "itemId", "stepId", "tool", "noticeId"):
                     if raw.get(key) is not None and (not isinstance(raw[key], str) or len(raw[key]) > 512):
                         raise ValueError("invalid tool identity")
+                if raw.get("purpose") is not None and raw["purpose"] != "compact":
+                    raise ValueError("invalid turn purpose")
                 for key in ("file", "requestId"):
                     if raw.get(key) is not None and (
                         type(raw[key]) is not str or len(raw[key]) > 512
@@ -92,11 +95,12 @@ class EventLog:
                 ):
                     raise ValueError("invalid message preview")
                 text = raw.get("text") or raw.get("question") or raw.get("message") or ""
+                compacted_turn = compact_completion(raw)
                 event = Event(
                     f"{self.job_id}:{self.identity}:{end}",
                     self.job_id,
                     end,
-                    raw["kind"],
+                    "compaction_turn_completed" if compacted_turn else raw["kind"],
                     at,
                     text,
                     raw.get("status") or "",
@@ -115,6 +119,15 @@ def read_job(job, root):
             or not path.resolve().is_relative_to(root.resolve()) or path.stat().st_size > 1048576):
         raise ValueError("unsafe or oversized job state")
     state = load_state(job)
+    pending_switch = state.get("pendingSwitch")
+    if pending_switch is not None and (
+        type(pending_switch) is not dict or set(pending_switch) != {"model", "effort"}
+        or not any(value is not None for value in pending_switch.values())
+        or any(value is not None and (
+            type(value) is not str or not value or len(value) > 4096 or any(ord(c) < 32 for c in value)
+        ) for value in pending_switch.values())
+    ):
+        raise ValueError("invalid pending model switch")
     for key in (
         "backend",
         "title",
@@ -184,7 +197,8 @@ def read_job(job, root):
 
 
 def unanswered(job, evs):
-    turns = [i for i, e in enumerate(evs) if e.get("kind") == "turn_completed"]
+    turns = [i for i, e in enumerate(evs)
+             if e.get("kind") == "turn_completed" and e.get("purpose") != "compact"]
     start, end = (turns[-2] if len(turns) > 1 else -1), (turns[-1] if turns else len(evs) - 1)
     if list((job / "steer").glob("[0-9]*.md")):
         return 0

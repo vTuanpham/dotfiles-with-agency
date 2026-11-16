@@ -247,6 +247,7 @@ def test_compact_resumes_session_and_reports_boundary_or_noop(monkeypatch, tmp_p
     assert (tmp_path / "steer/001.md").read_text() == "follow up"
     logged = [json.loads(line) for line in (tmp_path / "live.jsonl").read_text().splitlines()]
     assert sum(event["kind"] == "compact_started" for event in logged) == 1
+    assert next(event for event in logged if event["kind"] == "turn_completed")["purpose"] == "compact"
     compacted = [event for event in logged if event["kind"] == "compacted"]
     output = capsys.readouterr().out
     if boundary:
