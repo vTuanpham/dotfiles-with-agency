@@ -255,8 +255,9 @@ def row_lines(model, domains, backends=None, *, summary_limit=2):
                          if summaries else "Task outcomes not measured."))
     speed_points = []
     for key, reverse in (
-        ("median_time_to_first_token_seconds", False),
-        ("median_output_tokens_per_second", True),
+        ("time_to_first_token_seconds", False),
+        ("time_to_first_answer_token_seconds", False),
+        ("output_tokens_per_second", True),
     ):
         known = [
             f
@@ -272,13 +273,15 @@ def row_lines(model, domains, backends=None, *, summary_limit=2):
     measured_levels = [level for level in levels if any(
         f.get("effort") == level and f.get("speed") and any(
             (f["speed"].get(key) or 0) > 0 for key in (
-                "median_time_to_first_token_seconds", "median_output_tokens_per_second"))
+                "time_to_first_token_seconds", "time_to_first_answer_token_seconds",
+                "output_tokens_per_second"))
         for f in model["evidence"])]
     if len(measured_levels) > 2:
         middle = measured_levels[(len(measured_levels) - 1) // 2]
         fact = next(f for f in model["evidence"] if f.get("effort") == middle and f.get("speed")
                     and any((f["speed"].get(key) or 0) > 0 for key in (
-                        "median_time_to_first_token_seconds", "median_output_tokens_per_second")))
+                        "time_to_first_token_seconds", "time_to_first_answer_token_seconds",
+                        "output_tokens_per_second")))
         if fact not in speed_points:
             speed_points.append(fact)
     speed_points.sort(key=lambda fact: levels.index(fact.get("effort"))
@@ -287,16 +290,20 @@ def row_lines(model, domains, backends=None, *, summary_limit=2):
         summaries = []
         for fact in speed_points:
             values = {
-                k: v for k, v in fact["speed"].items() if k.startswith("median_") and v is not None and v > 0
+                **fact["speed"],
+                **{k: v if v is not None and v > 0 else None for k, v in fact["speed"].items()
+                   if k in ("output_tokens_per_second", "time_to_first_token_seconds",
+                            "time_to_first_answer_token_seconds")},
             }
             speed = fact["speed"]
             workload = speed.get("workload") or {}
             scope = ["provider " + str(speed.get("provider") or "unknown")]
             if isinstance(workload, dict):
-                scope.extend(f"{key}={workload[key]}" for key in ("prompt_length", "parallel_queries")
+                scope.extend(f"{key}={workload[key]}" for key in (
+                    "prompt_length", "parallel_queries", "mix", "window")
                              if workload.get(key) is not None)
             summaries.append(
-                (fact["effort"] or "effort ?") + ": " + speed_brief(values).removeprefix("legacy median ")
+                (fact["effort"] or "effort ?") + ": " + speed_brief(values)
                 + " [" + ", ".join(scope) + "]"
             )
         lines.append("  Source speed: " + "; ".join(summaries))

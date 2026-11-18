@@ -19,22 +19,7 @@ def scopes(pids):
 
 def memory(pids):
     """RSS is only a fallback when a job has no readable scope; shared pages can count twice."""
-    total = 0
-    for pid in pids:
-        try:
-            rows = (resources.PROC / str(pid) / "status").read_text().splitlines()
-            values = [line.split()[1:] for line in rows if line.startswith("VmRSS:")]
-            if not values:  # a process exited between tree and RSS reads
-                continue
-            if len(values) != 1 or len(values[0]) != 2 or values[0][1] != "kB":
-                return None
-            value = int(values[0][0])
-            if value < 0:
-                return None
-            total += value * 1024
-        except (OSError, ValueError):
-            return None
-    return total
+    return resources.resident_memory(pids)
 
 
 def scope_memory(path):

@@ -31,10 +31,12 @@ def digest(value):
 def rows(url, raw):
     """Hash meaning, not markup, row order, signed links or generation timestamps."""
     text = raw.decode("utf-8")
-    if url == artificial.API:
+    if (number := artificial.api_page(url)) is not None:
         value = benchmarks.loads(text)
         artificial.decode(value)
-        return sorted(value["data"], key=lambda r: r["id"])
+        return {"data": sorted(value["data"], key=lambda r: r["id"]),
+                "pagination": artificial.pagination(value, number),
+                "intelligence_index_version": value["intelligence_index_version"]}
     if url == specialists.BUG:
         reader = csv.DictReader(io.StringIO(text))
         result = list(reader)
@@ -116,6 +118,10 @@ def endpoints(snapshot):
         if name == "Artificial Analysis":
             # Website terms prohibit scraping; the manual page adapter is retained.
             result[name] = [artificial.API] if os.environ.get(artificial.KEY) else []
+            raw = source.get("raw", {})
+            if result[name] and "pagination" in raw:
+                result[name] += [f"{artificial.API}?page={n}" for n in range(
+                    2, artificial.pagination(raw, 1)["total_pages"] + 1)]
         elif name == "LiveBench":
             result[name] = [benchmarks.LIVE]
             if source.get("release"):
@@ -153,7 +159,14 @@ def baseline(source, url):
             return digest(sorted(source["cost_rows"], key=lambda r: r["model"]))
     if type(raw) is not dict:
         return None
-    if url == specialists.KERNEL:
+    if (number := artificial.api_page(url)) is not None:
+        if "pagination" not in raw:
+            return None
+        page = artificial.pagination(raw, 1)
+        size = page["page_size"]
+        value = {**raw, "data": raw["data"][(number - 1) * size:number * size],
+                 "pagination": {**page, "page": number, "has_more": number < page["total_pages"]}}
+    elif url == specialists.KERNEL:
         value = raw.get("index", raw)
     elif url == kernel_source.CATALOG:
         value = raw.get("catalog")
@@ -183,7 +196,8 @@ def baseline(source, url):
 
 def request(url, validators):
     headers = {"User-Agent": "model-guide/0.1", **validators}
-    if url == artificial.API:
+    is_aa = artificial.api_page(url) is not None
+    if is_aa:
         headers["x-api-key"] = os.environ[artificial.KEY]
     try:
         with urlopen(Request(url, headers=headers), timeout=25) as response:
@@ -192,12 +206,12 @@ def request(url, validators):
                 raise ValueError("source exceeds size limit")
             if 'rel="next"' in response.headers.get("Link", ""):
                 raise ValueError("paginated probe requires source review")
-            if url == artificial.API and os.environ[artificial.KEY].encode() in raw:
+            if is_aa and os.environ[artificial.KEY].encode() in raw:
                 raise ValueError("Artificial Analysis response refused")
-            if url == artificial.API and any(os.environ[artificial.KEY] in response.headers.get(h, "")
+            if is_aa and any(os.environ[artificial.KEY] in response.headers.get(h, "")
                                             for h in ("ETag", "Last-Modified")):
                 raise ValueError("Artificial Analysis validator refused")
-            if url == artificial.API and response.url != artificial.API:
+            if is_aa and response.url != url:
                 raise ValueError("Artificial Analysis API redirect refused")
             return response.status, dict(response.headers.items()), raw
     except HTTPError as error:
@@ -338,6 +352,9 @@ def check(snapshot, *, now=None):
                 elif status == 200:
                     value = rows(url, raw)
                     item = {"digest": digest(value)}
+                    if url == artificial.API:
+                        urls[1:] = [f"{artificial.API}?page={n}" for n in range(
+                            2, value["pagination"]["total_pages"] + 1)]
                     if type(value) is dict and "exports" in value:
                         urls.extend(boards.VALS + path for path in value["exports"])
                         item["exports"] = value["exports"]

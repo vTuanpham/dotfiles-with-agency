@@ -6,7 +6,7 @@ import signal
 import sys
 import time
 
-from . import heavy
+from . import heavy, resources
 from .identity import identity, native_attribution
 
 TERM_GRACE = 5
@@ -68,6 +68,8 @@ def listing(json_output=False, owner=None):
             state = "running" if row["running"] else "queued"
             if row["control"]["cancelled"]:
                 state = "cancelling"
+            visible = owner is None or row.get("owner") == owner
+            rss = holder_memory(path, row) if row["running"] and visible else None
             elapsed = (now - row["started_ns"] if row["running"] else heavy.waited_ns(row, paused, now))
             label = "elapsed" if row["running"] else "wait"
             detail = ""
@@ -105,6 +107,7 @@ def listing(json_output=False, owner=None):
                         "state": state,
                         "running": row["running"],
                         "need_bytes": row["need"],
+                        "rss_bytes": rss,
                         "exclusive": row["exclusive"],
                         "wait_seconds": max(0, elapsed) // 10**9 if state == "queued" else None,
                         "elapsed_seconds": max(0, elapsed) // 10**9 if state == "running" else None,
@@ -117,6 +120,8 @@ def listing(json_output=False, owner=None):
                         "waiting_behind": waiting_behind,
                     })
             else:
+                if row["running"]:
+                    detail += f" rss={rss / heavy.MIB:g}MiB" if rss is not None else " rss=unavailable"
                 print(f"{request_id(path)} {row['job'] or '-'} {row['command']} "
                       f"{row['need'] / heavy.MIB:g}MiB {'yes' if row['exclusive'] else 'no'} "
                       f"{state} {label}={max(0, elapsed) // 10**9}s yes(kernel-lock){detail}")
@@ -203,6 +208,24 @@ def group_members(pgid, only_pid=None):
         except (OSError, ValueError, IndexError):
             continue
     return members
+
+
+def holder_memory(path, row):
+    """Attribute RSS only to a verified holder and a stable process-group snapshot."""
+    try:
+        namespace = os.readlink(heavy.PROC / "self/ns/pid")
+        pid = row.get("pid") if row.get("namespace") == namespace else row.get("host_pid")
+        if type(pid) is not int or pid < 1 or not process_has_request(pid, path):
+            return None
+        grouped = row["control"]["group"]
+        members = group_members(pid) if grouped else group_members(None, only_pid=pid)
+        if pid not in members:
+            return None
+        value = resources.resident_memory(members)
+        current = group_members(pid) if grouped else group_members(None, only_pid=pid)
+        return value if current == members and process_has_request(pid, path) else None
+    except (OSError, ValueError):
+        return None
 
 
 def cancel(target):

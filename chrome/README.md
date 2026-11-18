@@ -37,7 +37,24 @@ Authentication and account consent remain per profile.
 
 Claude Code's Chrome integration is [documented as unsupported in WSL](https://code.claude.com/docs/en/chrome).
 The Claude extension can still install and sign in; that alone does not establish
-a Claude Code connection. Check `/chrome` in Claude Code before relying on it.
+a Claude Code connection. Use the connection preflight below before relying on it.
+
+## Claude connection preflight
+
+Loaded Chrome tools or a connected MCP server do not establish a live browser
+connection. Call `tabs_context_mcp` with `createIfEmpty: false` first. A successful
+"No MCP tab groups found" response leaves the browser unchanged; it does not
+verify page control. Verify an actual page read when the task needs one.
+
+If it reports "Browser extension is not connected", check that normal Chrome is
+open in the intended profile with the extension enabled. Chrome being closed is
+one documented cause; also check that the extension and CLI use the same Claude
+account and organization (`/status`). Run `/chrome` → Reconnect extension and
+retry the context call. A headless browser with extensions disabled does not
+satisfy these conditions. See [Anthropic's connection troubleshooting](https://code.claude.com/docs/en/chrome#common-error-messages).
+
+For an isolated local app check, use that project's maintained headless test
+workflow when available; it verifies the app, not this extension connection.
 
 ## ChatGPT from WSL: gap and local compatibility patch
 
@@ -146,6 +163,8 @@ change approval policies or bring over the computer-control service.
 Check the selected browser instance when both Windows and Linux Chrome are open.
 
 ## Visible agent tabs
+
+Claude Code sessions first use the [connection preflight](#claude-connection-preflight).
 
 Retain control while useful to ongoing work or a pending handoff; otherwise
 release this task's resources, preserving user content and needed results.

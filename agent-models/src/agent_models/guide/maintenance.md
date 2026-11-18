@@ -24,11 +24,18 @@ until explicit apply/discard/replacement. AA uses the official
 keyed API via ARTIFICIAL_ANALYSIS_API_KEY (optional service EnvironmentFile);
 without a key its automatic poll is disabled under the website terms. Manual
 refresh retains the public-page adapter. Keys never enter reports or snapshots.
+The keyed free-model schema supplies paginated index scores, weighted evaluation
+USD per task and v3 headline speed. Retain nullable values, cost units and speed
+methodology; first-token latency is not task duration. Old median observations
+keep their original scope. `sources.md` links the current OpenAPI contract and limits.
 `model-guide refresh --force` fetches the snapshot and replaces only the
 delimited numeric sections in a pending models.md proposal. No agent is launched,
 no prose or subscription facts are reviewed, and nothing auto-applies.
 Manual force also honours server backoff. `benchmarks --coverage --backend BACKEND --brief`
 shows export/configuration/harness gaps and unmatched current-family names.
+Failed refreshes retain a previously valid source with its original retrieval
+date and an explicit failed-check notice. A first-time failure remains unavailable.
+Cached measurements are usable evidence, not confirmation of the current source.
 
 Read report.md for digests/methodology notes; models.md contains bounded decision views.
 Inspect source failures, release identities, retrieval dates, settings and frontier scope.

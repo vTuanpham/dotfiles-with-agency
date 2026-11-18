@@ -151,7 +151,7 @@ def test_inventory_failure_explains_comparison_is_incomplete():
 
 def test_missing_speed_does_not_become_fast_or_zero_and_fallback_is_visible():
     item = option("a", 20, 0, 0)
-    item["evidence"][0]["speed"] = {"median_output_tokens_per_second": 0}
+    item["evidence"][0]["speed"] = {"output_tokens_per_second": 0}
     rendered = comparison.render(result([item], task_routing={"note": "Overall evidence shown."}))
     assert "Overall evidence shown." in rendered and "/ source $0" in rendered
     assert "Source speed:" not in rendered and "0s" not in rendered
@@ -205,19 +205,19 @@ def test_excluded_explicit_choice_is_retained_as_input_but_not_a_comparison_opti
 def test_speed_points_keep_effort_throughput_and_latency_together():
     item = option("a", 40, 4, 200)
     item["evidence"][0]["speed"] = {
-        "median_output_tokens_per_second": 100,
-        "median_time_to_first_token_seconds": 40,
+        "output_tokens_per_second": 100,
+        "time_to_first_token_seconds": 40,
     }
     item["evidence"].append(
         {
             **item["evidence"][0],
             "effort": "low",
-            "speed": {"median_output_tokens_per_second": 10, "median_time_to_first_token_seconds": 2},
+            "speed": {"output_tokens_per_second": 10, "time_to_first_token_seconds": 2},
         }
     )
     text = comparison.render(result([item]))
-    assert "low: 10 tokens/s, 2 s TTFT" in text
-    assert "high: 100 tokens/s, 40 s TTFT" in text
+    assert "low: legacy median 10 tokens/s, 2 s TTFT" in text
+    assert "high: legacy median 100 tokens/s, 40 s TTFT" in text
 
 
 def test_speed_comparison_includes_measured_middle_effort_between_extremes():
@@ -225,13 +225,25 @@ def test_speed_comparison_includes_measured_middle_effort_between_extremes():
     item["efforts"] = ["low", "medium", "high", "max"]
     item["evidence"] = [
         {**item["evidence"][0], "effort": effort, "speed": {
-            "median_output_tokens_per_second": tps, "median_time_to_first_token_seconds": ttft}}
+            "output_tokens_per_second": tps, "time_to_first_token_seconds": ttft}}
         for effort, tps, ttft in (("low", 50, 1), ("medium", 80, 3), ("high", 90, 10), ("max", 100, 60))
     ]
     text = comparison.render(result([item]))
-    assert "low: 50 tokens/s, 1 s TTFT" in text
-    assert "medium: 80 tokens/s, 3 s TTFT" in text
-    assert "max: 100 tokens/s, 60 s TTFT" in text
+    assert "low: legacy median 50 tokens/s, 1 s TTFT" in text
+    assert "medium: legacy median 80 tokens/s, 3 s TTFT" in text
+    assert "max: legacy median 100 tokens/s, 60 s TTFT" in text
+
+
+def test_current_speed_comparison_names_its_method_and_separates_first_answer_latency():
+    item = option("a", 40, 0.591)
+    item["evidence"][0].update(cost_basis="USD/index task", speed={
+        "output_tokens_per_second": 50.81, "time_to_first_token_seconds": 26.29,
+        "time_to_first_answer_token_seconds": 40, "methodology_version": "v3",
+        "workload": {"mix": "single-request and multi-turn", "window": "trailing 5 days"}})
+    text = comparison.render(result([item]))
+    assert "v3 headline mean 50.81 tokens/s, 26.29 s TTFT, 40 s first answer" in text
+    assert "USD/index task" in text and "trailing 5 days" in text
+    assert "legacy" not in text
 
 
 def test_cost_floor_is_labelled_and_does_not_become_a_cheapest_candidate():

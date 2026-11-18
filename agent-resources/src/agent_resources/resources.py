@@ -13,6 +13,26 @@ PROC = Path("/proc")
 CGROUP = Path("/sys/fs/cgroup")
 
 
+def resident_memory(pids):
+    """Sum process RSS; shared pages can count twice and this is not a peak."""
+    total = 0
+    for pid in pids:
+        try:
+            rows = (PROC / str(pid) / "status").read_text().splitlines()
+            values = [line.split()[1:] for line in rows if line.startswith("VmRSS:")]
+            if not values:
+                continue
+            if len(values) != 1 or len(values[0]) != 2 or values[0][1] != "kB":
+                return None
+            value = int(values[0][0])
+            if value < 0:
+                return None
+            total += value * 1024
+        except (OSError, ValueError):
+            return None
+    return total
+
+
 def slice_name():
     value = os.environ.get("AGENT_RESOURCES_SLICE", "agent.slice")
     if not re.fullmatch(r"[A-Za-z0-9_-]+\.slice", value):

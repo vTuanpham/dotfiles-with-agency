@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
 
+from agent_models import artificial
 from agent_models.benchmarks import number, snapshot
 
 
@@ -23,7 +24,20 @@ def main():
     if source["status"] != "ok":
         raise ValueError("Artificial Analysis snapshot unavailable")
     points = []
-    for table in source["tables"]:
+    latency = "Response time"
+    if "measurements" in source:
+        source = artificial.with_observations(source)
+        latency = "First-token latency"
+        for row in source["measurements"]:
+            match = re.fullmatch(re.escape(args.model) + r" \(([\w-]+)\)", row["model"])
+            if (not match or row["metric"] != "artificial_analysis_intelligence_index"
+                    or row["score"] is None or row["cost"] is None):
+                continue
+            current = row.get("speed", {})
+            first_token = (current.get("time_to_first_token_seconds")
+                           if current.get("methodology_version") == "v3" else None)
+            points.append((match[1], row["score"], row["cost"], first_token))
+    for table in source.get("tables", []):
         header = next((r for r in table if "Cost per Task USD" in r), None)
         if header is None:
             continue
@@ -55,12 +69,15 @@ def main():
 
     def y(value):
         return bottom - (value - y_min) / (y_max - y_min) * (bottom - 136)
-    retrieved = datetime.fromisoformat(data["retrieved"]).astimezone(UTC).strftime("%d %b %Y %H:%M UTC")
-    version = ", ".join(source["metadata"])
+    retrieved = datetime.fromisoformat(source.get("retrieved", data["retrieved"])).astimezone(UTC).strftime(
+        "%d %b %Y %H:%M UTC")
+    version = ("Index " + str(source["raw"]["intelligence_index_version"])
+               if source.get("raw", {}).get("intelligence_index_version") is not None
+               else ", ".join(source["metadata"]))
     parts = [(f'<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="{height}" '
               f'viewBox="0 0 1040 {height}" role="img" aria-labelledby="title desc">'),
              f'<title id="title">{escape(args.model)} measured effort curve</title>',
-             ('<desc id="desc">Observed index against API USD per task; response time is '
+             (f'<desc id="desc">Observed index against evaluation USD per task; {latency.lower()} is '
               'not agent task duration. Source and retrieval time are recorded on the figure.</desc>'),
              f'<rect width="1040" height="{height}" fill="#faf9f6"/>',
              '<g font-family="Arial, Helvetica, sans-serif" fill="#263733">']
@@ -79,10 +96,12 @@ def main():
     text(86, 126, "Index ↑", 12, "#68766f")
     for i in range(round(x_max / tick) + 1):
         text(x(i * tick), bottom + 24, f"${i * tick:g}", 12, "#68766f", "middle")
-    text(390, bottom + 49, "API USD per task →", 12, "#68766f", "middle")
+    text(390, bottom + 49, "Index evaluation USD per task →", 12, "#68766f", "middle")
     path = "M" + "L".join(f"{x(p[2]):g} {y(p[1]):g}" for p in points)
     parts.append(f'<path d="{path}" stroke="#8cae9c" stroke-width="1.8" fill="none"/>')
-    text(761, 151, "Measured response", 16, extra='font-weight="700"')
+    text(761, 151, latency, 16, extra='font-weight="700"')
+    if latency == "First-token latency":
+        text(761, 171, "v3 headline mean", 12, "#68766f")
     for i, (effort, score, cost, response) in enumerate(points):
         color = "#a35e43" if i == len(points) - 1 else "#23786f"
         parts.append(f'<circle cx="{x(cost):g}" cy="{y(score):g}" r="6" fill="{color}"/>')
@@ -91,7 +110,7 @@ def main():
         text(1003, 193 + i * 38, f"{response:g} s" if response is not None else "unknown", 16,
              color, "end")
     parts.append(f'<path d="M733 136V{height - 82}" stroke="#d3d8d1"/>')
-    text(761, height - 50, "Response time ≠ agent task duration", 12, "#68766f")
+    text(761, height - 50, "Not agent task duration", 12, "#68766f")
     text(36, height - 17, source["url"], 11, "#68766f")
     parts.append('</g>\n</svg>\n')
     args.output.write_text("\n".join(parts))

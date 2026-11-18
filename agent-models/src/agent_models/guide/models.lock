@@ -1,7 +1,7 @@
-refreshed 2026-11-12
-guide models.md 2f3ad2345dee352ec65896203d60d56bd751125e5caf10b138fb5a184398abf7
+refreshed 2026-11-18
+guide models.md eee475f470a26a3991c791a9f9bd79273dacaf4633eee57628429a495a6faa1c
 guide subscriptions.md aa5e0d2c6234f783bad69428ffe1c74f48b420313b42a3052d27eea400fcbadf
-evidence 3e0513885af7bd98baebb78fed3b1276670153b4d094674469b85ea9a087481c
+evidence 57a497999fde2fd9e74700f8c98025a25e660725c1a46e2fa0e5aa658382b116
 agy claude-opus-4-6-thinking
 agy claude-sonnet-4-6
 agy gemini-3.8-flash-high
@@ -30,6 +30,8 @@ codex gpt-6-luna
 codex gpt-6-sol
 codex gpt-6.1-sol
 codex gpt-6.1-terra
+codex gpt-6.2-astra
+codex gpt-6.2-sol
 opencode opencode-go/beam-free
 opencode opencode-go/claude-haiku-5-5
 opencode opencode-go/deepseek-v4-pro
@@ -43,6 +45,7 @@ opencode opencode-go/gpt-6-luna
 opencode opencode-go/grok-4.7
 opencode opencode-go/hy3
 opencode opencode-go/hy4
+opencode opencode-go/hy4-flash-free
 opencode opencode-go/hy4-preview
 opencode opencode-go/iceman-contributor-free
 opencode opencode-go/kimi-k2.7-code
@@ -61,16 +64,17 @@ opencode opencode-go/muse-spark-1.3-contributor
 opencode opencode-go/qwen3.7-plus
 opencode opencode-go/qwen3.8-flash
 opencode opencode-go/qwen3.8-max
+opencode opencode-go/qwen4-max
 opencode opencode-go/step-5-preview
 opencode opencode/beam-free
 opencode opencode/big-pickle
 opencode opencode/deepseek-v4.1-flash-free
 opencode opencode/flint-40b-free
 opencode opencode/glm-5.3-flash-free
+opencode opencode/hy4-flash-free
 opencode opencode/iceman-free
 opencode opencode/inkling-2-small-free
 opencode opencode/longcat-2.5-free
 opencode opencode/mimo-v2.6-flash-free
-opencode opencode/minimax-m3.1-flash-free
 opencode opencode/nemotron-3.5-lightning-free
 opencode opencode/nemotron-3.5-super-vl-free

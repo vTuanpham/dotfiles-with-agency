@@ -169,6 +169,17 @@ default estimate, not a measured peak: declare larger needs for model/data work.
 Memory sizes use positive bytes or K/M/G/T binary units, including exact fractions
 such as `1.5G`. This declaration neither allocates memory nor changes cgroup caps.
 
+Size repeat runs from representative peak measurements, not a copied brief's
+blanket estimate. `list` shows current command-group RSS beside each running
+reservation (`rss_bytes` in JSON); shared pages may count twice, and missing or
+changing process identity leaves it unavailable. Current RSS does not establish
+the peak, so admission retains the declaration. For a completed measurement,
+`/usr/bin/time -v COMMAND ...` reports maximum per-process RSS including waited
+children, not simultaneous process-tree memory; use a dedicated cgroup's
+`memory.peak` for parallel workloads. Keep the measurement output with the run
+and leave headroom for the next workload. Small I/O or short numeric scripts
+run directly unless their measured size or sustained CPU use warrants admission.
+
 The oldest fitting request normally goes first. If the head does not fit, the
 first smaller request that fits may backfill. After the head has waited **five
 minutes**, no more jobs may backfill until it can start. Already-running jobs

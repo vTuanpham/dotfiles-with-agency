@@ -236,14 +236,15 @@ def test_invalid_retained_speed_source_is_isolated_without_losing_native_candida
     assert result["sources"]["debugging/Artificial Analysis"]["status"] == "unavailable"
 
 
-def test_speed_keeps_raw_zero_scope_and_all_efforts_without_inventing_task_duration(setup):
+@pytest.mark.parametrize("method", ["legacy unknown", "v3"])
+def test_speed_keeps_raw_zero_scope_and_all_efforts_without_inventing_task_duration(setup, method):
     data, catalog = setup
     data["sources"]["Artificial Analysis"] = {"status": "ok", "version": "legacy", "measurements": [
         measured("gpt-6-luna", level, cost=None, seconds=None, harness=None,
             metric="artificial_analysis_intelligence_index", model_metadata={"release_date": "2026-09-23"},
-            speed={"median_output_tokens_per_second": tps, "median_time_to_first_token_seconds": ttft,
+            speed={"output_tokens_per_second": tps, "time_to_first_token_seconds": ttft,
                    "provider": provider, "workload": {"prompt_length": 1000},
-                   "methodology_version": "legacy unknown"})
+                   "methodology_version": method})
         for level, tps, ttft, provider in (("low", 0, 0, None), ("medium", 100, 1, "provider-a"),
                                           ("high", 120, 90, "provider-b"))]}
     result = selection.suggest(found(catalog), catalog)
@@ -254,6 +255,8 @@ def test_speed_keeps_raw_zero_scope_and_all_efforts_without_inventing_task_durat
     assert {r["speed"]["provider"] for r in rows} == {None, "provider-a", "provider-b"}
     text = selection.brief(result)
     assert "reported 0; validity unknown" in text and "120 tokens/s, 90 s TTFT" in text
+    assert ("v3 headline mean" in text) == (method == "v3")
+    assert ("legacy median" in text) == (method != "v3")
     assert rows[0]["model_metadata"]["release_date"] == "2026-09-23"
 
 

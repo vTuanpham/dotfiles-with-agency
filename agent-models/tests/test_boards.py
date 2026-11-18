@@ -95,20 +95,21 @@ def test_legacy_aa_speed_keeps_metric_workload_and_unknown_provider_without_inve
            "data": [aa_record("Claude Opus 5.5 (Max)", "claude-opus-5-5")]}
     rows = artificial.decode(raw)
     speed = rows[0]["speed"]
-    assert speed["median_output_tokens_per_second"] == 100
-    assert speed["median_time_to_first_token_seconds"] == 1
+    assert speed["output_tokens_per_second"] == 100
+    assert speed["time_to_first_token_seconds"] == 1
     assert speed["provider"] is None and "legacy" in speed["methodology_version"]
     assert speed["workload"] == {"prompt_length": 1000, "parallel_queries": 1}
     assert rows[0]["seconds"] is None and rows[0]["effort"] == "max"
     cached = {"raw": raw, "measurements": [{k: v for k, v in r.items() if k != "speed"} for r in rows]}
     before = copy.deepcopy(cached)
-    assert artificial.with_speed(cached)["measurements"][0]["speed"] == speed
-    assert artificial.with_speed(cached)["measurements"][0]["model_metadata"]["release_date"] == "2026-09-23"
+    assert artificial.with_observations(cached)["measurements"][0]["speed"] == speed
+    recovered = artificial.with_observations(cached)["measurements"][0]
+    assert recovered["model_metadata"]["release_date"] == "2026-09-23"
     assert rows[0]["date"] is None  # Model release is not the benchmark run date.
     assert cached == before
     raw["data"][0].update(median_output_tokens_per_second=None, median_time_to_first_token_seconds=None)
     unknown = artificial.decode(raw)[0]
-    assert unknown["speed"]["median_output_tokens_per_second"] is None and unknown["seconds"] is None
+    assert unknown["speed"]["output_tokens_per_second"] is None and unknown["seconds"] is None
 
 
 @pytest.mark.parametrize("value", [True, -1, "100", float("nan")])
@@ -128,7 +129,7 @@ def test_cached_legacy_speed_uses_the_same_identity_and_status_validation(corrup
     else:
         raw["status"] = 200.0
     with pytest.raises(ValueError):
-        artificial.with_speed(source)
+        artificial.with_observations(source)
 
 
 def free_record(name, slug, index=58.4):
@@ -147,20 +148,95 @@ def test_free_endpoint_shape_nests_speed_skips_unmeasured_indexes_and_names_the_
     rows = artificial.decode(raw)
     assert len(rows) == 1 and rows[0]["effort"] == "max"  # null is no result; the creator needs no slug
     speed = rows[0]["speed"]
-    assert speed["median_output_tokens_per_second"] == 100
-    assert speed["median_time_to_first_token_seconds"] == 1
+    assert speed["output_tokens_per_second"] == 100
+    assert speed["time_to_first_token_seconds"] == 1
     assert "long" in speed["workload"]["prompt_length"]
     assert rows[0]["model_metadata"]["release_date"] == "2026-09-23"
     with pytest.raises(ValueError):
         artificial.decode({"data": raw["data"]})  # neither a tier nor a legacy status
 
 
+def test_current_aa_cost_and_speed_follow_the_free_schema_without_inventing_task_duration():
+    row = free_record("Example (High)", "example")
+    row.update(model_creator=None, performance_v3={
+        "mean_output_tokens_per_second": 50.81, "mean_time_to_first_token_seconds": 26.29,
+        "mean_time_to_first_answer_token_seconds": 40},
+        artificial_analysis_intelligence_index_cost={
+            "total_cost": 1500, "cost_per_task": {"total_cost": 0.591}})
+    raw = {"tier": "free", "data": [row]}
+    fact, = artificial.decode(raw)
+    assert fact["cost"] == 0.591 and fact["cost_basis"] == "USD/index task"
+    assert fact["cost_kind"] == "published" and fact["seconds"] is None
+    assert fact["speed"]["output_tokens_per_second"] == 50.81
+    assert fact["speed"]["time_to_first_token_seconds"] == 26.29
+    assert fact["speed"]["time_to_first_answer_token_seconds"] == 40
+    assert fact["speed"]["methodology_version"] == "v3"
+    cached = {"raw": raw, "measurements": [{**fact, "cost": None, "speed": None}]}
+    before = copy.deepcopy(cached)
+    assert artificial.with_observations(cached)["measurements"] == [fact]
+    assert cached == before
+
+
+def test_current_nulls_do_not_fall_back_to_legacy_speed_or_token_prices():
+    row = free_record("Example (High)", "example")
+    row.update(performance_v3=None, artificial_analysis_intelligence_index_cost={
+        "total_cost": 1500, "cost_per_task": None})
+    fact, = artificial.decode({"tier": "free", "data": [row]})
+    assert fact["cost"] is None and fact["cost_basis"] is None
+    assert fact["speed"]["output_tokens_per_second"] is None and fact["seconds"] is None
+    row["artificial_analysis_intelligence_index_cost"] = None
+    assert artificial.decode({"tier": "free", "data": [row]})[0]["cost"] is None
+
+
+@pytest.mark.parametrize("value", [True, -1, "100", float("nan")])
+@pytest.mark.parametrize("field", ["cost", "speed"])
+def test_current_aa_observations_reject_invalid_numbers(value, field):
+    row = free_record("Example (High)", "example")
+    if field == "cost":
+        row["artificial_analysis_intelligence_index_cost"] = {
+            "total_cost": 1, "cost_per_task": {"total_cost": value}}
+    else:
+        row["performance_v3"] = {"mean_output_tokens_per_second": value,
+                                 "mean_time_to_first_token_seconds": None,
+                                 "mean_time_to_first_answer_token_seconds": None}
+    with pytest.raises(ValueError):
+        artificial.decode({"tier": "free", "data": [row]})
+
+
+def test_current_aa_rejects_truncated_v3_and_null_nonnullable_costs():
+    row = free_record("Example (High)", "example")
+    row["performance_v3"] = {"mean_output_tokens_per_second": 100}
+    with pytest.raises(KeyError):
+        artificial.decode({"tier": "free", "data": [row]})
+    row["performance_v3"] = None
+    row["artificial_analysis_intelligence_index_cost"] = {"total_cost": None, "cost_per_task": None}
+    with pytest.raises(ValueError, match="total cost"):
+        artificial.decode({"tier": "free", "data": [row]})
+    row["artificial_analysis_intelligence_index_cost"] = {
+        "total_cost": 1, "cost_per_task": {"total_cost": None}}
+    with pytest.raises(ValueError, match="per-task cost"):
+        artificial.decode({"tier": "free", "data": [row]})
+
+
+@pytest.mark.parametrize("change", [{"page": True}, {"page": 2}, {"page_size": 0},
+                                   {"total_pages": -1}, {"has_more": "false"}, {"has_more": True}])
+def test_aa_load_rejects_invalid_or_incomplete_pagination(monkeypatch, change):
+    page = {"tier": "free", "pagination": {
+        "page": 1, "page_size": 200, "total_pages": 1, "has_more": False} | change,
+        "data": [free_record("Example (High)", "example")]}
+    monkeypatch.setenv(artificial.KEY, "fake-sensitive-value")
+    monkeypatch.setattr(artificial.benchmarks, "fetch_bytes", lambda *a: json.dumps(page).encode())
+    with pytest.raises(ValueError, match="request or schema failed"):
+        artificial.load()
+
+
 def test_aa_load_reads_every_page_of_the_free_endpoint_without_leaking_the_key(monkeypatch):
     pages = {artificial.API: {"tier": "free", "intelligence_index_version": 5,
-                              "pagination": {"page": 1, "total_pages": 2, "has_more": True},
+                              "pagination": {"page": 1, "page_size": 200, "total_pages": 2, "has_more": True},
                               "data": [free_record("Alpha (High)", "alpha")]},
              artificial.API + "?page=2": {"tier": "free", "intelligence_index_version": 5,
-                                          "pagination": {"page": 2, "total_pages": 2, "has_more": False},
+                                          "pagination": {"page": 2, "page_size": 200,
+                                                         "total_pages": 2, "has_more": False},
                                           "data": [free_record("Beta (High)", "beta", index=40)]}}
     seen = []
 

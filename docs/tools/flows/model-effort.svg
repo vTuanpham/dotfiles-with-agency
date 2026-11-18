@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="460" viewBox="0 0 1040 460" role="img" aria-labelledby="title desc">
 <title id="title">GPT-6.1 Sol measured effort curve</title>
-<desc id="desc">Observed index against API USD per task; response time is not agent task duration. Source and retrieval time are recorded on the figure.</desc>
+<desc id="desc">Observed index against evaluation USD per task; first-token latency is not agent task duration. Source and retrieval time are recorded on the figure.</desc>
 <rect width="1040" height="460" fill="#faf9f6"/>
 <g font-family="Arial, Helvetica, sans-serif" fill="#263733">
 <text x="36" y="38" font-size="11" fill="#68766f" text-anchor="start" letter-spacing="2">MEASURED EFFORT CURVE · GPT-6.1 Sol</text>
 <text x="36" y="78" font-size="30" fill="#263733" text-anchor="start" font-family="Georgia, serif">Measured effort, quality and cost.</text>
-<text x="36" y="105" font-size="12" fill="#68766f" text-anchor="start" >Artificial Analysis · Intelligence Index v5.0 · retrieved 30 Oct 2026 13:39 UTC</text>
+<text x="36" y="105" font-size="12" fill="#68766f" text-anchor="start" >Artificial Analysis · Index 5 · retrieved 18 Nov 2026 04:07 UTC</text>
 <path d="M86 368H696" stroke="#e2e5df"/>
 <text x="65" y="372" font-size="12" fill="#68766f" text-anchor="end" >30</text>
 <path d="M86 290.667H696" stroke="#e2e5df"/>
@@ -20,31 +20,32 @@
 <text x="289.333" y="392" font-size="12" fill="#68766f" text-anchor="middle" >$0.5</text>
 <text x="492.667" y="392" font-size="12" fill="#68766f" text-anchor="middle" >$1</text>
 <text x="696" y="392" font-size="12" fill="#68766f" text-anchor="middle" >$1.5</text>
-<text x="390" y="417" font-size="12" fill="#68766f" text-anchor="middle" >API USD per task →</text>
-<path d="M151.067 329.333L232.4 244.267L325.933 213.333L395.067 197.867L602.467 174.667" stroke="#8cae9c" stroke-width="1.8" fill="none"/>
-<text x="761" y="151" font-size="16" fill="#263733" text-anchor="start" font-weight="700">Measured response</text>
-<circle cx="151.067" cy="329.333" r="6" fill="#23786f"/>
-<text x="151.067" y="354.333" font-size="13" fill="#23786f" text-anchor="middle" >low</text>
-<text x="761" y="193" font-size="14" fill="#263733" text-anchor="start" >low</text>
-<text x="1003" y="193" font-size="16" fill="#23786f" text-anchor="end" >10.62 s</text>
-<circle cx="232.4" cy="244.267" r="6" fill="#23786f"/>
-<text x="232.4" y="227.267" font-size="13" fill="#23786f" text-anchor="middle" >medium</text>
-<text x="761" y="231" font-size="14" fill="#263733" text-anchor="start" >medium</text>
-<text x="1003" y="231" font-size="16" fill="#23786f" text-anchor="end" >13.99 s</text>
-<circle cx="325.933" cy="213.333" r="6" fill="#23786f"/>
-<text x="325.933" y="238.333" font-size="13" fill="#23786f" text-anchor="middle" >high</text>
-<text x="761" y="269" font-size="14" fill="#263733" text-anchor="start" >high</text>
-<text x="1003" y="269" font-size="16" fill="#23786f" text-anchor="end" >44.28 s</text>
-<circle cx="395.067" cy="197.867" r="6" fill="#23786f"/>
-<text x="395.067" y="180.867" font-size="13" fill="#23786f" text-anchor="middle" >xhigh</text>
-<text x="761" y="307" font-size="14" fill="#263733" text-anchor="start" >xhigh</text>
-<text x="1003" y="307" font-size="16" fill="#23786f" text-anchor="end" >123.34 s</text>
-<circle cx="602.467" cy="174.667" r="6" fill="#a35e43"/>
-<text x="602.467" y="199.667" font-size="13" fill="#a35e43" text-anchor="middle" >max</text>
-<text x="761" y="345" font-size="14" fill="#263733" text-anchor="start" >max</text>
-<text x="1003" y="345" font-size="16" fill="#a35e43" text-anchor="end" >283.09 s</text>
+<text x="390" y="417" font-size="12" fill="#68766f" text-anchor="middle" >Index evaluation USD per task →</text>
+<path d="M151.677 330.88L232.156 241.947L326.34 211.013L396.693 194L603.321 177.76" stroke="#8cae9c" stroke-width="1.8" fill="none"/>
+<text x="761" y="151" font-size="16" fill="#263733" text-anchor="start" font-weight="700">First-token latency</text>
+<text x="761" y="171" font-size="12" fill="#68766f" text-anchor="start" >v3 headline mean</text>
+<circle cx="151.677" cy="330.88" r="6" fill="#23786f"/>
+<text x="151.677" y="355.88" font-size="13" fill="#23786f" text-anchor="middle" >Low</text>
+<text x="761" y="193" font-size="14" fill="#263733" text-anchor="start" >Low</text>
+<text x="1003" y="193" font-size="16" fill="#23786f" text-anchor="end" >2.99 s</text>
+<circle cx="232.156" cy="241.947" r="6" fill="#23786f"/>
+<text x="232.156" y="224.947" font-size="13" fill="#23786f" text-anchor="middle" >Medium</text>
+<text x="761" y="231" font-size="14" fill="#263733" text-anchor="start" >Medium</text>
+<text x="1003" y="231" font-size="16" fill="#23786f" text-anchor="end" >4.8 s</text>
+<circle cx="326.34" cy="211.013" r="6" fill="#23786f"/>
+<text x="326.34" y="236.013" font-size="13" fill="#23786f" text-anchor="middle" >High</text>
+<text x="761" y="269" font-size="14" fill="#263733" text-anchor="start" >High</text>
+<text x="1003" y="269" font-size="16" fill="#23786f" text-anchor="end" >26.29 s</text>
+<circle cx="396.693" cy="194" r="6" fill="#23786f"/>
+<text x="396.693" y="177" font-size="13" fill="#23786f" text-anchor="middle" >Xhigh</text>
+<text x="761" y="307" font-size="14" fill="#263733" text-anchor="start" >Xhigh</text>
+<text x="1003" y="307" font-size="16" fill="#23786f" text-anchor="end" >59.68 s</text>
+<circle cx="603.321" cy="177.76" r="6" fill="#a35e43"/>
+<text x="603.321" y="202.76" font-size="13" fill="#a35e43" text-anchor="middle" >Max</text>
+<text x="761" y="345" font-size="14" fill="#263733" text-anchor="start" >Max</text>
+<text x="1003" y="345" font-size="16" fill="#a35e43" text-anchor="end" >145.15 s</text>
 <path d="M733 136V378" stroke="#d3d8d1"/>
-<text x="761" y="410" font-size="12" fill="#68766f" text-anchor="start" >Response time ≠ agent task duration</text>
-<text x="36" y="443" font-size="11" fill="#68766f" text-anchor="start" >https://artificialanalysis.ai/leaderboards/models</text>
+<text x="761" y="410" font-size="12" fill="#68766f" text-anchor="start" >Not agent task duration</text>
+<text x="36" y="443" font-size="11" fill="#68766f" text-anchor="start" >https://artificialanalysis.ai/</text>
 </g>
 </svg>

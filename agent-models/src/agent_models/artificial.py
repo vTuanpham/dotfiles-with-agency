@@ -15,8 +15,42 @@ KEY = "ARTIFICIAL_ANALYSIS_API_KEY"
 MAX_PAGES = 10
 
 
+def api_page(url):
+    if url == API:
+        return 1
+    if url.startswith(API + "?page="):
+        value = url.removeprefix(API + "?page=")
+        if not value.isdecimal() or not 1 <= int(value) <= MAX_PAGES:
+            raise ValueError("invalid Artificial Analysis page URL")
+        return int(value)
+    return None
+
+
+def pagination(page, number):
+    value = specialists.obj(page["pagination"])
+    if (any(type(value[k]) is not int or value[k] < 1 for k in ("page", "page_size", "total_pages"))
+            or value["page"] != number or not number <= value["total_pages"] <= MAX_PAGES
+            or type(value["has_more"]) is not bool
+            or value["has_more"] != (number < value["total_pages"])):
+        raise ValueError("invalid Artificial Analysis pagination")
+    return value
+
+
 def speed(row, options):
-    """Legacy median fields; do not relabel them with newer v3 mean/TTFT semantics."""
+    """Keep current headline means separate from retained legacy median observations."""
+    if "performance_v3" in row:
+        figures = None if row["performance_v3"] is None else specialists.obj(row["performance_v3"])
+        return {key: specialists.numeric(figures["mean_" + key]) if figures is not None else None for key in (
+                    "output_tokens_per_second", "time_to_first_token_seconds",
+                    "time_to_first_answer_token_seconds")} | {
+            "provider": None, "statistic": "headline mean", "methodology_version": "v3",
+            "workload": {"mix": "single-request and multi-turn", "window": "trailing 5 days"},
+            "source": API,
+            "scope": "AA performance-endpoint means, or the median of endpoint means; "
+                     "end-to-end output speed includes reasoning and first-token time. "
+                     "Provider identity, exact workloads and window end are not in the free response. "
+                     "First-token and first-answer-token latency are separate; neither is task duration.",
+        }
     prompt = options.get("prompt_length", "medium (documented default: 1k input tokens)")
     if type(prompt) is str:
         specialists.text(prompt)
@@ -27,27 +61,49 @@ def speed(row, options):
         specialists.count(parallel)
     # the current endpoint nests the medians under "performance"; the removed one put them on the model
     figures = row["performance"] if type(row.get("performance")) is dict else row
-    return {"median_output_tokens_per_second": specialists.numeric(
+    return {"output_tokens_per_second": specialists.numeric(
                 figures.get("median_output_tokens_per_second")),
-            "median_time_to_first_token_seconds": specialists.numeric(
+            "time_to_first_token_seconds": specialists.numeric(
                 figures.get("median_time_to_first_token_seconds")),
-            "provider": None, "methodology_version": "Unverified (legacy free API)",
+            "time_to_first_answer_token_seconds": specialists.numeric(
+                figures.get("median_time_to_first_answer_token_seconds")),
+            "provider": None, "statistic": "median", "methodology_version": "Unverified (legacy free API)",
             "workload": {"prompt_length": prompt, "parallel_queries": parallel}, "source": API,
             "scope": "Legacy API median speed; serving endpoint, TTFT/reasoning inclusion and "
                      "task completion time unverified. TTFT is not first-answer-token latency."}
 
 
-def with_speed(source):
+def with_observations(source):
     """Recover already-retained raw fields in memory; no fetch or snapshot mutation."""
     raw = source.get("raw")
-    if type(raw) is not dict or "status" not in raw:
+    if type(raw) is not dict or "data" not in raw:
         return source
-    retained = {identifier: {"speed": speed(row, options), "model_metadata": model_metadata(row)}
+    retained = {identifier: index_facts(row, options)
                 for row, identifier, options in records(raw)}
     return {**source, "measurements": [
         {**row, **retained[row["source_id"]]} if row.get("source_id") in retained
         and row["metric"] == "artificial_analysis_intelligence_index" else row
         for row in source.get("measurements", [])]}
+
+
+def index_facts(row, options):
+    cost = None
+    block = row.get("artificial_analysis_intelligence_index_cost")
+    if block is not None:
+        block = specialists.obj(block)
+        if specialists.numeric(block["total_cost"]) is None:
+            raise ValueError("AA evaluation total cost must be a number")
+        per_task = block["cost_per_task"]
+        if per_task is not None:
+            cost = specialists.numeric(specialists.obj(per_task)["total_cost"])
+            if cost is None:
+                raise ValueError("AA weighted per-task cost must be a number")
+    return {"speed": speed(row, options), "model_metadata": model_metadata(row),
+            "cost": cost, "cost_kind": "published" if cost is not None else None,
+            "cost_basis": "USD/index task" if cost is not None else None,
+            "caveat": "AA weighted index-evaluation cost, when published; not native route spend or "
+                      "subscription use. Run date, harness and complete index method version are "
+                      "unverified. Native effort is known only when explicitly named."}
 
 
 def model_metadata(row):
@@ -85,16 +141,16 @@ def decode(raw):
         match = coverage.RUN_SETTING.search(label)
         configuration = match[1].partition(", ")[2] if match and ", " in match[1] else (
             "with fallback" if match and "with fallback" in match[1].casefold() else None)
-        metadata = model_metadata(row)
         specialists.text(row["slug"])
-        creator = specialists.obj(row["model_creator"])
-        for field in ("id", "name"):  # the free tier's creator has no slug
-            specialists.text(creator[field])
+        if row["model_creator"] is not None:
+            creator = specialists.obj(row["model_creator"])
+            for field in ("id", "name"):  # the free tier's creator has no slug
+                specialists.text(creator[field])
         evaluations = specialists.obj(row["evaluations"])
         # API token prices are not a task-cost estimate or subscription allowance.
         for value in specialists.obj(row["pricing"]).values():
             specialists.numeric(value)
-        performance = speed(row, options)
+        facts = index_facts(row, options)
         for metric, value in evaluations.items():
             score = specialists.numeric(value)
             if score is None:  # null is "not measured", not a result
@@ -107,8 +163,7 @@ def decode(raw):
                 "not published by this endpoint. Native effort verified only when named explicitly.",
                 configuration=configuration, source_id=identifier))
             if metric == "artificial_analysis_intelligence_index":
-                measurement["speed"] = performance
-                measurement["model_metadata"] = metadata
+                measurement.update(facts)
             result.append(measurement)
     return result
 
@@ -127,8 +182,13 @@ def load():
                 raise ValueError("Artificial Analysis response refused")
             digest.update(raw)
             page = benchmarks.loads(raw.decode("utf-8"))
+            if pages and (page["tier"] != pages[0]["tier"]
+                          or page["intelligence_index_version"] != pages[0]["intelligence_index_version"]
+                          or any(page["pagination"][k] != pages[0]["pagination"][k]
+                                 for k in ("page_size", "total_pages"))):
+                raise ValueError("Artificial Analysis pages changed during capture")
             pages.append(page)
-            if not specialists.obj(page.get("pagination", {})).get("has_more"):
+            if not pagination(page, number)["has_more"]:
                 break
         else:
             raise ValueError("Artificial Analysis page limit exceeded")
@@ -145,7 +205,7 @@ def load():
             "measurements": rows, "sha256": digest.hexdigest(),
             "limits": "Attribution: Artificial Analysis (https://artificialanalysis.ai/). "
                       "Free API coverage differs from the website/commercial API; effort/configuration "
-                      "coverage is not guaranteed. Token pricing is not task cost. No coding-agent "
-                      "scaffold or per-effort task-cost curve is supplied by the documented endpoint.",
+                      "coverage is not guaranteed. Published weighted index-task cost is separate from "
+                      "token pricing and native subscription use. Native harness and run dates are unknown.",
             "coverage": {"available_rows": len(data["data"]), "captured_rows": len(data["data"]),
                          "harness_captured": "not published"}}

@@ -125,6 +125,46 @@ def test_aa_missing_key_keeps_manual_adapter_and_skips_scheduled_website(monkeyp
     assert polling.endpoints({"sources": {"Artificial Analysis": {}}})["Artificial Analysis"] == []
 
 
+def test_aa_poll_checks_every_page_detects_later_changes_and_handles_resize(setup, monkeypatch):
+    monkeypatch.setenv(artificial.KEY, "fake-sensitive-value")
+    monkeypatch.setattr(polling, "endpoints", lambda _: {"Artificial Analysis": [artificial.API]})
+    record = {"id": "a", "slug": "a", "name": "Example (High)", "model_creator": None,
+              "evaluations": {"artificial_analysis_intelligence_index": 50}, "pricing": {},
+              "performance_v3": None}
+    first = {"tier": "free", "intelligence_index_version": 5,
+             "pagination": {"page": 1, "page_size": 1, "total_pages": 2, "has_more": True},
+             "data": [record]}
+    second = {**first, "pagination": {**first["pagination"], "page": 2, "has_more": False},
+              "data": [{**record, "id": "b", "slug": "b"}]}
+    pages = {artificial.API: first, artificial.API + "?page=2": second}
+    snapshot = {"sources": {"Artificial Analysis": {"status": "ok", "raw": {
+        **first, "data": first["data"] + second["data"]}}}}
+    setup.side_effect = lambda url, validators: (200, {}, json.dumps(pages[url]).encode())
+    assert polling.check(snapshot, now=NOW)[0] == []
+    assert [call.args[0] for call in setup.call_args_list] == list(pages)
+    second["data"][0]["evaluations"] = {"artificial_analysis_intelligence_index": 51}
+    names, fetched, _ = polling.check(snapshot, now=NOW + polling.INTERVAL)
+    assert names == ["Artificial Analysis"] and set(fetched) == set(pages)
+    polling.accept(names)
+    setup.reset_mock()
+    first["pagination"] = {**first["pagination"], "total_pages": 1, "has_more": False}
+    assert polling.check(snapshot, now=NOW + 2 * polling.INTERVAL)[0] == ["Artificial Analysis"]
+    assert setup.call_count == 1  # Removed pages are not probed after the first-page update.
+
+
+def test_aa_poll_later_page_failure_does_not_accept_a_partial_update(setup, monkeypatch):
+    monkeypatch.setenv(artificial.KEY, "fake-sensitive-value")
+    monkeypatch.setattr(polling, "endpoints", lambda _: {"Artificial Analysis": [artificial.API]})
+    first = {"tier": "free", "intelligence_index_version": 5,
+             "pagination": {"page": 1, "page_size": 1, "total_pages": 2, "has_more": True},
+             "data": [{"id": "a", "slug": "a", "name": "Example", "model_creator": None,
+                       "evaluations": {"artificial_analysis_intelligence_index": 50}, "pricing": {}}]}
+    setup.side_effect = [(200, {}, json.dumps(first).encode()), (503, {}, b"")]
+    names, _, messages = polling.check({"sources": {"Artificial Analysis": {}}}, now=NOW)
+    assert names == [] and "HTTP 503" in messages[0]
+    assert polling.load()["sources"]["Artificial Analysis"]["failures"] == 1
+
+
 def test_vals_new_build_path_with_identical_rows_does_not_regenerate(setup, monkeypatch):
     page = "https://www.vals.ai/benchmarks/example"
     before = "https://www.vals.ai/_astro/benchmark_view_example.aaa.json"
@@ -278,7 +318,10 @@ def test_pending_observation_failures_preserve_proposal_and_honest_unknowns(
         assert (benchmarks.CACHE / "benchmark-data.json").read_text() == before
         assert polling.load()["sources"]["LiveBench"]["failures"] == 1
     else:
-        assert benchmarks.snapshot()["sources"]["LiveBench"]["status"] == "unavailable"
+        source = benchmarks.snapshot()["sources"]["LiveBench"]
+        assert source["status"] == "ok" and "malformed source" in source["refresh_error"]
+        assert source["retrieved"] == "2026-01-01T00:00:00Z"
+        assert source["points"]["Coding"][0]["score"] == 1
         assert polling.load()["sources"]["LiveBench"]["refresh_needed"]
 
 

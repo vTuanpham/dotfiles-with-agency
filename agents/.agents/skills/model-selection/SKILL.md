@@ -1,6 +1,6 @@
 ---
 name: model-selection
-description: Choose a model, harness and effort using task context, native access, account constraints and current model evidence. Use for model comparisons or task-to-model selection.
+description: Choose a model, harness and effort before delegating, switching models or comparing candidates, using the actual task, native access, allowance and current evidence.
 ---
 
 # Model selection
@@ -14,18 +14,22 @@ or require a maintained per-model role table.
    competing work, required tools/modalities and existing session context. Use
    what is already known; distinguish constraints from assumptions. Continuing
    in the current session is an option when delegation adds no value.
-2. For general model lookup use `model-guide suggest` or `--query MODEL`.
-   When task-specific evidence would change the choice, add `--task "TASK"`;
-   it suggests a focus and retains other evidence in `--json` and `--choice`.
-   Check its fit; use `--domain AREA` only to limit the evidence when needed.
-   It compares harnesses by default; `--backend` restricts one.
-   Supply known constraints and task/session facts
+2. For a model decision, start with `model-guide suggest --task "ACTUAL JOB"`.
+   Describe the work, verification and material constraints, not a model name or
+   just "coding". The tool infers evidence areas; review their fit. No domain or
+   backend is needed unless the work is already restricted to one. A name-only
+   query filters candidates before comparison; it is for lookups or drilling
+   into an identified candidate, not an unrestricted task decision.
+   Supply known access limits and task/session facts
    with `--context PATH|-` JSON; `suggest --help` owns the format. The context is
-   per request, not a file the user must maintain. Native worker controls and
+   per request, not a file the user must maintain. Encode hard access limits in
+   `allowed_backends`, `allowed_routes` and `allowed_efforts`; prose records
+   considerations and does not filter access. Native worker controls and
    selected-session access outrank a general catalog or cached account hint.
 3. Use the compact comparison, which includes different access pools and
-   observed quality/cost/time tradeoffs, then inspect `--choice ROUTE` when exact
-   settings matter. Compare the relevant model/effort combinations and routes. Weigh likely
+   observed quality/cost/time tradeoffs. Use `--query MODEL` with the same task
+   and context for a focused follow-up; `--choice ROUTE` preserves an explicit
+   user/project selection. Compare model/effort combinations and routes. Weigh likely
    usefulness against allowance, completion time, verification and rework.
    Read the reported reset windows, shared pools and model-specific limits;
    follow local policy drill-downs when plan conditions could change the choice.

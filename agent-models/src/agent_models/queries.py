@@ -121,6 +121,10 @@ def search(domains, query="", limit=5, catalog=None, *, now=None, include_effort
             found["warnings"].append(
                 f"Excluded {found['unsupported_effort_count']} measurements at unsupported native efforts.")
         for name, source in found["sources"].items():
+            if source.get("refresh_error"):
+                found["warnings"].append(
+                    f"{name}: refresh failed ({source['refresh_attempted']}); "
+                    f"using cached observation from {source['retrieved']}. {source['refresh_error']}")
             if source.get("coverage_gap"):
                 found["warnings"].append(name + ": " + source["coverage_gap"])
             if source.get("retrieved") and age(source["retrieved"], now) > reference.MAX_AGE_DAYS:

@@ -135,6 +135,9 @@ def test_records_native_effective_effort_without_changing_requested(
     monkeypatch.setattr(codex, "runner_started", lambda *_: None)
     monkeypatch.setattr(codex, "runner_finished", lambda *_: None)
     codex.run(job, state, path, "prompt", resume=resume)
+    setup_method = "thread/resume" if resume else "thread/start"
+    setup = next(params for method, params in rpc.calls if method == setup_method)
+    assert setup["developerInstructions"] == core.MESSAGING_RULE
     assert state["effectiveEffort"] == expected
     assert state["effort"] == requested
     assert json.loads(path.read_text())["effectiveEffort"] == expected

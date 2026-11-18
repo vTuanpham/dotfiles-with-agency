@@ -166,7 +166,8 @@ def poll():
         return 0
     benchmarks.prepare(benchmarks.CACHE, names=names, previous=previous, fetched=fetched)
     updated = benchmarks.snapshot()
-    polling.accept([name for name in names if updated["sources"][name]["status"] == "ok"])
+    polling.accept([name for name in names if updated["sources"][name]["status"] == "ok"
+                    and not updated["sources"][name].get("refresh_error")])
     return run(snapshot=updated)
 
 
@@ -191,7 +192,9 @@ def run(force=False, *, names=None, previous=None, fetched=None, snapshot=None):
                                   json.dumps(snapshot, indent=2, allow_nan=False) + "\n")
         (work / "benchmark-report.md").write_text((benchmarks.CACHE / "benchmark-report.md").read_text())
     elif names is None:
-        benchmarks.prepare(work)
+        if previous is None and (benchmarks.CACHE / "benchmark-data.json").is_file():
+            previous = benchmarks.snapshot()
+        benchmarks.prepare(work, previous=previous)
     else:
         benchmarks.prepare(work, names=names, previous=previous, fetched=fetched)
     snapshot = benchmarks.loads((work / "benchmark-data.json").read_text())

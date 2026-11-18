@@ -221,7 +221,8 @@ def facets(options):
 
 
 def important_notes(result):
-    markers = ("unavailable", "stale", "absent", "vision measures", "browser/osworld", "bounds apply")
+    markers = ("unavailable", "stale", "absent", "refresh failed", "vision measures",
+               "browser/osworld", "bounds apply")
     coverage = result.get("coverage_notes", [])
     warnings = list(dict.fromkeys(n for n in result.get("notes", []) if n not in coverage
                                   and any(word in n.casefold() for word in markers)))
@@ -246,12 +247,14 @@ def speed_brief(speed):
     if not speed:
         return ""
     values = []
-    for key, label in (("median_output_tokens_per_second", "tokens/s"),
-                       ("median_time_to_first_token_seconds", "s TTFT")):
+    for key, label in (("output_tokens_per_second", "tokens/s"),
+                       ("time_to_first_token_seconds", "s TTFT"),
+                       ("time_to_first_answer_token_seconds", "s first answer")):
         value = speed.get(key)
         if value is not None:
             values.append(f"{value:.4g} {label}" + (" (reported 0; validity unknown)" if value == 0 else ""))
-    return "legacy median " + ", ".join(values) if values else "speed unknown"
+    scope = "v3 headline mean " if speed.get("methodology_version") == "v3" else "legacy median "
+    return scope + ", ".join(values) if values else "speed unknown"
 
 
 def point(row):
@@ -329,8 +332,8 @@ def evidence_lines(option):
         context = ("provider " + str(speed.get("provider") or "unknown")
                    + " · workload " + json.dumps(speed.get("workload"), separators=(",", ":")))
         values = list(dict.fromkeys((row["effort"] or "effort ?") + ": "
-                      + speed_brief(row["speed"]).removeprefix("legacy median ") for row in rows))
-        lines.append("  Source speed / " + scope[0] + " · legacy median · " + context
+                      + speed_brief(row["speed"]) for row in rows))
+        lines.append("  Source speed / " + scope[0] + " · " + context
                      + ": " + "; ".join(values))
     return lines
 

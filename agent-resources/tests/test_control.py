@@ -39,6 +39,52 @@ def test_visible_holder_requires_namespace_pid_and_request_descriptor(tmp_path, 
     assert control.visible_holder(row, request_file) is None
 
 
+def test_holder_memory_counts_only_the_verified_command_group(tmp_path, monkeypatch):
+    proc = tmp_path / "proc"
+    (proc / "self/ns").mkdir(parents=True)
+    (proc / "self/ns/pid").symlink_to("pid:[host]")
+    request_file = tmp_path / "owned.request"
+    request_file.touch()
+    for pid, group, rss in ((101, 101, 4096), (102, 101, 8192), (103, 103, 2048)):
+        root = proc / str(pid)
+        (root / "fd").mkdir(parents=True)
+        fields = ["S", "1", str(group), *["0"] * 16, "7"]
+        (root / "stat").write_text(f"{pid} (fixture) " + " ".join(fields))
+        (root / "status").write_text(f"VmRSS:\t{rss} kB\n")
+    descriptor = proc / "101/fd/3"
+    descriptor.symlink_to(request_file)
+    monkeypatch.setattr(heavy, "PROC", proc)
+    monkeypatch.setattr(resources, "PROC", proc)
+    row = {"pid": 101, "namespace": "pid:[host]", "control": {"group": True}}
+    assert control.holder_memory(request_file, row) == 12 * resources.MIB
+    row["control"]["group"] = False
+    assert control.holder_memory(request_file, row) == 4 * resources.MIB
+    row.update(pid=1, namespace="pid:[child]", host_pid=101)
+    assert control.holder_memory(request_file, row) == 4 * resources.MIB
+    descriptor.unlink()
+    assert control.holder_memory(request_file, row) is None
+
+
+def test_holder_memory_rejects_changed_process_identity(tmp_path, monkeypatch):
+    request_file = tmp_path / "owned.request"
+    request_file.touch()
+    monkeypatch.setattr(control, "process_has_request", lambda *_: True)
+    generations = iter(({101: "old"}, {101: "reused"}))
+    monkeypatch.setattr(control, "group_members", lambda *_: next(generations))
+    monkeypatch.setattr(resources, "resident_memory", lambda _: 100)
+    row = {"pid": 101, "namespace": os.readlink(heavy.PROC / "self/ns/pid"),
+           "control": {"group": True}}
+    assert control.holder_memory(request_file, row) is None
+
+
+@pytest.mark.parametrize("rss", ["-1 kB", "1 MB", "bad kB", "1 kB\nVmRSS: 2 kB"])
+def test_resident_memory_rejects_invalid_native_readings(tmp_path, monkeypatch, rss):
+    (tmp_path / "101").mkdir()
+    (tmp_path / "101/status").write_text(f"VmRSS: {rss}\n")
+    monkeypatch.setattr(resources, "PROC", tmp_path)
+    assert resources.resident_memory([101]) is None
+
+
 def request(name, need=GIB, *, running=False, exclusive=False, age=600, cap=None, cancelled=False):
     return Path(f"000-{name}.request"), {
         "job": f"owner/{name}",
@@ -88,6 +134,20 @@ def test_stuck_head_explains_memory_fairness_and_requests_behind_it(queue, capsy
     assert "position=3/3" in lines[2] and "waiting_behind=0" in lines[2]
     assert "cancelling" in lines[3] and "position=" not in lines[3]
     assert queue == before
+
+
+def test_listing_separates_current_rss_from_reservations(queue, monkeypatch, capsys):
+    queue.extend([request("holder", 4 * GIB, running=True), request("waiter")])
+    monkeypatch.setattr(control, "holder_memory", lambda *_: 512 * resources.MIB)
+    control.listing()
+    lines = capsys.readouterr().out.splitlines()
+    assert "4096MiB" in lines[0] and "rss=512MiB" in lines[0]
+    assert "rss=" not in lines[1]
+    control.listing(json_output=True)
+    rows = json.loads(capsys.readouterr().out)["requests"]
+    assert rows[0]["need_bytes"] == 4 * GIB
+    assert rows[0]["rss_bytes"] == 512 * resources.MIB
+    assert rows[1]["rss_bytes"] is None
 
 
 @pytest.mark.parametrize(

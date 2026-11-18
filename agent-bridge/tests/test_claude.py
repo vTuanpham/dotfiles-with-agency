@@ -61,7 +61,7 @@ def make_state(tmp_path):
 def test_claude_settings_and_event_mapping(tmp_path, capsys):
     state, _ = make_state(tmp_path)
     cmd = claude.command(state, tmp_path, resume=True)
-    assert "Agent" in cmd
+    assert "--disallowedTools" not in cmd
     assert "--replay-user-messages" in cmd
     settings = json.loads((tmp_path / "claude-settings.json").read_text())
     assert settings["permissions"]["allow"] == ["WebFetch(domain:*)"]
@@ -72,7 +72,8 @@ def test_claude_settings_and_event_mapping(tmp_path, capsys):
     cmd = claude.command(state, tmp_path)
     assert json.loads((tmp_path / "claude-settings.json").read_text())["permissions"] == {}
     assert cmd.count("--disallowedTools") == 1
-    assert all(tool in cmd for tool in ("Agent", "Edit", "Write", "NotebookEdit"))
+    assert "Agent" not in cmd
+    assert all(tool in cmd for tool in ("Edit", "Write", "NotebookEdit"))
 
 
 def test_effort_hook_keeps_only_main_agent_native_observations(tmp_path):

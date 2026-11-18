@@ -29,6 +29,37 @@ def test_standalone_exec_preserves_environment_argv_stdin_and_exit(tmp_path):
     assert json.loads(result.stdout) == ["synthetic-value", "$literal", "stdin payload"]
 
 
+def test_live_command_group_rss_includes_child_without_changing_reservation(tmp_path):
+    env = {"PATH": os.defpath, "HOME": str(tmp_path),
+           "PYTHONPATH": str(Path(heavy.__file__).parents[1]),
+           "AGENT_RESOURCES_HOME": str(tmp_path / "queue"),
+           "AGENT_RESOURCES_MIN_AVAILABLE_MIB": "0", "AGENT_RESOURCES_MAX_LOAD": "1000000"}
+    child = "import time; data=bytearray(16*1024**2); print('ready',flush=True); time.sleep(60)"
+    script = ("import subprocess,sys,time; data=bytearray(16*1024**2); "
+              f"child=subprocess.Popen([sys.executable,'-c',{child!r}],stdout=subprocess.PIPE); "
+              "assert child.stdout.readline().strip()==b'ready'; print('ready',flush=True); time.sleep(60)")
+    process = subprocess.Popen(
+        [sys.executable, "-m", "agent_resources.cli", "run", "--mem", "96M", "--",
+         sys.executable, "-c", script], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, start_new_session=True,
+    )
+    try:
+        import select
+
+        assert select.select([process.stdout], [], [], 10)[0], "command did not become ready"
+        assert process.stdout.readline().strip() == "ready"
+        folder = Path(env["AGENT_RESOURCES_HOME"])
+        with heavy.gate(folder):
+            rows = heavy.entries(folder)
+        assert len(rows) == 1 and rows[0][1]["need"] == 96 * 1024**2
+        path, row = rows[0]
+        assert control.holder_memory(path, row) >= 32 * 1024**2
+        assert row["need"] == 96 * 1024**2
+    finally:
+        os.killpg(process.pid, signal.SIGTERM)
+        process.communicate(timeout=5)
+
+
 def test_idle_unfit_head_exits_with_error_and_cleans_request(tmp_path, monkeypatch, capsys):
     queue = tmp_path / "queue"
     monkeypatch.delenv("AGENT_RESOURCES_ACTIVE", raising=False)

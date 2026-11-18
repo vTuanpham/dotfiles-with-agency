@@ -438,6 +438,10 @@ def prepare(directory=CACHE, *, names=None, previous=None, fetched=None):
         try:
             name, result = collect(*item)
             result["retrieved"] = datetime.now(UTC).isoformat()
+            old = (previous or {}).get("sources", {}).get(name, {})
+            if result["status"] != "ok" and old.get("status") == "ok":
+                result = {**old, "refresh_error": result["error"],
+                          "refresh_attempted": result["retrieved"]}
             return name, result
         finally:
             PRELOADED.reset(token)
@@ -459,9 +463,13 @@ def prepare(directory=CACHE, *, names=None, previous=None, fetched=None):
     failures = []
     for name, source in sources.items():
         version = source.get("published", source.get("release", ", ".join(source.get("metadata", []))))
-        lines.append(f"| {name} | {source['status']} | {version or 'Unverified'} |")
+        state = "cached; refresh failed" if source.get("refresh_error") else source["status"]
+        lines.append(f"| {name} | {state} | {version or 'Unverified'} |")
         if source["status"] != "ok":
             failures.append(f"- {name}: {source['error']}")
+        elif source.get("refresh_error"):
+            failures.append(f"- {name}: {source['refresh_error']}; retained observation "
+                            f"from {source['retrieved']}")
     lines += ["", *failures]
     live = sources.get("LiveBench", {})
     if live.get("status") == "ok":
@@ -566,8 +574,8 @@ def search(domain, query="", limit=5, catalog=None, *, data=None, include_speed=
             from . import artificial
 
             try:
-                source = artificial.with_speed(source)
-            except ValueError:
+                source = artificial.with_observations(source)
+            except (ValueError, KeyError, TypeError):
                 source = {**source, "status": "unavailable",
                           "error": "Retained AA source validation failed; refresh or inspect this source."}
         info = {key: value for key, value in source.items()

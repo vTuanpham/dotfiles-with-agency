@@ -103,7 +103,7 @@ def home(tmp_path, monkeypatch):
     (tmp_path / "refresh").mkdir()
     monkeypatch.setattr(benchmarks, "CACHE", tmp_path / "benchmarks")
 
-    def prepare(directory):
+    def prepare(directory, **kwargs):
         (directory / "benchmark-data.json").write_text(json.dumps(SNAPSHOT))
         (directory / "benchmark-report.md").write_text("Source evidence")
 
@@ -152,6 +152,32 @@ def test_unavailable_effort_and_missing_measurements_are_unverified_not_zero():
     assert "| zero (Unverified) | 0 | Unverified |" in text
     assert benchmarks.frontier(data["sources"]["LiveBench"]["points"]["Overall"]) == []
     assert "Unverified: source absent" in generated.render(REAL, {**data, "sources": {}})
+
+
+def test_failed_refresh_retains_dated_evidence_reports_failure_and_recovers(monkeypatch, tmp_path):
+    old = copy.deepcopy(SNAPSHOT)
+    del old["sources"]["LiveBench"]
+    source = old["sources"]["Artificial Analysis"]
+    source["retrieved"] = old["retrieved"]
+
+    def failed():
+        raise ValueError("source temporarily unavailable")
+
+    monkeypatch.setattr(benchmarks, "loaders", lambda: {"Artificial Analysis": failed})
+    benchmarks.prepare(tmp_path, previous=old)
+    captured = json.loads((tmp_path / "benchmark-data.json").read_text())
+    retained = captured["sources"]["Artificial Analysis"]
+    assert retained["retrieved"] == source["retrieved"]
+    assert retained["tables"] == source["tables"]
+    assert "source temporarily unavailable" in retained["refresh_error"]
+    assert "cached; refresh failed" in (tmp_path / "benchmark-report.md").read_text()
+    text = generated.render(REAL, captured)
+    assert "Example (adaptive)" in text and "cached; refresh failed" in text
+    assert old["sources"]["Artificial Analysis"] == source and "refresh_error" not in source
+    monkeypatch.setattr(benchmarks, "loaders", lambda: {"Artificial Analysis": lambda: source})
+    benchmarks.prepare(tmp_path, previous=captured)
+    recovered = json.loads((tmp_path / "benchmark-data.json").read_text())
+    assert "refresh_error" not in recovered["sources"]["Artificial Analysis"]
 
 
 def test_versions_stay_in_read_path_and_review_provenance_moves_out():
@@ -330,8 +356,8 @@ def test_apply_revalidates_generated_numbers_and_handwritten_text(home, kind):
 def test_intervening_edit_during_generation_is_not_overwritten(home, monkeypatch, capsys):
     prepare = benchmarks.prepare
 
-    def edit(directory):
-        prepare(directory)
+    def edit(directory, **kwargs):
+        prepare(directory, **kwargs)
         (reference.GUIDES / "models.md").write_text(REAL + "\nintervening edit\n")
 
     monkeypatch.setattr(benchmarks, "prepare", edit)
@@ -341,7 +367,10 @@ def test_intervening_edit_during_generation_is_not_overwritten(home, monkeypatch
 
 def test_failed_forced_replacement_does_not_leave_an_old_pending_pointer(home, monkeypatch):
     refresh.run(force=True)
-    monkeypatch.setattr(benchmarks, "prepare", lambda _: (_ for _ in ()).throw(ValueError("bad source")))
+    def failed(*args, **kwargs):
+        raise ValueError("bad source")
+
+    monkeypatch.setattr(benchmarks, "prepare", failed)
     with pytest.raises(ValueError, match="bad source"):
         refresh.run(force=True)
     assert not reference.PENDING.exists()

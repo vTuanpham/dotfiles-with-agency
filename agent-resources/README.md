@@ -28,7 +28,9 @@ long or queued runs as a native harness background job so steers still arrive
 `list` explains queued requests with their admission reason, memory need versus
 free/budget, queue position and number of requests behind them. It reuses the
 admission policy against current readings; redirected command output is not
-needed to diagnose a wait.
+needed to diagnose a wait. Running rows also show current command-group RSS
+(`rss_bytes` in JSON) beside the reservation. Shared pages can count twice;
+this observation is not a measured peak or a smaller reservation.
 
 Use `list --json --owner <controller>` for a versioned snapshot with
 `agent_id`, declared need and queue state. For native agent attribution, pass

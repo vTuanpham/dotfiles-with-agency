@@ -11,7 +11,7 @@ Managed workers use the job channels under Steer, resume, peers; native sends ar
 - **Never bridge to your own harness.** A Claude root uses its Agent tool for Claude workers, a Codex root its own subagents, an agy root its own. The bridge is only for the other harnesses.
 - Before launching, read the notes of the backend you will launch in `agent-bridge start --help`: its models, effort levels, quota and quirks.
 - No backend is the default. Use the delegation and model-selection skills for task/model choice; read only the selected backend's execution notes here.
-- A delegated worker never starts jobs itself; the runner tells every worker so.
+- A delegated worker never starts Bridge jobs or independent harness sessions. Root may authorize native subagents in its brief or a steer, naming the task and concurrency limit. The worker manages and verifies them within its existing job's sandbox and resource caps; they are not separate Bridge jobs. For example: "You may use up to three native subagents for the read-only audit; combine and verify their findings."
 
 ## Model references
 

@@ -42,6 +42,8 @@ def source_note(name, source, retrieved):
     identity += source.get("metadata", [])
     version = "; ".join(dict.fromkeys(cell(v) for v in identity if v)) or "Unverified"
     failure = " · Unverified: " + cell(source["error"]) if source["status"] != "ok" else ""
+    if source.get("refresh_error"):
+        failure += " · cached; refresh failed " + cell(source["refresh_attempted"].partition("T")[0])
     return f"- {label} · {version} · retrieved {retrieved}{failure}"
 
 
@@ -53,6 +55,7 @@ def provenance(data):
         details = {key: source[key] for key in (
             "methodology_url", "methodology_sha256", "sha256", "limits", "weights",
             "categories", "metric", "ambiguous_names",
+            "refresh_error", "refresh_attempted",
         ) if key in source}
         parts.append(json.dumps(details, sort_keys=True, ensure_ascii=False, indent=2))
     return "\n\n".join(parts)
@@ -130,9 +133,11 @@ def sections(data):
                 rows = sorted((r for r in source["measurements"] if r["score"] is not None
                                and r["metric"] == "artificial_analysis_intelligence_index"),
                               key=lambda r: (-r["score"], r["model"]))[:LIMIT]
-                result[section].append(table(["Model / published effort", "Intelligence Index"],
-                                             [[r["label"], r["score"]] for r in rows]))
-                result[section].append("Free API: task-cost curves and methodology version Unverified.")
+                result[section].append(table(
+                    ["Model / published effort", "Intelligence Index", "Index eval USD/task"],
+                    [[r["label"], r["score"], r["cost"]] for r in rows]))
+                result[section].append("Index evaluation cost is not native subscription usage; "
+                                       "harness and run date Unverified.")
             else:
                 result[section].append("Task-specific evidence: query benchmarks --domain "
                                        + ({"KernelBench.com": "performance", "Bug Hunt": "debugging",

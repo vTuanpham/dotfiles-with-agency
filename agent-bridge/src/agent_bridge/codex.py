@@ -300,7 +300,9 @@ def run(job, state, path, prompt, resume=False, compact=False):
         )
         rpc.send({"method": "initialized", "params": {}})
         if resume:
-            resumed = rpc.call("thread/resume", {"threadId": thread})
+            resumed = rpc.call("thread/resume", {
+                "threadId": thread, "developerInstructions": MESSAGING_RULE,
+            })
             thread = resumed.get("thread", {}).get("id", thread)
             record_settings(state, resumed)
             turns = rpc.call(

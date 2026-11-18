@@ -9,12 +9,15 @@ of worker orchestration. The selecting agent weighs the actual task and current
 session against these observations; no model-role table or score chooses for it.
 Arena, Artificial Analysis, LiveBench and Vals measure different outcomes.
 
-![Sol 6.1 effort curve: measured index against API cost per task, with response time for each setting.](../docs/tools/flows/model-effort.svg)
+![Sol 6.1 effort curve: measured index against evaluation cost per task, with v3 first-token latency for each setting.](../docs/tools/flows/model-effort.svg)
 
 [Dated measurements and methodology](src/agent_models/guide/models.md#effort-and-model-strength).
 
 ```sh
 uv tool install --with-editable ./agent-accounts --editable ./agent-models
+model-guide suggest --task "Find why concurrent writers lose records; add a regression test"
+model-guide suggest --task "Refine the mobile layout and verify it in the browser" --context /tmp/decision.json
+model-guide suggest --help          # optional context schema and selection examples
 model-guide read models
 model-guide models --backend codex --json  # native IDs/efforts + generated coverage
 model-guide read subscriptions     # only for allowance/retention decisions
@@ -24,17 +27,17 @@ model-guide check --live           # explicitly query native inventories
 model-guide refresh --prepare      # public data + cost curves; no model worker
 model-guide benchmarks --backend claude --domain design --query sonnet --limit 5 --brief
 model-guide benchmarks --backend codex --domain backend --limit 3 --brief
-model-guide suggest --task "UI refactor"
-model-guide suggest --task "Records disappear when writers run together"
-model-guide suggest --task "Fix failing tests" --context /tmp/decision.json
-model-guide suggest --backend codex --task "Fix code" --domain coding --query luna --json
-model-guide suggest --help          # optional context JSON schema and exact admission rules
 model-guide preferences list         # private notes, including expiry and attribution
 model-guide usage                    # attributable local Bridge turn outcomes
 model-guide benchmarks --domain performance --query sol --brief
 model-guide benchmarks --domain debugging --query sonnet --brief
 model-guide read maintenance
 ```
+
+For model selection, start with the actual task and carry known context; the
+shared `model-selection` skill owns the decision workflow. `--query` narrows the
+candidate pool by name, `models` inspects native inventory, and `benchmarks`
+inspects individual measurements. These lookups support the task comparison.
 
 The daily `agent-models-reference.timer` checks drift and conditionally polls due
 sources (36h, with backoff); changed observations update the cache and generate a
@@ -129,6 +132,8 @@ Source/version, dates, samples, intervals, harness, configuration and workload
 remain available in JSON. Task duration, response/first-token latency and tokens/s
 are distinct. Legacy cached AA speed and model release dates are recovered in
 memory without fetch or proposal approval; reported zero remains validity-unknown.
+Current AA data adds weighted index-evaluation cost and v3 headline speed, with
+units and methodology preserved separately from legacy medians and native usage.
 Native descriptions/modalities are facts or claims, not task-quality scores.
 Vision perception and browser/OSWorld outcomes remain separate.
 

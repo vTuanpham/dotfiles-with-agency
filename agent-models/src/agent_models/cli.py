@@ -141,7 +141,11 @@ def main():
     read = commands.add_parser("read", help="read only the reference needed for this task")
     read.add_argument("topic", choices=("models", "subscriptions", "sources", "maintenance"))
     compare = commands.add_parser("benchmarks", help="search benchmark evidence with local account context")
-    suggest = commands.add_parser("suggest", help="task-relevant model/effort evidence for agent judgment",
+    suggest = commands.add_parser("suggest", help="compare models for a task using native access/evidence",
+        description='Choose for a job: model-guide suggest --task "ACTUAL JOB AND CONSTRAINTS"\n'
+                    'Evidence areas are inferred; --domain and --backend are optional restrictions.\n'
+                    'Use --query for model lookup or a focused follow-up; it filters the candidate pool.\n'
+                    'Carry known session/access/allowance facts with --context; the agent chooses.',
         epilog=decision_context.HELP, formatter_class=argparse.RawDescriptionHelpFormatter)
     for command in (compare, suggest):
         command.add_argument("--domain", choices=benchmarks.DOMAINS, action="append",
@@ -149,7 +153,7 @@ def main():
         command.add_argument("--task",
                              help="full task context; evidence areas are inferred from its wording")
         command.add_argument("--query", default="",
-                             help="model words/prefixes or native alias; task prose uses --task")
+                             help="filter model names/aliases for lookup or drill-down; use --task for a job")
         command.add_argument("--backend", choices=decision_context.BACKENDS,
                              help="restrict native harness; suggest otherwise discovers all four")
         command.add_argument("--account", help="native account override (agy only)")

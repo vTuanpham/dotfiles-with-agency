@@ -52,9 +52,9 @@ def command(state, job, resume=False):
     roots = [p for p in state.get("writableRoots", []) if p != state["cwd"]] if write else []
     sandbox = {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False}
     sandbox["filesystem"] = {"allowWrite": roots}
-    # workers never spawn agents; read-only also loses every file-writing tool
-    denied = ["Agent"] if write else ["Agent", "Edit", "Write", "NotebookEdit"]
-    cmd += ["--permission-mode", "auto" if write else "dontAsk", "--disallowedTools", *denied]
+    cmd += ["--permission-mode", "auto" if write else "dontAsk"]
+    if not write:
+        cmd += ["--disallowedTools", "Edit", "Write", "NotebookEdit"]
     for root in roots:
         cmd += ["--add-dir", root]
     # A settings allow rule WebFetch(domain:*) pre-allows every host for sandboxed commands (sandboxing docs),
