@@ -135,11 +135,11 @@ badges.append((family, on(family, CRUST, f" {ICON_MODEL} ") + shimmer(model, CRU
 
 effort = g("effort", "level")
 meter = ""
-if effort:  # Wake's effort dots: one per level the model offers, lit up to this one; the bare word only if the level is unknown
+if effort:
     lvl = EFFORT_LEVELS.index(effort) + 1 if effort in EFFORT_LEVELS else 0
     meter = on(CARD, TEXT, " ") + ("".join(
         on(CARD, ramp(i / 4) if i < lvl else SURFACE2, "●" if i < lvl else "○") for i in range(len(EFFORT_LEVELS))
-    ) if lvl else on(CARD, TEXT, effort, bold=True)) + on(CARD, TEXT, " ")
+    ) if lvl else on(CARD, SUBTLE, "–")) + on(CARD, TEXT, " ")
 if g("thinking", "enabled"):
     meter += on(CARD, PINK, f"{ICON_THINK} ")
 if g("fast_mode"):

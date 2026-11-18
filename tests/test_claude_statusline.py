@@ -48,7 +48,9 @@ class StatuslineTests(unittest.TestCase):
         output = render({"effort": {"level": "xhigh"}, "rate_limits": {"five_hour": {"used_percentage": 0}}})
         self.assertIn("●●●●○", output)  # Wake's effort dots: four of the five levels lit, no word
         self.assertNotIn("xhigh", output)
-        self.assertIn("turbo", render({"effort": {"level": "turbo"}}))  # a level off the scale keeps its word
+        unknown = render({"effort": {"level": "turbo"}})
+        self.assertIn("–", unknown)
+        self.assertNotIn("turbo", unknown)
         self.assertRegex(output, r"5h .* 0%")
 
     def test_subagent_tokens_before_model_resolution(self):
@@ -58,6 +60,14 @@ class StatuslineTests(unittest.TestCase):
         self.assertNotIn("%", output)
         task["contextWindowSize"] = 200000
         self.assertIn("12k 6%", render({"tasks": [task]}, subagent=True))
+
+    def test_subagent_effort_has_no_inline_label(self):
+        task = {"id": "demo", "status": "running"}
+        for effort, mark in (("high", "●●●○○"), (None, "–"), ("turbo", "–"), (4096, "4096 tok")):
+            with self.subTest(effort=effort):
+                output = render({"tasks": [dict(task, effort=effort)]}, subagent=True)
+                self.assertIn(mark, output)
+                self.assertNotRegex(output, r"high|turbo|default effort")
 
 
 if __name__ == "__main__":

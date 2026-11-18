@@ -328,11 +328,11 @@ export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[
     }).sort((a, b) => b.lastAt - a.lastAt)
       .map(p => `${p.outgoing ? '↗' : '↙'}${clean(p.target.split('/').at(-1) ?? '')}${p.count > 1 ? ':' + p.count : ''}`)
     const peers = peerMarks.join(',')
-    // effort on the model's own scale (a Gemini topping out at high fills at high); the bare word when the scale is unknown
+    // Effort is a meter on the model's scale. Reserve the same space while its scale is unavailable.
     const dots = job.effortLevels?.length && job.effortLevels.includes(job.effort.toLowerCase())
       ? { lit: job.effortLevels.indexOf(job.effort.toLowerCase()) + 1, total: job.effortLevels.length } : undefined
     const values: Record<CrewColumn, string> = {
-      effort: dots ? '●'.repeat(dots.lit) + '○'.repeat(dots.total - dots.lit) : job.effort || '?',
+      effort: dots ? '●'.repeat(dots.lit) + '○'.repeat(dots.total - dots.lit) : '–',
       elapsed: age === undefined ? '?' : span(age),
       reason: state === 'stalled' || state === 'blocked_on_question' ? job.reason ?? '' : '',
       memory: memory === undefined ? '?' : '▣' + bar(memory),
@@ -344,6 +344,7 @@ export function crewRows(jobs: WakeChip[], now: number, width: number): CrewRow[
     const cellText = ([name, size]: [CrewColumn, number]) => ' ' + pad(truncate(values[name], size), size)
     // what each metric means, in the card a pointer opens over it (the effort card is drawn from `effortSlot` below)
     const hovers: Partial<Record<CrewColumn, NonNullable<CrewPart['hover']>>> = {
+      effort: { title: 'Effort', lines: job.effort ? [`Effort: ${job.effort}`, 'Model scale unavailable for this level'] : ['Effort not reported'] },
       elapsed: { title: 'Last event', lines: [age === undefined ? 'No event seen from this worker yet' : `${span(age)} since this worker last did something`, 'A long silence marks it stalled'] },
       memory: { title: 'Memory', lines: memoryLines(job, memory) },
       ...(values.reason ? { reason: { title: state === 'stalled' ? 'Why it is marked stalled' : 'Why it is waiting', lines: [values.reason] } } : {}),

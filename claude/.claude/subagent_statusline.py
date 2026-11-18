@@ -70,12 +70,12 @@ for t in d.get("tasks", []):
     effort = t.get("effort")
     if effort in EFFORT_LEVELS:
         lvl = EFFORT_LEVELS.index(effort) + 1
-        body.append("".join(on(CARD, ramp(i / 4) if i < lvl else SURFACE2, h) for i, h in enumerate("▁▂▄▆█"))
-                    + on(CARD, ramp((lvl - 1) / 4), f" {effort}", bold=True))
-    elif effort is not None:
+        body.append("".join(on(CARD, ramp(i / 4) if i < lvl else SURFACE2, "●" if i < lvl else "○")
+                            for i in range(len(EFFORT_LEVELS))))
+    elif type(effort) is int:
         body.append(on(CARD, TEXT, f"{effort} tok"))
     else:
-        body.append(on(CARD, SUBTLE, "default effort"))
+        body.append(on(CARD, SUBTLE, "–"))
 
     tokens, window = t.get("tokenCount", 0), t.get("contextWindowSize")
     if window:

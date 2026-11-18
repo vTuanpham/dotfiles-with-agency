@@ -376,6 +376,7 @@ test('one-row pager keeps worker and quota hover cards outside clipping containe
   const bar = await mount($, 'AbovePrompt', false, 40, 4)
   let tree = (await bar.drawn()) as Node
   expect(flat(tree)).toContain('◆ ● Native')
+  expect(flat(tree)).not.toContain('medium')
   expect(flat(tree, true)).toContain('Effort: medium')
   expect(flat(tree, true)).toContain('pytest · 1G · queued')
   await bar.press({ key: 'quota-crew-next' })
@@ -466,11 +467,12 @@ test('one crew job at 180 columns keeps its status and model next to the title',
   const job: WakeChip = { name: 'ranking', title: 'Photo ranking feature scan', backend: 'codex', account: '01', model: 'gpt-6-luna', effort: 'high', running: true, isStale: false, since: 1, lastEventAt: 985_000 }
   on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: [job], version: 1 } }))
   const bar = await mount($, 'AbovePrompt', false, 180)
-  const text = flat((await bar.drawn()) as Node)
+  const tree = (await bar.drawn()) as Node
+  const text = flat(tree)
   expect(text).toContain('Photo ranking feature scan')
-  expect(text).toMatch(/Co  . Photo ranking feature scan ◔ ●/) // logo with a cell of air, the Codex spinner, the title, class and state
-  // with no inventory loaded the effort shows as its word, never a guessed scale
-  expect(text).toContain('high')
+  expect(text).toMatch(/Co  . Photo ranking feature scan ◔ ● –/) // logo, spinner, title, class, state and meter placeholder
+  expect(text).not.toContain('high')
+  expect(flat(tree, true)).toContain('Effort: high')
   const scaled = crewRows([{ ...job, backend: 'codex', effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] }], 1_000_000, 120)[0]!
   expect(scaled.detail).toContain('●●●○○○')
   expect(scaled.effortSlot).toMatchObject({ lit: 3, total: 6 })
@@ -479,14 +481,18 @@ test('one crew job at 180 columns keeps its status and model next to the title',
 
 test('a fitted row keeps event age, whatever backend runs the job', async ($, on) => {
   engine(on)
+  const native: WakeAgent = { id: 'native', type: 'general-purpose', name: 'Native review', description: 'Review', since: 1, status: 'running', model: 'sonnet', effort: 'medium' }
   let shown: WakeChip[] = []
   on('state.get', { plugin: 'wake', key: 'chips' }, () => ({ value: { value: shown, version: 1 } }))
+  on('state.get', { plugin: 'wake', key: 'subagents' }, () => ({ value: { value: [native], version: 1 } }))
   for (const [backend, model, mark] of [['codex', 'gpt-6-luna', 'Co  . Face validation ◔'], ['agy', 'gemini-3.8-flash-high', 'An  . Face validation ◔']] as const) {
     shown = [{ name: 'v5', title: 'Face validation', backend, account: '01', model, effort: 'high', running: true, isStale: false, since: 1, lastEventAt: 992_000 }]
     const bar = await mount($, 'AbovePrompt', false, 120)
     const text = flat((await bar.drawn()) as Node)
     expect(text).toMatch(new RegExp(mark))
     expect(text).toContain('8s')
+    expect(text).toMatch(/Native review . – /)
+    expect(text).not.toContain('medium')
     await bar.unmount()
   }
 })

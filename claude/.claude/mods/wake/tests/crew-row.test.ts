@@ -140,13 +140,13 @@ test('every width fits terminal cells even with wide text, emoji, links and mult
 test('known memory, freshness, effort and directed weighted peers render without fabricated values', () => {
   const row = crewRows([{ ...base, peers: [{ target: 'owner/reviewer', count: 3, lastAt: 9_000, outgoing: true }, { target: 'owner/other', count: 2, lastAt: 8_000, outgoing: false }] }], 20_000, 120)[0]!
   expect(row.family + ' ' + row.glyph).toBe('◈◑ ●')
-  // effort without a known scale stays the plain word; with the model's levels it is a meter on that scale
-  expect(row.detail).toContain('high')
+  expect(row.parts.find(part => part.column === 'effort')).toMatchObject({ text: ' –     ', hover: { lines: ['Effort: high', 'Model scale unavailable for this level'] } })
   const scaled = (effortLevels: string[], effort = 'high') => crewRows([{ ...base, effort, effortLevels }], 20_000, 120)[0]!
   expect(scaled(['low', 'medium', 'high']).detail).toContain('●●●') // a model that tops out at high is full at high
   expect(scaled(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']).detail).toContain('●●●○○○')
   expect(scaled(['low', 'medium', 'high']).effortSlot).toMatchObject({ lit: 3, total: 3 })
-  expect(scaled(['low', 'high', 'max'], 'medium').detail).toContain('medium') // not on its scale: never forced onto it
+  expect(scaled(['low', 'high', 'max'], 'medium').detail).not.toContain('medium')
+  expect(scaled(['low', 'high', 'max'], 'medium').effortSlot).toBeUndefined()
   expect(row.detail).toContain('▰▰▱▱')
   expect(crewRows([{ ...base, memoryBytes: 512, memoryCap: '1024' }], 20_000, 120)[0]!.detail).toContain('▰▰▱▱')
   expect(row.detail).toContain('↗reviewer:3')

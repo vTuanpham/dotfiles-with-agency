@@ -306,7 +306,8 @@ Wake looks at Bridge every five seconds while a worker runs and straight after a
 `watch` or `result`.
 A filling circle beside the harness mark (◔ ◑ ◕ ◉) shows the class, and effort is a row of
 dots on the model's own scale (`●●●○`, one per level it offers, lit up to the current one) for Bridge
-jobs and Claude subagents alike. Each row opens with the harness logo and, while the worker
+jobs and Claude subagents alike. A `–` means the meter is unavailable. Hover for the reported effort.
+Each row opens with the harness logo and, while the worker
 runs, the harness's own spinner (Codex orbits, agy twinkles, OpenCode's lantern flickers); the
 working headline's spinner follows the command: a shell spins, tests fill a gauge, edits grow a caret,
 reads fill a page, searches circle, agents turn a gem, the web turns a globe; thinking keeps the

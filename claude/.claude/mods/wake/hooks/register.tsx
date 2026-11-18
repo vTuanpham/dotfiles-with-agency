@@ -381,7 +381,7 @@ function pollCodex($: EngineInterface) {
   codexPoll ??= $.clock.every(CODEX_BUSY_POLL_MS, () => void safely(() => bridgeTimer($)))
   if (!effortPoll) {
     // its own slow schedule: the inventory changes rarely and is independent of quota polling
-    $.clock.after(5_000, () => void safely(() => effortTick($)))
+    $.clock.after(5_000, () => void safely(() => effortTick($, true)))
     effortPoll = $.clock.every(EFFORT_RETRY_MS, () => void safely(() => effortTick($))) // cheap: the tick returns until the table is due
   }
   if (!quotaPoll) {
@@ -408,10 +408,10 @@ export async function resourceTick($: EngineInterface) {
 }
 
 /** Which effort levels each model offers, from the native inventory: once on start, then a few times a day. */
-export async function effortTick($: EngineInterface) {
+export async function effortTick($: EngineInterface, startup = false) {
   const known = await read($, effortLevels)
   const now = await $.clock.now()
-  if (now - known.at < EFFORT_LEVELS_MS) return
+  if (!startup && now - known.at < EFFORT_LEVELS_MS) return
   const refreshed = await Promise.all(['codex', 'claude', 'agy', 'opencode'].map(async backend => {
     const levels = await scanEfforts($, [backend], known.levels)
     if (levels[backend] === known.levels[backend]) return false
@@ -590,7 +590,7 @@ async function scanBridgeTick($: EngineInterface) {
       // one done row per job: a later turn replaces it
       await update($, needs, list => [...list.filter(one => one.kind !== 'codex-done' || one.owner !== job.owner || one.job !== job.name), { id: hash(job.dir + job.finishedAt), kind: 'codex-done' as const, owner: job.owner, job: job.name, title: titleOf(job), text: summary, at: now }].slice(-6))
       play('shoot')
-      await card($, `${job.backend} ${titleOf(job)} finished · ${job.model} ${job.effort}`, [`${G.agent} ${summary || 'no final message'}`])
+      await card($, `${job.backend} ${titleOf(job)} finished${job.model ? ` · ${job.model}` : ''}`, [`${G.agent} ${summary || 'no final message'}`])
       await update($, digest, d => ({ ...d, codex: [...d.codex, { owner: job.owner, name: titleOf(job), model: job.model, summary }] }))
       if (away) await $.ui.notify(`${job.backend} ${titleOf(job)} finished`, { title: 'Wake' })
     }
@@ -1200,7 +1200,9 @@ export const register: Register = on => {
                 // the subagent's effort on its own model's scale (the parent's model when it reports none)
                 const scale = levelsFor(levels, 'claude', agent.model || parentModelId)
                 const dots = agent.effort ? effortDots(agent.effort, scale) : undefined
-                if (!dots) return <Text color={ink.subtle}>{agent.effort || '?'}</Text>
+                if (!dots) return <Box key={`wake-agent-effort-${index}`} position="relative" flexShrink={0} hover={popups.show('Effort', agent.effort ? [`Effort: ${agent.effort}`, 'Model scale unavailable for this level'] : ['Effort not reported'])}>
+                  <Text color={ink.subtle}>–</Text>
+                </Box>
                 const lit = dots.indexOf('○') < 0 ? dots.length : dots.indexOf('○')
                 return <Box key={`wake-agent-effort-${index}`} position="relative" flexShrink={0} hover={popups.show('Effort', [`${agent.effort} · ${lit} of ${scale!.length} levels this model offers`, scale!.join(' → ')])}>
                   <Text><Text color={ink.pink}>{dots.slice(0, lit)}</Text><Text color={ink.surface}>{dots.slice(lit)}</Text></Text>
