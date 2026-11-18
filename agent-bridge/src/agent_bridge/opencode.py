@@ -68,7 +68,7 @@ def command(state, job, prompt, resume=False, server_only=False):
         if state.get("sessionId"):
             cmd += ["--session", state["sessionId"]]
         cmd += ["--title", state["title"]]
-    env = worker_env(job)
+    env = worker_env(job, state=state)
     for key in list(env):
         if key in {"OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR"} or key.startswith(
             ("OPENCODE_SERVER", "OPENCODE_PASSWORD")

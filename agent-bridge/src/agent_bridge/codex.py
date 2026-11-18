@@ -98,7 +98,8 @@ class Rpc:
                 capped(["codex", "app-server", "--stdio"], state),
                 cwd=cwd,
                 # every command the agent runs inherits it
-                env=worker_env(Path(stderr).parent, CODEX_HOME=str(build_home(Path(stderr).parent))),
+                env=worker_env(Path(stderr).parent, state=state,
+                               CODEX_HOME=str(build_home(Path(stderr).parent))),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=self.err,

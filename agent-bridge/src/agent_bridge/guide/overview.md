@@ -28,6 +28,10 @@ native observations. Missing native data stays unreported rather than guessed.
 - Use a short owner tag (project + topic) unique to this session; sessions share job storage. Never use `/tmp` for job data.
 - Prepare a clear brief before starting a job. Reviewers need network for docs, API contracts and test scratch: start them workspace-write with `--writable-root <job>/out`, brief "don't edit the repo; scratch only under <job>/out", and check `git status` afterwards.
 - Approvals are auto-declined. Never bypass a backend's sandbox.
+- For WSL CUDA work, add `--gpu` to `start` or `resume` for a workspace-write Codex, Claude or
+  OpenCode worker. Bridge adds `/dev/dxg` to that worker's existing Bubblewrap sandbox. The grant
+  stays with the job, and `resume --no-gpu` removes it on the next launch. AGY's native terminal
+  sandbox exposes the WSL device on its own. Its normal command approvals still apply.
 - Worker environments drop secret-like names by default. Set `AGENT_BRIDGE_PASS_ENV=NAME1,NAME2` before launch to opt specific names in; `AGENT_BRIDGE_DENY_ENV` adds exact denied names and wins conflicts. Backend auth files/config paths, ordinary runtime and proxy settings remain available. See the README's Worker environment section for matching rules and limits.
 - Every job runs in a systemd user scope inside `codex.slice`. `start ... --memory 4G --cpu 400%` chooses that job's caps; `resume <job> --memory 5G --cpu 400%` applies caps on the next runner launch. Defaults remain `CODEX_JOB_MEMORY_MAX` (2500M) and `CODEX_JOB_CPU_QUOTA` (300%). Explicit and default caps are checked against effective slice/host limits and refused above them. `owners` and `watch` show each job's caps. Missing CPU controllers mean configured CPU quotas may not be enforced. Check actual memory/CPU budgets before choosing concurrency; brief data-heavy agents to stream or chunk.
 - Use `agent-resources run --mem SIZE -- <command>` for heavy foreground work; its own `guide` owns admission, controls and limits. Bridge injects job/controller identity and worker restrictions. Resource waits appear in Bridge status and do not wake the root.

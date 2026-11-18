@@ -11,7 +11,7 @@ from pathlib import Path
 import agent_session
 from agent_resources import identity
 
-from . import retries
+from . import gpu, retries
 
 POLL = 0.2
 LARGE_CONTEXT = 150_000  # tokens: above this a model or account change is worth a word, at or below it is not
@@ -280,8 +280,10 @@ def command_env(**extra):
             if name not in denied and (name in passed or not SECRET_ENV.search(name))}
 
 
-def worker_env(job=None, **extra):
+def worker_env(job=None, *, state=None, **extra):
     """Filtered backend environment plus the bridge worker identity and CLI restrictions."""
+    if state and state.get("gpu"):
+        extra["PATH"] = f"{gpu.launcher(state).parent}:{os.environ.get('PATH') or os.defpath}"
     state_home = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
     if not state_home.is_absolute():
         state_home = Path.home() / ".local/state"

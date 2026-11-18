@@ -20,7 +20,7 @@ build-backend = "setuptools.build_meta"
 agent-bridge = "agent_bridge.cli:main"
 
 [tool.setuptools.package-data]
-agent_bridge = ["guide/*.md", "status.schema.json"]
+agent_bridge = ["guide/*.md", "status.schema.json", "gpu-bin/bwrap"]
 
 [dependency-groups]
 dev = ["pytest", "ruff", "jsonschema>=4,<5"]

@@ -1,0 +1,12 @@
+#!/usr/bin/python3 -I
+# Bridge puts this on PATH only for workers granted the WSL GPU.
+import os
+import sys
+
+args = sys.argv[1:]
+end = args.index("--") if "--" in args else len(args)
+for i in range(end - 2, -1, -1):
+    if args[i:i + 2] == ["--dev", "/dev"]:
+        args[i + 2:i + 2] = ["--dev-bind", "/dev/dxg", "/dev/dxg"]
+        break
+os.execv("/usr/bin/bwrap", ["/usr/bin/bwrap", *args])

@@ -176,7 +176,7 @@ def test_capped_command_keeps_environment_defaults_and_honors_job_override(monke
     assert "MemoryMax=4G" in command and "CPUQuota=400%" in command
 
 
-def test_start_and_resume_choose_caps_at_next_launch(budgets, monkeypatch, tmp_path):
+def test_start_and_resume_choose_caps_and_gpu_at_next_launch(budgets, monkeypatch, tmp_path):
     job = tmp_path / "jobs/owner/job"
     job.mkdir(parents=True)
     (job / "prompt.md").write_text("work")
@@ -185,10 +185,11 @@ def test_start_and_resume_choose_caps_at_next_launch(budgets, monkeypatch, tmp_p
     monkeypatch.setattr(cli.reference, "warning", lambda: None)
     monkeypatch.setattr(cli.codex, "active_account", lambda: "1")
     monkeypatch.setattr(cli, "linger", lambda *args: None)
+    monkeypatch.setattr(cli.gpu, "launcher", lambda state: tmp_path / "bwrap")
     calls = []
 
     def run(job, state, path, prompt, resume=False):
-        calls.append((prompt, resume, core.job_caps(state)))
+        calls.append((prompt, resume, state.get("gpu"), core.job_caps(state)))
         state["threadId"] = "original"
         core.save(path, state)
         core.log(job, "turn_completed")
@@ -196,11 +197,15 @@ def test_start_and_resume_choose_caps_at_next_launch(budgets, monkeypatch, tmp_p
     monkeypatch.setattr(cli.codex, "run", run)
     monkeypatch.setattr(sys, "argv", ["agent-bridge", "start", "owner/job", "--backend", "codex",
                                      "--title", "Cap probe", "--cwd", str(tmp_path),
-                                     "--sandbox", "workspace-write", "--memory", "4G", "--cpu", "400%"])
+                                     "--sandbox", "workspace-write", "--memory", "4G",
+                                     "--cpu", "400%", "--gpu"])
     cli.main()
     monkeypatch.setattr(sys, "argv", ["agent-bridge", "resume", "owner/job",
                                      "--memory", "5G", "--cpu", "500%"])
     cli.main()
-    assert calls == [("work", False, {"memoryMax": "4G", "cpuQuota": "400%"}),
-                     ("Continue.", True, {"memoryMax": "5G", "cpuQuota": "500%"})]
+    monkeypatch.setattr(sys, "argv", ["agent-bridge", "resume", "owner/job", "--no-gpu"])
+    cli.main()
+    assert calls == [("work", False, True, {"memoryMax": "4G", "cpuQuota": "400%"}),
+                     ("Continue.", True, True, {"memoryMax": "5G", "cpuQuota": "500%"}),
+                     ("Continue.", True, False, {"memoryMax": "5G", "cpuQuota": "500%"})]
     assert core.load_state(job)["threadId"] == "original"

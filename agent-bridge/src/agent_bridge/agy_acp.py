@@ -35,7 +35,7 @@ class Rpc(CodexRpc):
         try:
             self.p = subprocess.Popen(
                 capped(command, state),
-                cwd=state["cwd"], env=worker_env(job, HOME=str(Path(job) / "home")),
+                cwd=state["cwd"], env=worker_env(job, state=state, HOME=str(Path(job) / "home")),
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.err,
                 bufsize=0, start_new_session=True,
             )

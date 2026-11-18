@@ -14,6 +14,7 @@ from . import (
     agy,
     claude,
     codex,
+    gpu,
     groups,
     login,
     opencode,
@@ -400,6 +401,8 @@ def main():
     s.add_argument(
         "--writable-root", action="append", help="extra writable directory; workspace-write only, repeatable"
     )
+    s.add_argument("--gpu", action="store_true", default=None,
+                   help="grant this workspace-write worker access to the WSL CUDA device")
     s.add_argument(
         "--config",
         action="append",
@@ -430,6 +433,8 @@ def main():
     r.add_argument("job", help="job as <owner>/<name>")
     r.add_argument("--model", help="switch model starting on the next turn")
     r.add_argument("--effort", help="switch effort or variant starting on the next turn")
+    r.add_argument("--gpu", action=argparse.BooleanOptionalAction,
+                   help="grant or remove WSL CUDA access on the next backend launch")
     choice = r.add_mutually_exclusive_group()
     choice.add_argument("--compact", action="store_true",
                         help="compact on the current model first; --model/--effort apply once it succeeds")
@@ -886,6 +891,10 @@ def main():
             (job / "steer").mkdir(exist_ok=True)
             (job / "inbox").mkdir(exist_ok=True)
         if a.command in {"start", "resume"}:
+            if a.gpu is not None:
+                state["gpu"] = a.gpu
+            if state.get("gpu"):
+                gpu.launcher(state)
             caps = job_caps(state)
             if a.memory:
                 caps["memoryMax"] = a.memory

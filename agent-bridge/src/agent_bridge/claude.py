@@ -240,7 +240,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=(Path(job) / "claude.stderr.log").open("a", encoding="utf-8"),
-        env=worker_env(job),
+        env=worker_env(job, state=state),
         bufsize=0,
         start_new_session=True,
     )
