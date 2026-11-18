@@ -74,10 +74,20 @@ def test_unregistered_agy_never_falls_back_to_chat(native):
     assert not native
 
 
-def test_codex_utf8_limit_includes_attribution_before_native_send(native):
-    with pytest.raises(RuntimeError, match="1000 UTF-8 bytes"):
-        messages.send("codex:recipient", "é" * 450)
+@pytest.mark.parametrize("sender", ["codex:sender", "claude:émetteur"])
+def test_codex_reports_exact_utf8_body_budget_before_native_send(native, monkeypatch, sender):
+    monkeypatch.setattr(messages, "identity", lambda: sender)
+    messages.send("codex:recipient", "x")
+    limit = 1000 - (len(native[-1][3].encode("utf-8")) - 1)
+    native.clear()
+
+    boundary = "é" * (limit // 2) + "x" * (limit % 2)
+    with pytest.raises(RuntimeError, match=rf"{limit + 1} UTF-8 bytes\. Maximum is {limit} bytes"):
+        messages.send("codex:recipient", boundary + "x")
     assert not native
+    messages.send("codex:recipient", boundary)
+    assert len(native[-1][3].encode("utf-8")) == 1000
+    assert native[-1][3].endswith(boundary)
 
 
 def test_uncertain_delivery_not_retried_or_sent_as_chat(native, monkeypatch):

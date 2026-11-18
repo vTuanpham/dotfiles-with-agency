@@ -5,7 +5,7 @@ import os
 import uuid
 from pathlib import Path
 
-from codex_wake.client import Wake, connection, validate_message
+from codex_wake.client import MAX_MESSAGE, Wake, connection
 
 from . import owner_binding
 from .core import WORKER_FLAG
@@ -164,7 +164,8 @@ def send(target, text):
     sender = identity()
     if not isinstance(text, str) or not text.strip():
         raise ValueError("Message must be nonempty text")
-    if len(text.encode("utf-8")) > 16384:
+    body_bytes = len(text.encode("utf-8"))
+    if harness != "codex" and body_bytes > 16384:
         raise ValueError("Message exceeds 16384 UTF-8 bytes")
     identifier = str(uuid.uuid4())
     packet = {"version": 1, "id": identifier, "sender": sender, "recipient": target, "text": text}
@@ -184,13 +185,18 @@ def send(target, text):
         raise RuntimeError(f"Native agent messaging is unavailable for {harness}; no chat fallback")
     # A foreign sender uses the recipient's task context as a clearly labelled Bridge relay.
     source_harness, source_session = address(sender)
-    context = Wake(source_session if source_harness == "codex" else recipient)
-    prompt = envelope(packet)
+    header = envelope({**packet, "text": ""})
     if source_harness != "codex":
-        prompt = "Forwarded by Bridge through this recipient's Codex task context.\n" + prompt
-    validate_message(prompt)
+        header = "Forwarded by Bridge through this recipient's Codex task context.\n" + header
+    body_limit = MAX_MESSAGE - len(header.encode("utf-8"))
+    if body_bytes > body_limit:
+        raise RuntimeError(
+            f"Codex message body is {body_bytes} UTF-8 bytes. Maximum is {body_limit} bytes after the "
+            f"Bridge header ({MAX_MESSAGE}-byte native limit)."
+        )
+    context = Wake(source_session if source_harness == "codex" else recipient)
     context.check()
-    context.send(prompt, recipient=recipient)
+    context.send(header + text, recipient=recipient)
     return {
         "version": 1,
         "id": identifier,

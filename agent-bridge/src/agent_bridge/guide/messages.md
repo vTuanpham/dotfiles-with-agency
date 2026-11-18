@@ -56,11 +56,12 @@ These local same-user addresses are attribution, not cryptographic authenticatio
 
 Codex requires a loaded task with the native task MCP and its reachable control
 socket under `CODEX_HOME`; a standalone Bridge app-server worker need not expose
-this API. The entire framed message must fit 1000 UTF-8 bytes. Claude accepts up
-to 16384 UTF-8 bytes of body. Missing identity, missing API, offline recipients,
-refusal and unsupported protocol versions fail explicitly. Sandbox denial means the
-delivery-only command needs an authorized host context; never unsandbox a larger
-command or worker to make messaging work.
+this API. The entire framed message must fit 1000 UTF-8 bytes. Bridge reports the
+body size and the available bytes after its header when a message exceeds that limit.
+Claude accepts up to 16384 UTF-8 bytes of body. Missing identity, missing API,
+offline recipients, refusal and unsupported protocol versions fail explicitly.
+Sandbox denial means the delivery-only command needs an authorized host context;
+never unsandbox a larger command or worker to make messaging work.
 
 Steering is the default wherever native APIs offer it. AGY's direct-session
 `agentapi send-message` has no steering flag, so that API controls its delivery
