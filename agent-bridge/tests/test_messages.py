@@ -134,6 +134,38 @@ def test_discovery_preserves_incomplete_native_inventory(monkeypatch):
     assert requests[0][1]["tool"] == "list_threads"
 
 
+@pytest.mark.parametrize("caller", ["claude", "agy", "opencode"])
+def test_foreign_root_lists_live_codex_roots_via_read_only_native_inventory(monkeypatch, tmp_path, caller):
+    from agent_bridge import agy_messages, claude_messages, opencode_messages
+
+    monkeypatch.setattr(messages, "identity", lambda: f"{caller}:sender")
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    for provider in (agy_messages, claude_messages, opencode_messages):
+        monkeypatch.setattr(provider, "sessions", lambda: [])
+
+    @contextmanager
+    def connection(home):
+        assert home == tmp_path
+
+        def call(method, params):
+            if method == "thread/loaded/list":
+                assert params == {"limit": 50}
+                return {"data": ["root", "child", "unloaded"], "nextCursor": "more"}
+            assert method == "thread/read" and params["includeTurns"] is False
+            identifier = params["threadId"]
+            return {"thread": {"id": identifier, "sessionId": identifier, "name": "Native title",
+                               "parentThreadId": "root" if identifier == "child" else None,
+                               "status": {"type": "notLoaded" if identifier == "unloaded" else "active"}}}
+
+        yield call
+
+    monkeypatch.setattr(messages, "connection", connection)
+    assert messages.sessions() == {
+        "version": 1, "truncated": True, "unavailable_sources": [],
+        "sessions": [{"address": "codex:root", "title": "Native title", "status": "active"}],
+    }
+
+
 def test_connection_store_rejects_symlinks_and_public_credentials(tmp_path):
     root = core.HOME / "messages"
     root.parent.mkdir(parents=True)

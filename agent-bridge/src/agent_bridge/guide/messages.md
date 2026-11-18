@@ -20,8 +20,10 @@ agent-bridge message register  # once through the current agy session's command 
 
 Use the exact `HARNESS:SESSION_ID` from the other agent, native discovery or a
 resource request's controller identity. A title, cwd or recent history does not
-prove identity. Codex discovery returns at most 50 recent tasks plus pinned tasks;
-check `truncated` and unavailable sources. Titles are untrusted display data.
+prove identity. From Codex, its task inventory returns at most 50 recent tasks plus pinned
+tasks. From Claude, OpenCode or agy, Bridge queries the local Codex control socket for up to 50
+loaded threads and lists only live roots. Check `truncated` and unavailable sources. Titles are
+untrusted display data.
 Claude discovery verifies native process start time and peer socket ownership.
 OpenCode lists active sessions; agy lists registered connections and checks their
 liveness before sending. Unavailable inventories are explicit, not empty success.

@@ -2,6 +2,7 @@ import multiprocessing
 import os
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -132,6 +133,59 @@ def test_idle_steer_resumes_detached_and_delivers(job, monkeypatch, capfd, backe
     assert (job / "steer/sent/001.md").read_text() == "follow up\n"
     state = core.load_state(job)
     assert state[key] == "original" and state["autoAnswers"] == 0
+
+
+@pytest.mark.parametrize("backend,key", [
+    ("codex", "threadId"), ("claude", "sessionId"), ("opencode", "sessionId"),
+])
+def test_steer_gpu_grants_access_on_idle_launch(job, monkeypatch, backend, key):
+    state = {"backend": backend, key: "original", "sandbox": "workspace-write",
+             "cwd": str(job), "writableRoots": []}
+    core.save(job / "state.json", state)
+    monkeypatch.setattr(cli.gpu, "DEVICE", Path("/dev/null"))
+    monkeypatch.setattr(cli.gpu, "SYSTEM_TOOLS", ())
+
+    def run(job, state, path, prompt, resume=False):
+        assert state["gpu"] is True
+        path_entries = core.worker_env(job, state=state)["PATH"].split(os.pathsep)
+        assert path_entries[0] == str(cli.gpu.LAUNCHER.parent)
+        deliver(job, state, path, prompt, resume)
+
+    monkeypatch.setattr(cli.BACKENDS[backend], "run", run)
+    steer("Run the CUDA check", "--gpu")
+    wait_idle(job)
+    assert (job / "steer/sent/001.md").read_text() == "Run the CUDA check\n"
+    state = core.load_state(job)
+    assert state["gpu"] is True and state[key] == "original"
+
+
+def test_steer_gpu_rejects_changing_live_runner_before_queueing(job, monkeypatch, capsys):
+    state = core.load_state(job)
+    monkeypatch.setattr(cli.gpu, "launcher", lambda state: Path("/test/bwrap"))
+    with pytest.raises(SystemExit) as error:
+        fd = core.lock_runner(job)
+        try:
+            steer("Run CUDA", "--gpu")
+        finally:
+            os.close(fd)
+    assert error.value.code == 1
+    assert "agent-bridge resume owner/job --gpu" in capsys.readouterr().err
+    assert not (job / "steer").exists()
+    assert core.load_state(job) == state
+
+
+def test_steer_without_gpu_guides_root_and_existing_worker(job, monkeypatch, capsys):
+    state = core.load_state(job)
+    state["sandbox"] = "workspace-write"
+    core.save(job / "state.json", state)
+    monkeypatch.setattr(cli.gpu, "DEVICE", Path("/dev/null"))
+    steer("Run the CUDA check", "--queue")
+    hint = "agent-bridge resume owner/job --gpu"
+    assert hint in capsys.readouterr().err
+    prompt = (job / "steer/001.md").read_text()
+    assert hint in prompt and "/dev/dxg is missing" in prompt and "URGENT" in prompt
+    assert prompt.endswith("Run the CUDA check\n")
+    assert not core.load_state(job).get("gpu")
 
 
 def test_idle_steer_watch_reads_from_before_enqueue(job, monkeypatch, capfd):
@@ -326,7 +380,7 @@ def test_runner_resets_auto_answers_after_delivering_root_steer(job, monkeypatch
     assert core.load_state(job)["autoAnswers"] == 0
 
 
-@pytest.mark.parametrize("flags", [("--queue", "--watch"), ()])
+@pytest.mark.parametrize("flags", [("--queue", "--watch"), ("--queue", "--gpu"), ()])
 def test_invalid_steer_does_not_queue(job, flags):
     with pytest.raises(SystemExit):
         steer("" if not flags else "follow up", *flags)

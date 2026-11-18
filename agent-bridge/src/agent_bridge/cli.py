@@ -474,6 +474,7 @@ def main():
     st.add_argument("job", help="job as <owner>/<name>")
     st.add_argument("text", nargs="?", help="steer text (use either this or --prompt-file)")
     st.add_argument("--prompt-file", help="read steer from PATH or '-' for stdin")
+    st.add_argument("--gpu", action="store_true", help="grant WSL CUDA when launching the idle worker")
     delivery = st.add_mutually_exclusive_group()
     delivery.add_argument("--queue", action="store_true", help="queue only; do not start an idle job")
     delivery.add_argument(
@@ -554,6 +555,8 @@ def main():
         else:
             p.error(f"unrecognized arguments: {' '.join(extras)}")
     if a.command == "steer":
+        if a.queue and a.gpu:
+            st.error("--gpu starts an idle worker and cannot be used with --queue; use resume --gpu")
         if isinstance(a.watch, str):
             watch_value = a.watch
             try:
@@ -784,10 +787,8 @@ def main():
                     state = load_state(job)
                     if state.get("retiredAt"):
                         raise RuntimeError(f"job is retired; run agent-bridge restore {a.job} first")
-                    path = make_steer(job, text)
-                    if a.queue and state.get("backend") in {"opencode", "agy"}:
-                        path.with_suffix(".queue").touch(mode=0o600)
-                    log(job, "root_steer", level="info", file=path.name)
+                    if a.gpu:
+                        gpu.launcher(state)
                     if not a.queue:
                         try:
                             runner_fd = lock_runner(job)
@@ -796,6 +797,19 @@ def main():
                         if runner_fd is not None and running(load_state(job)):
                             os.close(runner_fd)
                             runner_fd = None
+                    if a.gpu and not state.get("gpu") and runner_fd is None:
+                        raise RuntimeError(
+                            f"GPU access changes at launch. Wait for {a.job} to become idle, then "
+                            f"retry steer --gpu or run agent-bridge resume {a.job} --gpu."
+                        )
+                    if not a.gpu and (hint := gpu.resume_hint(state, a.job)):
+                        print(hint, file=sys.stderr)
+                        text = (f"[Bridge: If this task needs CUDA and /dev/dxg is missing, send URGENT to "
+                                f"the coordinator and pause GPU work. {hint}]\n\n{text}")
+                    path = make_steer(job, text)
+                    if a.queue and state.get("backend") in {"opencode", "agy"}:
+                        path.with_suffix(".queue").touch(mode=0o600)
+                    log(job, "root_steer", level="info", file=path.name)
             if a.queue:
                 print(f"queued: {path}; deliver with agent-bridge resume {a.job}")
                 return
@@ -902,6 +916,8 @@ def main():
                 caps["cpuQuota"] = a.cpu
             resources.validate_caps(caps["memoryMax"], caps["cpuQuota"])
             state.update(caps)
+        if a.command == "steer" and a.gpu:
+            state["gpu"] = True
         if resume:
             prompt = read_prompt(a.prompt_file) if getattr(a, "prompt_file", None) else ""
             if a.command == "resume" and not prompt and not list((job / "steer").glob("[0-9]*.md")):
@@ -929,6 +945,8 @@ def main():
             extra, then = {"compact": True}, (switch, prompt, record_root_prompt)
             prompt, record_root_prompt = "", False
         if a.command == "resume":
+            if a.gpu is None and (hint := gpu.resume_hint(state, a.job)):
+                print(hint, file=sys.stderr)
             count = len(list((job / "steer").glob("[0-9]*.md")))
             if getattr(a, "compact", False):
                 target = switch_text(switch)

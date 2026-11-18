@@ -50,6 +50,8 @@ MESSAGING_RULE = (
     "manage their scope, concurrency and results within this job's sandbox and resource caps. "
     "For heavy commands use agent-resources run --mem SIZE -- <command>; "
     "read agent-resources guide first for admission, sizing, cancellation and inherited caps. "
+    "If the job's sandbox lacks a GPU device required for the task, send an URGENT message naming "
+    "the missing device and wait for the coordinator to resolve access before further GPU checks. "
     "Light commands run directly. Never detach or nest the wrapper; start a heavy run as your harness's "
     "background job and collect it on completion, so coordinator steers still reach you meanwhile. "
     "Use --exclusive only for timing measurements. Queue waits and root pauses are normal; "

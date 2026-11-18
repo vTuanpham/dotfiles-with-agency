@@ -9,6 +9,13 @@ LAUNCHER = Path(__file__).resolve().with_name("gpu-bin") / "bwrap"
 SYSTEM_TOOLS = (Path("/usr/bin/bwrap"), Path("/usr/bin/python3"))
 
 
+def resume_hint(state, job):
+    if (state.get("backend") in BACKENDS and state.get("sandbox") == "workspace-write"
+            and not state.get("gpu") and DEVICE.is_char_device()):
+        return f"For WSL CUDA, the coordinator can run `agent-bridge resume {job} --gpu` when idle."
+    return None
+
+
 def launcher(state):
     if state["sandbox"] != "workspace-write":
         raise RuntimeError("--gpu requires workspace-write")

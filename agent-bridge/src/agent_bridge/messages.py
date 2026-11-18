@@ -3,6 +3,7 @@
 import json
 import os
 import uuid
+from pathlib import Path
 
 from codex_wake.client import Wake, connection, validate_message
 
@@ -55,16 +56,45 @@ def native_result(result):
     return data
 
 
-def codex_context():
-    harness, session = address(identity())
-    if harness != "codex":
-        raise RuntimeError("Codex discovery requires a Codex sender context")
-    return Wake(session)
+def loaded_codex_sessions():
+    """Read live local roots without borrowing a Codex task identity."""
+    home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
+    rows = []
+    unavailable = []
+    with connection(home) as call:
+        page = call("thread/loaded/list", {"limit": 50})
+        identifiers, cursor = page.get("data"), page.get("nextCursor")
+        if not isinstance(identifiers, list) or (cursor is not None and not isinstance(cursor, str)):
+            raise RuntimeError("Invalid Codex loaded-thread inventory")
+        for identifier in identifiers[:50]:
+            target = "codex:" + identifier if isinstance(identifier, str) else ""
+            address(target)
+            try:
+                row = call("thread/read", {"threadId": identifier, "includeTurns": False}).get("thread")
+            except RuntimeError:
+                unavailable.append("codex loaded-thread metadata unavailable")
+                break
+            if (not isinstance(row, dict) or row.get("id") != identifier
+                    or "parentThreadId" not in row or "sessionId" not in row):
+                raise RuntimeError("Invalid Codex loaded-thread metadata")
+            if row["parentThreadId"] is not None or row["sessionId"] != identifier:
+                continue
+            status, title = row.get("status"), row.get("name")
+            if (not isinstance(status, dict) or not isinstance(status.get("type"), str)
+                    or (title is not None and not isinstance(title, str))):
+                raise RuntimeError("Invalid Codex loaded-thread metadata")
+            if status["type"] in ("active", "idle"):
+                rows.append({"address": target, "title": title, "status": status["type"]})
+    return {"version": 1, "sessions": rows, "truncated": cursor is not None or len(identifiers) > 50,
+            "unavailable_sources": unavailable}
 
 
 def codex_sessions():
     """Bounded native discovery; keep the server's truncation/unavailability flags."""
-    context = codex_context()
+    harness, session = address(identity())
+    if harness != "codex":
+        return loaded_codex_sessions()
+    context = Wake(session)
     with connection(context.home) as call:
         data = native_result(
             call(
@@ -105,15 +135,12 @@ def codex_sessions():
 def sessions():
     from . import agy_messages, claude_messages, opencode_messages
 
-    harness, _ = address(identity())
-    data: dict = {"version": 1, "sessions": [], "truncated": False, "unavailable_sources": []}
-    if harness == "codex":
-        try:
-            data = codex_sessions()
-        except (OSError, ValueError, RuntimeError):
-            data["unavailable_sources"].append("codex native inventory unavailable")
-    else:
-        data["unavailable_sources"].append("Codex discovery requires a Codex sender context")
+    address(identity())
+    try:
+        data = codex_sessions()
+    except (OSError, ValueError, RuntimeError):
+        data = {"version": 1, "sessions": [], "truncated": False,
+                "unavailable_sources": ["codex native inventory unavailable"]}
     for name, provider in (
         ("claude", claude_messages),
         ("agy", agy_messages),
