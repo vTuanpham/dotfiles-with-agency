@@ -21,7 +21,9 @@ def config():
 
 def live():
     rows = []
-    for item in (config() / "sessions").glob("*.json"):
+    for item in (config() / "sessions").iterdir():
+        if item.suffix != ".json":
+            continue
         try:
             data = read(item, private=False)
             pid = data.get("pid")
@@ -55,9 +57,20 @@ def key_path(pid, sock):
 
 
 def target(session):
-    rows = [row for row in live() if row.get("sessionId") == session]
-    if len(rows) != 1:
-        raise RuntimeError("Native Claude recipient is offline or ambiguous")
+    try:
+        rows = [row for row in live() if row.get("sessionId") == session]
+    except OSError as exc:
+        raise RuntimeError(
+            f"Native Claude discovery unavailable in this execution context ({exc.strerror}). "
+            "See agent-bridge guide messages."
+        ) from None
+    if not rows:
+        raise RuntimeError(
+            "Native Claude recipient could not be verified in this execution context. "
+            "See agent-bridge guide messages."
+        )
+    if len(rows) > 1:
+        raise RuntimeError("Native Claude recipient is ambiguous")
     row = rows[0]
     if row.get("peerProtocol") != 1:
         raise RuntimeError("Unsupported native Claude peer protocol")

@@ -70,6 +70,14 @@ minutes for both. Explicit settings can change these defaults; see the
 Reuse context when relevant, and start fresh when unrelated history outweighs
 the benefit; a warm cache does not make an oversized conversation free.
 
+## Reading papers
+
+For papers, prefer the publisher's HTML version. Claude Code's built-in
+`web-fetch` can return raw PDF bytes or hit its download limit. When only a PDF
+is available, use the parent session's [Read tool with page ranges](https://code.claude.com/docs/en/tools-reference#read-tool-behavior)
+on an authorized local copy. Reuse a saved PDF if the fetch already produced
+one. Remove temporary downloads you created after reading them.
+
 ## Hooks
 
 The settings snapshot selects `/bin/bash` for Claude's Bash tool through

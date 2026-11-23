@@ -91,17 +91,24 @@ The patches carry RTK's [Apache-2.0 license](patches/LICENSE).
 command wrapped by `summary` and keeps invalid `read` arguments in RTK's parser
 instead of trying to launch an external `read` program. Exit status is preserved.
 
+[output-recovery.patch](patches/output-recovery.patch) makes `summary` attach
+RTK's private recovery hint whenever it shortens output, including successful
+commands. With recovery disabled or unavailable, it shows the original output.
+`test` shows the original failure when it cannot identify the test runner
+(for example, with `/usr/bin/time -v`) or cannot store recovery output.
+
 Apply it with `patch -p1 < /path/to/dotfiles-with-agency/rtk/patches/summary-results.patch`
-in a clean RTK v1.1.0 checkout, then apply `command-boundaries.patch` the same way.
+in a clean RTK v1.1.0 checkout, then apply `command-boundaries.patch` and
+`output-recovery.patch` the same way.
 Build its normal release with Rust 1.91 or later:
 `cargo build --locked --release --bin rtk -j 2`, through host resource admission.
 Validate with the built binary first on PATH using this repository's filter
 checks below, then replace the user-local binary. Snapshot installation does not
 manage that binary; rerun these checks after an RTK upgrade.
 
-When `rtk test` reports only failed test names and counts, use its `rtk recall HASH`
-hint to retrieve the full output. If it gives no usable hint, rerun once
-with `rtk summary <command>`; its failed-test path preserves the original output.
+Use the printed `rtk recall HASH` or tee file path to retrieve a diagnostic.
+For a command whose output must be retained byte for byte, capture its native
+streams to a scratch file before applying a display filter.
 
 ## Learning and filter patterns
 

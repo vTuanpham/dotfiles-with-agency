@@ -1,0 +1,53 @@
+--- a/src/cmds/system/summary.rs
++++ b/src/cmds/system/summary.rs
+@@ -69,5 +69,11 @@
+     let summary = summarize_output(&raw, &command_display, result.success());
+-    let shown = never_worse(&raw, &summary);
+-    println!("{}", shown);
+-    timer.track(&command_display, "rtk summary", &raw, shown);
++    let hint = (never_worse(&raw, &summary) != raw)
++        .then(|| crate::core::tee::force_tee_hint(&raw, "summary"))
++        .flatten();
++    let shown = crate::core::runner::emit_guarded(
++        if hint.is_some() { &summary } else { &raw },
++        hint.as_deref(),
++        &raw,
++    );
++    timer.track(&command_display, "rtk summary", &raw, &shown);
+     Ok(result.exit_code)
+--- a/src/core/runner.rs
++++ b/src/core/runner.rs
+@@ -209,2 +209,3 @@
+     pub tee_label: Option<&'a str>,
++    pub require_failure_recovery: bool,
+     pub filter_stdout_only: bool,
+@@ -340,3 +341,8 @@
+     let shown = if let Some(label) = opts.tee_label {
+-        print_with_hint(&filtered, raw, raw_for_tracking, label, exit_code)
++        let hint = crate::core::tee::tee_and_hint(raw, label, exit_code);
++        if opts.require_failure_recovery && exit_code != 0 && hint.is_none() {
++            emit_guarded(raw_for_tracking, None, raw_for_tracking)
++        } else {
++            emit_guarded(&filtered, hint.as_deref(), raw_for_tracking)
++        }
+     } else if opts.no_trailing_newline {
+@@ -964,2 +970,10 @@
+     }
++    let mut opts = RunOptions::with_tee(tee_label);
++    opts.require_failure_recovery = true;
++    if caller_named_command {
++        opts = opts.unguarded_help();
++    }
++    if eco == TestEcosystem::Unknown {
++        opts = opts.early_exit_on_failure();
++    }
+     run_filtered(
+@@ -969,7 +983,3 @@
+         move |raw| extract_test_summary(raw, eco),
+-        if caller_named_command {
+-            RunOptions::with_tee(tee_label).unguarded_help()
+-        } else {
+-            RunOptions::with_tee(tee_label)
+-        },
++        opts,
+     )

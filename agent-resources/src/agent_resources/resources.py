@@ -218,9 +218,9 @@ def wait_reason(host, policy, shared=False):
 
 
 def memory_size(value):
-    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([KMGT]?)", value)
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)(?:([KMGT])(?:iB)?)?", value)
     if not match:
-        raise ValueError("memory size must be positive bytes or K/M/G/T, such as 1G or 2500M")
+        raise ValueError("memory size must be positive bytes or a binary size, such as 1GiB or 2500MiB")
     numerator, denominator = Decimal(match[1]).as_integer_ratio()
     size, remainder = divmod(numerator * 1024 ** (" KMGT".index(match[2]) if match[2] else 0), denominator)
     if size <= 0 or remainder:

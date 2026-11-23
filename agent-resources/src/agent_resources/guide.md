@@ -6,7 +6,8 @@ suites, long-lived local servers/headless browsers, or commands expected to use
 more than about 1 GiB or several cores for more than a minute.
 Do not wrap worker runners, git, edits, reads, lint, type checks or targeted tests.
 Everything else runs directly; commands are never automatically wrapped.
-Declare the expected peak with `--mem` (for example `1G` or `2500M`). Add
+Declare the expected peak with `--mem` (for example `1GiB` or `2500MiB`, as shown
+in the queue). Short forms such as `1G` and `2500M` use the same binary units. Add
 `--exclusive` only for timing measurements, never for test suites. Fitting jobs
 run concurrently. Wrap a compound job with `agent-resources run --mem 1G -- sh -c '...'`.
 Never detach the command (`&`, `nohup`, `setsid`, `disown`, self-daemonizing):
@@ -166,8 +167,8 @@ holder exits with an error; temporary pressure may recover during that grace per
 Omitting `--mem` reserves **1 GiB**. It matches the heavy-work threshold and
 avoids charging every unannotated test suite for an entire worker scope. It is a
 default estimate, not a measured peak: declare larger needs for model/data work.
-Memory sizes use positive bytes or K/M/G/T binary units, including exact fractions
-such as `1.5G`. This declaration neither allocates memory nor changes cgroup caps.
+Memory sizes use positive bytes or binary units, including exact fractions
+such as `1.5GiB`. This declaration neither allocates memory nor changes cgroup caps.
 
 Size repeat runs from representative peak measurements, not a copied brief's
 blanket estimate. `list` shows current command-group RSS beside each running

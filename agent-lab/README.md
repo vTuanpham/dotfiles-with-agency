@@ -45,6 +45,8 @@ workers can receive that override when intentionally sharing labs; native sandbo
 permissions still apply. `show`, `list` and `path` need read access only.
 Bridge carries the host registry into its isolated worker profiles automatically.
 Files are ordinary local files, not a sandbox, secret store or backup.
+If a lab directory is rejected for group or other access, verify its ownership
+and use `chmod go-rwx` on the named directory.
 
 Provenance includes the originating directory and available Git root/branch/commit,
 harness, session, model and effort. Creator and latest runner remain separate.

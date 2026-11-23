@@ -22,8 +22,15 @@ def private_dir(path: Path) -> None:
 
 def existing_dir(path: Path) -> None:
     info = path.lstat()
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
-        raise ValueError(f"expected an owner-only directory: {path}")
+    if not stat.S_ISDIR(info.st_mode):
+        raise ValueError(f"expected a directory: {path}")
+    if info.st_uid != os.getuid():
+        raise ValueError(f"expected an owner-only directory: {path} is owned by UID {info.st_uid}")
+    if info.st_mode & 0o077:
+        raise ValueError(
+            f"expected an owner-only directory: {path} has mode {stat.S_IMODE(info.st_mode):04o}. "
+            "Remove group and other permissions from this directory."
+        )
 
 
 @contextmanager

@@ -39,7 +39,7 @@ def test_live_command_group_rss_includes_child_without_changing_reservation(tmp_
               f"child=subprocess.Popen([sys.executable,'-c',{child!r}],stdout=subprocess.PIPE); "
               "assert child.stdout.readline().strip()==b'ready'; print('ready',flush=True); time.sleep(60)")
     process = subprocess.Popen(
-        [sys.executable, "-m", "agent_resources.cli", "run", "--mem", "96M", "--",
+        [sys.executable, "-m", "agent_resources.cli", "run", "--mem", "96MiB", "--",
          sys.executable, "-c", script], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, start_new_session=True,
     )

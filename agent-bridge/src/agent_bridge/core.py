@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import agent_session
-from agent_resources import identity
+from agent_resources import identity, resources
 
 from . import gpu, retries
 
@@ -322,7 +322,7 @@ def capped(cmd, state=None):
         "--quiet",
         "--slice=codex.slice",
         "-p",
-        f"MemoryMax={caps['memoryMax']}",
+        f"MemoryMax={resources.memory_size(caps['memoryMax'])}",
         "-p",
         "MemorySwapMax=512M",
         "-p",

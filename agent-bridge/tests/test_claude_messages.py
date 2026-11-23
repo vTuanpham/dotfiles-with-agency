@@ -98,6 +98,18 @@ def test_native_peer_steers_authenticates_receipts_and_cleans_up(native_peer, st
     assert list(Path(row["messagingSocketPath"]).parent.iterdir()) == [Path(row["messagingSocketPath"])]
 
 
+def test_missing_registry_is_unavailable_and_an_empty_registry_is_unverified(monkeypatch, tmp_path):
+    monkeypatch.setattr(claude_messages, "config", lambda: tmp_path)
+    with pytest.raises(FileNotFoundError):
+        claude_messages.sessions()
+    with pytest.raises(RuntimeError, match="discovery unavailable in this execution context"):
+        claude_messages.target("recipient")
+    (tmp_path / "sessions").mkdir()
+    assert claude_messages.sessions() == []
+    with pytest.raises(RuntimeError, match="recipient could not be verified in this execution context"):
+        claude_messages.target("recipient")
+
+
 def test_live_discovery_ignores_reused_pid_and_verifies_private_peer_key(monkeypatch, tmp_path):
     monkeypatch.setattr(claude_messages, "config", lambda: tmp_path)
     registry = tmp_path / "sessions"

@@ -11,7 +11,7 @@ def main():
     parser.add_argument("--version", action="version", version=version("agent-resources"))
     commands = parser.add_subparsers(dest="action", required=True)
     run = commands.add_parser("run", help="wait for headroom, then exec the command unchanged")
-    run.add_argument("--mem", help="expected peak memory, such as 1G or 2500M")
+    run.add_argument("--mem", help="expected peak memory, such as 1GiB or 2500MiB")
     run.add_argument("--exclusive", action="store_true", help="isolate timing measurements")
     run.add_argument("--memory-max-mib", help="require a systemd memory cap")
     run.add_argument("--agent-id", help="native agent loop to attribute this command to")

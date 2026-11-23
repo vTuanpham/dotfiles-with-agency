@@ -15,6 +15,45 @@ CLAUDE_HOOK = Path(__file__).resolve().parents[1] / "claude/.claude/hooks/rtk.py
 
 
 class FilterTests(unittest.TestCase):
+    def test_summary_mixed_output_can_be_recovered_without_rerunning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = {**os.environ, "XDG_CONFIG_HOME": str(root / "config"),
+                   "XDG_DATA_HOME": str(root / "data"), "RTK_RECALL": "1", "RTK_TEE": "1"}
+            first = json.dumps({"setup": list(range(100))})
+            final = json.dumps({"result": list(range(100, 200))})
+            command = ["rtk", "summary", sys.executable, "-c",
+                       f"print({first!r}); print({final!r})"]
+            result = subprocess.run(command, cwd=root, env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            recall = re.search(r"rtk recall ([0-9a-f]+)", result.stdout)
+            if recall:
+                recovered = subprocess.run(["rtk", "recall", recall[1], "--full"], cwd=root, env=env,
+                                           capture_output=True, text=True, timeout=30)
+                self.assertEqual(recovered.returncode, 0, recovered.stdout + recovered.stderr)
+                output = recovered.stdout
+            else:
+                output = result.stdout
+            self.assertIn(first, output)
+            self.assertIn(final, output)
+
+            disabled = subprocess.run(command, cwd=root, env={**env, "RTK_RECALL": "0"},
+                                      capture_output=True, text=True, timeout=30)
+            self.assertEqual(disabled.returncode, 0, disabled.stdout + disabled.stderr)
+            self.assertIn(final, disabled.stdout)
+
+    def test_test_filter_keeps_failed_wrapped_command_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = {**os.environ, "XDG_CONFIG_HOME": directory, "XDG_DATA_HOME": directory,
+                   "RTK_RECALL": "0"}
+            result = subprocess.run(
+                ["rtk", "test", "/usr/bin/time", "-v", sys.executable, "-c",
+                 'raise AssertionError("wrapped failure")'],
+                cwd=directory, env=env, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("AssertionError: wrapped failure", result.stdout + result.stderr)
+
     def test_summary_passes_pipeline_input_and_exit_status(self):
         with tempfile.TemporaryDirectory() as directory:
             env = {**os.environ, "HOME": directory, "XDG_CONFIG_HOME": directory,
@@ -113,7 +152,7 @@ class FilterTests(unittest.TestCase):
             self.assertIn("AssertionError", result.stdout + result.stderr)
             self.assertIn("FAILED (failures=1)", result.stdout + result.stderr)
 
-    def test_test_filter_keeps_pytest_failure_diagnostics_recoverable(self):
+    def test_test_filter_keeps_pytest_diagnostics_without_recovery_storage(self):
         rtk = shutil.which("rtk")
         pytest = shutil.which("pytest")
         self.assertIsNotNone(rtk, "install RTK before running filter checks")
@@ -121,7 +160,7 @@ class FilterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             env = {**os.environ, "XDG_CONFIG_HOME": str(root / "config"),
-                   "XDG_DATA_HOME": str(root / "data")}
+                   "XDG_DATA_HOME": str(root / "data"), "RTK_RECALL": "0"}
             source = root / "test_failure.py"
             source.write_text('def test_failure_details():\n    assert "expected value" == "actual value"\n')
             result = subprocess.run(
@@ -129,20 +168,7 @@ class FilterTests(unittest.TestCase):
                 cwd=root, env=env, capture_output=True, text=True, timeout=30,
             )
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            filtered = result.stdout + result.stderr
-            recall = re.search(r"rtk recall ([0-9a-f]+)", filtered)
-            if recall:
-                recovered = subprocess.run([rtk, "recall", recall[1]], cwd=root, env=env,
-                                           capture_output=True, text=True, timeout=30)
-                self.assertEqual(recovered.returncode, 0, recovered.stdout + recovered.stderr)
-                output = recovered.stdout + recovered.stderr
-            else:
-                fallback = subprocess.run(
-                    [rtk, "summary", pytest, "-q", "--tb=short", str(source)],
-                    cwd=root, env=env, capture_output=True, text=True, timeout=30,
-                )
-                self.assertEqual(fallback.returncode, 1, fallback.stdout + fallback.stderr)
-                output = fallback.stdout + fallback.stderr
+            output = result.stdout + result.stderr
             self.assertIn("AssertionError", output)
             self.assertIn("expected value", output)
             self.assertIn("actual value", output)

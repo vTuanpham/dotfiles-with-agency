@@ -289,6 +289,11 @@ def test_private_registry_file_and_directory_permissions(store, tmp_path):
     target = store.records / f"{record.id}.json"
     assert target.stat().st_mode & 0o777 == 0o600
     assert store.root.stat().st_mode & 0o777 == 0o700
+    work = store.directory(record.id) / "work"
+    work.chmod(0o755)
+    with pytest.raises(ValueError, match="work has mode 0755"):
+        inspect_tree(work)
+    assert work.stat().st_mode & 0o777 == 0o755
     target.chmod(0o644)
     with pytest.raises(ValueError, match="owner-only"):
         store.read(record.id)

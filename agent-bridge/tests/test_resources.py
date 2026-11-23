@@ -170,10 +170,10 @@ def test_capped_command_keeps_environment_defaults_and_honors_job_override(monke
     monkeypatch.setenv("CODEX_JOB_MEMORY_MAX", "2000M")
     monkeypatch.setenv("CODEX_JOB_CPU_QUOTA", "200%")
     monkeypatch.setattr(core.shutil, "which", lambda _: "/usr/bin/systemd-run")
-    assert "MemoryMax=2000M" in core.capped(["program"])
+    assert f"MemoryMax={2000 * 1024**2}" in core.capped(["program"])
     assert "CPUQuota=200%" in core.capped(["program"])
-    command = core.capped(["program"], {"memoryMax": "4G", "cpuQuota": "400%"})
-    assert "MemoryMax=4G" in command and "CPUQuota=400%" in command
+    command = core.capped(["program"], {"memoryMax": "4GiB", "cpuQuota": "400%"})
+    assert f"MemoryMax={4 * 1024**3}" in command and "CPUQuota=400%" in command
 
 
 def test_start_and_resume_choose_caps_and_gpu_at_next_launch(budgets, monkeypatch, tmp_path):

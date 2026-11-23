@@ -83,6 +83,10 @@ Claude needs its existing native cross-session messaging enabled, not a Bridge m
 The Linux host adapter supports native peer protocol 1, as shipped in 2.1.317;
 unknown protocols fail explicitly. It reads live registry metadata and peer keys
 under `CLAUDE_CONFIG_DIR`, never transcripts or unrelated authentication stores.
+A missing or unreadable Claude registry appears under `unavailable_sources`.
+An unverified exact recipient can also mean the sandbox cannot see its process
+or socket. Compare `agent-bridge message list` in an authorized host context
+using the same Claude config before concluding the recipient is offline.
 OpenCode uses its existing private `XDG_STATE_HOME/opencode/service.json` and
 verifies its loopback URL, version and process before any send.
 Its direct messaging adapter addresses sessions on that service; a standalone
