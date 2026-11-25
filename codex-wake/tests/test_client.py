@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from codex_wake import client
 
 
@@ -18,6 +17,7 @@ def transport(monkeypatch):
         "mcpServer/tool/call": {
             "content": [{"type": "text", "text": '{"threadId":"target-thread"}'}],
         },
+        "thread/read": {"thread": {"id": "target-thread", "status": {"type": "idle"}}},
     }
 
     class Socket:
@@ -144,6 +144,26 @@ def test_rejected_or_misdirected_send_never_retries(transport, result):
     assert transport[0][0].closed and transport[1][0].closed
 
 
+@pytest.mark.parametrize("status_available", [True, False])
+def test_rejection_reports_native_reason_and_checks_only_the_recipient(transport, status_available):
+    responses = transport[2]
+    responses["mcpServer/tool/call"] = {"isError": True, "content": [{
+        "type": "text", "text": "Cannot resume this task\nbecause its history is unavailable. " + "x" * 1000,
+    }]}
+    if not status_available:
+        responses["thread/read"] = OSError("private transport detail")
+    with pytest.raises(client.MessageRejected, match="did not queue a retry") as error:
+        client.Wake("sender-thread").send("event", recipient="target-thread")
+    message = str(error.value)
+    assert "Cannot resume this task because its history is unavailable" in message
+    assert "\n" not in message and len(message) < 500
+    assert f"Recipient status: {'idle' if status_available else 'unavailable'}" in message
+    assert "private transport detail" not in message
+    requests = transport[1][0].requests
+    assert [request["method"] for request in requests[-2:]] == ["mcpServer/tool/call", "thread/read"]
+    assert requests[-1]["params"] == {"threadId": "target-thread", "includeTurns": False}
+
+
 def test_unavailable_capability_does_not_send(transport):
     transport[2]["mcpServerStatus/list"] = {"data": [], "nextCursor": None}
     with pytest.raises(RuntimeError, match="requires codex_tui"):
@@ -155,6 +175,7 @@ def test_transport_failure_is_bounded_and_does_not_echo_server_data(transport):
     with pytest.raises(RuntimeError, match="failed \\(OSError\\)") as error:
         client.Wake("target-thread").send("event")
     assert "private response" not in str(error.value)
+    assert "Delivery is unconfirmed" in str(error.value)
     assert transport[0][0].closed and transport[1][0].closed
 
 

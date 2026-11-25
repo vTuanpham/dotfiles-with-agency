@@ -1,6 +1,7 @@
 import fcntl
 import json
 import os
+import select
 import shutil
 import signal
 import subprocess
@@ -9,7 +10,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from agent_resources import control, heavy
 from agent_resources.identity import agent_id as resource_agent_id
 from agent_resources.resources import Pressure
@@ -27,6 +27,31 @@ def test_standalone_exec_preserves_environment_argv_stdin_and_exit(tmp_path):
                             capture_output=True, text=True, timeout=15)
     assert result.returncode == 7
     assert json.loads(result.stdout) == ["synthetic-value", "$literal", "stdin payload"]
+
+
+def test_sigterm_while_queued_reports_no_start_and_releases_request(tmp_path, monkeypatch):
+    folder = tmp_path / "queue"
+    monkeypatch.setenv("AGENT_RESOURCES_HOME", str(folder))
+    control.pause("test hold")
+    env = {"PATH": os.defpath, "HOME": str(tmp_path), "AGENT_RESOURCES_HOME": str(folder),
+           "PYTHONPATH": str(Path(heavy.__file__).parents[1]), "AGENT_RESOURCES_MIN_AVAILABLE_MIB": "0"}
+    process = subprocess.Popen(
+        [sys.executable, "-m", "agent_resources.cli", "run", "--mem", "1MiB", "--",
+         sys.executable, "-c", "print('started')"], env=env, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        assert select.select([process.stderr], [], [], 10)[0], "command did not enter the queue"
+        assert "paused by root: test hold" in process.stderr.readline()
+        process.terminate()
+        stdout, stderr = process.communicate(timeout=5)
+        assert process.returncode == -signal.SIGTERM
+        assert not stdout and "SIGTERM before starting the command" in stderr
+        assert not list(folder.glob("*.request*"))
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=5)
 
 
 def test_live_command_group_rss_includes_child_without_changing_reservation(tmp_path):

@@ -1,10 +1,9 @@
 import json
 
 import pytest
-from codex_wake import client
-
 from agent_bridge import core, root_wake, status, watch
 from agent_bridge.acknowledgements import acknowledge
+from codex_wake import client
 
 
 @pytest.fixture
@@ -19,6 +18,7 @@ def transport(monkeypatch):
         "mcpServer/tool/call": {
             "content": [{"type": "text", "text": '{"threadId":"root-thread"}'}],
         },
+        "thread/read": {"thread": {"id": "root-thread", "status": {"type": "idle"}}},
     }
 
     class Socket:
@@ -186,9 +186,11 @@ def test_watch_automatically_delivers_exit_to_codex_root(monkeypatch, tmp_path, 
 def test_rejected_native_send_is_visible_and_never_uses_another_delivery(transport, result):
     delivery = root_wake.CodexRootWake("root-thread")
     transport[2]["mcpServer/tool/call"] = result
-    with pytest.raises(RuntimeError, match="not accepted"):
+    message = "Codex rejected" if result.get("isError") is True else "Delivery is unconfirmed"
+    with pytest.raises(RuntimeError, match=message):
         delivery.deliver(["owner"], "event")
     assert len(transport[1]) == 2 and all(peer.closed for peer in transport[1])
+    assert sum(request["method"] == "mcpServer/tool/call" for request in transport[1][1].requests) == 1
 
 
 @pytest.mark.parametrize("receipt", ["not-json", '{"threadId":"another-thread"}', "[]"])
@@ -230,7 +232,7 @@ def test_failed_native_send_keeps_group_notice_pending_for_another_watch(monkeyp
     core.save(job / "state.json", {"backend": "codex"})
     core.log(job, "turn_completed")
     transport[2]["mcpServer/tool/call"] = {"isError": True, "content": []}
-    with pytest.raises(RuntimeError, match="not accepted"):
+    with pytest.raises(RuntimeError, match="Codex rejected"):
         watch.watch(["owner"], until_event=True)
     pending = status.Collector(tmp_path).collect(include_quotas=False)
     assert pending.wake_events[0].kind == "completion_batch"

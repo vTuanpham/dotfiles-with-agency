@@ -14,6 +14,10 @@ MAX_RESPONSE = 8 * 1024 * 1024
 MAX_MESSAGE = 1000
 
 
+class MessageRejected(RuntimeError):
+    """The native tool explicitly returned an error for the send."""
+
+
 def validate_message(prompt):
     if not isinstance(prompt, str) or not prompt.strip():
         raise RuntimeError("Codex task notification must be nonempty text")
@@ -44,7 +48,10 @@ def connection(home):
             if type(response.get("id")) is not int or response["id"] != sequence or "method" in response:
                 continue
             if "error" in response:
-                raise RuntimeError(f"Codex wake delivery rejected {method}")
+                error = response["error"]
+                code = error.get("code") if isinstance(error, dict) else None
+                suffix = f" (RPC code {code})" if type(code) is int else ""
+                raise RuntimeError(f"Codex wake delivery rejected {method}{suffix}")
             result = response.get("result")
             if not isinstance(result, dict):
                 raise RuntimeError("Invalid Codex wake delivery result")
@@ -81,6 +88,34 @@ def connection(home):
         if websocket is not None:
             websocket.close()
         transport.close()
+
+
+def _tool_text(result):
+    content = result.get("content")
+    if (isinstance(content, list) and len(content) == 1 and isinstance(content[0], dict)
+            and content[0].get("type") == "text" and isinstance(content[0].get("text"), str)):
+        return content[0]["text"]
+    return None
+
+
+def _rejection(call, target, text):
+    status = "unavailable"
+    try:
+        thread = call("thread/read", {"threadId": target, "includeTurns": False}).get("thread")
+    except (OSError, RuntimeError, ValueError, WebSocketException):
+        pass  # Keep the original rejection when recipient metadata is unavailable.
+    else:
+        if isinstance(thread, dict) and thread.get("id") == target and isinstance(thread.get("status"), dict):
+            observed = thread["status"].get("type")
+            if observed in ("active", "idle", "notLoaded", "systemError"):
+                status = observed
+    # Keep the native explanation on one line without replaying the MCP payload.
+    reason = " ".join("".join(char if char.isprintable() else " " for char in (text or "")[:1000]).split())
+    detail = f" ({reason[:300]})" if reason else ""
+    return MessageRejected(
+        f"Codex rejected the native message{detail}. Recipient status: {status}. "
+        "This send did not queue a retry. Check the recipient before trying again."
+    )
 
 
 class Wake:
@@ -139,31 +174,35 @@ class Wake:
         """Send once; an uncertain response must not cause an automatic duplicate."""
         validate_message(prompt)
         target = self.thread if recipient is None else Wake(recipient, self.home).thread
-        with connection(self.home) as call:
-            result = call(
-                "mcpServer/tool/call",
-                {
-                    "threadId": self.thread,
-                    "server": "codex_tui",
-                    "tool": "send_message_to_thread",
-                    "arguments": {"threadId": target, "prompt": prompt},
-                },
-            )
-        error, content = result.get("isError"), result.get("content")
-        if (
-            error is not None
-            and type(error) is not bool
-            or error is True
-            or not isinstance(content, list)
-            or len(content) != 1
-            or not isinstance(content[0], dict)
-            or content[0].get("type") != "text"
-            or not isinstance(content[0].get("text"), str)
-        ):
-            raise RuntimeError("Codex native task notification was not accepted")
+        submitted = False
         try:
-            receipt = json.loads(content[0]["text"])
-        except ValueError:
-            raise RuntimeError("Invalid Codex native task notification receipt") from None
-        if not isinstance(receipt, dict) or receipt.get("threadId") != target:
-            raise RuntimeError("Codex native task notification targeted a different thread")
+            with connection(self.home) as call:
+                submitted = True
+                result = call(
+                    "mcpServer/tool/call",
+                    {
+                        "threadId": self.thread,
+                        "server": "codex_tui",
+                        "tool": "send_message_to_thread",
+                        "arguments": {"threadId": target, "prompt": prompt},
+                    },
+                )
+                error, text = result.get("isError"), _tool_text(result)
+                if error is True:
+                    raise _rejection(call, target, text)
+                if (error is not None and type(error) is not bool) or text is None:
+                    raise RuntimeError("Invalid Codex native task notification receipt")
+                try:
+                    receipt = json.loads(text)
+                except ValueError:
+                    raise RuntimeError("Invalid Codex native task notification receipt") from None
+                if not isinstance(receipt, dict) or receipt.get("threadId") != target:
+                    raise RuntimeError("Codex native task notification targeted a different thread")
+        except MessageRejected:
+            raise
+        except RuntimeError as exc:
+            if not submitted:
+                raise
+            raise RuntimeError(
+                f"{exc}. Delivery is unconfirmed. Inspect the recipient before resending."
+            ) from None

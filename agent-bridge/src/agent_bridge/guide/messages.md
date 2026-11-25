@@ -70,8 +70,10 @@ pauses, approval holds and refusals stay in force.
 Acceptance, a socket write, the next turn and actually reading a message are
 different observations. A reply provides stronger evidence than a send receipt.
 
-There is one send attempt. A transport error or lost receipt may mean the message
-arrived: inspect the recipient before considering another send. Claude authenticates
+There is one send attempt. A Codex rejection reports the native reason and the
+recipient's status when available. Bridge keeps no local copy for later delivery.
+A transport error or lost receipt leaves delivery unconfirmed. Inspect the
+recipient before considering another send. Claude authenticates
 with the native private peer key, verifies process/socket identity and uses a
 temporary private reply socket to catch native holds/refusals. No callback within
 500 ms yields `sent`, never a read claim. Both temporary socket and key are removed.

@@ -4,6 +4,7 @@ import fcntl
 import json
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -22,6 +23,14 @@ DEFAULT_NEED = 1024 * MIB
 BACKFILL_SECONDS = 300
 IDLE_UNFIT_SECONDS = 300
 CANCELLED_EXIT = 125
+
+
+class _TerminatedBeforeExec(BaseException):
+    pass
+
+
+def _interrupt_wait(_signum, _frame):
+    raise _TerminatedBeforeExec
 
 
 def directory():
@@ -360,7 +369,11 @@ def run(command, memory_max=None, mem=None, exclusive=False, agent_id=None):
     folder = prepare()
     path = folder / f"{time.time_ns():020d}-{uuid.uuid4().hex}.request"
     fd = None
+    report_term = signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
+    terminated = False
     try:
+        if report_term:
+            signal.signal(signal.SIGTERM, _interrupt_wait)
         with gate(folder):
             entries(folder)
             fd = locked_file(path)
@@ -483,7 +496,13 @@ def run(command, memory_max=None, mem=None, exclusive=False, agent_id=None):
         os.set_inheritable(fd, True)
         # Replace the wrapper: signals, stdio and exit status belong directly to the command.
         os.execvpe(command[0], command, {**os.environ, "AGENT_RESOURCES_ACTIVE": "1"})
+    except _TerminatedBeforeExec:
+        terminated = True
+        print("heavy: received SIGTERM before starting the command; workload did not run",
+              file=sys.stderr, flush=True)
     finally:
+        if report_term:
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
         if fd is not None:
             os.close(fd)
         with gate(folder):
@@ -491,3 +510,5 @@ def run(command, memory_max=None, mem=None, exclusive=False, agent_id=None):
             reservation_path(path).unlink(missing_ok=True)
             control_path(path).unlink(missing_ok=True)
             agent_path(path).unlink(missing_ok=True)
+    if terminated:
+        signal.raise_signal(signal.SIGTERM)

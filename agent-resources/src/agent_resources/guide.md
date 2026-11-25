@@ -85,6 +85,10 @@ stopped too and the worker runner continues. Running commands retain their
 normal signal exit status. A process that escapes its process group by
 daemonizing is unsupported; keep servers attached to the wrapper.
 
+If the waiting wrapper receives an external `SIGTERM`, it prints that the
+workload did not start, releases its queue entry and preserves signal exit
+status (usually **143** in a shell). The signal does not identify its source.
+
 Cancellation verifies process identity against the inherited request descriptor
 and checks process start times before escalation; it never signals a worker
 runner's process group. Run controls from the host root harness so `/proc`
