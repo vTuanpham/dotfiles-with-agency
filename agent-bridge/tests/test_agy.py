@@ -1,4 +1,5 @@
 import json
+import re
 
 from agent_bridge import agy
 
@@ -48,6 +49,31 @@ def test_build_home_never_touches_real_agy_store(tmp_path, monkeypatch):
     assert not projects.is_symlink() and (home / ".gemini" / "config" / "mcp_config.json").is_symlink()
     (projects / "p.json").write_text("rewritten")
     assert (real / ".gemini" / "config" / "projects" / "p.json").read_text() == "stub"
+
+
+def test_read_only_hooks_keep_user_hooks_and_explicit_command_rules(tmp_path):
+    user_hook = {"existing": {"enabled": False}}
+    original = tmp_path / "original.json"
+    original.write_text(json.dumps(user_hook))
+    path = tmp_path / ".gemini/config/hooks.json"
+    path.parent.mkdir(parents=True)
+    path.symlink_to(original)
+
+    agy.prepare_read_only_hooks(tmp_path, [])
+    assert not path.is_symlink()
+    hooks = json.loads(path.read_text())
+    assert hooks["existing"] == user_hook["existing"]
+    matcher = hooks["agent-bridge-read-only"]["PreToolUse"][0]["matcher"]
+    assert re.fullmatch(matcher, "run_command")
+    assert re.fullmatch(matcher, "write_file")
+    assert not re.fullmatch(matcher, "read_file")
+
+    agy.prepare_read_only_hooks(tmp_path, ["command(git status)"])
+    hooks = json.loads(path.read_text())
+    matcher = hooks["agent-bridge-read-only"]["PreToolUse"][0]["matcher"]
+    assert not re.fullmatch(matcher, "run_command")
+    assert re.fullmatch(matcher, "write_file")
+    assert json.loads(original.read_text()) == user_hook
 
 
 def test_burn_check_reports_requests_the_stream_never_showed(tmp_path, monkeypatch):

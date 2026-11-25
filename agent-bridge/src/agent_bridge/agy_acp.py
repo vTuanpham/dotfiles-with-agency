@@ -26,6 +26,9 @@ from .core import (
 
 class Rpc(CodexRpc):
     def __init__(self, job, state):
+        home = Path(job) / "home"
+        if state["sandbox"] == "read-only":
+            agy.prepare_read_only_hooks(home, state.get("allow", []))
         self.err = (Path(job) / "agy.stderr.log").open("a", encoding="utf-8")
         command = ["agy", "acp", "--sandbox", "--disable-telemetry"]
         if state["sandbox"] == "workspace-write":
@@ -35,7 +38,7 @@ class Rpc(CodexRpc):
         try:
             self.p = subprocess.Popen(
                 capped(command, state),
-                cwd=state["cwd"], env=worker_env(job, state=state, HOME=str(Path(job) / "home")),
+                cwd=state["cwd"], env=worker_env(job, state=state, HOME=str(home)),
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.err,
                 bufsize=0, start_new_session=True,
             )
@@ -92,10 +95,11 @@ def reject(rpc, event, job):
     method, params = event.get("method"), event.get("params") or {}
     if method == "session/request_permission":
         options = params.get("options") or []
-        denied = next((item for item in options if isinstance(item, dict)
-                       and item.get("kind") in {"reject_once", "reject_always"}), None)
-        outcome = ({"outcome": "selected", "optionId": denied["optionId"]}
-                   if denied and isinstance(denied.get("optionId"), str) else {"outcome": "cancelled"})
+        option = next((item["optionId"] for item in options if isinstance(item, dict)
+                       and item.get("kind") == "reject_once"
+                       and isinstance(item.get("optionId"), str) and item["optionId"].strip()), None)
+        outcome = ({"outcome": "selected", "optionId": option}
+                   if option is not None else {"outcome": "cancelled"})
         rpc.send({"id": event["id"], "result": {"outcome": outcome}})
         log(job, "permission_denied", level="urgent",
             message=("AGY requested approval; Bridge declined the action. "
@@ -199,7 +203,7 @@ def run(job, state, path, prompt, resume=False, compact=False):
         raise
     reason, turns_done, permission_denied = "normal", 0, False
     session = None
-    pending, texts, echo, awaiting_echo = {}, [], "", deque()
+    pending, texts, echo, awaiting_echo = {}, [], "", {}
     queue_dir = job / "steer"
     queue_dir.mkdir(exist_ok=True)
     try:
@@ -230,13 +234,19 @@ def run(job, state, path, prompt, resume=False, compact=False):
             rpc.seq += 1
             identifier = f"prompt-{rpc.seq}"
             pending[identifier] = filename
-            awaiting_echo.append((text, filename))
+            awaiting_echo[identifier] = text
             rpc.send({"id": identifier, "method": "session/prompt", "params": {
                 "sessionId": session, "prompt": [{"type": "text", "text": text}],
             }})
             state["activeTurnId"] = identifier
             log_turn_started(job, state, identifier)
             save(path, state)
+
+        def accept_prompt(identifier, filename):
+            if filename and (state.get("inflight") or {}).get("file") == filename:
+                confirm_steer(job, state)
+                (queue_dir / filename).with_suffix(".queue").unlink(missing_ok=True)
+            log(job, "prompt_accepted", turnId=identifier)
 
         if (job / "stop").exists():
             (job / "stop").unlink()
@@ -302,20 +312,16 @@ def run(job, state, path, prompt, resume=False, compact=False):
                     save(path, state)
                 elif kind == "user_message_chunk" and isinstance(text, str):
                     flush_message(job, texts)
-                    echo += text
                     if awaiting_echo:
-                        expected, filename = awaiting_echo[0]
+                        identifier = next(iter(awaiting_echo))
+                        expected = awaiting_echo[identifier]
+                        echo += text
                         if echo == expected:
-                            awaiting_echo.popleft()
-                            marker = (queue_dir / filename).with_suffix(".queue") if filename else None
-                            if filename and (state.get("inflight") or {}).get("file") == filename:
-                                confirm_steer(job, state)
-                            if marker:
-                                marker.unlink(missing_ok=True)
+                            awaiting_echo.pop(identifier)
+                            accept_prompt(identifier, pending[identifier])
                             echo = ""
-                            log(job, "prompt_accepted")
-                        elif len(echo) >= len(expected):
-                            raise RuntimeError("AGY prompt echo did not match the submitted input")
+                        elif not expected.startswith(echo):
+                            echo = ""
                 elif kind == "agent_message_chunk" and isinstance(text, str):
                     texts.append(text)
                 elif kind in {"tool_call", "tool_call_update"}:
@@ -327,7 +333,11 @@ def run(job, state, path, prompt, resume=False, compact=False):
                     if status in {"completed", "failed"}:
                         log(job, "command_end", status=status, stepId=update.get("toolCallId"))
             elif event.get("id") in pending:
-                filename = pending.pop(event["id"])
+                identifier = event["id"]
+                filename = pending.pop(identifier)
+                if identifier == next(iter(awaiting_echo), None):
+                    echo = ""
+                awaiting = awaiting_echo.pop(identifier, None) is not None
                 if "error" in event:
                     message = event["error"].get("message", "unknown error")
                     raise RuntimeError(f"AGY ACP prompt failed: {message}")
@@ -336,8 +346,9 @@ def run(job, state, path, prompt, resume=False, compact=False):
                 if stop not in {"end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"}:
                     raise ValueError("AGY ACP returned an invalid prompt receipt")
                 flush_message(job, texts)
-                if filename and (state.get("inflight") or {}).get("file") == filename:
-                    raise RuntimeError("AGY did not confirm steer delivery; inspect the native session")
+                # AGY can process a prompt without streaming a user-message echo.
+                if awaiting and stop in {"end_turn", "max_tokens", "max_turn_requests"}:
+                    accept_prompt(identifier, filename)
                 if not pending:
                     cancelling = False
                     status = ("denied" if permission_denied else "completed") if stop == "end_turn" else (
@@ -348,6 +359,9 @@ def run(job, state, path, prompt, resume=False, compact=False):
                     permission_denied = False
                     state["activeTurnId"] = None
                     save(path, state)
+                if filename and (state.get("inflight") or {}).get("file") == filename:
+                    raise RuntimeError(f"AGY ended the prompt ({stop}) before confirming steer delivery; "
+                                       "inspect the native session")
     except Exception as error:
         reason = "error"
         log(job, "error", message=str(error))

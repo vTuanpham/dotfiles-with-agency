@@ -1,8 +1,8 @@
 import json
+import re
 from collections import deque
 
 import pytest
-
 from agent_bridge import agy_acp, core
 
 
@@ -56,24 +56,31 @@ def test_compact_requires_advertised_command_and_new_native_checkpoint(
     assert any(method == "session/prompt" for method, _ in calls) == advertised
 
 
-def test_acp_process_keeps_sandbox_and_explicit_writable_roots(tmp_path, monkeypatch):
+@pytest.mark.parametrize("sandbox", ["read-only", "workspace-write"])
+def test_acp_process_keeps_sandbox_and_explicit_writable_roots(tmp_path, monkeypatch, sandbox):
     calls = []
     monkeypatch.setattr(agy_acp, "capped", lambda command, state: command)
     monkeypatch.setattr(agy_acp.subprocess, "Popen",
                         lambda command, **kwargs: calls.append((command, kwargs)))
-    state = {"cwd": str(tmp_path), "sandbox": "workspace-write",
+    state = {"cwd": str(tmp_path), "sandbox": sandbox,
              "writableRoots": [str(tmp_path), "/tmp/extra"]}
     rpc = agy_acp.Rpc(tmp_path, state)
     rpc.err.close()
-    assert calls[0][0] == ["agy", "acp", "--sandbox", "--disable-telemetry", "--add-dir", "/tmp/extra"]
+    expected = ["agy", "acp", "--sandbox", "--disable-telemetry"]
+    if sandbox == "workspace-write":
+        expected.extend(["--add-dir", "/tmp/extra"])
+    assert calls[0][0] == expected
     assert calls[0][1]["env"]["HOME"] == str(tmp_path / "home")
     assert calls[0][1]["start_new_session"] is True
+    hooks = tmp_path / "home/.gemini/config/hooks.json"
+    assert hooks.exists() == (sandbox == "read-only")
 
 
+@pytest.mark.parametrize("echo", ["exact", "missing", "mismatch"])
 @pytest.mark.parametrize("update_settings", [False, True])
 @pytest.mark.parametrize("denied", [False, True])
 def test_active_prompt_is_steered_and_receipt_confirms_delivery(
-    tmp_path, monkeypatch, update_settings, denied
+    tmp_path, monkeypatch, update_settings, denied, echo
 ):
     job = tmp_path / "job"
     (job / "steer").mkdir(parents=True)
@@ -101,8 +108,10 @@ def test_active_prompt_is_steered_and_receipt_confirms_delivery(
                 return
             calls.append(value)
             text = value["params"]["prompt"][0]["text"]
-            self.output.append({"method": "session/update", "params": {"sessionId": "session", "update": {
-                "sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": text}}}})
+            if echo != "missing":
+                self.output.append({"method": "session/update", "params": {"sessionId": "session", "update": {
+                    "sessionUpdate": "user_message_chunk", "content": {
+                        "type": "text", "text": text if echo == "exact" else f"{text}\nMetadata"}}}})
             if update_settings:
                 for session, model in [("session", "changed-model"), ("other-session", "wrong-model")]:
                     self.output.append({"method": "session/update", "params": {"sessionId": session,
@@ -139,20 +148,24 @@ def test_active_prompt_is_steered_and_receipt_confirms_delivery(
     assert (job / "steer/sent/001.md").is_file()
     assert (job / "steer/sent/002.md").is_file()
     events = [json.loads(line)["kind"] for line in (job / "live.jsonl").read_text().splitlines()]
-    assert events.count("steer_sent") == 2 and events.count("turn_completed") == 1
+    assert events.count("steer_sent") == 2
+    assert events.count("prompt_accepted") == 3
     assert state["effectiveEffort"] == ("medium" if update_settings else "high")
     assert state["resolvedModel"] == ("changed-model" if update_settings else "native-default")
     observed = [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()
                 if json.loads(line)["kind"] == "effort_observed"]
     assert [event["effort"] for event in observed] == (["medium"] * 3 if update_settings else [])
     rows = [json.loads(line) for line in (job / "live.jsonl").read_text().splitlines()]
-    assert [row["status"] for row in rows if row["kind"] == "turn_completed"] == [
-        "denied" if denied else "completed"]
+    expected = ["denied" if denied else "completed"]
+    if echo != "exact":
+        expected.append("completed")  # the second steer follows the first native receipt
+    assert [row["status"] for row in rows if row["kind"] == "turn_completed"] == expected
     assert all("Waiting for" not in row.get("text", "") for row in rows if row["kind"] == "message")
     assert any(row.get("tool") == "Waiting for task-106 to complete." for row in rows)
 
 
-def test_explicit_queue_waits_for_active_turn(tmp_path, monkeypatch):
+@pytest.mark.parametrize("stop", ["end_turn", "cancelled", "refusal"])
+def test_explicit_queue_waits_for_active_turn(tmp_path, monkeypatch, stop):
     job = tmp_path / "job"
     (job / "steer").mkdir(parents=True)
     (job / "steer/001.md").write_text("later")
@@ -174,11 +187,8 @@ def test_explicit_queue_waits_for_active_turn(tmp_path, monkeypatch):
                 return
             text = value["params"]["prompt"][0]["text"]
             timeline.append("later sent" if text == "later" else "initial sent")
-            self.output.extend([
-                {"method": "session/update", "params": {"sessionId": "s", "update": {
-                    "sessionUpdate": "user_message_chunk", "content": {"text": text}}}},
-                {"id": value["id"], "result": {"stopReason": "end_turn"}},
-            ])
+            self.output.append({"id": value["id"], "result": {
+                "stopReason": stop if text == "later" else "end_turn"}})
 
         def read(self, _):
             value = self.output.popleft()
@@ -191,10 +201,15 @@ def test_explicit_queue_waits_for_active_turn(tmp_path, monkeypatch):
 
     monkeypatch.setattr(agy_acp, "Rpc", FakeRpc)
     monkeypatch.setattr(agy_acp.agy, "build_home", lambda *_: None)
-    agy_acp.run(job, state, path, "initial")
+    if stop == "end_turn":
+        agy_acp.run(job, state, path, "initial")
+    else:
+        with pytest.raises(RuntimeError, match=re.escape(f"({stop}) before confirming steer delivery")):
+            agy_acp.run(job, state, path, "initial")
     assert timeline == ["initial sent", "initial finished", "later sent"]
-    assert not (job / "steer/001.queue").exists()
-    assert (job / "steer/sent/001.md").is_file()
+    assert (job / "steer/001.queue").exists() == (stop != "end_turn")
+    assert (job / "steer/sent/001.md").is_file() == (stop == "end_turn")
+    assert bool(core.load_state(job).get("inflight")) == (stop != "end_turn")
 
 
 def test_stop_during_setup_does_not_send_a_prompt(tmp_path, monkeypatch):
@@ -307,6 +322,7 @@ def test_permission_request_is_denied_without_exposing_its_payload():
     with patch.object(agy_acp, "log") as log:
         agy_acp.reject(FakeRpc(), {"id": 1, "method": "session/request_permission", "params": {
             "options": [{"kind": "allow_once", "optionId": "allow"},
+                        {"kind": "reject_always", "optionId": "remember"},
                         {"kind": "reject_once", "optionId": "reject"}],
             "toolCall": {"rawInput": "private"}}}, "/tmp")
     assert calls == [{"id": 1, "result": {"outcome": {"outcome": "selected", "optionId": "reject"}}}]

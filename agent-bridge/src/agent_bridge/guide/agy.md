@@ -5,10 +5,11 @@
 - `agy-auth` owns account inventory and sign-in. A worker uses the current CLI account. Each worker receives its own private credential. Refreshed credentials return to the registry only if the original registry snapshot is unchanged.
 - Bridge reads the selected thinking level from the native ACP session configuration.
 - **Compact**: `agent-bridge compact <job>` resumes an idle session, discovers ACP's compact command and confirms a new native checkpoint before reporting success.
-- Bridge configures reads anywhere, workspace-write for the cwd plus writable roots, and commands in AGY's terminal sandbox with no network. read-only supplies a write denial and declines command approval requests. Native ACP rule enforcement has the limitation below.
+- Bridge requests reads anywhere, workspace-write for the cwd plus writable roots, and commands in AGY's terminal sandbox with no network. Read-only workers use a [job-local pre-tool hook](https://antigravity.google/docs/hooks#pretooluse) to refuse shell commands and file edits at the tool level so the review can continue. Explicit `--allow 'command(...)'` rules keep native command handling.
   - Additional access is requested through AGY's allow rules; its native contract gives deny rules precedence.
-  - ACP approval requests are declined and logged as urgent; a turn ending after
-    a declined action reports `denied`. In native CLI 1.5.9 probes, default ACP
+  - ACP approval requests are declined and logged as urgent. AGY can still ask
+    before reading outside the workspace, where declining can end the turn.
+    An `end_turn` result after a declined action reports `denied`. In native CLI 1.5.9 probes, default ACP
     requested approval despite matching allow or deny rules. ACP `auto` ran a
     command and wrote a file despite explicit deny rules; `--process-per-session`
     did not fix the command denial. The ordinary headless CLI enforced the same
@@ -16,6 +17,6 @@
     bypassed command denials. Bridge keeps its default approval handling; changing
     ACP modes does not repair rule enforcement. These observations differ from
     [AGY's permission contract](https://antigravity.google/docs/permissions/#cli-fine-grained-permissions).
-- Bridge uses AGY's [ACP steering](https://antigravity.google/docs/ide/extensions/acp/) to send a prompt during an active turn. `--queue` holds it for the next turn. The native echo confirms delivery; if the connection fails before confirmation, inspect the session before retrying. Interrupt ends the active turn. Conversation state is isolated per job and removed with the job.
+- Bridge uses AGY's [ACP steering](https://antigravity.google/docs/ide/extensions/acp/) to send a prompt during an active turn. `--queue` holds it for the next turn. A matching echo or the prompt's native completion confirms delivery, including when a later tool denial ends the turn. If delivery is still uncertain after a disconnect or cancellation, inspect the session before retrying. Interrupt ends the active turn. Conversation state is isolated per job and removed with the job.
 - Quota out: change the current account with `agy-auth` before resuming the worker. Before that, the runner reads its own login's cached quota every two minutes and asks `agent-accounts` to refresh it (at most about every ten), then raises `quota_pressure` for a window that covers the worker's model: by AGY's reported model set when it gives one, otherwise by the group's name, since `/usage` names its groups ("Gemini Models", "Claude and GPT models") without listing models. A worker on a `gemini-*`, `claude-*` or `gpt-*` model matches a group naming that family; any other model matches nothing. The warning says when the match was inferred from a name. Readings are as coarse as the refresh.
 - Waiting costs quota: agy backgrounds long commands and repeated polling can spend model requests. The runner checks the native transcript when available and raises an urgent `quota_burn` after sustained requests without streamed activity. Briefs should keep agy workers off long benchmarks; the runner tells them to hand such a command to the coordinator and end the turn.

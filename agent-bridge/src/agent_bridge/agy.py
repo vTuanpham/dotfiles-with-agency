@@ -1,4 +1,5 @@
 import json
+import shlex
 import shutil
 import subprocess
 import time
@@ -7,6 +8,7 @@ from pathlib import Path
 from agent_accounts import agy_auth
 
 from .core import (
+    atomic_save,
     link,
     log,
     save,
@@ -118,6 +120,33 @@ def build_home(job, state):
     )
     (cli / "settings.json").chmod(0o600)
     return home
+
+
+def prepare_read_only_hooks(home, allow):
+    path = home / ".gemini/config/hooks.json"
+    try:
+        hooks = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        hooks = {}
+    if not isinstance(hooks, dict):
+        raise ValueError("AGY hooks.json must be a JSON object")
+    # Refuse before ACP approval, where rejecting the same action ends the whole turn.
+    response = shlex.quote(json.dumps({
+        "decision": "deny",
+        "reason": "This Bridge job is read-only. Use native file reads and search.",
+    }))
+    tools = ["write_file", "write_to_file", "replace_file_content", "multi_replace_file_content"]
+    if not any(rule.startswith("command(") for rule in allow):
+        tools.append("run_command")
+    hook = {"PreToolUse": [{
+        "matcher": f"^({'|'.join(tools)})$",
+        "hooks": [{"type": "command", "command": f"printf '%s\\n' {response}"}],
+    }]}
+    name = "agent-bridge-read-only"
+    if path.is_symlink() or hooks.get(name) != hook:
+        hooks[name] = hook
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_save(path, hooks)
 
 
 def set_auth(job, state, account):
