@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent_bridge import agy_messages, core, messages, opencode_messages
+from agent_bridge import agy_messages, claude_messages, core, messages, opencode_messages
 
 
 @pytest.fixture(autouse=True)
@@ -149,36 +149,84 @@ def test_agy_registers_private_connection_and_uses_native_agentapi(agy):
     assert "credential" not in json.dumps(result)
 
 
-def test_agy_rejection_prevents_send_and_never_uses_human_prompt(agy, monkeypatch):
+@pytest.mark.parametrize(
+    ("error_text", "diagnostic", "register_again"),
+    [
+        ("rpc error: code = Unavailable desc = Error while dialing: dial tcp 127.0.0.1:12345: "
+         "connect: connection refused", "connection refused", True),
+        ("rpc error: code = Unavailable desc = Error while dialing: socket: operation not permitted",
+         "local socket access denied", False),
+        ("rpc error: code = Unauthenticated desc = invalid token", "gRPC Unauthenticated", True),
+        ("rpc error: code = NotFound desc = conversation missing", "gRPC NotFound", False),
+        ("rpc error: code = fixture-native-credential desc = unknown error", "agentapi exit 1", False),
+    ],
+)
+def test_agy_preflight_reports_safe_reason(agy, monkeypatch, error_text, diagnostic, register_again):
     session, calls = agy
     agy_messages.register()
 
     def reject(args, **kwargs):
         calls.append(args)
-        return SimpleNamespace(returncode=1, stdout=b'{"error":"private diagnostic"}')
+        return SimpleNamespace(returncode=1, stdout=json.dumps({
+            "response": {}, "error": error_text + " fixture-native-credential",
+        }).encode())
 
     monkeypatch.setattr(agy_messages.subprocess, "run", reject)
-    with pytest.raises(RuntimeError, match="no chat fallback") as error:
+    with pytest.raises(RuntimeError, match=diagnostic) as error:
         agy_messages.send(packet("agy:" + session))
-    assert "private diagnostic" not in str(error.value)
+    assert "No message was sent" in str(error.value)
+    assert ("message register" in str(error.value)) == register_again
+    assert "fixture-native-credential" not in str(error.value)
+    assert "127.0.0.1" not in str(error.value)
     assert len(calls) == 1 and calls[0][2] == "get-conversation-metadata"
 
 
-def test_agy_unknown_delivery_never_retries(agy, monkeypatch):
+@pytest.mark.parametrize("failure", ["timeout", "rejection", "malformed"])
+def test_agy_unconfirmed_delivery_never_retries(agy, monkeypatch, failure):
     session, calls = agy
     agy_messages.register()
     original = agy_messages.subprocess.run
 
-    def timeout(args, **kwargs):
-        if args[2] == "send-message":
-            calls.append((args, kwargs))
+    def run(args, **kwargs):
+        if args[2] != "send-message":
+            return original(args, **kwargs)
+        calls.append((args, kwargs))
+        if failure == "timeout":
             raise subprocess.TimeoutExpired(args, 10)
-        return original(args, **kwargs)
+        if failure == "rejection":
+            return SimpleNamespace(
+                returncode=1, stdout=b'{"error":"rpc error: code = FailedPrecondition desc = held"}',
+            )
+        return SimpleNamespace(returncode=0, stdout=b'{"response":null}')
 
-    monkeypatch.setattr(agy_messages.subprocess, "run", timeout)
-    with pytest.raises(RuntimeError, match="do not retry"):
+    monkeypatch.setattr(agy_messages.subprocess, "run", run)
+    with pytest.raises(RuntimeError, match=r"Delivery may be uncertain\. Check before retrying") as error:
         agy_messages.send(packet("agy:" + session))
-    assert len(calls) == 2
+    assert [args[2] for args, _ in calls] == ["get-conversation-metadata", "send-message"]
+    if failure == "rejection":
+        assert "gRPC FailedPrecondition" in str(error.value)
+
+
+@pytest.mark.parametrize("registered", [True, False])
+def test_agy_outbound_message_refreshes_only_existing_registration(agy, monkeypatch, registered):
+    session, calls = agy
+    target = "agy:" + session
+    if registered:
+        agy_messages.register()
+    monkeypatch.setenv("ANTIGRAVITY_LS_ADDRESS", "127.0.0.1:54321")
+    monkeypatch.setenv("ANTIGRAVITY_CSRF_TOKEN", "fixture-refreshed-credential")
+    monkeypatch.setattr(claude_messages, "send", lambda packet: {"status": "sent"})
+
+    assert messages.send("claude:recipient", "Test the return path")["status"] == "sent"
+    binding = agy_messages.directory(target) / "endpoint.json"
+    assert binding.exists() == registered
+    if registered:
+        assert agy_messages.read(binding)["environment"] == {
+            "ANTIGRAVITY_LS_ADDRESS": "127.0.0.1:54321",
+            "ANTIGRAVITY_CSRF_TOKEN": "fixture-refreshed-credential",
+        }
+        assert agy_messages.send(packet(target))["status"] == "accepted"
+        assert calls[-1][1]["env"]["ANTIGRAVITY_LS_ADDRESS"] == "127.0.0.1:54321"
 
 
 def test_agy_rejects_remote_connection_before_saving(agy, monkeypatch):

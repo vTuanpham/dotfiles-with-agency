@@ -15,7 +15,7 @@ agent-bridge message whoami
 agent-bridge message list
 agent-bridge message send codex:NATIVE_ID --text 'Can you check the shared file?'
 agent-bridge message send claude:NATIVE_ID --text-file question.txt
-agent-bridge message register  # once through the current agy session's command tool
+agent-bridge message register  # from the current agy session's command tool
 ```
 
 Use the exact `HARNESS:SESSION_ID` from the other agent, native discovery or a
@@ -97,14 +97,19 @@ Message delivery never selects or changes the recipient's model. For a native
 OpenCode chat/model check, follow `agent-bridge start --help`'s OpenCode notes;
 service-API errors are not a substitute for that CLI check.
 
-agy sessions run `agent-bridge message register` once through their own native
+To receive messages, agy sessions run `agent-bridge message register` through their own native
 command tool, which exports the conversation's API environment. Startup hooks
 do not have that environment. If the tool's PATH omits it, use
 `~/.local/bin/agent-bridge message register`. Only the exact conversation address and its local
 `ANTIGRAVITY_LS_ADDRESS`/`ANTIGRAVITY_CSRF_TOKEN` connection binding are stored, with
 owner-only permissions under `$AGENT_BRIDGE_HOME/messages`. These credentials
-never appear in discovery, receipts or the public repository. Offline bindings
-fail the native metadata preflight; no conversation is resumed or cloned.
+never appear in discovery, receipts or the public repository. After a resume,
+an outgoing Bridge message can refresh an existing registration from that agy
+session's live environment. If an incoming send reports connection refused or
+an unauthenticated binding, run `agent-bridge message register` again in the
+recipient session. Discovery lists registrations. The metadata check at send
+time verifies reachability and stops delivery if it fails. Agentapi failures
+show the native status code when available and omit raw output.
 
 Other host tools can import `agent_bridge.messages.identity`, `sessions` and
 `send(target, text)`. `send` returns a version 1 receipt containing `id`, `sender`,

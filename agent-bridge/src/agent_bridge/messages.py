@@ -169,6 +169,10 @@ def send(target, text):
         raise ValueError("Message exceeds 16384 UTF-8 bytes")
     identifier = str(uuid.uuid4())
     packet = {"version": 1, "id": identifier, "sender": sender, "recipient": target, "text": text}
+    if sender.startswith("agy:"):
+        from .agy_messages import refresh_registration
+
+        refresh_registration(sender)
     if harness == "claude":
         from .claude_messages import send
 

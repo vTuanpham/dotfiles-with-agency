@@ -3,6 +3,7 @@
 import ipaddress
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -13,6 +14,11 @@ from . import core, messages
 from .message_store import directory, read
 
 CONNECTION_ENV = ("ANTIGRAVITY_LS_ADDRESS", "ANTIGRAVITY_CSRF_TOKEN")
+RPC_CODE = re.compile(
+    r"^rpc error: code = (Canceled|Unknown|InvalidArgument|DeadlineExceeded|NotFound|"
+    r"AlreadyExists|PermissionDenied|ResourceExhausted|FailedPrecondition|Aborted|"
+    r"OutOfRange|Unimplemented|Internal|Unavailable|DataLoss|Unauthenticated) desc = "
+)
 
 
 def validate(environment):
@@ -58,6 +64,37 @@ def register():
     return {"version": 1, "address": target, "transport": "agy-agentapi"}
 
 
+def refresh_registration(target):
+    environment = {name: os.environ.get(name) for name in CONNECTION_ENV}
+    if not all(environment.values()):
+        return
+    try:
+        binding = read(directory(target) / "endpoint.json")
+        if binding.get("address") == target and binding.get("environment") != environment:
+            register()
+    except (OSError, ValueError):
+        # A missing or unwritable inbound registration should not block an outbound message.
+        pass
+
+
+def failure(command, error, fallback):
+    preflight = command == "get-conversation-metadata"
+    prefix = "Antigravity recipient check failed" if preflight else "Antigravity send was not confirmed"
+    match = RPC_CODE.match(error) if isinstance(error, str) else None
+    code = match[1] if match else None
+    reason = f"gRPC {code}" if code else fallback
+    remedy = "No message was sent." if preflight else "Delivery may be uncertain. Check before retrying."
+    if code == "Unavailable" and "while dialing:" in error:
+        if "connect: connection refused" in error:
+            reason += ", connection refused"
+            remedy += " Run `agent-bridge message register` from the active Antigravity recipient session."
+        elif "socket: operation not permitted" in error or "connect: permission denied" in error:
+            reason += ", local socket access denied"
+    elif preflight and code == "Unauthenticated":
+        remedy += " Run `agent-bridge message register` from the active Antigravity recipient session."
+    return RuntimeError(f"{prefix} ({reason}). {remedy}")
+
+
 def call(environment, command, session, text=None):
     validate(environment)
     binary = shutil.which("agy")
@@ -69,22 +106,19 @@ def call(environment, command, session, text=None):
     try:
         result = subprocess.run(args, env={**os.environ, **environment}, capture_output=True, timeout=10)
     except subprocess.TimeoutExpired:
-        raise RuntimeError(
-            "Antigravity agentapi timed out; delivery may be uncertain; do not retry"
-        ) from None
-    if result.returncode or len(result.stdout) > 1048576:
-        raise RuntimeError("Antigravity agentapi rejected the request; no chat fallback")
+        raise failure(command, None, "agentapi timed out") from None
+    if len(result.stdout) > 1048576:
+        raise failure(command, None, "oversized agentapi reply")
     try:
         data = json.loads(result.stdout)
     except ValueError:
-        raise RuntimeError("Invalid Antigravity agentapi receipt; delivery may be uncertain") from None
-    if (
-        not isinstance(data, dict)
-        or data.get("error") not in (None, "")
-        or not isinstance(data.get("response"), dict)
-    ):
-        raise RuntimeError("Antigravity agentapi did not confirm the request")
-    return data["response"]
+        data = None
+    error = data.get("error") if isinstance(data, dict) else None
+    response = data.get("response") if isinstance(data, dict) else None
+    if result.returncode or error not in (None, "") or not isinstance(response, dict):
+        fallback = f"agentapi exit {result.returncode}" if result.returncode else "invalid agentapi reply"
+        raise failure(command, error, fallback)
+    return response
 
 
 def send(packet):
