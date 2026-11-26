@@ -29,6 +29,7 @@ class FakeAgent:
         self.cancelled = asyncio.Event()
         self.instance = f"{os.getpid()}-{time.monotonic_ns()}"
         self.hang_initialize = "--hang-init" in sys.argv
+        self.root_id = sys.argv[sys.argv.index("--root-id") + 1] if "--root-id" in sys.argv else "fake-root"
 
     def on_connect(self, connection):
         self.connection = connection
@@ -55,7 +56,7 @@ class FakeAgent:
         if cursor is not None:
             raise ValueError("Unexpected fixture cursor")
         sessions = [
-            SessionInfo(session_id="fake-root", cwd="/project", title="Fake root " + self.instance),
+            SessionInfo(session_id=self.root_id, cwd="/project", title="Fake root " + self.instance),
             SessionInfo(session_id="other-root", cwd="/other", title="Other root"),
         ]
         if cwd is not None:
@@ -66,7 +67,7 @@ class FakeAgent:
         if "--hang-load" in sys.argv:
             Path(sys.argv[sys.argv.index("--hang-load") + 1]).touch()
             await asyncio.Event().wait()
-        if session_id not in ("fake-root", "other-root"):
+        if session_id not in (self.root_id, "other-root"):
             raise ValueError("Unknown fake session")
         if mcp_servers != []:
             raise ValueError("Unexpected fake MCP servers")
@@ -81,7 +82,7 @@ class FakeAgent:
         return LoadSessionResponse()
 
     async def resume_session(self, session_id, cwd, additional_directories=None, mcp_servers=None, **kwargs):
-        if session_id not in ("fake-root", "other-root"):
+        if session_id not in (self.root_id, "other-root"):
             raise ValueError("Unknown fake session")
         return ResumeSessionResponse()
 

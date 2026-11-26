@@ -10,7 +10,7 @@ import subprocess
 import uuid
 from urllib.parse import urlsplit
 
-from . import core, messages
+from . import core, inbox_messages, messages
 from .message_store import directory, read
 
 CONNECTION_ENV = ("ANTIGRAVITY_LS_ADDRESS", "ANTIGRAVITY_CSRF_TOKEN")
@@ -126,9 +126,18 @@ def send(packet):
     _, session = messages.address(target)
     if str(uuid.UUID(session)) != session:
         raise ValueError("Invalid native Antigravity conversation ID")
+    inbox_denied = None
+    try:
+        receipt = inbox_messages.send(packet)
+        if receipt is not None:
+            return receipt
+    except inbox_messages.InboxAccessDenied as error:
+        inbox_denied = error
     try:
         binding = read(directory(target) / "endpoint.json")
     except FileNotFoundError:
+        if inbox_denied is not None:
+            raise inbox_denied from None
         raise RuntimeError("Antigravity recipient must run agent-bridge message register first") from None
     if binding.get("address") != target:
         raise ValueError("Antigravity connection belongs to a different conversation")

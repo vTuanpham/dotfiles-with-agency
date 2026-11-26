@@ -10,9 +10,12 @@ import uuid
 from importlib.metadata import version
 from pathlib import Path
 
+from agent_session.peer import inbox_socket
+
 from .adapters import ADAPTERS, adapter
 from .catalog import Catalog
 from .models import Target, decode_json, https_url, text
+from .peers import serving
 from .server import App, Server
 from .store import Store
 
@@ -26,8 +29,7 @@ def state_home():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", action="version", version=version("agent-inbox"))
-    parser.add_argument("--state", type=Path, default=Path(os.environ.get(
-        "AGENT_INBOX_HOME", str(state_home() / "agent-inbox"))))
+    parser.add_argument("--state", type=Path, default=inbox_socket().parent)
     sub = parser.add_subparsers(dest="action", required=True)
     add = sub.add_parser("add-codex", help="register an existing root on a running local daemon")
     add.add_argument("--session", required=True)
@@ -157,7 +159,8 @@ def main():
             with (store.home / "server.lock").open("a") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 store.recover()
-                with Server(App(store), args.port, args.public_url) as server:
+                with (Server(App(store), args.port, args.public_url) as server,
+                      serving(store, ADAPTERS["acp"].runtimes)):
                     print(f"Inbox listening on loopback port {server.server_address[1]}", flush=True)
                     server.serve_forever()
     except (OSError, RuntimeError, ValueError, KeyError, subprocess.SubprocessError, ExceptionGroup) as error:

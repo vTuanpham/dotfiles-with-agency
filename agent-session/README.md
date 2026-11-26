@@ -35,6 +35,8 @@ runtime does not expose them; no global context file is inferred.
 Tool-specific policy stays with each tool: Baton's `AGENT_BATON_SESSION`, Resources'
 `AGENT_RESOURCES_OWNER`, a Bridge worker's own job, Lab's `/proc` lookup when Claude hides
 its ID, and each tool's stored identity format.
+`agent_session.peer` defines exact `HARNESS:SESSION_ID` addresses and the local
+Bridge-to-Inbox socket contract shared by the two processes.
 Codex's [root-session environment](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/src/exec_env.rs)
 also supplies `CODEX_SESSION_ID`. Resources uses it to group native child commands under
 their root controller; `native()` still identifies the child's own `CODEX_THREAD_ID`.

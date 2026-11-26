@@ -135,24 +135,27 @@ Connect an installed [ACP agent](https://agentclientprotocol.github.io/python-sd
 with the command option last:
 
 ```sh
-agent-inbox add-acp --harness Antigravity --bridge-backend agy --command /path/to/acp-agent
+agent-inbox add-acp --harness Antigravity --command agy acp
 ```
 
-ACP uses its own native session IDs. The checked Antigravity runtime listed no
-ACP sessions and did not expose cached `agy` CLI conversations; this integration
-does not clone those conversations. It never creates or authenticates a session
-on registration. Its agent must advertise list, load and resume capabilities.
+ACP lists the saved sessions in the native agent's configured profile. A selected
+conversation is loaded into Inbox's ACP connection. An open terminal with the same
+conversation ID has a separate native connection. Registration discovers sessions
+through the agent's list, load and resume capabilities.
 A selected root uses one persistent SDK connection for history updates, prompts
 and cancellation. Discovery also reuses a connection; the pool permits four
 runtimes total, with five-minute idle cleanup. Prompts
 return a **Completed** receipt at turn completion, not an invented admission acknowledgement.
+Agent Bridge can discover and send to a loaded AGY root by its native `agy:ID`.
+Inbox uses the same ACP connection to forward attributed peer messages while the
+root is idle. Bridge's `sent` receipt confirms the ACP request was written.
 ACP has no Inbox queue or mid-turn steering; new input is rejected until its
 current turn ends. Ordinary session-scoped form questions use the SDK's native
 [elicitation callback](https://agentclientprotocol.com/protocol/v1/elicitation),
 with accept, decline and cancel actions. Permissions are declined; URL and
 request-scoped elicitations return the native unsupported-parameters error.
 SDK 0.12.1 requires its protocol opt-in for this documented method. Unsupported
-form schemas are declined. Live provider turns remain unverified here.
+form schemas are declined.
 The reference service keeps the rest of the filesystem read-only. An ACP agent
 that needs cache or workspace writes requires explicit paths in a local service
 override, or a foreground run; no blanket home-directory write exception is added.

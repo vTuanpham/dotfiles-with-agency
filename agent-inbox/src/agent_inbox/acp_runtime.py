@@ -3,6 +3,7 @@
 import asyncio
 import concurrent.futures
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -66,6 +67,7 @@ class _Observer:
         self.methods = {}
         self.results = {}
         self.error = None
+        self.prompt_written = None
 
     def __call__(self, event):
         message = event.message
@@ -75,6 +77,10 @@ class _Observer:
                     identifier, method = message["id"], message["method"]
                     task = asyncio.current_task()
                     self.methods[identifier] = (method, task)
+                    written = self.prompt_written
+                    if (method == "session/prompt" and written is not None and not written.done()
+                            and message.get("params", {}).get("sessionId") == self.history.session_id):
+                        written.set_result(None)
 
                     def forget(task):
                         self.methods.pop(identifier, None)
@@ -169,6 +175,7 @@ class _Request:
 class _SessionRuntime:
     def __init__(self, target, role="root", startup_timeout=START_TIMEOUT):
         self.target = target
+        self.backend = target.settings.get("bridge_backend")
         self.role = role
         self.startup_timeout = startup_timeout
         self.key = runtime_key(target, role)
@@ -379,6 +386,9 @@ class _SessionRuntime:
             client_info=implementation,
         )
         self.capabilities = acp_history.initialize(observer.take("initialize"))
+        if (self.backend is None and response.agent_info is not None
+                and response.agent_info.name == "Antigravity ACP Server"):
+            self.backend = "agy"
         if response.protocol_version != 1 or not self.capabilities.list:
             raise ValueError("ACP agent does not advertise session listing")
         if self.role == "source":
@@ -539,7 +549,7 @@ class _SessionRuntime:
             return await asyncio.wait_for(
                 _list_sessions(self.connection, self.observer), timeout=timeout,
             )
-        if (operation in ("send", "slash", "cancel", "mode", "config", "forms", "answer")
+        if (operation in ("send", "peer", "slash", "cancel", "mode", "config", "forms", "answer")
                 and self.session is None):
             raise ValueError("ACP source runtime cannot control a root session")
         if operation == "snapshot":
@@ -578,7 +588,7 @@ class _SessionRuntime:
             if self.history is None:
                 return {"usage": None, "denied_permissions": 0}
             return {"usage": self.history.usage, "denied_permissions": self.history.denied_permissions}
-        if operation == "send":
+        if operation in ("send", "peer"):
             content = arguments[0]
             if self._prompt_task is not None and not self._prompt_task.done():
                 raise DeliveryRejected("This ACP root is already processing a turn")
@@ -589,6 +599,8 @@ class _SessionRuntime:
             self.observer.raise_if_error()
             self._prompt_task = asyncio.create_task(self._prompt(content))
             self.touch(busy=True)
+            if operation == "peer":
+                return await self._peer_write(self._prompt_task)
             return await asyncio.shield(self._prompt_task)
         if operation == "slash":
             name, value = arguments
@@ -639,7 +651,7 @@ class _SessionRuntime:
             self.observer.raise_if_error()
             if "configOptions" not in result:
                 raise ValueError("ACP configuration receipt omitted complete state")
-            _, config_options = acp_history.load_state(result)
+            _, config_options = acp_history.load_state(result, self.session.id)
             if config_options is None:
                 raise ValueError("ACP configuration receipt omitted complete state")
             self.history.config_options = config_options
@@ -659,6 +671,25 @@ class _SessionRuntime:
             self.touch()
             return "stopped"
         raise ValueError("Unknown ACP runtime operation")
+
+    async def _peer_write(self, task):
+        written = asyncio.get_running_loop().create_future()
+        self.observer.prompt_written = written
+
+        def report_failure(completed):
+            if not completed.cancelled() and (error := completed.exception()) is not None:
+                logging.getLogger(__name__).warning("ACP peer turn failed (%s)", type(error).__name__)
+
+        task.add_done_callback(report_failure)
+        try:
+            await asyncio.wait((written, task), return_when=asyncio.FIRST_COMPLETED)
+            if written.done():
+                return "forwarded"
+            task.result()
+            raise RuntimeError("ACP did not report a prompt write")
+        finally:
+            if self.observer.prompt_written is written:
+                self.observer.prompt_written = None
 
     async def _prompt(self, content):
         try:
@@ -712,6 +743,12 @@ class RuntimePool:
     def call(self, target, operation, *arguments):
         runtime = self._get_or_start(target, "root", startup_timeout=START_TIMEOUT)
         return runtime.request(operation, *arguments)
+
+    def live_roots(self, backend):
+        with self.lock:
+            return tuple(runtime for runtime in self.runtimes.values()
+                         if runtime.role == "root" and runtime.available
+                         and runtime.backend == backend)
 
     def _get_or_start(self, target, role, startup_timeout):
         key = runtime_key(target, role)

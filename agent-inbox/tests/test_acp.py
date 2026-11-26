@@ -215,6 +215,24 @@ def test_initialize_and_session_list_match_the_v1_advertised_legacy_shape():
     assert page.sessions[0].label == "Root"
 
 
+def test_initialize_accepts_matching_agy_capability_aliases():
+    session = {"list": {}, "load": {}, "resume": {}}
+    advertised = {"loadSession": True, "load_session": True, "sessionCapabilities": session,
+                  "session_capabilities": dict(session)}
+    result = acp_history.initialize({"protocolVersion": 1, "agentCapabilities": advertised})
+    assert result.load and result.list and result.resume
+    advertised["load_session"] = 1
+    with pytest.raises(ValueError, match="Conflicting"):
+        acp_history.initialize({"protocolVersion": 1, "agentCapabilities": advertised})
+
+
+def test_load_state_verifies_agy_session_id():
+    history = acp_history.History("loaded-session")
+    history.load({"sessionId": "loaded-session", "models": {}, "configOptions": []})
+    with pytest.raises(ValueError, match="different session"):
+        history.load({"sessionId": "other-session", "models": {}})
+
+
 def test_session_list_rejects_duplicate_or_non_absolute_root_metadata():
     with pytest.raises(ValueError, match="Duplicate"):
         acp_history.sessions_page({"sessions": [info(), info()]})

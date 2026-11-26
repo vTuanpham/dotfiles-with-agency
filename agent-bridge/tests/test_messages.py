@@ -12,6 +12,7 @@ from agent_bridge import cli, core, message_store, messages
 @pytest.fixture(autouse=True)
 def private_mail(monkeypatch, tmp_path):
     monkeypatch.setattr(core, "HOME", tmp_path / "bridge")
+    monkeypatch.setenv("AGENT_INBOX_HOME", str(tmp_path / "inbox"))
     for name in ("OPENCODE", "OPENCODE_SESSION_ID", "ANTIGRAVITY_CONVERSATION_ID"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("CODEX_THREAD_ID", "sender")

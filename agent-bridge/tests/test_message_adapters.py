@@ -5,13 +5,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent_bridge import agy_messages, claude_messages, core, messages, opencode_messages
+from agent_bridge import agy_messages, claude_messages, core, inbox_messages, messages, opencode_messages
 
 
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(core, "HOME", tmp_path / "bridge")
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("AGENT_INBOX_HOME", str(tmp_path / "i"))
     for name in ("ANTIGRAVITY_CONVERSATION_ID", "OPENCODE", "OPENCODE_SESSION_ID"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("CODEX_THREAD_ID", "sender")
@@ -147,6 +148,45 @@ def test_agy_registers_private_connection_and_uses_native_agentapi(agy):
     assert "From: codex:sender" in calls[1][0][4]
     assert calls[1][1]["env"]["ANTIGRAVITY_CSRF_TOKEN"] == "fixture-native-credential"
     assert "credential" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("status", ("sent", "busy", "ambiguous", "unknown", "missing"))
+def test_agy_routes_live_inbox_and_only_falls_back_for_missing_root(agy, monkeypatch, status):
+    session, calls = agy
+    target = "agy:" + session
+    agy_messages.register()
+
+    def request(operation, **data):
+        assert operation == "send" and data["recipient"] == target
+        return {"version": 1, "id": data["id"], "recipient": target, "status": status}
+
+    monkeypatch.setattr(inbox_messages, "request", request)
+    if status in ("sent", "missing"):
+        receipt = agy_messages.send(packet(target))
+        assert receipt["transport"] == ("agy-inbox-acp" if status == "sent" else "agy-agentapi")
+    else:
+        with pytest.raises(RuntimeError, match="busy|Multiple|unconfirmed"):
+            agy_messages.send(packet(target))
+    assert len(calls) == (2 if status == "missing" else 0)
+
+
+@pytest.mark.parametrize("registered", [False, True])
+def test_agy_inbox_access_denial_still_allows_a_registered_terminal(agy, monkeypatch, registered):
+    session, calls = agy
+    if registered:
+        agy_messages.register()
+
+    def deny(*args, **kwargs):
+        raise inbox_messages.InboxAccessDenied("Inbox socket access denied")
+
+    monkeypatch.setattr(inbox_messages, "request", deny)
+    if registered:
+        assert agy_messages.send(packet("agy:" + session))["transport"] == "agy-agentapi"
+        assert len(calls) == 2
+    else:
+        with pytest.raises(RuntimeError, match="Inbox socket access denied"):
+            agy_messages.send(packet("agy:" + session))
+        assert not calls
 
 
 @pytest.mark.parametrize(

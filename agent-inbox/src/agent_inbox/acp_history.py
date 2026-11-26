@@ -137,9 +137,11 @@ def initialize(value):
         (),
         (
             "loadSession",
+            "load_session",
             "promptCapabilities",
             "mcpCapabilities",
             "sessionCapabilities",
+            "session_capabilities",
             "auth",
             "providers",
             "nes",
@@ -161,9 +163,18 @@ def initialize(value):
     session = capabilities.get("sessionCapabilities", {})
     if type(session) is not dict:
         raise ValueError("Invalid ACP session capabilities")
-    if session.keys() - {"list", "delete", "additionalDirectories", "fork", "resume", "close", "_meta"}:
+    # AGY 1.5.17 publishes both names for these capabilities.
+    for standard, alias in (("loadSession", "load_session"), ("sessionCapabilities", "session_capabilities")):
+        if alias in capabilities and (
+            standard not in capabilities
+            or json.dumps(capabilities[standard], sort_keys=True)
+            != json.dumps(capabilities[alias], sort_keys=True)
+        ):
+            raise ValueError("Conflicting ACP capability aliases")
+    session_features = ("list", "load", "delete", "additionalDirectories", "fork", "resume", "close")
+    if session.keys() - {*session_features, "_meta"}:
         raise ValueError("Unknown ACP session capability")
-    for name in ("list", "delete", "additionalDirectories", "fork", "resume", "close"):
+    for name in session_features:
         if name in session:
             _capability_object(session[name], name)
     info = value.get("agentInfo")
@@ -320,8 +331,12 @@ def _config_options(value):
     return result
 
 
-def load_state(value):
-    fields(value, (), ("modes", "configOptions", "_meta"))
+def load_state(value, session_id):
+    fields(value, (), ("sessionId", "models", "modes", "configOptions", "_meta"))
+    if "sessionId" in value and value["sessionId"] != session_id:
+        raise ValueError("ACP returned state for a different session")
+    if "models" in value and type(value["models"]) is not dict:
+        raise ValueError("Invalid ACP model state")
     modes = _modes(value["modes"]) if value.get("modes") is not None else None
     options = _config_options(value["configOptions"]) if value.get("configOptions") is not None else None
     return modes, options
@@ -397,7 +412,7 @@ class History:
         self._anonymous_message = None
 
     def load(self, value):
-        modes, options = load_state(value)
+        modes, options = load_state(value, self.session_id)
         if modes is not None:
             self.modes = modes
         if options is not None:

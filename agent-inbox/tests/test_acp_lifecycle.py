@@ -1,10 +1,13 @@
 """Failure and cleanup paths exercised against the real SDK and a local peer."""
 
 import asyncio
+import json
 import os
 import signal
+import socket
 import sys
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -15,8 +18,9 @@ from types import SimpleNamespace
 import pytest
 from test_acp import detached_runtime, target
 
-from agent_inbox import acp, acp_process, acp_runtime
+from agent_inbox import acp, acp_process, acp_runtime, peers
 from agent_inbox.models import NoLongerPending
+from agent_inbox.store import Store
 
 
 def fake_target(*arguments):
@@ -40,6 +44,46 @@ def running(pid):
         return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
     except (FileNotFoundError, ProcessLookupError):
         return False
+
+
+@pytest.mark.skipif(not hasattr(socket, "SO_PEERCRED"), reason="Inbox peers use Linux peer credentials")
+def test_peer_socket_wakes_only_the_already_loaded_agy_root(tmp_path):
+    session = str(uuid.uuid4())
+    recipient = "agy:" + session
+    seed = fake_target("--root-id", session)
+    selected = replace(seed, session_id=session, settings={**seed.settings, "bridge_backend": "agy"})
+    pool = acp_runtime.RuntimePool()
+    store = Store(tmp_path / "i")
+    endpoint = store.home / "bridge.sock"
+
+    def request(operation, **data):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(3)
+            connection.connect(str(endpoint))
+            connection.sendall(json.dumps({"version": 1, "operation": operation, **data}).encode() + b"\n")
+            with connection.makefile("rb") as stream:
+                return json.loads(stream.readline())
+
+    message = {"id": str(uuid.uuid4()), "sender": "codex:peer", "recipient": recipient, "text": "Check this"}
+    try:
+        with peers.serving(store, pool):
+            assert endpoint.stat().st_mode & 0o777 == 0o600
+            assert request("list")["sessions"] == []
+            assert request("send", **message)["status"] == "missing" and not pool.runtimes
+
+            pool.call(selected, "snapshot", None, None)
+            assert request("list")["sessions"] == [{"address": recipient, "status": "idle"}]
+            result = request("send", **message)
+            assert result == {"version": 1, "id": message["id"], "recipient": recipient, "status": "sent"}
+            assert request("send", **message) == result
+            assert request("send", **(message | {"id": str(uuid.uuid4())}))["status"] == "busy"
+            assert request("list")["sessions"] == [{"address": recipient, "status": "active"}]
+            wait_until(lambda: any("From: codex:peer" in item.text and item.text.endswith("Check this")
+                                   for item in pool.call(selected, "snapshot", None, None)["messages"]))
+            assert pool.call(selected, "cancel") == "applied"
+        assert not endpoint.exists()
+    finally:
+        pool.close()
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Uses /proc to distinguish zombies")
