@@ -47,6 +47,7 @@ from .core import (
 from .watch import watch
 
 BACKENDS = {"codex": codex, "agy": agy, "claude": claude, "opencode": opencode}
+SESSION_KEYS = {"codex": "threadId", "claude": "sessionId", "opencode": "sessionId", "agy": "conversationId"}
 ROOT_COMMANDS = {"start", "resume", "steer", "interrupt", "stop"}
 
 
@@ -97,7 +98,6 @@ def session_bindings():
     result = []
     if not JOBS.is_dir():
         return {"version": 1, "sessions": result}
-    keys = {"codex": "threadId", "claude": "sessionId", "opencode": "sessionId", "agy": "conversationId"}
     for path in sorted(JOBS.glob("*/*/state.json")):
         try:
             if (path.is_symlink() or not path.resolve().is_relative_to(JOBS.resolve())
@@ -107,14 +107,14 @@ def session_bindings():
             if state.get("retiredAt"):
                 continue
             backend = state.get("backend")
-            identifier = state.get(keys.get(backend))
+            identifier = state.get(SESSION_KEYS.get(backend))
             title = state.get("title", "")
             parent = state.get("parent")
-            if (backend not in keys or type(identifier) is not str or not identifier or len(identifier) > 200
-                    or type(title) is not str or len(title) > 1000):
+            if (backend not in SESSION_KEYS or type(identifier) is not str or not identifier
+                    or len(identifier) > 200 or type(title) is not str or len(title) > 1000):
                 continue
             if parent is not None and (type(parent) is not dict or set(parent) != {"backend", "session_id"}
-                    or parent["backend"] not in keys or type(parent["session_id"]) is not str
+                    or parent["backend"] not in SESSION_KEYS or type(parent["session_id"]) is not str
                     or not parent["session_id"] or len(parent["session_id"]) > 200):
                 parent = None
             result.append({"backend": backend, "session_id": identifier,
@@ -127,6 +127,27 @@ def session_bindings():
 
 def events(job, offset=0):
     return [event for _, event in event_lines(Path(job), offset)]
+
+
+def print_input_receipt(name, job, offset, runner, steer=None):
+    kind = "steer_sent" if steer else "prompt_accepted"
+    accepted = False
+    details = []
+    try:
+        accepted = any(event["kind"] == kind and (not steer or event.get("file") == steer.name)
+                       for _, event in event_lines(job, offset))
+        state = load_state(job)
+        for label, key in (("session", SESSION_KEYS.get(state.get("backend"))),
+                           ("model", "resolvedModel"), ("effort", "effectiveEffort")):
+            value = state.get(key)
+            if isinstance(value, str) and 0 < len(value) <= 200 and value.isprintable():
+                details.append(f"{label}={value}")
+    except (OSError, ValueError, TypeError):
+        pass  # A failed observation must not turn an admitted request into a failed command.
+    request = f"steer {steer.stem}" if steer else "input"
+    receipt = f"{request} accepted" if accepted else f"{request} awaiting native confirmation"
+    observed = f" (last recorded {' '.join(details)})" if details else ""
+    print(f"{name}: {runner}; {receipt}{observed}", file=sys.stderr, flush=True)
 
 
 def unanswered_urgent(job):
@@ -773,6 +794,7 @@ def main():
             raise RuntimeError(f"job is retired; run agent-bridge restore {a.job} before {a.command}")
         job.mkdir(parents=True, exist_ok=True)
         state_path = job / "state.json"
+        steer_path = None
         if a.command == "steer":
             if (a.text is None) == (a.prompt_file is None):
                 raise RuntimeError("steer takes exactly one of <text> or --prompt-file")
@@ -806,15 +828,16 @@ def main():
                         print(hint, file=sys.stderr)
                         text = (f"[Bridge: If this task needs CUDA and /dev/dxg is missing, send URGENT to "
                                 f"the coordinator and pause GPU work. {hint}]\n\n{text}")
-                    path = make_steer(job, text)
+                    steer_path = make_steer(job, text)
                     if a.queue and state.get("backend") in {"opencode", "agy"}:
-                        path.with_suffix(".queue").touch(mode=0o600)
-                    log(job, "root_steer", level="info", file=path.name)
+                        steer_path.with_suffix(".queue").touch(mode=0o600)
+                    log(job, "root_steer", level="info", file=steer_path.name)
             if a.queue:
-                print(f"queued: {path}; deliver with agent-bridge resume {a.job}")
+                print(f"queued: {steer_path}; deliver with agent-bridge resume {a.job}")
                 return
             if runner_fd is None:
-                print(path, flush=True)
+                print_input_receipt(a.job, job, before, "existing runner", steer_path)
+                print(steer_path, flush=True)
                 return follow(job, before, a.watch)
             a.detach, a.prompt_file = True, None
         if a.command in ("interrupt", "stop"):
@@ -960,8 +983,6 @@ def main():
                 message = "resume: continuing the same native session"
             print(message, flush=True)
         watching = getattr(a, "watch", None)
-        launch_message = (f"delivered by resuming the idle job; watch: agent-bridge watch {a.job}"
-                          if a.command == "steer" else str(job))
         if getattr(a, "detach", False) or watching:
             if a.command != "steer":
                 before = (job / "live.jsonl").stat().st_size if (job / "live.jsonl").exists() else 0
@@ -987,9 +1008,10 @@ def main():
                         # The runner owns the job now. The parent's copy of the owner lock would
                         # otherwise block every steer, ack and watch on this owner while it follows.
                         root_guard.close()
-                        print(launch_message, flush=True)
+                        print_input_receipt(a.job, job, before,
+                                            "runner started" if started else "runner exited", steer_path)
+                        print(steer_path or job, flush=True)
                         return follow(job, before, watching)
-                        raise RuntimeError(f"detached runner exited before startup (status {exit_status})")
                     time.sleep(0.1)
                 tail = (
                     (job / "runner.log").read_text(errors="replace")[-2000:]

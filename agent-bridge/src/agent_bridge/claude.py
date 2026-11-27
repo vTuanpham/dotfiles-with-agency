@@ -251,11 +251,12 @@ def run(job, state, path, prompt, resume=False, compact=False):
     compacted = False
     usage_baseline = {"previous": None if resume else {}}
 
-    def send(text):
+    def send(text, identifier=None):
         nonlocal idle, message_id
-        proc.stdin.write(
-            (json.dumps({"type": "user", "message": {"role": "user", "content": text}}) + "\n").encode()
-        )
+        message = {"type": "user", "message": {"role": "user", "content": text}}
+        if identifier:
+            message["uuid"] = identifier
+        proc.stdin.write((json.dumps(message) + "\n").encode())
         proc.stdin.flush()
         message_id += 1
         idle = False
@@ -264,11 +265,13 @@ def run(job, state, path, prompt, resume=False, compact=False):
         save(path, state)
 
     stdin_closed = False
+    prompt_id = str(uuid.uuid4()) if prompt and not compact else None
     try:
         if not compact and state.get("inflight"):
             poll_steers(job, send, state=state, defer=True, redeliver=True)
         if prompt:
-            send(prompt)
+            send(prompt, prompt_id)
+            prompt_turn = state["activeTurnId"]
             if compact:
                 log(job, "compact_started")
         while True:
@@ -310,6 +313,9 @@ def run(job, state, path, prompt, resume=False, compact=False):
                     line, buf = buf.split(b"\n", 1)
                     try:
                         event = json.loads(line)
+                        if prompt_id and event.get("type") == "user" and event.get("uuid") == prompt_id:
+                            log(job, "prompt_accepted", turnId=prompt_turn)
+                            prompt_id = None
                         status = process(event, state, job, usage_baseline, compact=compact)
                         if compact:
                             if event.get("type") == "system" and event.get("subtype") == "compact_boundary":

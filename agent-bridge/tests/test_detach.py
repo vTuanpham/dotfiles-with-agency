@@ -34,20 +34,32 @@ def args(monkeypatch, job):
     monkeypatch.setattr(sys, "stdin", type("Input", (), {"isatty": lambda self: True})())
 
 
-def test_detach_runner_pid_handshake(monkeypatch, tmp_path, capsys):
+@pytest.mark.parametrize("accepted", [False, True])
+def test_detach_receipt_distinguishes_runner_from_native_acceptance(monkeypatch, tmp_path, capsys, accepted):
     job = tmp_path / "job"
     args(monkeypatch, job)
+    core.log(job, "prompt_accepted")  # A prior log entry cannot confirm this launch.
 
     def spawn():
         state_path = job / "state.json"
         state = json.loads(state_path.read_text())
-        state["runnerPid"] = cli.os.getpid()
+        state.update(runnerPid=cli.os.getpid(), sessionId="native-session", model="requested-model")
+        if accepted:
+            state.update(resolvedModel="reported-model", effectiveEffort="medium")
+            core.log(job, "prompt_accepted")
         state_path.write_text(json.dumps(state))
         return cli.os.getpid()
 
     monkeypatch.setattr(cli.os, "fork", spawn)
     cli.main()
-    assert capsys.readouterr().out.strip() == str(job)
+    output = capsys.readouterr()
+    assert output.out.strip() == str(job)
+    assert "runner started" in output.err and "session=native-session" in output.err
+    assert "requested-model" not in output.err
+    if accepted:
+        assert "input accepted" in output.err and "model=reported-model effort=medium" in output.err
+    else:
+        assert "input awaiting native confirmation" in output.err
 
 
 def test_agy_start_uses_current_account(monkeypatch, tmp_path):

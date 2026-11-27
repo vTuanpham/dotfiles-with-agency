@@ -58,6 +58,29 @@ def make_state(tmp_path):
     return state, tmp_path / "state.json"
 
 
+def test_initial_prompt_acceptance_matches_native_echo_by_uuid(tmp_path, monkeypatch):
+    state, path = make_state(tmp_path)
+    identifier = claude.uuid.UUID(int=1)
+    monkeypatch.setattr(claude.uuid, "uuid4", lambda: identifier)
+    echo = {"type": "user", "isReplay": True, "message": {"content": "work"}}
+    proc = fake_stream(monkeypatch, [
+        {**echo, "uuid": str(claude.uuid.UUID(int=2))},
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": "started"}]}},
+        {**echo, "uuid": str(identifier)},
+        {**echo, "uuid": str(identifier)},
+        {"type": "result", "subtype": "success", "is_error": False},
+    ])
+
+    claude.run(tmp_path, state, path, "work")
+
+    assert json.loads(proc.stdin.lines[0])["uuid"] == str(identifier)
+    events = [json.loads(line) for line in (tmp_path / "live.jsonl").read_text().splitlines()]
+    assert [event["kind"] for event in events] == [
+        "turn_started", "message", "prompt_accepted", "turn_completed",
+    ]
+    assert events[2]["turnId"] == "turn-1"
+
+
 def test_claude_settings_and_event_mapping(tmp_path, capsys):
     state, _ = make_state(tmp_path)
     cmd = claude.command(state, tmp_path, resume=True)

@@ -124,15 +124,38 @@ def test_idle_steer_resumes_detached_and_delivers(job, monkeypatch, capfd, backe
     monkeypatch.setattr(cli.BACKENDS[backend], "run", deliver)
     steer()
     wait_idle(job)
-    assert capfd.readouterr().out.splitlines() == [
-        "delivered by resuming the idle job; watch: agent-bridge watch owner/job"
-    ]
+    output = capfd.readouterr()
+    assert output.out.strip() == str(job / "steer/001.md")
+    assert "steer 001" in output.err and "session=original" in output.err
     runs = [e for e in cli.events(job) if e["kind"] == "test_run"]
     assert len(runs) == 1 and runs[0]["resume"] and runs[0]["prompt"] == ""
     assert runs[0]["pid"] != os.getpid()
     assert (job / "steer/sent/001.md").read_text() == "follow up\n"
     state = core.load_state(job)
     assert state[key] == "original" and state["autoAnswers"] == 0
+
+
+@pytest.mark.parametrize("matching_receipt", [False, True])
+def test_live_steer_receipt_requires_its_own_native_confirmation(job, monkeypatch, capsys, matching_receipt):
+    core.log(job, "steer_sent", file="001.md")  # Before this submission.
+    make_steer = cli.make_steer
+
+    def enqueue(job, text):
+        path = make_steer(job, text)
+        # A busy runner can log delivery before the root logs its enqueue event.
+        core.log(job, "steer_sent", file=path.name if matching_receipt else "002.md")
+        return path
+
+    monkeypatch.setattr(cli, "make_steer", enqueue)
+    fd = core.lock_runner(job)
+    try:
+        steer()
+    finally:
+        os.close(fd)
+    output = capsys.readouterr()
+    assert output.out.strip() == str(job / "steer/001.md")
+    receipt = "accepted" if matching_receipt else "awaiting native confirmation"
+    assert f"existing runner; steer 001 {receipt}" in output.err
 
 
 @pytest.mark.parametrize("backend,key", [
@@ -263,7 +286,7 @@ def test_concurrent_steers_share_one_resume_and_deliver_in_queue_order(job, monk
     assert [e["text"] for e in deliveries] == [
         p.read_text().strip() for p in sorted((job / "steer/sent").glob("*.md"))
     ]
-    assert capfd.readouterr().out.count("delivered by resuming") == 1
+    assert capfd.readouterr().err.count("runner started") == 1
 
 
 def test_steer_while_runner_finishes_is_delivered_by_that_runner(job, monkeypatch):
