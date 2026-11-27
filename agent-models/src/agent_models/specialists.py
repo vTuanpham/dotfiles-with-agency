@@ -4,7 +4,7 @@ import csv
 import io
 import math
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -128,6 +128,9 @@ def bug_runs(raw: str, summary: object = None) -> tuple[str, list[Measurement], 
     rows = list(reader)
     if not rows or any(None in r or None in r.values() for r in rows):
         raise ValueError("empty or ragged Bug Hunt CSV")
+    statuses = Counter(row["row_status"] for row in rows)
+    if statuses.keys() - {"live", "superseded", "harness_comparison"}:
+        raise ValueError("unknown Bug Hunt row status")
     identities, aliases = set(), defaultdict(set)
     for row in rows:
         aliases[text(row["model_id"])].add(text(row["model"]))
@@ -137,8 +140,6 @@ def bug_runs(raw: str, summary: object = None) -> tuple[str, list[Measurement], 
         if identifier in identities:
             raise ValueError("duplicate Bug Hunt run identity")
         identities.add(identifier)
-        if row["row_status"] not in ("live", "superseded"):
-            raise ValueError("unknown Bug Hunt row status")
         score, first, second = [csv_number(row[k], maximum=n) for k, n in (
             ("fixed_of_105", 105), ("fixed_of_45", 45), ("fixed_of_60", 60))]
         if score is None or first is None or second is None:
@@ -166,7 +167,8 @@ def bug_runs(raw: str, summary: object = None) -> tuple[str, list[Measurement], 
         # Some routed IDs (deepseek-flash) are reused for different dated releases.
         if len(aliases[model]) > 1:
             model = label
-        if row["row_status"] == "superseded":
+        # The publisher moved harness comparisons off the model leaderboard.
+        if row["row_status"] != "live":
             continue
         note = optional_text(row["note"])
         annotation = annotations.get(row["board_row"])
@@ -191,7 +193,8 @@ def bug_runs(raw: str, summary: object = None) -> tuple[str, list[Measurement], 
         raise ValueError("empty current Bug Hunt CSV")
     return max(r.date for r in result if r.date is not None), result, {
         "available_rows": len(rows), "captured_rows": len(rows), "live_rows": len(result),
-        "superseded_rows": len(rows) - len(result), "harness_captured": "yes",
+        "superseded_rows": statuses["superseded"], "harness_comparison_rows": statuses["harness_comparison"],
+        "harness_captured": "yes",
         "efforts": sorted({row["effort"] for row in rows}),
         "newest_available": max(row["date"] for row in rows)}
 

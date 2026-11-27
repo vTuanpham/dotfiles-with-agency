@@ -169,7 +169,7 @@ def audit(snapshot, catalog=None):
                      if name == "LiveBench" else "free API; not the commercial/agent dataset"
                      if name == "Artificial Analysis" and "measurements" in source else
                      "public-page table; API not used" if name == "Artificial Analysis" else
-                     "all CSV receipts; superseded retained raw" if name == "Bug Hunt" else
+                     "all CSV receipts; off-board runs retained raw" if name == "Bug Hunt" else
                      "all audit outcomes; chosen cells not used as the run universe"
                      if name == "KernelBench.com" else "full published structured export"),
             "captured_rows": captured, "available_rows": available,

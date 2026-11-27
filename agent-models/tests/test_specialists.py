@@ -19,14 +19,22 @@ def test_bug_csv_keeps_every_real_effort_and_versioned_replicate():
     opus = [r for r in rows if r.model == "claude-opus-5-5"]
     assert {r.effort for r in opus} == {"low", "medium", "high", "xhigh", "max"}
     assert all(r.harness_version and r.run_id and r.n_runs == 1 for r in opus)
-    assert audit["available_rows"] == audit["captured_rows"]
-    assert audit["superseded_rows"] == 1 and published >= "2026-09-23"
+    assert audit["available_rows"] == audit["captured_rows"] == len(rows) + 2
+    assert audit["superseded_rows"] == audit["harness_comparison_rows"] == 1
+    assert {"dsv4flash", "dsv41flash1017high"}.isdisjoint(r.run_id for r in rows)
+    assert published < audit["newest_available"]
     means = specialists.cohorts([asdict(r) for r in opus])
     maximum = next(r for r in means if r["effort"] == "max")
     assert maximum["n_runs"] == 3 and maximum["score"] == pytest.approx(125 / 3)
     maximum["harness_version"] = "different CLI"
     mixed = specialists.cohorts([means[0], maximum])
     assert len(mixed) == 2
+
+
+def test_bug_csv_rejects_unknown_row_status():
+    raw = (FIXTURES / "bughunt-runs.csv").read_text().replace(",harness_comparison,", ",unrecognized,", 1)
+    with pytest.raises(ValueError, match="unknown Bug Hunt row status"):
+        specialists.bug_runs(raw)
 
 
 def test_csv_reconciles_clamped_efforts_and_contended_time_without_using_summary_scores():

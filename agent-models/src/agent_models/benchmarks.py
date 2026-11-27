@@ -397,8 +397,9 @@ def bug_hunt_source():
                        "and missing cells are Unverified. "
                        "105 planted bugs in two repos; no bug report; hidden answer key, judge-graded. "
                        "Bill/list/floor/free costs are distinct; wall times can be contended; "
-                       "small score gaps may be run variance. Every CSV effort/run retained; "
-                       "superseded receipts retained in raw only; means never cross harness versions.")}
+                       "small score gaps may be run variance. Superseded and harness-comparison "
+                       "receipts stay in the raw export; only live rows enter model comparisons. "
+                       "Means never cross harness versions.")}
 
 
 def collect(name, loader):

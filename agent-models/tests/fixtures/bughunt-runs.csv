@@ -1,6 +1,7 @@
 run,board_row,row_status,model,vendor,harness,effort,date,fixed_of_105,fixed_of_45,fixed_of_60,partial,claimed_only,extras,wall_min,cost_usd,cost_kind,turns,turns_repo1,turns_repo2,model_id,harness_version,note
 dsv4flash,DeepSeek V4-Flash,superseded,DeepSeek V4-Flash,DeepSeek,Claude Code / OpenRouter,default,2026-07-31,8,4,4,1,0,4,24.9,0.61,list,190,63,127,deepseek/deepseek-v4-flash,Claude Code 2.1.220,
 dsv4flash0731,DeepSeek V4-Flash 0731,live,DeepSeek V4-Flash,DeepSeek,Claude Code / OpenRouter,default,2026-08-01,14,6,8,1,2,0,48.5,1.52,bill,205,66,139,deepseek/deepseek-v4-flash-0731,Claude Code 2.1.220,
+dsv41flash1017high,DeepSeek V4.1 Flash 1017 (high effort) - mean of 5,harness_comparison,DeepSeek V4.1 Flash 1017,DeepSeek,Claude Code / DeepSeek API,high,2026-10-17,34,15,19,4,1,18,47.2,0.87,bill,612,277,335,deepseek-flash,Claude Code 2.1.302,
 opus55high,Opus 5.5 (high effort) - mean of 3,live,Opus 5.5,Anthropic,Claude Code,high,2026-09-23,32,14,18,3,1,7,23.8,23.03,list,269,107,162,claude-opus-5-5,Claude Code 2.1.280,
 opus55highr2,Opus 5.5 (high effort) - mean of 3,live,Opus 5.5,Anthropic,Claude Code,high,2026-09-23,32,13,19,2,1,12,24.4,21.76,list,262,87,175,claude-opus-5-5,Claude Code 2.1.280,
 opus55highr3,Opus 5.5 (high effort) - mean of 3,live,Opus 5.5,Anthropic,Claude Code,high,2026-09-23,31,12,19,2,2,13,23.7,21.94,list,271,81,190,claude-opus-5-5,Claude Code 2.1.280,
