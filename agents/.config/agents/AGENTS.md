@@ -32,7 +32,8 @@ reading, searching and running commands.
   outcome or required authority changes. Reviews/explanations alone do not
   authorize edits. Finish or report the exact blocker.
 - Ship included features enabled by default after verifying the normal workflow.
-  Omit features that are not ready to ship. Use an off-by-default rollout only
+  If the downsides make default use unsuitable, explore a better approach.
+  Omit features until they are ready to ship. Use an off-by-default rollout only
   when the user explicitly asks for one.
 - Read ambiguous replies in context and act on the most sensible interpretation.
   Ask only when alternatives materially change the result. Broad wording covers

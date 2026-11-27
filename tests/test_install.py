@@ -34,7 +34,7 @@ class InstallTests(unittest.TestCase):
 
             self.assertEqual(first.returncode, 0, first.stderr)
             for name in (".zshrc", ".claude/CLAUDE.md", ".config/systemd/user/agent-models-reference.timer",
-                         ".local/libexec/chatgpt-browser-idle.py", ".codex/skills/codex-wake",
+                         ".local/libexec/chatgpt-browser-idle.py", ".codex/skills/codex-wake", ".codex/statusline.py",
                          ".local/libexec/agent-process-guard.py", ".claude/hooks/rtk.py",
                          ".claude/hooks/resource-context.py",
                          ".local/bin/agent-desktop",

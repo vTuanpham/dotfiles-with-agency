@@ -12,6 +12,7 @@ Codex CLI config under `~/.codex`.
   loaded on demand for background wake-ups. Invoke explicitly as `$codex-wake`.
 - `config.toml`: model, agents, plugins, features and the status line. A snapshot. Machine-local state
   (trusted projects, hook trust hashes, UI hints) is deliberately not tracked; Codex asks again.
+- `statusline.py` is the **live** [Orbit](#orbit-status-line) MCP provider.
 - `hooks.json`: [automatic task notifications](../codex-wake/README.md), RTK/Baton checks, the [process-match guard](../shell/README.md#agent-process-matching)
   and the [browser idle reminder](../chrome/README.md#idle-reminder). `install.sh --apply hooks`
   adds any that the live `~/.codex/hooks.json` lacks, keeping the rest; Codex then asks you to trust them
@@ -30,6 +31,25 @@ Chrome control in WSL uses a locally registered `node_repl` MCP server and the
 app's unchanged Chrome skill. The [browser adapter guide](../chrome/README.md#chatgpt-from-wsl-gap-and-local-compatibility-patch)
 owns its setup and Windows kernel exception. Machine paths and authorization
 stay in the live config; future chats use the native browser tools directly.
+
+## Orbit status line
+
+Orbit shows the active thread's activity, model, reasoning effort and directory. Its context and
+quota gauges show what's left. The five-hour and weekly gauges appear as Codex supplies those
+windows. Orbit uses the terminal theme and puts the gauges ahead of the directory for narrow screens.
+
+After `./install.sh --apply links`, register the provider on the machine running the app server.
+
+```sh
+codex mcp add orbit-statusline -- python3 -u "$HOME/.codex/statusline.py"
+```
+
+Enable **Custom status line** in `/experimental`, restart the TUI, and open a new conversation.
+In `/statusline`, choose **Choose a status line provider**, then **Orbit**. The same selection can
+be set in the live `config.toml` as `status_line_provider = { server = "orbit-statusline", tool = "statusline" }`
+under `[tui]`. Choose the built-in provider in `/statusline` to restore the regular footer.
+
+Orbit adapts the Codex starter's MCP transport and replaces its renderer. [Source](https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/skills/src/assets/samples/create-statusline/assets/statusline.py) · [Apache 2.0 license](STATUSLINE-LICENSE)
 
 ## Questions and reminders
 

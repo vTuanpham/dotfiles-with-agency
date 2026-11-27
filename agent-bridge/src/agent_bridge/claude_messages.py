@@ -1,4 +1,4 @@
-"""Claude's authenticated native peer socket (SendMessage), priority=now."""
+"""Claude's authenticated native peer socket (SendMessage), priority=next."""
 
 import hashlib
 import json
@@ -101,7 +101,7 @@ def send(packet):
     frame = {
         "type": "user",
         "message": {"role": "user", "content": envelope(packet)},
-        "priority": "now",
+        "priority": "next",
         "session_id": session,
         "uuid": packet["id"],
         "msg_id": packet["id"],

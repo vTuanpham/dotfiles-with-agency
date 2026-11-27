@@ -165,6 +165,7 @@ LINKS=(
   "claude/.claude/skills/agent-bridge .claude/skills/agent-bridge"
   "codex/.codex/AGENTS.md .codex/AGENTS.md"
   "codex/.codex/skills/codex-wake .codex/skills/codex-wake"
+  "codex/.codex/statusline.py .codex/statusline.py"
   "chrome/.local/bin/chatgpt-browser .local/bin/chatgpt-browser"
   "chrome/.local/libexec/chatgpt-browser-idle.py .local/libexec/chatgpt-browser-idle.py"
   "computer-use/.local/bin/agent-desktop .local/bin/agent-desktop"

@@ -42,7 +42,7 @@ there is no automatic reply, acknowledgement loop or fallback to user chat.
 | Recipient | Transport | Receipt |
 | --- | --- | --- |
 | Codex app task | `codex_tui.send_message_to_thread` through the local app server | `accepted` means native task-message admission, not read/completed |
-| Running Claude session | Authenticated native `SendMessage` peer socket, `priority=now` | `sent` means native socket write completed; a native hold/refusal is reported when received |
+| Running Claude session | Authenticated native `SendMessage` peer socket, `priority=next` | `sent` means native socket write completed; a native hold/refusal is reported when received |
 | OpenCode 2.2.6 | `/api/session/ID/synthetic`, `delivery=steer` | `accepted` validates the native synthetic receipt and exact session |
 | agy terminal | `agentapi send-message` | `accepted` means the native CLI confirmed its request; no mid-turn option is exposed |
 | agy in Agent Inbox | `session/prompt` on the loaded ACP connection | `sent` confirms the request was written to the native agent |
@@ -65,7 +65,8 @@ offline recipients, refusal and unsupported protocol versions fail explicitly.
 Sandbox denial means the delivery-only command needs an authorized host context;
 never unsandbox a larger command or worker to make messaging work.
 
-Steering is the default wherever native APIs offer it. AGY's direct-session
+Steering is the default wherever native APIs offer it. Claude reads messages between
+tool calls during an active turn, and starts a new turn when idle. AGY's direct-session
 `agentapi send-message` has no steering flag, so that API controls its delivery
 boundary. Inbox ACP roots accept a peer message while idle and reject while busy
 or waiting for a question. Managed AGY workers use their separate ACP steering
@@ -136,7 +137,8 @@ The official [Codex app-server MCP contract](https://learn.chatgpt.com/docs/app-
 defines per-thread tool connections; the installed `codex_tui` tool schema owns
 its task-message arguments and size limit. Claude's
 [session messaging API](https://code.claude.com/docs/en/plugins/mods/api#send-and-receive-messages-between-sessions)
-owns native peer framing and refusal. The installed native peer protocol defines
+and [delivery contract](https://code.claude.com/docs/en/cross-session-messaging#message-delivery)
+describe native messages and refusal. The installed native peer protocol defines
 socket authentication and priority. OpenCode documents its separate
 [synthetic-message API](https://opencode.ai/v2/docs/api#session-synthetic), and
 Antigravity documents [agentapi messaging](https://antigravity.google/docs/sidecars#agentapi).

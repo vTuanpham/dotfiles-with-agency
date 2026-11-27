@@ -91,7 +91,7 @@ def test_native_peer_steers_authenticates_receipts_and_cleans_up(native_peer, st
     worker.join(timeout=3)
     assert not worker.is_alive() and not errors
     assert len(received) == 1
-    assert received[0]["priority"] == "now" and received[0]["session_id"] == "recipient"
+    assert received[0]["priority"] == "next" and received[0]["session_id"] == "recipient"
     assert received[0]["from_plugin"] == "agent-bridge"
     assert "From: codex:sender" in received[0]["message"]["content"]
     assert list((config / "sessions").iterdir()) == []
